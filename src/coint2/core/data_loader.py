@@ -65,7 +65,53 @@ class DataHandler:
 
     @logged_time("get_all_symbols")
     def get_all_symbols(self) -> list[str]:
-        """Return list of symbols based on partition directory names."""
+        """Return list of symbols based on data in optimized parquet files."""
+        # Проверяем наличие оптимизированной директории
+        optimized_dir = Path(self.data_dir.parent / "data_optimized")
+        
+        if optimized_dir.exists():
+            # Используем оптимизированную структуру
+            logger.info(f"Используем оптимизированную структуру данных: {optimized_dir}")
+            
+            try:
+                # Загружаем один файл для получения списка символов
+                # Находим первый доступный файл parquet
+                parquet_files = []
+                for year_dir in optimized_dir.iterdir():
+                    if not year_dir.is_dir() or not year_dir.name.startswith("year="):
+                        continue
+                    
+                    for month_dir in year_dir.iterdir():
+                        if not month_dir.is_dir() or not month_dir.name.startswith("month="):
+                            continue
+                            
+                        for file in month_dir.glob("*.parquet"):
+                            parquet_files.append(file)
+                            break
+                        
+                        if parquet_files:
+                            break
+                    
+                    if parquet_files:
+                        break
+                
+                if not parquet_files:
+                    logger.warning(f"Не найдено parquet файлов в {optimized_dir}")
+                    return []
+                
+                # Читаем первый файл и получаем уникальные символы
+                import polars as pl
+                df = pl.read_parquet(parquet_files[0])
+                symbols = df["symbol"].unique().to_list()
+                
+                logger.info(f"Найдено {len(symbols)} символов в оптимизированной структуре: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
+                return sorted(symbols)
+                
+            except Exception as e:
+                logger.error(f"Ошибка при чтении оптимизированных данных: {e}")
+                # Если произошла ошибка, пробуем использовать старую структуру
+        
+        # Используем старую структуру, если оптимизированная недоступна
         if not self.data_dir.exists():
             logger.warning(f"Data directory does not exist: {self.data_dir}")
             return []
@@ -80,38 +126,73 @@ class DataHandler:
                 else:
                     symbols.append(p.name)
         
-        logger.info(f"Found {len(symbols)} symbols: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
+        logger.info(f"Found {len(symbols)} symbols in legacy structure: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
         return sorted(symbols)
 
     @logged_time("load_full_dataset")
-    def _load_full_dataset(self) -> dd.DataFrame:
+    def _load_full_dataset(self, start_date: pd.Timestamp = None, end_date: pd.Timestamp = None, symbols: list[str] = None) -> dd.DataFrame:
         """
-        Load the dataset for the configured period as a dask dataframe,
-        using predicate pushdown for efficiency.
+        Загружает данные из оптимизированной или стандартной структуры parquet.
+        
+        Parameters
+        ----------
+        start_date : pd.Timestamp, optional
+            Начальная дата для загрузки данных
+        end_date : pd.Timestamp, optional
+            Конечная дата для загрузки данных
+        symbols : list[str], optional
+            Список символов для фильтрации
+        
+        Returns
+        -------
+        dd.DataFrame
+            Dask DataFrame с данными за указанный период
         """
         try:
-            # Эти даты должны быть доступны в экземпляре DataHandler
-            # и установлены во время инициализации.
-            start_date = self.start_date
-            end_date = self.end_date
-
-            logger.info(f"Загрузка данных за расширенный период {start_date} - {end_date}")
-
-            # dd.read_parquet лучше всего работает с np.datetime64 для фильтров
-            start_ts = np.datetime64(start_date)
-            end_ts = np.datetime64(end_date)
-
-            logger.debug(f"Фильтрация по timestamp: {start_ts} - {end_ts}")
-
+            # Проверяем наличие оптимизированной директории
+            optimized_dir = Path(self.data_dir.parent / "data_optimized")
+            data_path = optimized_dir if optimized_dir.exists() else self.data_dir
+            
+            logger.info(f"Используем директорию данных: {data_path}")
+            
             cols_to_load = ["timestamp", "symbol", "close"]
+            filters = []
+            
+            # Добавляем фильтры по дате, если они указаны
+            if start_date is not None:
+                # Преобразуем в миллисекунды для фильтрации
+                start_ts = int(start_date.timestamp() * 1000)
+                logger.info(f"Фильтрация от даты: {start_date} (timestamp: {start_ts})")
+                filters.append(("timestamp", ">=", start_ts))
+                
+            if end_date is not None:
+                # Преобразуем в миллисекунды для фильтрации
+                end_ts = int(end_date.timestamp() * 1000)
+                logger.info(f"Фильтрация до даты: {end_date} (timestamp: {end_ts})")
+                filters.append(("timestamp", "<=", end_ts))
+            
+            # Добавляем фильтры по символам, если указаны
+            if symbols is not None and len(symbols) > 0:
+                logger.info(f"Фильтрация по символам: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
+                # Для оптимизированной структуры используем фильтр по столбцу symbol
+                if optimized_dir.exists():
+                    filters.append(("symbol", "in", symbols))
+            
+            logger.info(f"Загрузка данных с фильтрами: {filters if filters else 'без фильтров'}")
 
             # Используем dd.read_parquet с фильтрами для эффективной загрузки
             ddf = dd.read_parquet(
-                self.data_dir,
+                data_path,
                 engine="pyarrow",
                 columns=cols_to_load,
-                filters=[("timestamp", ">=", start_ts), ("timestamp", "<=", end_ts)],
+                filters=filters if filters else None,
                 gather_statistics=True,  # Важно для отсечения партиций (partition pruning)
+                schema_overrides={
+                    # Явно указываем типы для предотвращения ошибок типов
+                    "timestamp": np.int64,
+                    "close": np.float64,
+                    "symbol": str
+                }
             )
 
             # Репартиционируем для лучшего параллелизма и кешируем в памяти
@@ -129,13 +210,15 @@ class DataHandler:
             return empty_ddf()
 
     @logged_time("load_all_data_for_period")
-    def load_all_data_for_period(self, lookback_days: int | None = None) -> pd.DataFrame:
+    def load_all_data_for_period(self, lookback_days: int | None = None, symbols: list[str] = None) -> pd.DataFrame:
         """Load close prices for all symbols for the specified or configured lookback period.
         
         Parameters
         ----------
         lookback_days : int | None, optional
             Number of days to look back. If None, uses self.lookback_days.
+        symbols : list[str], optional
+            List of symbols to filter by. If None, loads data for all symbols.
             
         Returns
         -------
@@ -143,46 +226,42 @@ class DataHandler:
             DataFrame with close prices for all symbols.
         """
         try:
-            with time_block("loading full dataset"):
-                ddf = self._load_full_dataset()
+            # Определяем временные рамки для загрузки
+            days_back = lookback_days or self.lookback_days
+            end_date = pd.Timestamp.now()
+            start_date = end_date - pd.Timedelta(days=days_back)
+            
+            logger.info(f"Загрузка данных за период: {start_date} - {end_date} ({days_back} дней)")
+            
+            with time_block("loading filtered dataset"):
+                # Используем оптимизированный метод с фильтрацией по датам и символам
+                ddf = self._load_full_dataset(start_date=start_date, end_date=end_date, symbols=symbols)
 
             # Проверка на пустой DataFrame
             if not ddf.columns.tolist():
                 logger.warning("Empty dataset - no columns found")
                 return pd.DataFrame()
 
-            with time_block("computing dataset and applying filters"):
+            with time_block("computing dataset and preparing data"):
                 # Приводим ddf['timestamp'] к datetime если это еще не сделано
                 if not pd.api.types.is_datetime64_any_dtype(ddf["timestamp"]):
                     ddf["timestamp"] = dd.to_datetime(ddf["timestamp"], unit="ms")
 
-                # Вычисляем полные данные один раз
+                # Вычисляем полные данные
                 all_data = ddf.compute()
                 logger.info(f"Computed dataset: {len(all_data):,} rows, {len(all_data.columns)} columns")
-
-                # Определяем временные рамки  
-                days_back = lookback_days or self.lookback_days
-                max_ts = all_data["timestamp"].max()
-                start_ts = max_ts - pd.Timedelta(days=days_back)
                 
-                logger.info(f"Time range: {start_ts} to {max_ts} ({days_back} days)")
-
-            # Фильтруем уже вычисленные данные
-            with time_block("filtering data by time range"):
-                filtered_df = all_data[all_data["timestamp"] >= start_ts].copy()
-                logger.info(f"After time filtering: {len(filtered_df):,} rows")
-                
-                if filtered_df.empty:
+                if all_data.empty:
                     # Возвращаем пустой DataFrame с правильными колонками и именем индекса
                     logger.warning("No data in specified time range")
-                    return pd.DataFrame(columns=all_data.columns, index=pd.DatetimeIndex([], name="timestamp"))
+                    return pd.DataFrame(columns=["timestamp", "symbol", "close"], index=pd.DatetimeIndex([], name="timestamp"))
 
                 # Преобразуем timestamp в datetime
-                filtered_df["timestamp"] = pd.to_datetime(filtered_df["timestamp"], unit="ms")
+                all_data["timestamp"] = pd.to_datetime(all_data["timestamp"], unit="ms")
 
             # Пивотируем данные
             with time_block("pivoting data"):
-                result = filtered_df.pivot_table(
+                result = all_data.pivot_table(
                     index="timestamp", columns="symbol", values="close"
                 )
                 logger.info(f"Pivoted data: {len(result)} rows, {len(result.columns)} symbols")
@@ -498,11 +577,26 @@ class DataHandler:
 
         logger.debug(f"Тип all_data['timestamp']: {all_data['timestamp'].dtype}")
         logger.debug(f"Примеры значений timestamp: {all_data['timestamp'].head(5).tolist()}")
+        logger.debug(f"Тип timestamp: {all_data['timestamp'].dtype}")
         
+        # Проверяем и преобразуем timestamp в числовой тип
         if np.issubdtype(all_data['timestamp'].dtype, np.datetime64):
             logger.debug('Преобразую timestamp из datetime64[ns] в int/ms')
             all_data['timestamp'] = all_data['timestamp'].astype('int64') // 10**6
             logger.debug(f"Преобразовано. Примеры: {all_data['timestamp'].head(5).tolist()}")
+        elif all_data['timestamp'].dtype == 'object' or str(all_data['timestamp'].dtype).startswith('string') or 'str' in str(all_data['timestamp'].dtype).lower():
+            logger.warning('Обнаружен строковый тип timestamp! Преобразую в int64')
+            # Пробуем преобразовать строки в числа
+            try:
+                all_data['timestamp'] = pd.to_numeric(all_data['timestamp'], errors='coerce')
+                # Заполняем NaN значения, если они появились при преобразовании
+                if all_data['timestamp'].isna().any():
+                    logger.warning(f"При преобразовании timestamp появились NaN значения: {all_data['timestamp'].isna().sum()} из {len(all_data)}")
+                    # Удаляем строки с NaN в timestamp, так как они не могут быть корректно обработаны
+                    all_data = all_data.dropna(subset=['timestamp'])
+                logger.debug(f"Преобразовано в числовой тип. Примеры: {all_data['timestamp'].head(5).tolist()}")
+            except Exception as e:
+                logger.error(f"Ошибка при преобразовании timestamp из строки в число: {str(e)}")
         
         if all_data.empty:
             logger.warning(f"Нет данных в директории {self.data_dir}")

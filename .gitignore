@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Личные/временные папки
+data_clean/
+logs/
+.env
+data/
+data_optimized
