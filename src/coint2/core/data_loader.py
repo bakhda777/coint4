@@ -549,3 +549,53 @@ class DataHandler:
             wide_pdf = wide_pdf.asfreq(freq_val)
 
         return wide_pdf
+
+
+# New function for optimized dataset loading
+import pandas as pd
+import pyarrow.dataset as ds
+
+
+def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    """
+    Загружает данные для указанного диапазона, используя надежный фильтр
+    по партициям 'year' и 'month', который корректно обрабатывает переходы через год.
+    """
+    print(f"⚙️  Загрузка данных за период: {start_date.date()} -> {end_date.date()}")
+
+    # 1. Создаем надежный фильтр для PyArrow, который не сломается на границе года.
+    # Он состоит из двух частей:
+    #   - start_filter: выбирает все, что ПОСЛЕ начала периода
+    #   - end_filter: выбирает все, что ДО конца периода
+    start_filter = (ds.field('year') > start_date.year) | \
+                   ((ds.field('year') == start_date.year) & (ds.field('month') >= start_date.month))
+
+    end_filter = (ds.field('year') < end_date.year) | \
+                 ((ds.field('year') == end_date.year) & (ds.field('month') <= end_date.month))
+
+    combined_filter = start_filter & end_filter
+
+    try:
+        dataset = ds.dataset(data_path, format="parquet", partitioning=['year', 'month'])
+    except Exception as e:
+        print(f"❌ Ошибка при создании датасета PyArrow: {e}")
+        print("💡 Убедитесь, что структура папок соответствует 'year=YYYY/month=MM/'.")
+        return pd.DataFrame()
+
+    table = dataset.to_table(filter=combined_filter)
+
+    if table.num_rows == 0:
+        print("⚠️  Данные по фильтру не найдены.")
+        return pd.DataFrame()
+
+    df = table.to_pandas()
+
+    if 'timestamp' not in df.columns and df.index.name == 'timestamp':
+        df = df.reset_index()
+
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    mask = (df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)
+
+    final_df = df.loc[mask]
+    print(f"✅ Загружено {len(final_df)} записей.")
+    return final_df
