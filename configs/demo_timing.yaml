@@ -1,0 +1,34 @@
+data_dir: "data_clean"
+results_dir: "results"
+portfolio:
+  initial_capital: 1000.0
+  risk_per_position_pct: 0.01  # Риск 1% на сделку
+  max_active_positions: 15  # Торгуем не более 15 пар одновременно
+
+pair_selection:
+  lookback_days: 60
+  coint_pvalue_threshold: 0.10  # Ослабили для демо
+  ssd_top_n: 1000  # Уменьшили для быстроты
+  min_half_life_days: 1  
+  max_half_life_days: 15   # Увеличили диапазон
+  min_mean_crossings: 5    # Ослабили требования
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 30
+  zscore_threshold: 2.0     # Умеренный порог
+  zscore_exit: 0.5         # Порог выхода
+  stop_loss_multiplier: 3.0 
+  fill_limit_pct: 0.1       
+  commission_pct: 0.004     # Реальная комиссия
+  slippage_pct: 0.002       # Реальное проскальзывание
+  annualizing_factor: 365
+  cooldown_hours: 4         # Тайм-аут после выхода
+
+walk_forward:
+  start_date: "2022-04-15"  # Раньше начинаем  
+  end_date: "2022-06-30"    # Позже заканчиваем
+  training_period_days: 30   # Сократили обучение до 30 дней
+  testing_period_days: 15    # Сократили тест до 15 дней
+
+max_shards: null 

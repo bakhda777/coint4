@@ -1,0 +1,34 @@
+data_dir: "data_clean"
+results_dir: "results"
+portfolio:
+  initial_capital: 10000.0      # Увеличили капитал до $10,000
+  risk_per_position_pct: 0.01   # Риск 1% на позицию (меньше риск = больше позиций)
+  max_active_positions: 50      # Значительно больше позиций для диверсификации
+
+pair_selection:
+  lookback_days: 90             # Увеличили lookback для 2024
+  coint_pvalue_threshold: 0.05  # Более мягкий порог коинтеграции
+  ssd_top_n: 500               # Больше кандидатов для SSD
+  min_half_life_days: 1        
+  max_half_life_days: 30       # Расширенный диапазон half-life
+  min_mean_crossings: 5        # Более мягкое требование к сигналам
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 30
+  zscore_threshold: 2.5         # Консервативный порог входа
+  zscore_exit: 0.0             # Выход при возврате к среднему
+  stop_loss_multiplier: 2.0    # Стоп-лосс при 2 std
+  fill_limit_pct: 0.1          
+  commission_pct: 0.004        # Реальная комиссия Binance 
+  slippage_pct: 0.002          # Реальное проскальзывание
+  annualizing_factor: 365
+  cooldown_hours: 4            # Тайм-аут между сделками
+
+walk_forward:
+  start_date: "2024-03-01"     # Начало года с достаточным history
+  end_date: "2024-12-31"       # Полный год тестирования  
+  training_period_days: 60     # 2 месяца обучения
+  testing_period_days: 30      # 1 месяц тестирования
+
+max_shards: null 

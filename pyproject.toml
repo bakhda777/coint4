@@ -1,0 +1,49 @@
+[tool.poetry]
+name = "coint2" # Оставляем оригинальное имя проекта
+version = "0.1.0"
+description = "Cointegration backtest framework"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+click = "*"
+joblib = "*"
+pydantic = "*"
+pyyaml = "^6.0"
+numpy = "*"
+pandas = "*"
+scipy = "*"
+numba = "*"
+# ↓↓↓ ЭТИ ЗАВИСИМОСТИ МЫ БЕРЕМ ИЗ ВЕТКИ CODEX ↓↓↓
+pyarrow = ">=8.0.0"
+statsmodels = "*"
+dask = {extras = ["dataframe"], version = "*"} # Устанавливаем dask с поддержкой DataFrame
+dask-expr = "*" # Нужен для read_parquet в новых версиях
+python-dotenv = "*"
+matplotlib = "*"  # Для графиков
+seaborn = "*"     # Для красивых графиков
+plotly = "*"      # Для интерактивных графиков
+
+[tool.poetry.dev-dependencies]
+pytest = "*"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.4"
+mypy = "^1.10"
+
+[tool.poetry.scripts]
+coint2 = "coint2.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "B", "I", "UP"]
+
