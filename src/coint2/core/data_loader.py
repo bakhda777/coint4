@@ -751,9 +751,10 @@ def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.T
         print(f"✅ Загружено {result.height} записей с помощью Polars.")
         
         # Преобразуем timestamp в datetime для pandas
+        # ВАЖНО: наши timestamp хранятся в миллисекундах, поэтому используем правильное преобразование
         result = result.with_columns(
             pl.col("timestamp").cast(pl.Int64).alias("timestamp_ms"),
-            pl.col("timestamp").cast(pl.Datetime).alias("timestamp")
+            (pl.col("timestamp") * 1000).cast(pl.Datetime).alias("timestamp")
         )
         
         # Преобразуем в pandas DataFrame
