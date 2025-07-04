@@ -1,4 +1,4 @@
-data_dir: "data_clean"
+data_dir: "data_optimized"
 results_dir: "results"
 portfolio:
   initial_capital: 10000.0      # Увеличили капитал до $10,000

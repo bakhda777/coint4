@@ -652,58 +652,120 @@ import pyarrow.dataset as ds
 
 def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
     """
-    Загружает данные для указанного диапазона, используя надежный фильтр
-    по партициям 'year' и 'month', который корректно обрабатывает переходы через год.
+    Загружает данные для указанного диапазона, используя Polars для надежной фильтрации
+    и строгого контроля типов данных.
+    
+    Parameters
+    ----------
+    data_path : str
+        Путь к директории с данными
+    start_date : pd.Timestamp
+        Начальная дата диапазона
+    end_date : pd.Timestamp
+        Конечная дата диапазона
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame с данными за указанный период
     """
     print(f"⚙️  Загрузка данных за период: {start_date.date()} -> {end_date.date()}")
 
-    # --- НАЧАЛО ПРАВИЛЬНОГО КОДА ---
-
-    # Задача этого блока — создать надежный фильтр, который корректно обработает
-    # любой диапазон дат, включая переходы через год.
-
-    # 1. Создаем условие для нижней границы диапазона.
-    #    Оно выберет все партиции, которые находятся:
-    #    - в годах ПОЗЖЕ начального года
-    #    - ИЛИ в том же году, но в месяце, который равен или ПОЗЖЕ начального.
-    start_filter = (ds.field('year') > start_date.year) | \
-                   ((ds.field('year') == start_date.year) & (ds.field('month') >= start_date.month))
-
-    # 2. Создаем условие для верхней границы диапазона.
-    #    Оно выберет все партиции, которые находятся:
-    #    - в годах РАНЬШЕ конечного года
-    #    - ИЛИ в том же году, но в месяце, который равен или РАНЬШЕ конечного.
-    end_filter = (ds.field('year') < end_date.year) | \
-                 ((ds.field('year') == end_date.year) & (ds.field('month') <= end_date.month))
-
-    # 3. Объединяем два условия через логическое "И".
-    #    В переменную `filter_expr` попадут только те партиции, которые
-    #    удовлетворяют ОБА условия одновременно.
-    filter_expr = start_filter & end_filter
-
-    # --- КОНЕЦ ПРАВИЛЬНОГО КОДА ---
-
+    # Проверяем наличие оптимизированной структуры данных
+    import os
+    from pathlib import Path
+    import polars as pl
+    
+    data_path_obj = Path(data_path)
+    optimized_dir = Path(data_path_obj.parent / "data_optimized")
+    
+    if optimized_dir.exists() and os.listdir(optimized_dir):
+        print(f"ℹ️  Используем оптимизированную структуру данных: {optimized_dir}")
+        data_path = str(optimized_dir)
+    
+    # Преобразуем даты в миллисекунды для фильтрации
+    start_ts = int(start_date.timestamp() * 1000)
+    end_ts = int(end_date.timestamp() * 1000)
+    
     try:
-        dataset = ds.dataset(data_path, format="parquet", partitioning=['year', 'month'])
+        # Используем Polars для загрузки данных с фильтрацией
+        # Сначала найдем все parquet файлы в нужных партициях
+        parquet_files = []
+        
+        # Если используем оптимизированную структуру
+        if str(data_path) == str(optimized_dir):
+            # Фильтруем по year и month
+            for year_dir in Path(data_path).glob("year=*"):
+                year = int(year_dir.name.split('=')[1])
+                
+                # Пропускаем годы, которые точно не входят в диапазон
+                if year < start_date.year or year > end_date.year:
+                    continue
+                    
+                for month_dir in year_dir.glob("month=*"):
+                    month = int(month_dir.name.split('=')[1])
+                    
+                    # Проверяем, входит ли месяц в диапазон
+                    if year == start_date.year and month < start_date.month:
+                        continue
+                    if year == end_date.year and month > end_date.month:
+                        continue
+                        
+                    # Добавляем все parquet файлы из этой директории
+                    for file in month_dir.glob("*.parquet"):
+                        parquet_files.append(str(file))
+        else:
+            # Для старой структуры используем glob
+            for p in Path(data_path).glob("**/*.parquet"):
+                parquet_files.append(str(p))
+        
+        if not parquet_files:
+            print("⚠️  Не найдено parquet файлов по указанному пути и фильтрам.")
+            return pd.DataFrame()
+            
+        print(f"📂 Найдено {len(parquet_files)} parquet файлов для обработки.")
+        
+        # Загружаем и фильтруем данные с помощью Polars
+        # Используем LazyFrame для эффективной фильтрации
+        ldf = pl.scan_parquet(parquet_files)
+        
+        # Проверяем схему данных
+        print(f"📊 Схема данных: {ldf.schema}")
+        
+        # Фильтруем по timestamp
+        filtered_ldf = ldf.filter(
+            (pl.col("timestamp") >= start_ts) & 
+            (pl.col("timestamp") <= end_ts)
+        )
+        
+        # Выбираем нужные столбцы и собираем данные
+        result = filtered_ldf.select(
+            "timestamp", "symbol", "close"
+        ).collect()
+        
+        # Проверяем результаты
+        if result.height == 0:
+            print("⚠️  После фильтрации данные не найдены.")
+            return pd.DataFrame()
+            
+        print(f"✅ Загружено {result.height} записей с помощью Polars.")
+        
+        # Преобразуем timestamp в datetime для pandas
+        result = result.with_columns(
+            pl.col("timestamp").cast(pl.Int64).alias("timestamp_ms"),
+            pl.col("timestamp").cast(pl.Datetime).alias("timestamp")
+        )
+        
+        # Преобразуем в pandas DataFrame
+        pandas_df = result.to_pandas()
+        
+        # Проверяем типы данных
+        print(f"📊 Типы данных в pandas: {pandas_df.dtypes}")
+        
+        return pandas_df
+        
     except Exception as e:
-        print(f"❌ Ошибка при создании датасета PyArrow: {e}")
-        print("💡 Убедитесь, что структура папок соответствует 'year=YYYY/month=MM/'.")
+        print(f"❌ Ошибка при загрузке данных с помощью Polars: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
-
-    table = dataset.to_table(filter=filter_expr)
-
-    if table.num_rows == 0:
-        print("⚠️  Данные по фильтру не найдены.")
-        return pd.DataFrame()
-
-    df = table.to_pandas()
-
-    if 'timestamp' not in df.columns and df.index.name == 'timestamp':
-        df = df.reset_index()
-
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    mask = (df['timestamp'] >= start_date) & (df['timestamp'] <= end_date)
-
-    final_df = df.loc[mask]
-    print(f"✅ Загружено {len(final_df)} записей.")
-    return final_df
