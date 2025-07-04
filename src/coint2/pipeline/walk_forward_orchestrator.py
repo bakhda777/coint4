@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 
 from coint2.core import math_utils, performance
-from coint2.core.data_loader import DataHandler
+from coint2.core.data_loader import DataHandler, load_master_dataset
 from coint2.engine.backtest_engine import PairBacktester
 from coint2.utils.config import AppConfig
 from coint2.utils.logging_utils import get_logger
@@ -40,49 +40,6 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     logger.info(f"Training период: {cfg.walk_forward.training_period_days} дней")
     logger.info(f"Testing период: {cfg.walk_forward.testing_period_days} дней")
 
-    # Load master dataset
-    with time_block("loading master dataset"):
-        logger.info(f"Загрузка данных за расширенный период {full_range_start} - {end_date}")
-        master_df = handler.preload_all_data(full_range_start, end_date)
-        logger.info(f"Мастер-датасет: {master_df.shape[0]:,} строк × {master_df.shape[1]} символов")
-
-    # Data quality audit
-    with time_block("data quality audit"):
-        logger.info("📊 АУДИТ КАЧЕСТВА ДАННЫХ:")
-        freq_issues = 0
-        missing_issues = 0
-        
-        for i, symbol in enumerate(master_df.columns):
-            idx = master_df[symbol].dropna().index
-            dups = idx.duplicated().sum()
-            freq = pd.infer_freq(idx)
-            min_dt, max_dt = (idx.min(), idx.max()) if len(idx) > 0 else (None, None)
-            
-            # Detailed logging for first few symbols, then summary
-            if i < 5:
-                logger.info(f"  {symbol}: {len(idx):,} точек, {min_dt} — {max_dt}, freq={freq}")
-            
-            if dups > 0:
-                logger.warning(f"  {symbol}: найдено {dups} дубликатов timestamp!")
-            
-            if not freq:
-                freq_issues += 1
-                if i < 3:  # Only log first few
-                    logger.warning(f"  {symbol}: не удалось определить частоту временного индекса!")
-            else:
-                full_range = pd.date_range(min_dt, max_dt, freq=freq)
-                missing = set(full_range) - set(idx)
-                if missing:
-                    missing_issues += 1
-                    if i < 3 and len(missing) < 50:  # Only log first few and if not too many
-                        logger.warning(f"  {symbol}: пропущено {len(missing)} дат")
-        
-        # Summary of issues
-        if freq_issues > 0:
-            logger.warning(f"📊 Проблемы с частотой: {freq_issues}/{len(master_df.columns)} символов")
-        if missing_issues > 0:
-            logger.warning(f"📊 Пропуски в данных: {missing_issues}/{len(master_df.columns)} символов")
-        logger.info(f"📊 Качественных символов: {len(master_df.columns) - freq_issues - missing_issues}/{len(master_df.columns)}")
 
     # Calculate walk-forward steps
     # ИСПРАВЛЕНИЕ: start_date теперь начало ТЕСТОВОГО периода, а не тренировочного
@@ -102,11 +59,6 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             logger.info(f"  Тестовое окно {testing_end.date()} слишком далеко за end_date {end_date.date()}")
             break
         
-        # Дополнительная проверка: есть ли достаточно данных в мастер-датасете
-        available_data_end = master_df.index.max() if not master_df.empty else end_date
-        if testing_end > available_data_end:
-            logger.info(f"  Недостаточно данных: нужно до {testing_end.date()}, есть до {available_data_end.date()}")
-            break
             
         logger.info(f"  Шаг {len(walk_forward_steps)+1}: тренировка {training_start.date()}-{training_end.date()}, тест {testing_start.date()}-{testing_end.date()}")
         walk_forward_steps.append((training_start, training_end, testing_start, testing_end))
@@ -128,15 +80,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         
         logger.warning(f"   testing_end был бы: {would_be_testing_end.date()}")
         logger.warning(f"   нужны данные с: {needed_training_start.date()}")
-        logger.warning(f"   доступны данные до: {master_df.index.max().date() if not master_df.empty else 'нет данных'}")
         
         if would_be_testing_end > end_date:
             logger.warning(f"   ❌ ПРИЧИНА: testing_end ({would_be_testing_end.date()}) > end_date ({end_date.date()})")
             logger.warning(f"   ✅ РЕШЕНИЕ: Продлите end_date до {would_be_testing_end.date()} или сократите testing_period_days")
         
-        if not master_df.empty and needed_training_start < master_df.index.min():
-            logger.warning(f"   ❌ ПРИЧИНА: Недостаточно данных для тренировки")
-            logger.warning(f"   ✅ РЕШЕНИЕ: Загрузите данные с {needed_training_start.date()} или сдвиньте start_date")
     else:
         logger.info(f"✅ Шаги успешно запланированы:")
         for i, (tr_start, tr_end, te_start, te_end) in enumerate(walk_forward_steps, 1):
@@ -159,10 +107,17 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         step_tag = f"WF-шаг {step_idx}/{len(walk_forward_steps)}"
         
         with time_block(f"{step_tag}: training {training_start.date()}-{training_end.date()}, testing {testing_start.date()}-{testing_end.date()}"):
-            # Extract training data
-            with time_block("extracting training data"):
-                training_slice = master_df.loc[training_start:training_end]
-                logger.info(f"  Training данные: {training_slice.shape[0]:,} строк × {training_slice.shape[1]} символов")
+            # Load data only for this step
+            with time_block("loading step data"):
+                step_df_long = load_master_dataset(cfg.data_dir, training_start, testing_end)
+
+            if step_df_long.empty:
+                logger.warning(f"  Нет данных для шага {step_idx}, пропуск.")
+                continue
+
+            step_df = step_df_long.pivot_table(index="timestamp", columns="symbol", values="close")
+            training_slice = step_df.loc[training_start:training_end]
+            logger.info(f"  Training данные: {training_slice.shape[0]:,} строк × {training_slice.shape[1]} символов")
                 
             if training_slice.empty or len(training_slice.columns) < 2:
                 logger.warning(f"  Недостаточно данных для обучения в шаге {step_idx}")
@@ -235,7 +190,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             pair_tracker = ProgressTracker(len(active_pairs), f"{step_tag} backtests", step=max(1, len(active_pairs)//5))
             
             for pair_idx, (s1, s2, beta, mean, std) in enumerate(active_pairs, 1):
-                pair_data = master_df.loc[testing_start:testing_end, [s1, s2]].dropna()
+                pair_data = step_df.loc[testing_start:testing_end, [s1, s2]].dropna()
                 # Нормализация: оба ряда начинаются с 100
                 if not pair_data.empty:
                     pair_data = pair_data / pair_data.iloc[0] * 100
