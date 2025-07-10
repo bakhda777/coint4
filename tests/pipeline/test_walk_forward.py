@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import numpy as np
 from coint2.core import performance
 from coint2.core.data_loader import DataHandler
 from coint2.engine.backtest_engine import PairBacktester
@@ -41,13 +42,7 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
         test_end = test_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
         if test_end > end:
             break
-        train = master.loc[current:train_end, ["A", "B"]].dropna()
-        beta = train["A"].cov(train["B"]) / train["B"].var()
-        spread = train["A"] - beta * train["B"]
-        mean = spread.mean()
-        std = spread.std()
-
-        pairs = [("A", "B", beta, mean, std)]
+        pairs = [("A", "B")]
         active_pairs = pairs[: cfg.portfolio.max_active_positions]
 
         step_pnl = pd.Series(dtype=float)
@@ -59,13 +54,11 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
         else:
             capital_per_pair = 0.0
 
-        for _s1, _s2, _beta, _mean, _std in active_pairs:
+        for _s1, _s2 in active_pairs:
             data = master.loc[test_start:test_end, ["A", "B"]].dropna()
             bt = PairBacktester(
                 data,
-                beta=_beta,
-                spread_mean=_mean,
-                spread_std=_std,
+                rolling_window=cfg.backtest.rolling_window,
                 z_threshold=cfg.backtest.zscore_threshold,
                 commission_pct=cfg.backtest.commission_pct,
                 slippage_pct=cfg.backtest.slippage_pct,
@@ -82,13 +75,28 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
 
     overall = overall.dropna()
     if overall.empty:
-        return {"sharpe_ratio": 0.0, "max_drawdown": 0.0, "total_pnl": 0.0}
+        return {
+            "sharpe_ratio_abs": 0.0,
+            "sharpe_ratio_on_returns": 0.0,
+            "max_drawdown_abs": 0.0,
+            "max_drawdown_on_equity": 0.0,
+            "total_pnl": 0.0,
+        }
+
     cum = overall.cumsum()
+    equity_series = cum + cfg.portfolio.initial_capital
+    capital_per_pair = cfg.portfolio.initial_capital * cfg.portfolio.risk_per_position_pct
+
+    sharpe_abs = performance.sharpe_ratio(overall, cfg.backtest.annualizing_factor)
+    sharpe_ret = performance.sharpe_ratio_on_returns(
+        overall, capital_per_pair, cfg.backtest.annualizing_factor
+    )
+
     return {
-        "sharpe_ratio": performance.sharpe_ratio(
-            overall, cfg.backtest.annualizing_factor
-        ),
-        "max_drawdown": performance.max_drawdown(cum),
+        "sharpe_ratio_abs": 0.0 if np.isnan(sharpe_abs) else sharpe_abs,
+        "sharpe_ratio_on_returns": 0.0 if np.isnan(sharpe_ret) else sharpe_ret,
+        "max_drawdown_abs": performance.max_drawdown(cum),
+        "max_drawdown_on_equity": performance.max_drawdown_on_equity(equity_series),
         "total_pnl": cum.iloc[-1],
     }
 
