@@ -47,7 +47,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     # ИСПРАВЛЕНИЕ: start_date теперь начало ТЕСТОВОГО периода, а не тренировочного
     current_test_start = start_date
     walk_forward_steps = []
-    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", 15)
+    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
     bar_delta = pd.Timedelta(minutes=bar_minutes)
     while current_test_start < end_date:
         # Тренировочный период ПРЕДШЕСТВУЕТ тестовому
@@ -235,16 +235,27 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         else:
             active_pairs = []
         
-        logger.info(f"  Активных пар для торговли: {len(active_pairs)}")
+        num_active_pairs = len(active_pairs)
+        logger.info(f"  Активных пар для торговли: {num_active_pairs}")
 
         step_pnl = pd.Series(dtype=float)
         total_step_pnl = 0.0
 
-        if active_pairs:
-            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct
-            logger.info(f"  Капитал на пару: ${capital_per_pair:,.0f}")
+        logger.info(
+            f"  Проверка расчета капитала: equity={equity}, num_active_pairs={num_active_pairs}"
+        )
+        if num_active_pairs > 0:
+            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct / num_active_pairs
         else:
             capital_per_pair = 0.0
+
+        if capital_per_pair < 0:
+            logger.error(
+                f"КРИТИЧЕСКАЯ ОШИБКА: Капитал на пару стал отрицательным ({capital_per_pair})."
+            )
+            capital_per_pair = 0.0
+
+        logger.info(f"  Капитал на пару: ${capital_per_pair:,.2f}")
 
         period_label = f"{training_start.strftime('%m/%d')}-{testing_end.strftime('%m/%d')}"
         pair_count_data.append((period_label, len(active_pairs)))
@@ -372,6 +383,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             cumulative = aggregated_pnl.cumsum()
             # Используем капитал для расчета риска на сделку и доходности
             capital_per_pair = equity * cfg.portfolio.risk_per_position_pct
+            if capital_per_pair < 0:
+                logger.error(
+                    f"КРИТИЧЕСКАЯ ОШИБКА: Капитал на пару стал отрицательным ({capital_per_pair})."
+                )
+                capital_per_pair = 0.0
             sharpe_abs = performance.sharpe_ratio(aggregated_pnl, cfg.backtest.annualizing_factor)
             sharpe_on_returns = performance.sharpe_ratio_on_returns(
                 aggregated_pnl, capital_per_pair, cfg.backtest.annualizing_factor

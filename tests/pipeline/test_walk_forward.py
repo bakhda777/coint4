@@ -53,8 +53,9 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
         step_pnl = pd.Series(dtype=float)
         total_step_pnl = 0.0
 
-        if active_pairs:
-            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct
+        num_active_pairs = len(active_pairs)
+        if num_active_pairs > 0:
+            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct / num_active_pairs
         else:
             capital_per_pair = 0.0
 

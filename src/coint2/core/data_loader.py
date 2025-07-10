@@ -417,6 +417,29 @@ class DataHandler:
         else:
             return pd.DataFrame()
 
+    def preload_all_data(self, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+        """Load raw data for all symbols between ``start_date`` and ``end_date``.
+
+        Returns a wide DataFrame indexed by timestamp with symbols as columns.
+        """
+        files = list(Path(self.data_dir).rglob("*.parquet"))
+        if not files:
+            return pd.DataFrame()
+
+        frames = []
+        for file in files:
+            df = pd.read_parquet(file)
+            symbol = file.parent.parent.parent.name.split("=")[1]
+            df["symbol"] = symbol
+            frames.append(df)
+
+        all_df = pd.concat(frames)
+        all_df["timestamp"] = pd.to_datetime(all_df["timestamp"])
+        mask = (all_df["timestamp"] >= start_date) & (all_df["timestamp"] <= end_date)
+        all_df = all_df.loc[mask]
+        wide = all_df.pivot_table(index="timestamp", columns="symbol", values="close")
+        return wide.sort_index()
+
     def load_and_normalize_data(
         self, start_date: pd.Timestamp, end_date: pd.Timestamp
     ) -> pd.DataFrame:
