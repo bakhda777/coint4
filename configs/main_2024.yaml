@@ -10,7 +10,7 @@ data_processing:
 portfolio:
   initial_capital: 10000.0      # Капитал $10,000
   risk_per_position_pct: 0.01   # Риск 1% на позицию
-  max_active_positions: 15      # Уменьшаем число позиций для снижения over-trading
+  max_active_positions: 20    # Уменьшаем число позиций для снижения over-trading
   max_margin_usage: 0.5         # Максимальное использование маржи 50%
 
 pair_selection:
@@ -19,7 +19,7 @@ pair_selection:
   ssd_top_n: 5000              # Увеличиваем пул кандидатов для получения 10-20 торгуемых пар
   min_half_life_days: 1       # ≥24 часов (минимум 1 день)
   max_half_life_days: 35        # ≤1.5 месяца
-  min_mean_crossings: 2         # Понижен порог пересечений (было 4) для 60-дневного окна
+  min_mean_crossings: 3         # Понижен порог пересечений (было 4) для 60-дневного окна
   # Новые параметры фильтрации пар
   min_correlation: 0.15         # Еще более мягкий порог корреляции (было 0.30)
   max_correlation: 0.98         # Разрешаем почти идентичные активы (было 0.95)
