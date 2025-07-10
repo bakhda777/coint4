@@ -23,7 +23,7 @@ class PairBacktester:
         take_profit_multiplier: float = None,
         cooldown_periods: int = 0,
         wait_for_candle_close: bool = False,
-        max_margin_usage: float = 1.0,
+        max_margin_usage: float = float("inf"),
     ) -> None:
         """Initialize backtester with pre-computed parameters.
 
@@ -58,7 +58,7 @@ class PairBacktester:
         self.annualizing_factor = annualizing_factor
         self.capital_at_risk = capital_at_risk
         self.stop_loss_multiplier = stop_loss_multiplier
-        self.take_profit_multiplier = take_profit_multiplier if take_profit_multiplier is not None else stop_loss_multiplier
+        self.take_profit_multiplier = take_profit_multiplier
         self.wait_for_candle_close = wait_for_candle_close
         self.max_margin_usage = max_margin_usage
 
@@ -100,8 +100,8 @@ class PairBacktester:
         df["entry_z"] = np.nan
         df["exit_z"] = np.nan
         df["exit_reason"] = ""
-        df["trade_duration"] = 0
-        df["entry_date"] = pd.NaT
+        df["trade_duration"] = 0.0
+        df["entry_date"] = np.nan
 
         total_cost_pct = self.commission_pct + self.slippage_pct
 
@@ -141,7 +141,12 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
             # Стоп-лосс выходы
             elif position > 0 and z_curr <= stop_loss_z:
                 new_position = 0.0
@@ -154,7 +159,12 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
             elif position < 0 and z_curr >= stop_loss_z:
                 new_position = 0.0
                 cooldown_remaining = self.cooldown_periods
@@ -166,9 +176,18 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
             # Take-profit выходы (новая логика)
-            elif position > 0 and z_curr >= float(np.sign(entry_z) * self.take_profit_multiplier):
+            elif (
+                self.take_profit_multiplier is not None
+                and position > 0
+                and z_curr >= float(np.sign(entry_z) * self.take_profit_multiplier)
+            ):
                 new_position = 0.0
                 cooldown_remaining = self.cooldown_periods
                 # Логируем take-profit
@@ -179,8 +198,17 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
-            elif position < 0 and z_curr <= float(np.sign(entry_z) * self.take_profit_multiplier):
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
+            elif (
+                self.take_profit_multiplier is not None
+                and position < 0
+                and z_curr <= float(np.sign(entry_z) * self.take_profit_multiplier)
+            ):
                 new_position = 0.0
                 cooldown_remaining = self.cooldown_periods
                 # Логируем take-profit
@@ -191,7 +219,12 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
             # Z-score exit: закрываем позицию если z-score вернулся к заданному уровню
             elif position != 0 and abs(z_curr) <= self.z_exit:
                 new_position = 0.0
@@ -204,70 +237,79 @@ class PairBacktester:
                 # Рассчитываем длительность сделки
                 entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
                 if pd.notna(entry_date):
-                    df.loc[df.index[i], 'trade_duration'] = (df.index[i] - entry_date).total_seconds() / 3600  # В часах
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'trade_duration'] = (
+                            df.index[i] - pd.to_datetime(entry_date)
+                        ).total_seconds() / 3600
+                    else:
+                        df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
 
             # Проверяем сигналы входа только если не в последнем периоде и не в cooldown
             if i < len(df) - 1 and cooldown_remaining == 0:
-                # Сигнал на покупку y и продажу x
-                if z_curr <= -self.z_threshold and position == 0:
-                    # Рассчитываем стоп-лосс и тейк-профит
+                signal = 0
+                if z_curr >= self.z_threshold:
+                    signal = -1
+                elif z_curr <= -self.z_threshold:
+                    signal = 1
+
+                if new_position == 0 and signal != 0:
                     entry_z = z_curr
                     stop_loss_z = float(np.sign(entry_z) * self.stop_loss_multiplier)
-                    take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
-                    
-                    # Рассчитываем размер позиции на основе риска
+                    if self.take_profit_multiplier is not None:
+                        take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
+
                     stop_loss_price = self.mean + stop_loss_z * self.std
                     risk_per_unit = abs(spread_curr - stop_loss_price)
                     trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
                     size_risk = self.capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
                     size_value = self.capital_at_risk / trade_value if trade_value != 0 else 0.0
-                    # Ограничиваем размер позиции с учетом max_margin_usage
                     margin_limit = self.capital_at_risk * self.max_margin_usage / trade_value if trade_value != 0 else 0.0
                     size = min(size_risk, size_value, margin_limit)
-                    
-                    new_position = 1.0 * size
-                    
-                    # Логируем параметры входа
+
+                    new_position = signal * size
+
                     df.loc[df.index[i], 'entry_price_s1'] = df.loc[df.index[i], 'y']
                     df.loc[df.index[i], 'entry_price_s2'] = df.loc[df.index[i], 'x']
                     df.loc[df.index[i], 'entry_z'] = z_curr
-                    df.loc[df.index[i], 'entry_date'] = df.index[i]
-                    
-                # Сигнал на продажу y и покупку x
-                elif z_curr >= self.z_threshold and position == 0:
-                    # Рассчитываем стоп-лосс и тейк-профит
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'entry_date'] = df.index[i]
+                    else:
+                        df.loc[df.index[i], 'entry_date'] = float(i)
+                elif new_position != 0 and signal != 0 and np.sign(new_position) != signal:
                     entry_z = z_curr
                     stop_loss_z = float(np.sign(entry_z) * self.stop_loss_multiplier)
-                    take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
-                    
-                    # Рассчитываем размер позиции на основе риска
+                    if self.take_profit_multiplier is not None:
+                        take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
+
                     stop_loss_price = self.mean + stop_loss_z * self.std
                     risk_per_unit = abs(spread_curr - stop_loss_price)
                     trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
                     size_risk = self.capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
                     size_value = self.capital_at_risk / trade_value if trade_value != 0 else 0.0
-                    # Ограничиваем размер позиции с учетом max_margin_usage
                     margin_limit = self.capital_at_risk * self.max_margin_usage / trade_value if trade_value != 0 else 0.0
                     size = min(size_risk, size_value, margin_limit)
-                    
-                    new_position = -1.0 * size
-                    
-                    # Логируем параметры входа
+
+                    new_position = signal * size
+
                     df.loc[df.index[i], 'entry_price_s1'] = df.loc[df.index[i], 'y']
                     df.loc[df.index[i], 'entry_price_s2'] = df.loc[df.index[i], 'x']
                     df.loc[df.index[i], 'entry_z'] = z_curr
-                    df.loc[df.index[i], 'entry_date'] = df.index[i]
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        df.loc[df.index[i], 'entry_date'] = df.index[i]
+                    else:
+                        df.loc[df.index[i], 'entry_date'] = float(i)
 
             trades = abs(new_position - position)
             trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
             # Ограничиваем общее плечо/маржу с помощью max_margin_usage
             # Рассчитываем текущую экспозицию (плечо) как процент от капитала
             current_exposure = abs(new_position) * trade_value
-            max_allowed_exposure = self.capital_at_risk / self.max_margin_usage
-            
-            # Если текущая экспозиция превышает максимально допустимую, корректируем размер позиции
-            if current_exposure > max_allowed_exposure and max_allowed_exposure > 0:
-                new_position = new_position * (max_allowed_exposure / current_exposure)
+
+            if np.isfinite(self.max_margin_usage):
+                max_allowed_exposure = self.capital_at_risk / self.max_margin_usage
+
+                if current_exposure > max_allowed_exposure and max_allowed_exposure > 0:
+                    new_position = new_position * (max_allowed_exposure / current_exposure)
             costs = trades * trade_value * total_cost_pct
 
             df.iat[i, position_col_idx] = new_position
@@ -284,7 +326,7 @@ class PairBacktester:
     def get_results(self) -> pd.DataFrame:
         if self.results is None:
             raise ValueError("Backtest not yet run")
-        return self.results[["spread", "z_score", "position", "pnl", "costs", "cumulative_pnl"]]
+        return self.results[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
 
     def get_performance_metrics(self) -> dict:
         if self.results is None or self.results.empty:
