@@ -1,34 +1,65 @@
-data_dir: "data_optimized"
+data_dir: "data_downloaded"
 results_dir: "results"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "zscore"    # Метод нормализации: minmax, zscore, log_returns
+  fill_method: "linear"             # Метод заполнения пропусков: ffill, linear, none
+  min_history_ratio: 0.8            # Минимальная доля непропущенных значений
+  handle_constant: true             # Обрабатывать ли символы с постоянной ценой
 portfolio:
-  initial_capital: 10000.0      # Увеличили капитал до $10,000
-  risk_per_position_pct: 0.01   # Риск 1% на позицию (меньше риск = больше позиций)
-  max_active_positions: 50      # Значительно больше позиций для диверсификации
+  initial_capital: 10000.0      # Капитал $10,000
+  risk_per_position_pct: 0.01   # Риск 1% на позицию
+  max_active_positions: 15      # Уменьшаем число позиций для снижения over-trading
+  max_margin_usage: 0.5         # Максимальное использование маржи 50%
 
 pair_selection:
-  lookback_days: 90             # Увеличили lookback для 2024
-  coint_pvalue_threshold: 0.05  # Более мягкий порог коинтеграции
-  ssd_top_n: 500               # Больше кандидатов для SSD
-  min_half_life_days: 1        
-  max_half_life_days: 30       # Расширенный диапазон half-life
-  min_mean_crossings: 5        # Более мягкое требование к сигналам
+  lookback_days: 60             # Коинтеграцию считать по последним 60 суткам
+  coint_pvalue_threshold: 0.05  
+  ssd_top_n: 5000              # Увеличиваем пул кандидатов для получения 10-20 торгуемых пар
+  min_half_life_days: 1       # ≥24 часов (минимум 1 день)
+  max_half_life_days: 35        # ≤1.5 месяца
+  min_mean_crossings: 2         # Понижен порог пересечений (было 4) для 60-дневного окна
+  # Новые параметры фильтрации пар
+  min_correlation: 0.15         # Еще более мягкий порог корреляции (было 0.30)
+  max_correlation: 0.98         # Разрешаем почти идентичные активы (было 0.95)
+  adaptive_quantiles: false     # Используем абсолютные пороги std
+  bar_minutes: 15               # Размер бара в минутах
+  liquidity_usd_daily: 500_000      # Уменьшаем требование к ликвидности в 2 раза (было 1_000_000)
+  max_bid_ask_pct: 0.2
+  max_avg_funding_pct: 0.03
+  save_filter_reasons: true
+  min_spread_std: 0.005         # Более мягкий порог волатильности
+  max_spread_std: 10.0          # Временно повышен порог максимальной волатильности (было 5.0)
+  min_abs_spread_mult: 0.015    # Экстремально снижен порог отношения |spread| к издержкам (было 0.15)
+  kpss_pvalue_threshold: 0.01   # Очень мягкий порог KPSS стационарности (было 0.10)
+  pvalue_top_n: 50             # Число лучших пар по p-value после коинтеграции
+  # Дополнительные параметры
+  cost_filter: false           # Временно отключаем фильтр |spread| vs cost
+  save_std_histogram: true     # Сохранять гистограмму σ
 
 backtest:
   timeframe: "15min"
   rolling_window: 30
-  zscore_threshold: 2.5         # Консервативный порог входа
-  zscore_exit: 0.0             # Выход при возврате к среднему
-  stop_loss_multiplier: 2.0    # Стоп-лосс при 2 std
+  zscore_threshold: 2.0         # Порог входа (было 2.5)
+  zscore_exit: 0.8              # Выход при возврате к среднему (было 0.0)
+  stop_loss_multiplier: 3.0     # Стоп-лосс при 3 std
+  take_profit_multiplier: 3.0   # Добавляем симметричный take-profit
   fill_limit_pct: 0.1          
-  commission_pct: 0.004        # Реальная комиссия Binance 
-  slippage_pct: 0.002          # Реальное проскальзывание
+  commission_pct: 0.004         # Комиссия Binance 
+  slippage_pct: 0.002           # Проскальзывание
   annualizing_factor: 365
-  cooldown_hours: 4            # Тайм-аут между сделками
+  cooldown_hours: 24            # Увеличиваем тайм-аут между сделками (было 4)
+  wait_for_candle_close: true   # Ждем закрытия свечи перед входом
 
 walk_forward:
-  start_date: "2024-03-01"     # Начало года с достаточным history
-  end_date: "2024-12-31"       # Полный год тестирования  
-  training_period_days: 60     # 2 месяца обучения
-  testing_period_days: 30      # 1 месяц тестирования
+  start_date: "2024-01-01"      # Первый бар, который попадает даже в train
+  end_date: "2024-12-31"        # Последний день тестового окна
+  training_period_days: 60      # Тренировка на 60 днях вместо года
+  testing_period_days: 30       # Торговля найденных пар ровно 30 суток
 
-max_shards: null 
+max_shards: null
+
+logging:
+  trade_details: true           # Логирование деталей сделок
+  debug_level: "INFO"           # Уровень логирования

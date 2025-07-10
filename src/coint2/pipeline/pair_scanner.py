@@ -186,10 +186,12 @@ def find_cointegrated_pairs(
     logger.info(f"Теоретическое число пар: {theoretical_pairs:,} из {num_symbols} символов")
 
     with time_block("SSD computation"):
-        logger.info(f"Выполняю SSD-фильтрацию для топ-{cfg.pair_selection.ssd_top_n} пар")
+        logger.info(
+            f"Выполняю SSD-фильтрацию без ограничения (всего {theoretical_pairs:,} пар)"
+        )
         ssd = math_utils.calculate_ssd(
             normalized,
-            top_k=cfg.pair_selection.ssd_top_n,
+            top_k=None,
         )
         top_pairs = ssd.index.tolist()
         logger.info(f"SSD отобрал {len(top_pairs):,} из {theoretical_pairs:,} пар ({len(top_pairs)/theoretical_pairs*100:.1f}%)")
@@ -217,27 +219,66 @@ def find_cointegrated_pairs(
         
         logger.info(f"Прошли фильтр tradability: {len(tradable_pairs):,} из {len(top_pairs):,} пар ({len(tradable_pairs)/len(top_pairs)*100:.1f}%)")
 
-    # Stage 3: cointegration filter
-    logger.info("🔍 ЭТАП 3: Тесты коинтеграции (Engle-Granger)")
-    with time_block("cointegration testing"):
-        lazy_results = []
+    # Stage 3: cointegration filter и расширенные метрики
+    logger.info("🔍 ЭТАП 3: Тесты коинтеграции и расширенные метрики")
+    with time_block("cointegration and metrics testing"):
+        # Загружаем все данные для пар, прошедших tradability фильтр
+        all_pairs_data = {}
         for s1, s2 in tradable_pairs:
-            task = _test_pair_for_coint(
-                handler,
-                s1,
-                s2,
-                start_date,
-                end_date,
-                p_value_threshold,
-            )
-            lazy_results.append(task)
-
-        logger.info(f"Запускаю параллельные тесты коинтеграции для {len(lazy_results):,} пар")
-        results = dask.compute(*lazy_results, scheduler="threads")
-        final_pairs = [r for r in results if r is not None]
+            pair_data = handler.load_pair_data(s1, s2, start_date, end_date).dropna()
+            if not pair_data.empty and len(pair_data.columns) >= 2:
+                all_pairs_data[(s1, s2)] = pair_data
         
+        logger.info(f"Загружены данные для {len(all_pairs_data)} пар")
+        
+        # Создаем DataFrame с данными всех пар для передачи в filter_pairs_by_coint_and_half_life
+        if not all_pairs_data:
+            logger.warning("Не удалось загрузить данные ни для одной пары")
+            return []
+            
+        # Объединяем все данные в один DataFrame
+        all_symbols = set()
+        for s1, s2 in all_pairs_data.keys():
+            all_symbols.add(s1)
+            all_symbols.add(s2)
+            
+        # Создаем DataFrame с данными всех символов
+        price_df = pd.DataFrame()
+        for pair, data in all_pairs_data.items():
+            s1, s2 = pair
+            if s1 not in price_df.columns:
+                price_df[s1] = data[s1]
+            if s2 not in price_df.columns:
+                price_df[s2] = data[s2]
+                
+        logger.info(f"Создан DataFrame с данными для {len(price_df.columns)} символов")
+        
+        # Импортируем функцию фильтрации
+        from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
+        
+        # Применяем расширенную фильтрацию
+        final_pairs = filter_pairs_by_coint_and_half_life(
+            pairs=tradable_pairs,
+            price_df=price_df,
+            pvalue_threshold=p_value_threshold,
+            min_half_life=cfg.pair_selection.min_half_life_days,
+            max_half_life=cfg.pair_selection.max_half_life_days,
+            min_mean_crossings=cfg.pair_selection.min_mean_crossings,
+            min_correlation=cfg.pair_selection.min_correlation,
+            max_correlation=cfg.pair_selection.max_correlation,
+            min_spread_std=cfg.pair_selection.min_spread_std,
+            max_spread_std=cfg.pair_selection.max_spread_std,
+            commission_pct=cfg.backtest.commission_pct,
+            slippage_pct=cfg.backtest.slippage_pct,
+            min_abs_spread_mult=getattr(cfg.pair_selection, 'min_abs_spread_mult', 2.0)
+        )      
         success_rate = (len(final_pairs)/len(tradable_pairs)*100) if len(tradable_pairs) > 0 else 0
-        logger.info(f"Прошли фильтр коинтеграции: {len(final_pairs):,} из {len(tradable_pairs):,} пар ({success_rate:.1f}%)")
+        logger.info(f"Прошли все фильтры: {len(final_pairs):,} из {len(tradable_pairs):,} пар ({success_rate:.1f}%)")
+        logger.info(f"Фильтры: p-value < {p_value_threshold}, half-life = {cfg.pair_selection.min_half_life_days}-{cfg.pair_selection.max_half_life_days}, "
+                  f"mean_crossings >= {cfg.pair_selection.min_mean_crossings}, "
+                  f"corr = {cfg.pair_selection.min_correlation}-{cfg.pair_selection.max_correlation}, "
+                  f"spread_std = {cfg.pair_selection.min_spread_std}-{cfg.pair_selection.max_spread_std}")
+
     
     # Summary
     if not final_pairs:
@@ -246,10 +287,16 @@ def find_cointegrated_pairs(
         logger.warning("  • Увеличить max_half_life_days")
         logger.warning("  • Уменьшить min_mean_crossings")
         logger.warning("  • Увеличить ssd_top_n")
+        logger.warning("  • Ослабить требования к корреляции или spread_std")
     else:
-        logger.info(f"✅ ИТОГО найдено {len(final_pairs)} качественных пар:")
-        for i, (s1, s2, beta, mean, std) in enumerate(final_pairs[:5], 1):
-            logger.info(f"  {i}. {s1}-{s2}: beta={beta:.4f}, mean={mean:.4f}, std={std:.4f}")
+        # Сортируем найденные пары по p-value коинтеграции и берем топ-N
+        pvalue_top_n = getattr(cfg.pair_selection, 'pvalue_top_n', 50)
+        final_pairs = sorted(final_pairs, key=lambda x: x[5].get('pvalue', 1.0))[:pvalue_top_n]
+        logger.info(f"✅ ИТОГО найдено {len(final_pairs)} качественных пар (Топ-{pvalue_top_n} по p-value):")
+        for i, (s1, s2, beta, mean, std, metrics) in enumerate(final_pairs[:5], 1):
+            logger.info(f"  {i}. {s1}-{s2}: beta={beta:.4f}, mean={mean:.4f}, std={std:.4f}, "  
+                      f"half_life={metrics['half_life']:.1f}, corr={metrics['correlation']:.2f}, "  
+                      f"mean_crossings={metrics['mean_crossings']}")
         if len(final_pairs) > 5:
             logger.info(f"  ... и еще {len(final_pairs) - 5} пар")
             

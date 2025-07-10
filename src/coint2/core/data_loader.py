@@ -420,6 +420,61 @@ class DataHandler:
     def load_and_normalize_data(
         self, start_date: pd.Timestamp, end_date: pd.Timestamp
     ) -> pd.DataFrame:
+        """Load OHLC data for all symbols in the period and normalise prices.
+
+        Возвращает ``pd.DataFrame`` (index – datetime, столбцы – символы), где
+        каждая ценовая серия нормализована так, чтобы первое ненулевое значение
+        было 100. Далее фильтруются проблемные серии (константные, с >50 % NaN).
+        Для прозрачности в лог выводится список удалённых символов с причиной.
+        """
+        # Убедимся, что даты наивные
+        if start_date.tzinfo is not None:
+            start_date = start_date.tz_localize(None)
+        if end_date.tzinfo is not None:
+            end_date = end_date.tz_localize(None)
+
+        logger.debug("Загрузка данных: %s — %s", start_date, end_date)
+
+        t0 = time.perf_counter()
+        data_df = self.preload_all_data(start_date, end_date)
+        logger.info("Данные загружены за %.2f с; shape=%s", time.perf_counter() - t0, data_df.shape)
+
+        if data_df.empty:
+            return data_df
+
+        # --- Нормализация --------------------------------------------------
+        numeric_cols = [c for c in data_df.columns if pd.api.types.is_numeric_dtype(data_df[c])]
+        for col in numeric_cols:
+            ser = data_df[col]
+            first_idx = ser.first_valid_index()
+            first_val = ser.loc[first_idx] if first_idx is not None else pd.NA
+            if pd.isna(first_val) or first_val == 0:
+                data_df[col] = 0.0
+            else:
+                data_df[col] = 100 * ser / first_val
+
+        # --- Фильтрация проблемных серий -----------------------------------
+        valid_cols: list[str] = []
+        dropped: dict[str, str] = {}
+        for col in numeric_cols:
+            ser = data_df[col]
+            if ser.nunique() <= 1:
+                dropped[col] = "constant_series"
+                continue
+            na_pct = ser.isna().mean()
+            if na_pct >= 0.5:
+                dropped[col] = f"too_many_nan_{na_pct:.0%}"
+                continue
+            valid_cols.append(col)
+
+        if dropped:
+            logger.info("Символы отброшены после нормализации:")
+            for sym, reason in dropped.items():
+                logger.info("  %s — %s", sym, reason)
+
+        data_df = data_df[valid_cols]
+        logger.debug("После фильтрации осталось %s символов", len(valid_cols))
+        return data_df
         """
         Load and normalize data for all symbols within the given date range.
         
@@ -445,61 +500,6 @@ class DataHandler:
             
         logger.debug(f"Загрузка и нормализация данных за период {start_date} - {end_date}")
         
-        start_time = time.time()
-        data_df = self.preload_all_data(start_date, end_date)
-        elapsed_time = time.time() - start_time
-        logger.info(f"Данные загружены за {elapsed_time:.2f} секунд. Размер: {data_df.shape}")
-
-        # Нормализация цен
-        if not data_df.empty:
-            logger.debug(
-                f"Количество символов до нормализации: {len(data_df.columns)}"
-            )
-
-            numeric_cols = [
-                c
-                for c in data_df.columns
-                if pd.api.types.is_numeric_dtype(data_df[c]) and c != "timestamp"
-            ]
-            if numeric_cols:
-                for col in numeric_cols:
-                    series = data_df[col]
-                    first_val = series.loc[series.first_valid_index()] if series.first_valid_index() is not None else pd.NA
-                    if pd.isna(first_val) or first_val == 0:
-                        data_df[col] = 0.0
-                    else:
-                        data_df[col] = 100 * series / first_val
-
-            logger.debug(
-                f"Количество символов после нормализации: {len(data_df.columns)}"
-            )
-            
-            # Проверяем наличие константных серий и серий с большим количеством пропусков
-            valid_columns = []
-            for column in data_df.columns:
-                if pd.api.types.is_numeric_dtype(data_df[column]):
-                    # Проверка на константность серии
-                    if data_df[column].nunique() > 1:
-                        # Проверка на слишком много пропусков (более 50%)
-                        na_pct = data_df[column].isna().mean()
-                        if na_pct < 0.5:
-                            valid_columns.append(column)
-                            
-            # Оставляем только валидные столбцы
-            if valid_columns:
-                logger.debug(
-                    f"Отфильтровано {len(data_df.columns) - len(valid_columns)} "
-                    "константных или разреженных серий"
-                )
-                data_df = data_df[valid_columns]
-
-        return data_df
-
-    def preload_all_data(
-        self, start_date: pd.Timestamp, end_date: pd.Timestamp
-    ) -> pd.DataFrame:
-        """Loads and pivots all data for a given wide date range."""
-        # Обеспечиваем, что даты в наивном формате (без timezone)
         if start_date.tzinfo is not None:
             logger.debug(f"Удаляю timezone из start_date в preload_all_data: {start_date}")
             start_date = start_date.tz_localize(None)

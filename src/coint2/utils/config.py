@@ -12,9 +12,33 @@ class PairSelectionConfig(BaseModel):
     lookback_days: int
     coint_pvalue_threshold: float
     ssd_top_n: int
-    min_half_life_days: int
-    max_half_life_days: int
+    min_half_life_days: float
+    max_half_life_days: float
     min_mean_crossings: int
+
+    # Extended filters
+    min_correlation: float | None = None
+    max_correlation: float | None = None
+    adaptive_quantiles: bool | None = None
+    bar_minutes: int | None = None
+    liquidity_usd_daily: float | None = None
+    max_bid_ask_pct: float | None = None
+    max_avg_funding_pct: float | None = None
+    save_filter_reasons: bool | None = None
+    min_spread_std: float | None = None
+    max_spread_std: float | None = None
+    min_abs_spread_mult: float | None = None
+    kpss_pvalue_threshold: float | None = None
+    pvalue_top_n: int | None = None
+
+
+class DataProcessingConfig(BaseModel):
+    """Configuration for data processing and normalization."""
+    
+    normalization_method: str = "minmax"
+    fill_method: str = "ffill"
+    min_history_ratio: float = 0.8
+    handle_constant: bool = True
 
 
 class PortfolioConfig(BaseModel):
@@ -52,6 +76,7 @@ class AppConfig(BaseModel):
 
     data_dir: DirectoryPath
     results_dir: Path
+    data_processing: DataProcessingConfig
     portfolio: PortfolioConfig
     pair_selection: PairSelectionConfig
     backtest: BacktestConfig
@@ -59,7 +84,7 @@ class AppConfig(BaseModel):
     max_shards: int | None = None
 
 
-def load_config(path: Path) -> AppConfig:
+def load_config(path: Path | str) -> AppConfig:
     """Load configuration from a YAML file.
 
     Parameters
@@ -72,6 +97,7 @@ def load_config(path: Path) -> AppConfig:
     AppConfig
         Parsed configuration object.
     """
+    path = Path(path) if isinstance(path, str) else path
     with path.open("r", encoding="utf-8") as f:
         raw_cfg = pyyaml.safe_load(f)
     return AppConfig(**raw_cfg)

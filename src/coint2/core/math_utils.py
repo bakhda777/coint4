@@ -56,9 +56,11 @@ def rolling_zscore(series: pd.Series, window: int) -> pd.Series:
     return (series - mean) / std
 
 
+from typing import Optional
+
 def calculate_ssd(
     normalized_prices: pd.DataFrame,
-    top_k: int,
+    top_k: int | None = None,
     block_size: int = 512,
 ) -> pd.Series:
     """Compute top-K pairwise SSDs using a memory-efficient block approach."""
@@ -102,7 +104,7 @@ def calculate_ssd(
 
             all_pairs.extend(block_pairs)
 
-            if len(all_pairs) > top_k * 2:
+            if top_k is not None and len(all_pairs) > top_k * 2:
                 all_pairs = sorted(all_pairs, key=lambda x: x[2])[:top_k]
 
     all_pairs = sorted(all_pairs, key=lambda x: x[2])[:top_k]

@@ -6,7 +6,9 @@ import pandas as pd
 from pathlib import Path
 
 from coint2.core import math_utils, performance
-from coint2.core.data_loader import DataHandler, load_master_dataset
+# Import directly from the file path rather than the module
+from src.coint2.core.data_loader import DataHandler, load_master_dataset
+from src.coint2.core.normalization_improvements import preprocess_and_normalize_data
 from coint2.engine.backtest_engine import PairBacktester
 from coint2.utils.config import AppConfig
 from coint2.utils.logging_utils import get_logger
@@ -126,11 +128,55 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 # Normalize training data
                 with time_block("normalizing training data"):
                     logger.debug(f"  Нормализация данных для {len(training_slice.columns)} символов")
-                    normalized_training = (training_slice - training_slice.min()) / (
-                        training_slice.max() - training_slice.min()
+                    
+                    # Сохраняем список символов до нормализации
+                    symbols_before = set(training_slice.columns)
+                    
+                    # Проверяем символы с постоянной ценой (max=min)
+                    constant_price_symbols = [col for col in training_slice.columns
+                                             if training_slice[col].max() == training_slice[col].min()]
+                    if constant_price_symbols:
+                        logger.info(f"  Символы с постоянной ценой: {len(constant_price_symbols)}")
+                        logger.debug(f"  Список: {', '.join(sorted(constant_price_symbols))}")
+                    
+                    # Проверяем символы с NaN значениями
+                    nan_symbols = [col for col in training_slice.columns
+                                  if training_slice[col].isna().any()]
+                    if nan_symbols:
+                        logger.info(f"  Символы с NaN значениями: {len(nan_symbols)}")
+                        logger.debug(f"  Список: {', '.join(sorted(nan_symbols))}")
+                    
+                    # Используем улучшенный метод нормализации
+                    norm_method = getattr(cfg.data_processing, 'normalization_method', 'minmax')
+                    fill_method = getattr(cfg.data_processing, 'fill_method', 'ffill')
+                    min_history_ratio = getattr(cfg.data_processing, 'min_history_ratio', 0.8)
+                    handle_constant = getattr(cfg.data_processing, 'handle_constant', True)
+                    
+                    logger.info(f"  Применяем метод нормализации: {norm_method}")
+                    normalized_training, norm_stats = preprocess_and_normalize_data(
+                        training_slice,
+                        min_history_ratio=min_history_ratio,
+                        fill_method=fill_method,
+                        norm_method=norm_method,
+                        handle_constant=handle_constant
                     )
-                    normalized_training = normalized_training.dropna(axis=1)
-                    logger.info(f"  После нормализации: {len(normalized_training.columns)} символов")
+                    
+                    # Выводим статистику нормализации
+                    logger.info(f"  Статистика нормализации:")
+                    logger.info(f"    Исходные символы: {norm_stats['initial_symbols']}")
+                    logger.info(f"    Недостаточная история: {norm_stats['low_history_ratio']}")
+                    logger.info(f"    Постоянная цена: {norm_stats['constant_price']}")
+                    logger.info(f"    NaN после нормализации: {norm_stats['nan_after_norm']}")
+                    logger.info(f"    Итоговые символы: {norm_stats['final_symbols']} ({norm_stats['final_symbols']/norm_stats['initial_symbols']*100:.1f}%)")
+                    
+                    # Анализируем потерянные символы для обратной совместимости
+                    symbols_after = set(normalized_training.columns)
+                    dropped_symbols = symbols_before - symbols_after
+                    logger.info(f"  После нормализации: {len(normalized_training.columns)} символов (потеряно {len(dropped_symbols)})")
+                    if dropped_symbols and len(dropped_symbols) <= 20:
+                        logger.info(f"  Отброшенные символы: {', '.join(sorted(dropped_symbols))}")
+                    elif dropped_symbols:
+                        logger.info(f"  Отброшено много символов: {len(dropped_symbols)} из {len(symbols_before)}")
                     
                 if len(normalized_training.columns) < 2:
                     logger.warning("  После нормализации осталось менее 2 символов")
@@ -138,11 +184,16 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 else:
                     # SSD computation
                     with time_block("SSD computation"):
-                        logger.info(f"  Расчет SSD для топ-{cfg.pair_selection.ssd_top_n} пар")
-                        ssd = math_utils.calculate_ssd(
-                            normalized_training, top_k=cfg.pair_selection.ssd_top_n
-                        )
-                        logger.info(f"  SSD результат: {len(ssd)} пар")
+                        logger.info("  Расчет SSD для всех пар (без ограничения)")
+                        # Сначала считаем SSD для всех пар
+                        ssd = math_utils.calculate_ssd(normalized_training, top_k=None)
+                        logger.info(f"  SSD результат (все пары): {len(ssd)} пар")
+                        
+                        # Затем берем только top-N пар для дальнейшей фильтрации
+                        ssd_top_n = cfg.pair_selection.ssd_top_n
+                        if len(ssd) > ssd_top_n:
+                            logger.info(f"  Ограничиваем до top-{ssd_top_n} пар для дальнейшей обработки")
+                            ssd = ssd.sort_values().head(ssd_top_n)
                         
                     # Filter pairs
                     with time_block("filtering pairs by cointegration and half-life"):
@@ -153,7 +204,20 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                             training_slice,
                             pvalue_threshold=cfg.pair_selection.coint_pvalue_threshold,
                             min_half_life=cfg.pair_selection.min_half_life_days,
-                            max_half_life=cfg.pair_selection.max_half_life_days
+                            max_half_life=cfg.pair_selection.max_half_life_days,
+                            min_mean_crossings=getattr(cfg.pair_selection, 'min_mean_crossings', 4),
+                            min_correlation=getattr(cfg.pair_selection, 'min_correlation', 0.30),
+                            max_correlation=getattr(cfg.pair_selection, 'max_correlation', 0.95),
+                            min_spread_std=getattr(cfg.pair_selection, 'min_spread_std', 0.005),
+                            max_spread_std=getattr(cfg.pair_selection, 'max_spread_std', 5.0),
+                            adaptive_quantiles=getattr(cfg.pair_selection, 'adaptive_quantiles', False),
+                            save_filter_reasons=getattr(cfg.pair_selection, 'save_filter_reasons', True),
+                            save_std_histogram=getattr(cfg.pair_selection, 'save_std_histogram', True),
+                            kpss_pvalue_threshold=getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05),
+                            commission_pct=getattr(cfg.backtest, 'commission_pct', 0.004),
+                            slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.002),
+                            min_abs_spread_mult=getattr(cfg.pair_selection, 'min_abs_spread_mult', 1.0),
+                            cost_filter=getattr(cfg.pair_selection, 'cost_filter', True)
                         )
                         logger.info(f"  Фильтрация: {len(ssd_pairs)} → {len(filtered_pairs)} пар")
                         pairs = filtered_pairs
@@ -207,7 +271,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     annualizing_factor=getattr(cfg.backtest, 'annualizing_factor', 365),
                     capital_at_risk=capital_per_pair,
                     stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
-                    cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) / 24),  # Convert hours to daily periods
+                    take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
+                    # Convert hours to periods based on 15-minute timeframe
+                    cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) * 60 / 15),  # 15-минутный таймфрейм
+                    wait_for_candle_close=getattr(cfg.backtest, 'wait_for_candle_close', False),
+                    max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
                 )
                 bt.run()
                 results = bt.get_results()
@@ -302,7 +370,8 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             }
         else:
             cumulative = aggregated_pnl.cumsum()
-            capital_per_pair = cfg.portfolio.initial_capital / max(cfg.portfolio.max_active_positions, 1)
+            # Используем капитал для расчета риска на сделку и доходности
+            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct
             sharpe_abs = performance.sharpe_ratio(aggregated_pnl, cfg.backtest.annualizing_factor)
             sharpe_on_returns = performance.sharpe_ratio_on_returns(
                 aggregated_pnl, capital_per_pair, cfg.backtest.annualizing_factor

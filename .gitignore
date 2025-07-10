@@ -14,4 +14,7 @@ data_clean/
 logs/
 .env
 data/
-data_optimized
+data_optimized/
+temporary useful files/
+data_downloaded/
+results/

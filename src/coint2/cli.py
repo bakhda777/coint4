@@ -68,7 +68,8 @@ def backtest(ctx: click.Context, pair: str) -> None:
         slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
         stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
         annualizing_factor=getattr(cfg.backtest, 'annualizing_factor', 365),
-        cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) * 24),  # Convert hours to periods (assuming daily data)
+        # Convert hours to periods based on 15-minute timeframe
+        cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) * 60 / 15),  # 15-минутный таймфрейм
     )
     bt.run()
     metrics = bt.get_performance_metrics()
