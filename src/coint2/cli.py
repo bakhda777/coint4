@@ -52,16 +52,9 @@ def backtest(ctx: click.Context, pair: str) -> None:
         click.echo("No data available for the pair")
         return
 
-    beta = data[s1].cov(data[s2]) / data[s2].var()
-    spread = data[s1] - beta * data[s2]
-    mean = spread.mean()
-    std = spread.std()
-
     bt = PairBacktester(
         data,
-        beta=beta,
-        spread_mean=mean,
-        spread_std=std,
+        rolling_window=cfg.backtest.rolling_window,
         z_threshold=cfg.backtest.zscore_threshold,
         z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
         commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),

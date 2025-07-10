@@ -269,12 +269,10 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 # Нормализация: оба ряда начинаются с 100
                 if not pair_data.empty:
                     pair_data = pair_data / pair_data.iloc[0] * 100
-                
+
                 bt = PairBacktester(
                     pair_data,
-                    beta=beta,
-                    spread_mean=mean,
-                    spread_std=std,
+                    rolling_window=cfg.backtest.rolling_window,
                     z_threshold=cfg.backtest.zscore_threshold,
                     z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
                     commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),

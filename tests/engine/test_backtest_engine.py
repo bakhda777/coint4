@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 from coint2.core import performance
 
@@ -19,9 +20,7 @@ def calc_params(df: pd.DataFrame) -> tuple[float, float, float]:
 
 def manual_backtest(
     df: pd.DataFrame,
-    beta: float,
-    mean: float,
-    std: float,
+    rolling_window: int,
     z_threshold: float,
     z_exit: float,
     commission_pct: float,
@@ -34,11 +33,33 @@ def manual_backtest(
     df = df.copy()
     y_col, x_col = df.columns[0], df.columns[1]
 
-    df["spread"] = df[y_col] - beta * df[x_col]
-    if std == 0:
-        df["z_score"] = 0.0
-    else:
-        df["z_score"] = (df["spread"] - mean) / std
+    df["beta"] = np.nan
+    df["mean"] = np.nan
+    df["std"] = np.nan
+    df["spread"] = np.nan
+    df["z_score"] = np.nan
+
+    for i in range(rolling_window, len(df)):
+        window = df.iloc[i - rolling_window : i]
+        y_win = window[y_col]
+        x_win = window[x_col]
+        x_const = sm.add_constant(x_win)
+        model = sm.OLS(y_win, x_const).fit()
+        beta = model.params.iloc[1]
+        spread_win = y_win - beta * x_win
+        mean = spread_win.mean()
+        std = spread_win.std()
+        if std < 1e-6:
+            continue
+        curr_spread = df[y_col].iat[i] - beta * df[x_col].iat[i]
+        z = (curr_spread - mean) / std
+        df.loc[df.index[i], ["beta", "mean", "std", "spread", "z_score"]] = [
+            beta,
+            mean,
+            std,
+            curr_spread,
+            z,
+        ]
     
     df["position"] = 0.0
     df["trades"] = 0.0
@@ -59,6 +80,20 @@ def manual_backtest(
     pnl_col_idx = df.columns.get_loc("pnl")
 
     for i in range(1, len(df)):
+        if (
+            pd.isna(df["spread"].iat[i])
+            or pd.isna(df["spread"].iat[i - 1])
+            or pd.isna(df["z_score"].iat[i])
+        ):
+            df.iat[i, position_col_idx] = position
+            df.iat[i, trades_col_idx] = 0.0
+            df.iat[i, costs_col_idx] = 0.0
+            df.iat[i, pnl_col_idx] = 0.0
+            continue
+
+        beta = df["beta"].iat[i]
+        mean = df["mean"].iat[i]
+        std = df["std"].iat[i]
         spread_prev = df["spread"].iat[i - 1]
         spread_curr = df["spread"].iat[i]
         z_curr = df["z_score"].iat[i]
@@ -143,13 +178,11 @@ def test_backtester_outputs():
     slippage = 0.0005
     annualizing_factor = 365
 
-    beta, mean, std = calc_params(data)
+    rolling_window = 3
 
     bt = PairBacktester(
         data,
-        beta=beta,
-        spread_mean=mean,
-        spread_std=std,
+        rolling_window=rolling_window,
         z_threshold=z_threshold,
         z_exit=0.0,
         commission_pct=commission,
@@ -165,9 +198,7 @@ def test_backtester_outputs():
     # Сравниваем с эталоном
     expected = manual_backtest(
         data,
-        beta,
-        mean,
-        std,
+        rolling_window,
         1.0,
         0.0,
         commission_pct=commission,
@@ -204,14 +235,14 @@ def test_zero_std_handling() -> None:
     """Проверяет корректность работы при нулевом стандартном отклонении спреда."""
     data = pd.DataFrame({"Y": 2 * np.arange(1, 11), "X": np.arange(1, 11)})
 
+    rolling_window = 3
+
     beta, mean, std = calc_params(data)
     assert std == 0
 
     bt = PairBacktester(
         data,
-        beta=beta,
-        spread_mean=mean,
-        spread_std=std,
+        rolling_window=rolling_window,
         z_threshold=1.0,
         z_exit=0.0,
         commission_pct=0.001,
@@ -225,9 +256,7 @@ def test_zero_std_handling() -> None:
 
     expected = manual_backtest(
         data,
-        beta,
-        mean,
-        std,
+        rolling_window,
         1.0,
         0.0,
         commission_pct=0.001,

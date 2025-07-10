@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 from ..core import performance
 
@@ -10,9 +11,7 @@ class PairBacktester:
     def __init__(
         self,
         pair_data: pd.DataFrame,
-        beta: float,
-        spread_mean: float,
-        spread_std: float,
+        rolling_window: int,
         z_threshold: float,
         z_exit: float = 0.0,
         commission_pct: float = 0.0,
@@ -25,19 +24,14 @@ class PairBacktester:
         wait_for_candle_close: bool = False,
         max_margin_usage: float = float("inf"),
     ) -> None:
-        """Initialize backtester with pre-computed parameters.
+        """Initialize backtester.
 
         Parameters
         ----------
         pair_data : pd.DataFrame
             DataFrame with two columns containing price series for the pair.
-        beta : float
-            Regression coefficient between ``y`` and ``x`` estimated on the
-            training period.
-        spread_mean : float
-            Mean of the spread from the training period.
-        spread_std : float
-            Standard deviation of the spread from the training period.
+        rolling_window : int
+            Window size for rolling parameter estimation.
         z_threshold : float
             Z-score absolute threshold for entry signals.
         z_exit : float
@@ -46,9 +40,7 @@ class PairBacktester:
             Number of periods to wait after closing position before re-entering.
         """
         self.pair_data = pair_data.copy()
-        self.beta = beta
-        self.mean = spread_mean
-        self.std = spread_std
+        self.rolling_window = rolling_window
         self.z_threshold = z_threshold
         self.z_exit = z_exit
         self.cooldown_periods = cooldown_periods
@@ -78,13 +70,34 @@ class PairBacktester:
             }
         ).copy()
 
-        # Рассчитываем спред и z-score
-        df["spread"] = df["y"] - self.beta * df["x"]
+        # Prepare columns for rolling parameters
+        df["beta"] = np.nan
+        df["mean"] = np.nan
+        df["std"] = np.nan
+        df["spread"] = np.nan
+        df["z_score"] = np.nan
 
-        if self.std == 0:
-            df["z_score"] = 0.0
-        else:
-            df["z_score"] = (df["spread"] - self.mean) / self.std
+        for i in range(self.rolling_window, len(df)):
+            window = df.iloc[i - self.rolling_window : i]
+            y_win = window["y"]
+            x_win = window["x"]
+            x_const = sm.add_constant(x_win)
+            model = sm.OLS(y_win, x_const).fit()
+            beta = model.params.iloc[1]
+            spread_win = y_win - beta * x_win
+            mean = spread_win.mean()
+            std = spread_win.std()
+            if std < 1e-6:
+                continue
+            current_spread = df["y"].iat[i] - beta * df["x"].iat[i]
+            z = (current_spread - mean) / std
+            df.loc[df.index[i], ["beta", "mean", "std", "spread", "z_score"]] = [
+                beta,
+                mean,
+                std,
+                current_spread,
+                z,
+            ]
 
         # Инициализируем столбцы для результатов
         df["position"] = 0.0
@@ -117,6 +130,20 @@ class PairBacktester:
         pnl_col_idx = df.columns.get_loc("pnl")
 
         for i in range(1, len(df)):
+            if (
+                pd.isna(df["spread"].iat[i])
+                or pd.isna(df["spread"].iat[i - 1])
+                or pd.isna(df["z_score"].iat[i])
+            ):
+                df.iat[i, position_col_idx] = position
+                df.iat[i, trades_col_idx] = 0.0
+                df.iat[i, costs_col_idx] = 0.0
+                df.iat[i, pnl_col_idx] = 0.0
+                continue
+
+            beta = df["beta"].iat[i]
+            mean = df["mean"].iat[i]
+            std = df["std"].iat[i]
             spread_prev = df["spread"].iat[i - 1]
             spread_curr = df["spread"].iat[i]
             z_curr = df["z_score"].iat[i]
@@ -258,9 +285,9 @@ class PairBacktester:
                     if self.take_profit_multiplier is not None:
                         take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
 
-                    stop_loss_price = self.mean + stop_loss_z * self.std
+                    stop_loss_price = mean + stop_loss_z * std
                     risk_per_unit = abs(spread_curr - stop_loss_price)
-                    trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
+                    trade_value = df["y"].iat[i] + abs(beta) * df["x"].iat[i]
                     size_risk = self.capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
                     size_value = self.capital_at_risk / trade_value if trade_value != 0 else 0.0
                     margin_limit = self.capital_at_risk * self.max_margin_usage / trade_value if trade_value != 0 else 0.0
@@ -281,9 +308,9 @@ class PairBacktester:
                     if self.take_profit_multiplier is not None:
                         take_profit_z = float(np.sign(entry_z) * self.take_profit_multiplier)
 
-                    stop_loss_price = self.mean + stop_loss_z * self.std
+                    stop_loss_price = mean + stop_loss_z * std
                     risk_per_unit = abs(spread_curr - stop_loss_price)
-                    trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
+                    trade_value = df["y"].iat[i] + abs(beta) * df["x"].iat[i]
                     size_risk = self.capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
                     size_value = self.capital_at_risk / trade_value if trade_value != 0 else 0.0
                     margin_limit = self.capital_at_risk * self.max_margin_usage / trade_value if trade_value != 0 else 0.0
@@ -300,7 +327,7 @@ class PairBacktester:
                         df.loc[df.index[i], 'entry_date'] = float(i)
 
             trades = abs(new_position - position)
-            trade_value = df["y"].iat[i] + abs(self.beta) * df["x"].iat[i]
+            trade_value = df["y"].iat[i] + abs(beta) * df["x"].iat[i]
             # Ограничиваем общее плечо/маржу с помощью max_margin_usage
             # Рассчитываем текущую экспозицию (плечо) как процент от капитала
             current_exposure = abs(new_position) * trade_value
