@@ -295,32 +295,34 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 # Собираем статистику по сделкам для данной пары
                 if isinstance(results, dict):
                     trades = results.get("trades", pd.Series())
-                    positions = results.get("position", pd.Series())
+                    positions = results.get("position", pd.Series(dtype=float))
                     costs = results.get("costs", pd.Series())
                 else:
                     # Если results - DataFrame, используем колонки
                     trades = results.get("trades", results.get("trades", pd.Series()))
-                    positions = results.get("position", results.get("position", pd.Series()))
+                    positions = results.get("position", results.get("position", pd.Series(dtype=float)))
                     costs = results.get("costs", results.get("costs", pd.Series()))
-                
-                # Считаем количество открытий/закрытий позиций
+
+                # Новая логика подсчёта фактических сделок
                 if not positions.empty:
-                    position_changes = positions.diff().fillna(0).abs()
-                    trade_opens = (position_changes > 0).sum()
+                    positions = positions.fillna(method="ffill")
+                    prev_positions = positions.shift(1).fillna(0)
+                    is_trade_open_event = (prev_positions == 0) & (positions != 0)
+                    actual_trade_count = int(is_trade_open_event.sum())
                 else:
-                    trade_opens = 0
+                    actual_trade_count = 0
                 
                 # Всегда добавляем статистику по парам, даже если сделок не было
                 pair_pnl = pnl_series.sum()
                 pair_costs = costs.sum() if not costs.empty else 0
-                
+
                 trade_stats.append({
                     'pair': f'{s1}-{s2}',
                     'period': period_label,
                     'total_pnl': pair_pnl,
                     'total_costs': pair_costs,
-                    'trade_count': trade_opens,
-                    'avg_pnl_per_trade': pair_pnl / max(trade_opens, 1),
+                    'trade_count': actual_trade_count,
+                    'avg_pnl_per_trade': pair_pnl / max(actual_trade_count, 1),
                     'win_days': (pnl_series > 0).sum(),
                     'lose_days': (pnl_series < 0).sum(),
                     'total_days': len(pnl_series),
