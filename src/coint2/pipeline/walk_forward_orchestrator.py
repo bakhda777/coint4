@@ -47,10 +47,13 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     # ИСПРАВЛЕНИЕ: start_date теперь начало ТЕСТОВОГО периода, а не тренировочного
     current_test_start = start_date
     walk_forward_steps = []
+    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", 15)
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
     while current_test_start < end_date:
         # Тренировочный период ПРЕДШЕСТВУЕТ тестовому
         training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-        training_end = current_test_start
+        # Завершаем тренировочный период за один бар до начала тестового
+        training_end = current_test_start - bar_delta
         testing_start = current_test_start
         testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
         
