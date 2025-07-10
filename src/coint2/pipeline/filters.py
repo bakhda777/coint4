@@ -40,7 +40,6 @@ def filter_pairs_by_coint_and_half_life(
     std_q_low: float = 0.10,
     std_q_high: float = 0.90,
     min_history_ratio: float = 0.8,
-    cost_filter: bool = True,
     save_std_histogram: bool = True,
     liquidity_usd_daily: float = 1_000_000.0,
     max_bid_ask_pct: float = 0.2,
@@ -48,9 +47,6 @@ def filter_pairs_by_coint_and_half_life(
     save_filter_reasons: bool = True,
     kpss_pvalue_threshold: float = 0.05,
     *,
-    commission_pct: float = 0.0,
-    slippage_pct: float = 0.0,
-    min_abs_spread_mult: float = 2.0,
     stable_tokens: Optional[List[str]] = None,
 ) -> List[Tuple[str, str, float, float, float, Dict[str, Any]]]:
     """
@@ -83,15 +79,12 @@ def filter_pairs_by_coint_and_half_life(
     
     # Словарь для отслеживания причин фильтрации по категориям
     filter_stats = {
-        'history': 0,
-        'liquidity': 0,
-        'correlation': 0,
+        'total': len(pairs),
         'pvalue': 0,
         'half_life': 0,
-        'kpss': 0,
+        'correlation': 0,
         'std': 0,
         'crossings': 0,
-        'cost_spread': 0
     }
     
     # Фильтр 1: Коинтеграция (p-value)
@@ -103,7 +96,7 @@ def filter_pairs_by_coint_and_half_life(
         hist_ratio2 = price_df[s2].notna().mean()
         if min(hist_ratio1, hist_ratio2) < min_history_ratio:
             filter_reasons.append((s1, s2, 'history'))
-            filter_stats['history'] += 1
+            filter_stats['history'] = filter_stats.get('history', 0) + 1
             continue
 
         # --- Liquidity & market microstructure checks ---
@@ -111,7 +104,7 @@ def filter_pairs_by_coint_and_half_life(
         vol2, ba2, fund2 = _get_market_metrics(s2)
         if min(vol1, vol2) < liquidity_usd_daily or max(ba1, ba2) > max_bid_ask_pct or max(abs(fund1), abs(fund2)) > max_avg_funding_pct:
             filter_reasons.append((s1, s2, 'liquidity'))
-            filter_stats['liquidity'] += 1
+            filter_stats['liquidity'] = filter_stats.get('liquidity', 0) + 1
             continue
         pair_data = price_df[[s1, s2]].dropna()
         if pair_data.empty or pair_data[s2].var() == 0:
@@ -174,7 +167,7 @@ def filter_pairs_by_coint_and_half_life(
                 p_kpss = kpss(spread, regression='c', nlags='auto')[1]
             if p_kpss < kpss_pvalue_threshold:
                 filter_reasons.append((s1, s2, 'kpss'))
-                filter_stats['kpss'] += 1
+                filter_stats['kpss'] = filter_stats.get('kpss', 0) + 1
                 continue  # отвергаем стационарность тренда
         except Exception:
             pass  # если тест не применим, пропускаем
@@ -239,17 +232,18 @@ def filter_pairs_by_coint_and_half_life(
         # динамический минимум пересечений
         train_bars = len(spread)
         hl_bars_est = hl_days * 1440 / 15  # приблизительно, bar_minutes=15
-        dynamic_min_cross = int(train_bars / max(hl_bars_est, 1))
-        if mean_crossings < dynamic_min_cross:
+        
+        # Значительно снижаем порог пересечений (было: делим на hl_bars_est)
+        dynamic_min_cross = max(1, int(train_bars / max(hl_bars_est * 10, 1)))
+        # Фильтр временно отключен для диагностики
+        if False and mean_crossings < min(2, dynamic_min_cross):  # Минимум 2 пересечения
             filter_reasons.append((s1, s2, 'crossings'))
             filter_stats['crossings'] += 1
             continue
         mean_cross_passed += 1
 
-        # Проверка среднего абсолютного отклонения спреда относительно издержек
-        # ВРЕМЕННО ПОЛНОСТЬЮ ОТКЛЮЧЕН ФИЛЬТР |spread| vs cost
-        # ГАРАНТИРОВАННО ПРОПУСКАЕМ ВСЕ ПАРЫ ЧЕРЕЗ ЭТОТ ФИЛЬТР
-        mad_passed += 1  # Все пары проходят фильтр
+        # Вычисляем среднее абсолютное отклонение для метрики
+        mean_abs_dev = np.abs(spread - mean).mean()
             
         # Сохраняем расширенные метрики для пары
         metrics = {
@@ -274,8 +268,8 @@ def filter_pairs_by_coint_and_half_life(
     
     logger.info(f"[ФИЛЬТР] Half-life: {total_pairs_coint} → {half_life_passed} пар")
     logger.info(f"[ФИЛЬТР] Spread std (q={std_q_low:.2f}/{std_q_high:.2f}, range {std_low:.4f}-{std_high:.4f}): {len(tmp_stats)} → {std_passed} пар")
-    logger.info(f"[ФИЛЬТР] |spread| vs cost: {std_passed} → {mad_passed} пар")
-    logger.info(f"[ФИЛЬТР] Mean crossings: {mad_passed} → {mean_cross_passed} пар")
+    # Поскольку фильтр по стоимости удалён, теперь все пары проходят этот этап
+    logger.info(f"[ФИЛЬТР] Mean crossings: {std_passed} → {mean_cross_passed} пар")
     logger.info(f"[ФИЛЬТР] После всех фильтров: {len(result)} пар ({len(result)/total_pairs*100:.1f}% от исходного числа)")
 
     # Сохраняем причины отсева в CSV

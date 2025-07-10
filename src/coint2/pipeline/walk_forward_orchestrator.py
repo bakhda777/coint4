@@ -205,19 +205,16 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                             pvalue_threshold=cfg.pair_selection.coint_pvalue_threshold,
                             min_half_life=cfg.pair_selection.min_half_life_days,
                             max_half_life=cfg.pair_selection.max_half_life_days,
-                            min_mean_crossings=getattr(cfg.pair_selection, 'min_mean_crossings', 4),
-                            min_correlation=getattr(cfg.pair_selection, 'min_correlation', 0.30),
-                            max_correlation=getattr(cfg.pair_selection, 'max_correlation', 0.95),
-                            min_spread_std=getattr(cfg.pair_selection, 'min_spread_std', 0.005),
-                            max_spread_std=getattr(cfg.pair_selection, 'max_spread_std', 5.0),
-                            adaptive_quantiles=getattr(cfg.pair_selection, 'adaptive_quantiles', False),
-                            save_filter_reasons=getattr(cfg.pair_selection, 'save_filter_reasons', True),
-                            save_std_histogram=getattr(cfg.pair_selection, 'save_std_histogram', True),
-                            kpss_pvalue_threshold=getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05),
-                            commission_pct=getattr(cfg.backtest, 'commission_pct', 0.004),
-                            slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.002),
-                            min_abs_spread_mult=getattr(cfg.pair_selection, 'min_abs_spread_mult', 1.0),
-                            cost_filter=getattr(cfg.pair_selection, 'cost_filter', True)
+                            min_mean_crossings=cfg.pair_selection.min_mean_crossings,
+                            min_correlation=cfg.pair_selection.min_correlation,
+                            max_correlation=cfg.pair_selection.max_correlation,
+                            min_spread_std=cfg.pair_selection.min_spread_std,
+                            max_spread_std=cfg.pair_selection.max_spread_std,
+                            adaptive_quantiles=cfg.pair_selection.adaptive_quantiles,
+                            save_filter_reasons=cfg.pair_selection.save_filter_reasons,
+                            save_std_histogram=cfg.pair_selection.save_std_histogram,
+                            kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
+                            # Параметры commission_pct и slippage_pct удалены
                         )
                         logger.info(f"  Фильтрация: {len(ssd_pairs)} → {len(filtered_pairs)} пар")
                         pairs = filtered_pairs
@@ -230,7 +227,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             quality_sorted_pairs = sorted(pairs, key=lambda x: abs(x[4]), reverse=True)  # x[4] = std
             active_pairs = quality_sorted_pairs[:cfg.portfolio.max_active_positions]
             logger.info(f"  Топ-3 пары по волатильности спреда:")
-            for i, (s1, s2, beta, mean, std) in enumerate(active_pairs[:3], 1):
+            for i, (s1, s2, beta, mean, std, metrics) in enumerate(active_pairs[:3], 1):
                 logger.info(f"    {i}. {s1}-{s2}: beta={beta:.4f}, std={std:.4f}")
         else:
             active_pairs = []
@@ -253,7 +250,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         if active_pairs:
             pair_tracker = ProgressTracker(len(active_pairs), f"{step_tag} backtests", step=max(1, len(active_pairs)//5))
             
-            for pair_idx, (s1, s2, beta, mean, std) in enumerate(active_pairs, 1):
+            for pair_idx, (s1, s2, beta, mean, std, metrics) in enumerate(active_pairs, 1):
                 pair_data = step_df.loc[testing_start:testing_end, [s1, s2]].dropna()
                 # Нормализация: оба ряда начинаются с 100
                 if not pair_data.empty:

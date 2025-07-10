@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import yaml as pyyaml  # type: ignore
-from pydantic import BaseModel, DirectoryPath, Field  # type: ignore
+from pydantic import BaseModel, DirectoryPath, Field, model_validator  # type: ignore
 
 
 class PairSelectionConfig(BaseModel):
@@ -28,8 +28,21 @@ class PairSelectionConfig(BaseModel):
     min_spread_std: float | None = None
     max_spread_std: float | None = None
     min_abs_spread_mult: float | None = None
+    cost_filter: bool | None = None
     kpss_pvalue_threshold: float | None = None
     pvalue_top_n: int | None = None
+    save_std_histogram: bool | None = None
+
+    # -------- Validators --------
+    @model_validator(mode="after")
+    def _check_cost_filter_params(self):  # type: ignore
+        """Ensure required parameters are present when `cost_filter` is enabled."""
+        if self.cost_filter:
+            if self.min_abs_spread_mult is None:
+                raise ValueError(
+                    "`min_abs_spread_mult` must be specified in the config when `cost_filter` is true"
+                )
+        return self
 
 
 class DataProcessingConfig(BaseModel):
