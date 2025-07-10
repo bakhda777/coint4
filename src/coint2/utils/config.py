@@ -69,7 +69,7 @@ class BacktestConfig(BaseModel):
     rolling_window: int
     zscore_threshold: float
     stop_loss_multiplier: float
-    fill_limit_pct: float = Field(..., gt=0.0, lt=1.0)
+    fill_limit_pct: float = Field(..., ge=0.0, le=1.0)
     commission_pct: float  # Новое поле
     slippage_pct: float  # Новое поле
     annualizing_factor: int  # Новое поле
@@ -89,7 +89,7 @@ class AppConfig(BaseModel):
 
     data_dir: DirectoryPath
     results_dir: Path
-    data_processing: DataProcessingConfig
+    data_processing: DataProcessingConfig = Field(default_factory=DataProcessingConfig)
     portfolio: PortfolioConfig
     pair_selection: PairSelectionConfig
     backtest: BacktestConfig
