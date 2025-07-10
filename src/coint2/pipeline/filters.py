@@ -25,6 +25,10 @@ def _get_market_metrics(symbol: str) -> tuple[float, float, float]:
 import logging
 from typing import List, Tuple, Optional, Dict, Any
 
+# Разумные границы для коэффициента beta
+MIN_BETA = 0.1
+MAX_BETA = 10.0
+
 def filter_pairs_by_coint_and_half_life(
     pairs: List[Tuple[str, str]],
     price_df: pd.DataFrame,
@@ -52,10 +56,11 @@ def filter_pairs_by_coint_and_half_life(
     """
     Фильтрует пары по расширенным критериям качества:
     1. p-value коинтеграции
-    2. half-life спреда
-    3. Количество пересечений среднего
-    4. Корреляция между активами
-    5. Стандартное отклонение спреда
+    2. коэффициент beta
+    3. half-life спреда
+    4. Количество пересечений среднего
+    5. Корреляция между активами
+    6. Стандартное отклонение спреда
     
     Возвращает пары с параметрами (s1, s2, beta, mean, std, metrics), прошедшие все фильтры.
     """
@@ -81,6 +86,7 @@ def filter_pairs_by_coint_and_half_life(
     filter_stats = {
         'total': len(pairs),
         'pvalue': 0,
+        'beta': 0,
         'half_life': 0,
         'correlation': 0,
         'std': 0,
@@ -135,12 +141,21 @@ def filter_pairs_by_coint_and_half_life(
 
     total_pairs_coint = len(coint_passed)
     half_life_passed = 0
+    beta_passed = 0
 
     # Первичный проход — вычисляем half-life и std, собираем метрики
     tmp_stats: list[tuple[str, str, float, float, float, float, float, float]] = []  # s1,s2,beta,mean,std,hl_days,mean_crossings,pvalue
     for s1, s2, corr, pvalue in coint_passed:
         pair_data = price_df[[s1, s2]].dropna()
         beta = pair_data[s1].cov(pair_data[s2]) / pair_data[s2].var()
+
+        if not (MIN_BETA <= abs(beta) <= MAX_BETA):
+            filter_reasons.append((s1, s2, f"beta_out_of_range ({beta:.2f})"))
+            filter_stats['beta'] += 1
+            continue
+
+        beta_passed += 1
+
         spread = pair_data[s1] - beta * pair_data[s2]
         
         # Расчёт half-life (в барах)
@@ -266,6 +281,9 @@ def filter_pairs_by_coint_and_half_life(
     for reason, percent in sorted(filter_percentages.items(), key=lambda x: x[1], reverse=True):
         logger.info(f"  • {reason}: {filter_stats[reason]} пар ({percent:.1f}%)")
     
+    logger.info(
+        f"[ФИЛЬТР] Beta range {MIN_BETA}-{MAX_BETA}: {total_pairs_coint} → {beta_passed} пар"
+    )
     logger.info(f"[ФИЛЬТР] Half-life: {total_pairs_coint} → {half_life_passed} пар")
     logger.info(f"[ФИЛЬТР] Spread std (q={std_q_low:.2f}/{std_q_high:.2f}, range {std_low:.4f}-{std_high:.4f}): {len(tmp_stats)} → {std_passed} пар")
     # Поскольку фильтр по стоимости удалён, теперь все пары проходят этот этап
