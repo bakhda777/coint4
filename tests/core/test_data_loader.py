@@ -78,20 +78,21 @@ def test_load_all_data_for_period(tmp_path: Path) -> None:
     )
     handler = DataHandler(cfg)
 
-    result = handler.load_all_data_for_period()
+    end_date = pd.Timestamp("2021-01-04")
+    result = handler.load_all_data_for_period(end_date=end_date)
 
     pdf = pd.read_parquet(tmp_path, engine="pyarrow")
     pdf["timestamp"] = pd.to_datetime(pdf["timestamp"])
     pdf = pdf.sort_values("timestamp")
-    end_date = pdf["timestamp"].max()
     start_date = end_date - pd.Timedelta(days=2)
-    filtered = pdf[pdf["timestamp"] >= start_date]
+    filtered = pdf[(pdf["timestamp"] >= start_date) & (pdf["timestamp"] <= end_date)]
     expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close")
     expected = expected.sort_index()
 
     result = result.astype(float)
     expected = expected.astype(float)
     sync_and_assert_frames(result, expected)
+    assert result.index.max() <= end_date
 
 
 def test_load_pair_data(tmp_path: Path) -> None:
@@ -283,7 +284,8 @@ def test_clear_cache(tmp_path: Path) -> None:
     )
     handler = DataHandler(cfg)
 
-    initial = handler.load_all_data_for_period()
+    end_date = pd.Timestamp("2021-01-05")
+    initial = handler.load_all_data_for_period(end_date=end_date)
     assert "CCC" not in initial.columns
 
     idx = pd.date_range("2021-01-01", periods=5, freq="D")
@@ -294,7 +296,7 @@ def test_clear_cache(tmp_path: Path) -> None:
 
     handler.clear_cache()
     # Явно увеличиваем lookback_days, чтобы включить все даты
-    result = handler.load_all_data_for_period(lookback_days=10)
+    result = handler.load_all_data_for_period(lookback_days=10, end_date=end_date)
 
     # Диагностика состояния результата
     print('=== RESULT SHAPE:', result.shape)
@@ -307,7 +309,7 @@ def test_clear_cache(tmp_path: Path) -> None:
     pdf = pdf.sort_values("timestamp")
     end_date = pdf["timestamp"].max()
     start_date = end_date - pd.Timedelta(days=10)
-    filtered = pdf[pdf["timestamp"] >= start_date]
+    filtered = pdf[(pdf["timestamp"] >= start_date) & (pdf["timestamp"] <= end_date)]
     expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close")
     expected = expected.sort_index()
     freq_val = pd.infer_freq(expected.index)

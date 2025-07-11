@@ -75,10 +75,11 @@ def test_load_all_data_cache(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(dd, "read_parquet", counting_read_parquet)
 
-    handler.load_all_data_for_period()
+    end_date = pd.Timestamp("2021-01-05")
+    handler.load_all_data_for_period(end_date=end_date)
     assert calls == 1
 
-    handler.load_all_data_for_period()
+    handler.load_all_data_for_period(end_date=end_date)
     assert calls == 1
 
 
@@ -94,7 +95,7 @@ def test_threaded_cache_reload(tmp_path: Path) -> None:
     results: list[pd.DataFrame] = []
 
     def worker() -> None:
-        results.append(handler.load_all_data_for_period())
+        results.append(handler.load_all_data_for_period(end_date=end_date))
 
     threads = [threading.Thread(target=worker) for _ in range(2)]
     for t in threads:
@@ -114,7 +115,8 @@ def test_cache_autorefresh(tmp_path: Path) -> None:
     cfg = make_cfg(tmp_path)
     handler = DataHandler(cfg)
 
-    initial = handler.load_all_data_for_period(lookback_days=10)
+    end_date = pd.Timestamp("2021-01-05")
+    initial = handler.load_all_data_for_period(lookback_days=10, end_date=end_date)
     assert len(initial) == 5
 
     part_dir = tmp_path / "symbol=AAA" / "year=2021" / "month=01"
@@ -123,6 +125,6 @@ def test_cache_autorefresh(tmp_path: Path) -> None:
     time.sleep(1)
     df.to_parquet(part_dir / "data.parquet")
 
-    updated = handler.load_all_data_for_period(lookback_days=10)
+    updated = handler.load_all_data_for_period(lookback_days=10, end_date=end_date)
     assert len(updated) == 6
     assert pd.Timestamp("2021-01-06") in updated.index

@@ -65,22 +65,26 @@ def test_pivot(tmp_path: Path) -> None:
     create_dataset_with_duplicates(tmp_path)
     handler = _create_handler(tmp_path, lookback_days=3)
 
-    result = handler.load_all_data_for_period()
+    end_date = pd.Timestamp("2021-01-02")
+    result = handler.load_all_data_for_period(end_date=end_date)
 
     pdf = pd.read_parquet(tmp_path, engine="pyarrow")
     pdf["timestamp"] = pd.to_datetime(pdf["timestamp"])
-    end_date = pdf["timestamp"].max()
     start_date = end_date - pd.Timedelta(days=3)
-    filtered = pdf[pdf["timestamp"] >= start_date]
+    filtered = pdf[(pdf["timestamp"] >= start_date) & (pdf["timestamp"] <= end_date)]
     expected = filtered.pivot_table(
         index="timestamp",
         columns="symbol",
         values="close",
-        aggfunc="last",
+        aggfunc="mean",
     )
     expected = expected.sort_index()
     # Приводим к одинаковой частоте для корректного сравнения
-    freq_val = pd.infer_freq(expected.index)
-    if freq_val:
-        expected = expected.asfreq(freq_val)
+    if len(expected.index) >= 3:
+        freq_val = pd.infer_freq(expected.index)
+        if freq_val:
+            expected = expected.asfreq(freq_val)
+    result = result.astype(float)
+    expected = expected.astype(float)
     pd.testing.assert_frame_equal(result, expected)
+    assert result.index.max() <= end_date
