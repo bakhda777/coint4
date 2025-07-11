@@ -23,6 +23,8 @@ class PairBacktester:
         cooldown_periods: int = 0,
         wait_for_candle_close: bool = False,
         max_margin_usage: float = float("inf"),
+        half_life: float | None = None,
+        time_stop_multiplier: float | None = None,
     ) -> None:
         """Initialize backtester.
 
@@ -53,6 +55,8 @@ class PairBacktester:
         self.take_profit_multiplier = take_profit_multiplier
         self.wait_for_candle_close = wait_for_candle_close
         self.max_margin_usage = max_margin_usage
+        self.half_life = half_life
+        self.time_stop_multiplier = time_stop_multiplier
         self.s1 = pair_data.columns[0]
         self.s2 = pair_data.columns[1]
         self.trades_log: list[dict] = []
@@ -161,6 +165,30 @@ class PairBacktester:
             pnl = position * (spread_curr - spread_prev)
 
             new_position = position
+
+            # Time-based stop-loss
+            if (
+                position != 0
+                and self.half_life is not None
+                and self.time_stop_multiplier is not None
+            ):
+                trade_duration = i - entry_index
+                time_stop_limit = self.half_life * self.time_stop_multiplier
+                if trade_duration > time_stop_limit:
+                    new_position = 0.0
+                    cooldown_remaining = self.cooldown_periods
+                    df.loc[df.index[i], 'exit_reason'] = 'time_stop'
+                    df.loc[df.index[i], 'exit_price_s1'] = df.loc[df.index[i], 'y']
+                    df.loc[df.index[i], 'exit_price_s2'] = df.loc[df.index[i], 'x']
+                    df.loc[df.index[i], 'exit_z'] = z_curr
+                    entry_date = df.loc[(df['entry_date'].notna()) & (df.index <= df.index[i])]['entry_date'].iloc[-1]
+                    if pd.notna(entry_date):
+                        if isinstance(df.index, pd.DatetimeIndex):
+                            df.loc[df.index[i], 'trade_duration'] = (
+                                df.index[i] - pd.to_datetime(entry_date)
+                            ).total_seconds() / 3600
+                        else:
+                            df.loc[df.index[i], 'trade_duration'] = float(df.index[i] - entry_date)
 
             # Уменьшаем cooldown счетчик
             if cooldown_remaining > 0:

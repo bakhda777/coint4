@@ -44,6 +44,7 @@ backtest:
   zscore_threshold: 2.0         # Порог входа (было 2.5)
   zscore_exit: 0.8              # Выход при возврате к среднему (было 0.0)
   stop_loss_multiplier: 3.0     # Стоп-лосс при 3 std
+  time_stop_multiplier: 2.0
   take_profit_multiplier: 3.0   # Добавляем симметричный take-profit
   fill_limit_pct: 0.1          
   commission_pct: 0.004         # Комиссия Binance 

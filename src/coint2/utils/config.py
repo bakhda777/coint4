@@ -74,6 +74,7 @@ class BacktestConfig(BaseModel):
     commission_pct: float  # Новое поле
     slippage_pct: float  # Новое поле
     annualizing_factor: int  # Новое поле
+    time_stop_multiplier: float | None = None
 
 
 class WalkForwardConfig(BaseModel):

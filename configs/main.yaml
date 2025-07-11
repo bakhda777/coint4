@@ -17,6 +17,7 @@ backtest:
   rolling_window: 30
   zscore_threshold: 1.5
   stop_loss_multiplier: 3.0
+  time_stop_multiplier: 2.0
   fill_limit_pct: 0.2
   commission_pct: 0.001
   slippage_pct: 0.0005
