@@ -16,6 +16,7 @@ def test_load_config():
     assert cfg.pair_selection.min_half_life_days == 1
     assert cfg.pair_selection.max_half_life_days == 30
     assert cfg.pair_selection.min_mean_crossings == 12
+    assert cfg.pair_selection.max_hurst_exponent == 0.5
     assert cfg.backtest.rolling_window == 30
     assert cfg.backtest.stop_loss_multiplier == 3.0
     assert cfg.backtest.commission_pct == 0.001

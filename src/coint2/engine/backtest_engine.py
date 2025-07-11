@@ -347,14 +347,29 @@ class PairBacktester:
 
                 if current_exposure > max_allowed_exposure and max_allowed_exposure > 0:
                     new_position = new_position * (max_allowed_exposure / current_exposure)
-            costs = trades * trade_value * total_cost_pct
-            step_pnl = pnl - costs
+            # 1. Рассчитываем PnL и точные расходы (из версии main)
+            # Стоимость изменения позиции, учитывая комиссии и проскальзывание
+            price_s1 = df["y"].iat[i]
+            price_s2 = df["x"].iat[i]
+            position_s1_change = new_position - position
+            position_s2_change = -new_position * beta - (-position * beta)
 
+            notional_change_s1 = abs(position_s1_change * price_s1)
+            notional_change_s2 = abs(position_s2_change * price_s2)
+
+            commission = (notional_change_s1 + notional_change_s2) * self.commission_pct
+            slippage = (notional_change_s1 + notional_change_s2) * self.slippage_pct
+            total_costs = commission + slippage
+            
+            step_pnl = pnl - total_costs
+
+            # 2. Обновляем основной DataFrame
             df.iat[i, position_col_idx] = new_position
             df.iat[i, trades_col_idx] = trades
-            df.iat[i, costs_col_idx] = costs
+            df.iat[i, costs_col_idx] = total_costs
             df.iat[i, pnl_col_idx] = step_pnl
 
+            # 3. Накапливаем PnL для детального лога (из версии codex)
             # Update trade PnL accumulator if a trade is open
             if position != 0 or (position == 0 and new_position != 0):
                 current_trade_pnl += step_pnl
@@ -386,10 +401,13 @@ class PairBacktester:
                     'trade_duration_hours': duration_hours,
                 }
                 self.trades_log.append(trade_info)
+                
+                # Сбрасываем счетчики для следующей сделки
                 current_trade_pnl = 0.0
                 entry_datetime = None
                 entry_spread = 0.0
                 entry_position_size = 0.0
+
 
             position = new_position
 
