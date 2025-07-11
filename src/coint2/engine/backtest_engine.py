@@ -445,8 +445,10 @@ class PairBacktester:
 
             commission = (notional_change_s1 + notional_change_s2) * self.commission_pct
             slippage = (notional_change_s1 + notional_change_s2) * self.slippage_pct
+            # Combine costs and subtract from PnL for this step
             total_costs = commission + slippage
 
+            # PnL after accounting for trading costs
             step_pnl = pnl - total_costs
 
             # 2. Обновляем основной DataFrame
