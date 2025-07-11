@@ -73,6 +73,7 @@ def manual_backtest(
     stop_loss_z = 0.0
     cooldown_remaining = 0
     entry_index = 0
+    entry_time = None
 
     # Вынесем get_loc вычисления из цикла для оптимизации
     position_col_idx = df.columns.get_loc("position")
@@ -108,11 +109,17 @@ def manual_backtest(
             and half_life is not None
             and time_stop_multiplier is not None
         ):
-            trade_duration = i - entry_index
-            time_stop_limit = half_life * time_stop_multiplier
-            if trade_duration > time_stop_limit:
-                new_position = 0.0
-                cooldown_remaining = cooldown_periods
+            if entry_time is not None:
+                if isinstance(df.index, pd.DatetimeIndex):
+                    trade_duration = (
+                        df.index[i] - entry_time
+                    ).total_seconds() / (60 * 60 * 24)
+                else:
+                    trade_duration = float(df.index[i] - entry_time)
+                time_stop_limit = half_life * time_stop_multiplier
+                if trade_duration >= time_stop_limit:
+                    new_position = 0.0
+                    cooldown_remaining = cooldown_periods
 
         # Уменьшаем cooldown счетчик
         if cooldown_remaining > 0:
@@ -157,6 +164,8 @@ def manual_backtest(
                 size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
                 size = min(size_risk, size_value)
                 new_position = signal * size
+                entry_index = i
+                entry_time = df.index[i]
 
             elif (
                 new_position != 0
@@ -176,6 +185,7 @@ def manual_backtest(
                 size = min(size_risk, size_value)
                 new_position = signal * size
                 entry_index = i
+                entry_time = df.index[i]
 
         trades = abs(new_position - position)
         trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
@@ -381,21 +391,25 @@ def test_step_pnl_includes_costs() -> None:
 
 def test_time_stop() -> None:
     """Ensures that trades are closed when the time stop is exceeded."""
-    data = pd.DataFrame({
-        "Y": np.arange(30) + 2 * np.sin(np.linspace(0, 2 * np.pi, 30)),
-        "X": np.arange(30),
-    })
+    idx = pd.date_range("2020-01-01", periods=30, freq="D")
+    data = pd.DataFrame(
+        {
+            "Y": np.arange(30) + 2 * np.sin(np.linspace(0, 2 * np.pi, 30)),
+            "X": np.arange(30),
+        },
+        index=idx,
+    )
 
     bt = PairBacktester(
         data,
         rolling_window=5,
-        z_threshold=1.0,
+        z_threshold=0.5,
         z_exit=0.0,
         commission_pct=0.0,
         slippage_pct=0.0,
         capital_at_risk=100.0,
-        stop_loss_multiplier=2.0,
-        cooldown_periods=0,
+        stop_loss_multiplier=1000.0,
+        cooldown_periods=100,
         half_life=2,
         time_stop_multiplier=2,
     )
@@ -404,4 +418,5 @@ def test_time_stop() -> None:
     assert bt.trades_log, "No trades were executed"
     first_trade = bt.trades_log[0]
     assert first_trade["exit_reason"] == "time_stop"
-    assert first_trade["trade_duration_hours"] > bt.half_life * bt.time_stop_multiplier
+    expected_hours = bt.half_life * bt.time_stop_multiplier * 24
+    assert np.isclose(first_trade["trade_duration_hours"], expected_hours)
