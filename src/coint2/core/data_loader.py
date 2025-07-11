@@ -235,12 +235,29 @@ class DataHandler:
             days_back = lookback_days or self.lookback_days
             end_date = end_date or pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=days_back)
-            
-            logger.info(f"Загрузка данных за период: {start_date} - {end_date} ({days_back} дней)")
-            
-            with time_block("loading filtered dataset"):
-                # Используем оптимизированный метод с фильтрацией по датам и символам
-                ddf = self._load_full_dataset(start_date=start_date, end_date=end_date, symbols=symbols)
+
+            logger.info(
+                f"Загрузка данных за период: {start_date} - {end_date} ({days_back} дней)"
+            )
+
+            # ----- Кеширование уровня Dask DataFrame -----
+            cache_key_tuple = (
+                days_back,
+                end_date.strftime("%Y-%m-%d"),
+                tuple(sorted(symbols)) if symbols else None,
+            )
+            cache_key = str(cache_key_tuple)
+
+            with self._lock:
+                cached = self._all_data_cache.get(cache_key)
+                current_hash = _dir_mtime_hash(self.data_dir)
+                if cached and (not self.autorefresh or cached[1] == current_hash):
+                    ddf = cached[0]
+                else:
+                    ddf = self._load_full_dataset(
+                        start_date=start_date, end_date=end_date, symbols=symbols
+                    )
+                    self._all_data_cache[cache_key] = (ddf, current_hash)
 
             # Проверка на пустой DataFrame
             if not ddf.columns.tolist():
@@ -289,7 +306,13 @@ class DataHandler:
                 if removed_symbols > 0:
                     logger.info(f"Removed {removed_symbols} symbols with >50% missing data")
                 
-                logger.info(f"Final result: {len(clean_result)} rows, {len(clean_result.columns)} symbols")
+                logger.info(
+                    f"Final result: {len(clean_result)} rows, {len(clean_result.columns)} symbols"
+                )
+
+                freq_val = pd.infer_freq(clean_result.index)
+                with self._lock:
+                    self._freq = freq_val
 
             return clean_result
 

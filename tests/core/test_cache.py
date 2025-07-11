@@ -88,6 +88,8 @@ def test_threaded_cache_reload(tmp_path: Path) -> None:
     cfg = make_cfg(tmp_path, lookback_days=2)
     handler = DataHandler(cfg)
 
+    end_date = pd.Timestamp("2021-01-05")
+
     # preload and then clear to force reload
     handler.load_all_data_for_period()
     handler.clear_cache()
@@ -115,7 +117,7 @@ def test_cache_autorefresh(tmp_path: Path) -> None:
     cfg = make_cfg(tmp_path)
     handler = DataHandler(cfg)
 
-    end_date = pd.Timestamp("2021-01-05")
+    end_date = pd.Timestamp("2021-01-06")
     initial = handler.load_all_data_for_period(lookback_days=10, end_date=end_date)
     assert len(initial) == 5
 
