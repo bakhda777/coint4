@@ -28,6 +28,8 @@ def manual_backtest(
     capital_at_risk: float,
     stop_loss_multiplier: float,
     cooldown_periods: int,
+    half_life: float | None = None,
+    time_stop_multiplier: float | None = None,
 ) -> pd.DataFrame:
     """Эталонная реализация логики бэктеста для проверки."""
     df = df.copy()
@@ -66,12 +68,11 @@ def manual_backtest(
     df["costs"] = 0.0
     df["pnl"] = 0.0
 
-    total_cost_pct = commission_pct + slippage_pct
-
     position = 0.0
     entry_z = 0.0
     stop_loss_z = 0.0
     cooldown_remaining = 0
+    entry_index = 0
 
     # Вынесем get_loc вычисления из цикла для оптимизации
     position_col_idx = df.columns.get_loc("position")
@@ -101,6 +102,17 @@ def manual_backtest(
         pnl = position * (spread_curr - spread_prev)
 
         new_position = position
+
+        if (
+            position != 0
+            and half_life is not None
+            and time_stop_multiplier is not None
+        ):
+            trade_duration = i - entry_index
+            time_stop_limit = half_life * time_stop_multiplier
+            if trade_duration > time_stop_limit:
+                new_position = 0.0
+                cooldown_remaining = cooldown_periods
 
         # Уменьшаем cooldown счетчик
         if cooldown_remaining > 0:
@@ -145,11 +157,13 @@ def manual_backtest(
                 size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
                 size = min(size_risk, size_value)
                 new_position = signal * size
+
             elif (
                 new_position != 0
                 and (long_confirmation or short_confirmation)
                 and np.sign(new_position) != signal
             ):
+
                 entry_z = z_curr
                 stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
                 stop_loss_price = mean + stop_loss_z * std
@@ -161,6 +175,7 @@ def manual_backtest(
                 size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
                 size = min(size_risk, size_value)
                 new_position = signal * size
+                entry_index = i
 
         trades = abs(new_position - position)
         trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
