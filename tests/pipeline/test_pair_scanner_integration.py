@@ -9,6 +9,7 @@ from coint2.utils.config import (
     AppConfig,
     BacktestConfig,
     PairSelectionConfig,
+    FilterParamsConfig,
     PortfolioConfig,
     WalkForwardConfig,
 )
@@ -45,6 +46,7 @@ def test_find_cointegrated_pairs(monkeypatch, tmp_path: Path) -> None:
             max_half_life_days=30,
             min_mean_crossings=12,
         ),
+        filter_params=FilterParamsConfig(),
         backtest=BacktestConfig(
             timeframe="1d",
             rolling_window=1,

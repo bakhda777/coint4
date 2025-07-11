@@ -27,3 +27,22 @@ walk_forward:
   end_date: "2021-01-31"
   training_period_days: 30
   testing_period_days: 10
+
+# -----------------------------------------------------------------------------
+# НОВЫЙ РАЗДЕЛ: Параметры для фильтрации пар
+# -----------------------------------------------------------------------------
+filter_params:
+  # Параметры для BetaFilter
+  min_beta: 0.1
+  max_beta: 10.0
+
+  # Параметры для HalfLifeFilter
+  min_half_life_days: 1
+  max_half_life_days: 252 # Примерно один торговый год
+
+  # Параметры для HurstFilter
+  max_hurst_exponent: 0.5
+
+  # Параметры для MeanCrossingFilter
+  min_mean_crossings: 10
+
