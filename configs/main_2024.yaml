@@ -3,7 +3,7 @@ results_dir: "results"
 
 # Настройки предобработки и нормализации данных
 data_processing:
-  normalization_method: "zscore"    # Метод нормализации: minmax, zscore, log_returns
+  normalization_method: "minmax"    # Метод нормализации: minmax, zscore, log_returns
   fill_method: "linear"             # Метод заполнения пропусков: ffill, linear, none
   min_history_ratio: 0.8            # Минимальная доля непропущенных значений
   handle_constant: true             # Обрабатывать ли символы с постоянной ценой

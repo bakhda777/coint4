@@ -24,7 +24,7 @@ def preprocess_and_normalize_data(
         price_df: DataFrame с ценами, индекс - timestamp, колонки - символы
         min_history_ratio: Минимальная доля непропущенных значений
         fill_method: Метод заполнения пропусков ('ffill', 'linear', None)
-        norm_method: Метод нормализации ('minmax', 'zscore', 'log_returns')
+        norm_method: Метод нормализации ('minmax', 'log_returns')
         handle_constant: Обрабатывать ли символы с постоянной ценой
         epsilon: Малое число для предотвращения деления на ноль
         
@@ -68,9 +68,6 @@ def preprocess_and_normalize_data(
                 if norm_method == "minmax":
                     # Для min-max: заменяем на 0.5 (середина диапазона [0,1])
                     filtered_df[col] = 0.5
-                elif norm_method == "zscore":
-                    # Для z-score: заменяем на 0 (z-score константы = 0)
-                    filtered_df[col] = 0
                 elif norm_method == "log_returns":
                     # Для лог-доходности: заменяем на 0 (лог-доходность константы = 0)
                     filtered_df[col] = 0
@@ -100,15 +97,7 @@ def preprocess_and_normalize_data(
         
         normalized_df = (filled_df - data_min) / data_range
         
-    elif norm_method == "zscore":
-        # Z-score нормализация (более устойчивая к выбросам)
-        data_mean = filled_df.mean()
-        data_std = filled_df.std()
-        
-        # Защита от деления на ноль
-        data_std = data_std.replace(0, epsilon)
-        
-        normalized_df = (filled_df - data_mean) / data_std
+
         
     elif norm_method == "log_returns":
         # Логарифмические доходности
@@ -146,7 +135,7 @@ def adaptive_normalization(price_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Нормализованный DataFrame с максимальным сохранением символов
     """
-    methods = ["minmax", "zscore", "log_returns"]
+    methods = ["minmax", "log_returns"]
     best_method = None
     max_symbols = 0
     
