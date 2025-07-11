@@ -393,7 +393,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             capital_per_pair = portfolio.calculate_position_risk_capital(
                 cfg.portfolio.risk_per_position_pct
             )
-            sharpe_abs = performance.sharpe_ratio(aggregated_pnl, cfg.backtest.annualizing_factor)
+            # Calculate Sharpe ratio using portfolio percentage returns
+            daily_returns = equity_series.pct_change().dropna()
+            sharpe_abs = performance.sharpe_ratio(
+                daily_returns, cfg.backtest.annualizing_factor
+            )
             sharpe_on_returns = performance.sharpe_ratio_on_returns(
                 aggregated_pnl, capital_per_pair, cfg.backtest.annualizing_factor
             )
@@ -468,5 +472,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 
         except Exception as e:
             logger.error(f"Ошибка при создании отчетов: {e}")
-    
+
+    # Calculate and display Sharpe ratio on portfolio returns for verification
+    equity_curve = portfolio.equity_curve
+    daily_returns = equity_curve.pct_change().dropna()
+    sharpe = performance.sharpe_ratio(daily_returns, cfg.backtest.annualizing_factor)
+    print(f"Correct Sharpe Ratio: {sharpe}")
+
     return base_metrics

@@ -29,26 +29,28 @@ def max_drawdown_on_equity(equity_curve: pd.Series) -> float:
     drawdown = (equity_curve - running_max) / running_max
     return drawdown.min()
 
-def sharpe_ratio(pnl: pd.Series, annualizing_factor: int, risk_free_rate: float = 0.0) -> float:
-    """Compute annualized Sharpe ratio of a PnL series.
+def sharpe_ratio(returns: pd.Series, annualizing_factor: float) -> float:
+    """Calculates the annualized Sharpe ratio from a series of returns.
 
     Parameters
     ----------
-    pnl : pd.Series
-        Profit and loss series.
-    risk_free_rate : float, optional
-        Daily risk free rate, by default ``0.0``.
+    returns : pd.Series
+        Series of strategy returns expressed in percentages (not PnL).
+    annualizing_factor : float
+        Factor used to annualize the Sharpe ratio (e.g. number of trading days).
 
     Returns
     -------
     float
-        Annualized Sharpe ratio.
+        Annualized Sharpe ratio. Returns ``0.0`` if the standard deviation of
+        ``returns`` is zero.
     """
-    excess_returns = pnl - risk_free_rate
-    if excess_returns.std(ddof=0) == 0:
-        return np.nan
-    daily_sharpe = excess_returns.mean() / excess_returns.std(ddof=0)
-    return daily_sharpe * np.sqrt(annualizing_factor)
+
+    if returns.std() == 0:
+        return 0.0
+
+    # Assume risk free rate is zero
+    return np.sqrt(annualizing_factor) * returns.mean() / returns.std()
 
 
 def max_drawdown(cumulative_pnl: pd.Series) -> float:
