@@ -337,12 +337,24 @@ class PairBacktester:
 
                 if current_exposure > max_allowed_exposure and max_allowed_exposure > 0:
                     new_position = new_position * (max_allowed_exposure / current_exposure)
-            costs = trades * trade_value * total_cost_pct
+
+            # Стоимость изменения позиции, учитывая комиссии и проскальзывание
+            price_s1 = df["y"].iat[i]
+            price_s2 = df["x"].iat[i]
+            position_s1_change = new_position - position
+            position_s2_change = -new_position * beta - (-position * beta)
+
+            notional_change_s1 = abs(position_s1_change * price_s1)
+            notional_change_s2 = abs(position_s2_change * price_s2)
+
+            commission = (notional_change_s1 + notional_change_s2) * self.commission_pct
+            slippage = (notional_change_s1 + notional_change_s2) * self.slippage_pct
+            total_costs = commission + slippage
 
             df.iat[i, position_col_idx] = new_position
             df.iat[i, trades_col_idx] = trades
-            df.iat[i, costs_col_idx] = costs
-            df.iat[i, pnl_col_idx] = pnl - costs
+            df.iat[i, costs_col_idx] = total_costs
+            df.iat[i, pnl_col_idx] = pnl - total_costs
 
             position = new_position
 

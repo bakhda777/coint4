@@ -152,7 +152,18 @@ def manual_backtest(
 
         trades = abs(new_position - position)
         trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
-        costs = trades * trade_value * total_cost_pct
+
+        price_s1 = df[y_col].iat[i]
+        price_s2 = df[x_col].iat[i]
+        position_s1_change = new_position - position
+        position_s2_change = -new_position * beta - (-position * beta)
+
+        notional_change_s1 = abs(position_s1_change * price_s1)
+        notional_change_s2 = abs(position_s2_change * price_s2)
+
+        commission = (notional_change_s1 + notional_change_s2) * commission_pct
+        slippage = (notional_change_s1 + notional_change_s2) * slippage_pct
+        costs = commission + slippage
 
         df.iat[i, position_col_idx] = new_position
         df.iat[i, trades_col_idx] = trades
