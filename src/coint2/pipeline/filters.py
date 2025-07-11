@@ -34,6 +34,8 @@ def filter_pairs_by_coint_and_half_life(
     pairs: List[Tuple[str, str]],
     price_df: pd.DataFrame,
     pvalue_threshold: float = 0.05,
+    min_beta: float = MIN_BETA,
+    max_beta: float = MAX_BETA,
     min_half_life: float = 2,
     max_half_life: float = 100,
     min_mean_crossings: int = 8,
@@ -136,7 +138,7 @@ def filter_pairs_by_coint_and_half_life(
         pair_data = price_df[[s1, s2]].dropna()
         beta = pair_data[s1].cov(pair_data[s2]) / pair_data[s2].var()
 
-        if not (MIN_BETA <= abs(beta) <= MAX_BETA):
+        if not (min_beta <= abs(beta) <= max_beta):
             filter_reasons.append((s1, s2, f"beta_out_of_range ({beta:.2f})"))
             filter_stats['beta'] += 1
             continue
@@ -234,7 +236,7 @@ def filter_pairs_by_coint_and_half_life(
         logger.info(f"  • {reason}: {filter_stats[reason]} пар ({percent:.1f}%)")
     
     logger.info(
-        f"[ФИЛЬТР] Beta range {MIN_BETA}-{MAX_BETA}: {total_pairs_coint} → {beta_passed} пар"
+        f"[ФИЛЬТР] Beta range {min_beta}-{max_beta}: {total_pairs_coint} → {beta_passed} пар"
     )
     logger.info(f"[ФИЛЬТР] Half-life: {total_pairs_coint} → {half_life_passed} пар")
     logger.info(f"[ФИЛЬТР] Mean crossings: {len(tmp_stats)} → {mean_cross_passed} пар")

@@ -25,6 +25,12 @@ def test_load_config():
     assert cfg.portfolio.initial_capital == 10000.0
     assert cfg.portfolio.risk_per_position_pct == 0.01
     assert cfg.portfolio.max_active_positions == 5
+    assert cfg.filter_params.min_beta == 0.1
+    assert cfg.filter_params.max_beta == 10.0
+    assert cfg.filter_params.min_half_life_days == 1
+    assert cfg.filter_params.max_half_life_days == 252
+    assert cfg.filter_params.max_hurst_exponent == 0.5
+    assert cfg.filter_params.min_mean_crossings == 10
 
 
 def test_fill_limit_pct_validation() -> None:

@@ -42,6 +42,17 @@ class PairSelectionConfig(BaseModel):
         return self
 
 
+class FilterParamsConfig(BaseModel):
+    """Configurable thresholds for pair filtering."""
+
+    min_beta: float = 0.1
+    max_beta: float = 10.0
+    min_half_life_days: float = 1
+    max_half_life_days: float = 252
+    max_hurst_exponent: float = 0.5
+    min_mean_crossings: int = 10
+
+
 class DataProcessingConfig(BaseModel):
     """Configuration for data processing and normalization."""
     
@@ -90,6 +101,7 @@ class AppConfig(BaseModel):
     data_processing: DataProcessingConfig = Field(default_factory=DataProcessingConfig)
     portfolio: PortfolioConfig
     pair_selection: PairSelectionConfig
+    filter_params: FilterParamsConfig = Field(default_factory=FilterParamsConfig)
     backtest: BacktestConfig
     walk_forward: WalkForwardConfig
     max_shards: int | None = None
