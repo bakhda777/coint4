@@ -204,8 +204,8 @@ def filter_pairs_by_coint_and_half_life(
         
         # Значительно снижаем порог пересечений (было: делим на hl_bars_est)
         dynamic_min_cross = max(1, int(train_bars / max(hl_bars_est * 10, 1)))
-        # Фильтр временно отключен для диагностики
-        if False and mean_crossings < min(2, dynamic_min_cross):  # Минимум 2 пересечения
+        # Восстанавливаем фильтр по количеству пересечений среднего
+        if mean_crossings < min(2, dynamic_min_cross):  # Минимум 2 пересечения
             filter_reasons.append((s1, s2, 'crossings'))
             filter_stats['crossings'] += 1
             continue
