@@ -35,6 +35,16 @@ def audit_and_clean_parquet_files(data_dir: str = DATA_DIR, output_dir: str = CL
         df = df.set_index('timestamp')
         # Выравнивание по target_freq
         idx = pd.date_range(df.index.min(), df.index.max(), freq=target_freq)
+
+        # Логируем количество строк до и после реиндексации, чтобы понять,
+        # сколько новых значений (с потенциальными NaN) будет добавлено
+        original_rows = len(df)
+        projected_rows = len(idx)
+        print(
+            f"INFO: Reindexing data. Original rows: {original_rows}, "
+            f"Projected rows: {projected_rows}. Added rows: {projected_rows - original_rows}"
+        )
+
         df = df.reindex(idx)
         # Логируем диагностику
         n_dups = df.index.duplicated().sum()
