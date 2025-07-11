@@ -336,3 +336,45 @@ def test_zero_std_handling() -> None:
 
     metrics = bt.get_performance_metrics()
     assert metrics == {"sharpe_ratio": 0.0, "max_drawdown": 0.0, "total_pnl": 0.0}
+
+
+def test_step_pnl_includes_costs() -> None:
+    """Ensure step PnL subtracts trading costs for each period."""
+    np.random.seed(42)
+    data = pd.DataFrame(
+        {
+            "Y": np.linspace(1, 10, 10) + np.random.normal(0, 0.1, size=10),
+            "X": np.linspace(1, 10, 10),
+        }
+    )
+
+    bt = PairBacktester(
+        data,
+        rolling_window=3,
+        z_threshold=0.5,
+        z_exit=0.0,
+        commission_pct=0.001,
+        slippage_pct=0.0005,
+        capital_at_risk=50.0,
+        stop_loss_multiplier=2.0,
+        cooldown_periods=0,
+    )
+    bt.run()
+    result = bt.get_results()
+    df = pd.DataFrame(
+        {
+            "spread": result["spread"],
+            "position": result["position"],
+            "pnl": result["pnl"],
+            "costs": result["costs"],
+        }
+    )
+
+    df = df.dropna()
+
+    for i in range(1, len(df)):
+        position_prev = df["position"].iloc[i - 1]
+        spread_diff = df["spread"].iloc[i] - df["spread"].iloc[i - 1]
+        expected_step_pnl = position_prev * spread_diff - df["costs"].iloc[i]
+        assert np.isclose(expected_step_pnl, df["pnl"].iloc[i])
+
