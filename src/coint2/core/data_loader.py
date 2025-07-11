@@ -405,9 +405,9 @@ class DataHandler:
         if freq_val:
             wide_df = wide_df.asfreq(freq_val)
 
-        # рассчитываем максимальную длину подряд идущих NA по проценту
-        limit = max(1, int(len(wide_df) * self.fill_limit_pct))
-
+        # Более надёжное заполнение пропусков
+        limit = 5  # Максимальное число подряд идущих пропусков
+        wide_df = wide_df.interpolate(method="linear", limit=limit)
         wide_df = wide_df.ffill(limit=limit).bfill(limit=limit)
 
 
@@ -422,18 +422,8 @@ class DataHandler:
 
         Returns a wide DataFrame indexed by timestamp with symbols as columns.
         """
-        files = list(Path(self.data_dir).rglob("*.parquet"))
-        if not files:
-            return pd.DataFrame()
-
-        frames = []
-        for file in files:
-            df = pd.read_parquet(file)
-            symbol = file.parent.parent.parent.name.split("=")[1]
-            df["symbol"] = symbol
-            frames.append(df)
-
-        all_df = pd.concat(frames)
+        ddf = dd.read_parquet(self.data_dir, engine="pyarrow")
+        all_df = ddf.compute()
         all_df["timestamp"] = pd.to_datetime(all_df["timestamp"])
         mask = (all_df["timestamp"] >= start_date) & (all_df["timestamp"] <= end_date)
         all_df = all_df.loc[mask]

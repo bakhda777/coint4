@@ -145,7 +145,8 @@ def test_load_pair_data(tmp_path: Path) -> None:
     freq_val = pd.infer_freq(expected.index)
     if freq_val:
         expected = expected.asfreq(freq_val)
-    limit = max(1, int(len(expected) * 0.1))
+    limit = 5
+    expected = expected.interpolate(method="linear", limit=limit)
     expected = expected.ffill(limit=limit).bfill(limit=limit)
     expected = expected[["AAA", "BBB"]].dropna()
     expected = expected.loc[pd.Timestamp("2021-01-02"): pd.Timestamp("2021-01-04")]
@@ -393,8 +394,8 @@ def test_fill_limit_pct_application(tmp_path: Path) -> None:
     expected_a[50:60] = np.nan
     expected_b[60:70] = np.nan
     expected = pd.DataFrame({"AAA": expected_a, "BBB": expected_b})
-    limit = int(len(expected) * 0.1)
-    limit = max(1, int(len(expected) * 0.1))
+    limit = 5
+    expected = expected.interpolate(method="linear", limit=limit)
     expected = expected.ffill(limit=limit).bfill(limit=limit)
     expected = expected[["AAA", "BBB"]].dropna()
     expected.index.name = 'timestamp'
