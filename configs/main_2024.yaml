@@ -31,6 +31,7 @@ pair_selection:
   save_filter_reasons: true
   min_spread_std: 0.005         # Более мягкий порог волатильности
   max_spread_std: 10.0          # Временно повышен порог максимальной волатильности (было 5.0)
+  max_hurst_exponent: 0.5
   # Параметры min_abs_spread_mult и cost_filter удалены
   kpss_pvalue_threshold: 0.01   # Очень мягкий порог KPSS стационарности (было 0.10)
   pvalue_top_n: 50             # Число лучших пар по p-value после коинтеграции

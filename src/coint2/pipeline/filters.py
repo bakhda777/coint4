@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from coint2.core.math_utils import calculate_half_life
 from coint2.core.fast_coint import fast_coint
+from coint2.analysis.pair_filter import calculate_hurst_exponent
 from statsmodels.tsa.stattools import kpss  # KPSS тест стационарности
 from statsmodels.tools.sm_exceptions import InterpolationWarning
 import warnings
@@ -50,6 +51,7 @@ def filter_pairs_by_coint_and_half_life(
     max_avg_funding_pct: float = 0.03,
     save_filter_reasons: bool = True,
     kpss_pvalue_threshold: float = 0.05,
+    max_hurst_exponent: float = 0.5,
     *,
     stable_tokens: Optional[List[str]] = None,
 ) -> List[Tuple[str, str, float, float, float, Dict[str, Any]]]:
@@ -91,6 +93,7 @@ def filter_pairs_by_coint_and_half_life(
         'correlation': 0,
         'std': 0,
         'crossings': 0,
+        'hurst': 0,
     }
     
     # Фильтр 1: Коинтеграция (p-value)
@@ -157,7 +160,13 @@ def filter_pairs_by_coint_and_half_life(
         beta_passed += 1
 
         spread = pair_data[s1] - beta * pair_data[s2]
-        
+
+        hurst_exponent = calculate_hurst_exponent(spread)
+        if hurst_exponent > max_hurst_exponent:
+            filter_reasons.append((s1, s2, f"hurst_too_high ({hurst_exponent:.2f})"))
+            filter_stats['hurst'] += 1
+            continue
+
         # Расчёт half-life (в барах)
         hl_bars = calculate_half_life(spread)
         # Определяем таймфрейм в минутах по разнице индексов

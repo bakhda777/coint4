@@ -1,0 +1,28 @@
+data_dir: "data"
+results_dir: "results"
+portfolio:
+  initial_capital: 10000.0
+  risk_per_position_pct: 0.01
+  max_active_positions: 5
+pair_selection:
+  lookback_days: 90
+  coint_pvalue_threshold: 0.05
+  ssd_top_n: 10000
+  min_half_life_days: 1
+  max_half_life_days: 30
+  min_mean_crossings: 12
+  max_hurst_exponent: 0.5
+backtest:
+  timeframe: "1d"
+  rolling_window: 30
+  zscore_threshold: 1.5
+  stop_loss_multiplier: 3.0
+  fill_limit_pct: 0.2
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+  annualizing_factor: 365
+walk_forward:
+  start_date: "2021-01-01"
+  end_date: "2021-01-31"
+  training_period_days: 30
+  testing_period_days: 10

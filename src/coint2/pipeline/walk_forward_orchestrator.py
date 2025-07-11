@@ -213,6 +213,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                             max_correlation=cfg.pair_selection.max_correlation,
                             min_spread_std=cfg.pair_selection.min_spread_std,
                             max_spread_std=cfg.pair_selection.max_spread_std,
+                            max_hurst_exponent=getattr(cfg.pair_selection, 'max_hurst_exponent', 0.5),
                             adaptive_quantiles=cfg.pair_selection.adaptive_quantiles,
                             save_filter_reasons=cfg.pair_selection.save_filter_reasons,
                             save_std_histogram=cfg.pair_selection.save_std_histogram,
