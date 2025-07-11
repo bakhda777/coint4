@@ -101,6 +101,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     equity_data = []
     pair_count_data = []
     trade_stats = []
+    all_trades_log = []
     equity = cfg.portfolio.initial_capital
     equity_curve = [equity]
     equity_data.append((start_date, equity))
@@ -288,6 +289,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 )
                 bt.run()
                 results = bt.get_results()
+                all_trades_log.extend(results.get('trades_log', []))
                 pnl_series = results["pnl"]
                 step_pnl = step_pnl.add(pnl_series, fill_value=0)
                 total_step_pnl += pnl_series.sum()
@@ -455,6 +457,11 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 trades_df = pd.DataFrame(trade_stats)
                 trades_df.to_csv(results_dir / "trade_statistics.csv", index=False)
                 logger.info(f"🔄 Статистика по сделкам сохранена: {results_dir / 'trade_statistics.csv'}")
+
+            if all_trades_log:
+                trades_log_df = pd.DataFrame(all_trades_log)
+                trades_log_df.to_csv(results_dir / "trades_log.csv", index=False)
+                logger.info(f"📓 Детальный лог сделок сохранен: {results_dir / 'trades_log.csv'}")
                 
         except Exception as e:
             logger.error(f"Ошибка при создании отчетов: {e}")
