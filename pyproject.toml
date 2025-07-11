@@ -13,7 +13,7 @@ pydantic = "*"
 pyyaml = "^6.0"
 numpy = "*"
 pandas = "*"
-scipy = "1.13.0"
+scipy = "^1.13.0"
 numba = "*"
 # ↓↓↓ ЭТИ ЗАВИСИМОСТИ МЫ БЕРЕМ ИЗ ВЕТКИ CODEX ↓↓↓
 pyarrow = ">=8.0.0"
