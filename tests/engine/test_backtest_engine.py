@@ -62,7 +62,7 @@ def manual_backtest(
             curr_spread,
             z,
         ]
-    
+
     df["position"] = 0.0
     df["trades"] = 0.0
     df["costs"] = 0.0
@@ -141,24 +141,37 @@ def manual_backtest(
             elif z_curr < -z_threshold:
                 signal = 1
 
-            if new_position == 0 and signal != 0:
+            z_prev = df["z_score"].iat[i - 1]
+            long_confirmation = (signal == 1) and (z_curr > z_prev)
+            short_confirmation = (signal == -1) and (z_curr < z_prev)
+
+            if new_position == 0 and (long_confirmation or short_confirmation):
                 entry_z = z_curr
                 stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
                 stop_loss_price = mean + stop_loss_z * std
                 risk_per_unit = abs(spread_curr - stop_loss_price)
                 trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
-                size_risk = capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
+                size_risk = (
+                    capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
+                )
                 size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
                 size = min(size_risk, size_value)
                 new_position = signal * size
-                entry_index = i
-            elif new_position != 0 and signal != 0 and np.sign(new_position) != signal:
+
+            elif (
+                new_position != 0
+                and (long_confirmation or short_confirmation)
+                and np.sign(new_position) != signal
+            ):
+
                 entry_z = z_curr
                 stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
                 stop_loss_price = mean + stop_loss_z * std
                 risk_per_unit = abs(spread_curr - stop_loss_price)
                 trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
-                size_risk = capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
+                size_risk = (
+                    capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
+                )
                 size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
                 size = min(size_risk, size_value)
                 new_position = signal * size
@@ -189,14 +202,17 @@ def manual_backtest(
     df["cumulative_pnl"] = df["pnl"].cumsum()
     return df
 
+
 def test_backtester_outputs():
     """Проверяет, что каждый столбец и метрика бэктестера совпадают с эталоном."""
     np.random.seed(0)
     # Используем произвольные имена колонок для проверки надежности
-    data = pd.DataFrame({
-        "ASSET_Y": np.linspace(1, 20, 20) + np.random.normal(0, 0.5, size=20),
-        "ASSET_X": np.linspace(1, 20, 20)
-    })
+    data = pd.DataFrame(
+        {
+            "ASSET_Y": np.linspace(1, 20, 20) + np.random.normal(0, 0.5, size=20),
+            "ASSET_X": np.linspace(1, 20, 20),
+        }
+    )
 
     z_threshold = 1.0
     commission = 0.001
@@ -220,13 +236,15 @@ def test_backtester_outputs():
     bt.run()
     result = bt.get_results()
 
-    result_df = pd.DataFrame({
-        "spread": result["spread"],
-        "z_score": result["z_score"],
-        "position": result["position"],
-        "pnl": result["pnl"],
-        "cumulative_pnl": result["cumulative_pnl"],
-    })
+    result_df = pd.DataFrame(
+        {
+            "spread": result["spread"],
+            "z_score": result["z_score"],
+            "position": result["position"],
+            "pnl": result["pnl"],
+            "cumulative_pnl": result["cumulative_pnl"],
+        }
+    )
 
     # Сравниваем с эталоном
     expected = manual_backtest(
@@ -240,20 +258,20 @@ def test_backtester_outputs():
         stop_loss_multiplier=2.0,
         cooldown_periods=0,
     )
-    expected_for_comparison = expected[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
-    
+    expected_for_comparison = expected[
+        ["spread", "z_score", "position", "pnl", "cumulative_pnl"]
+    ]
+
     pd.testing.assert_frame_equal(result_df, expected_for_comparison)
     assert isinstance(result["trades_log"], list)
 
     # Проверяем метрики
     metrics = bt.get_performance_metrics()
-    
+
     expected_pnl = expected["pnl"].dropna()
     expected_cum_pnl = expected["cumulative_pnl"].dropna()
     expected_metrics = {
-        "sharpe_ratio": performance.sharpe_ratio(
-            expected_pnl, annualizing_factor
-        ),
+        "sharpe_ratio": performance.sharpe_ratio(expected_pnl, annualizing_factor),
         "max_drawdown": performance.max_drawdown(expected_cum_pnl),
         "total_pnl": expected_cum_pnl.iloc[-1] if not expected_cum_pnl.empty else 0.0,
     }
@@ -288,13 +306,15 @@ def test_zero_std_handling() -> None:
     bt.run()
     result = bt.get_results()
 
-    result_df = pd.DataFrame({
-        "spread": result["spread"],
-        "z_score": result["z_score"],
-        "position": result["position"],
-        "pnl": result["pnl"],
-        "cumulative_pnl": result["cumulative_pnl"],
-    })
+    result_df = pd.DataFrame(
+        {
+            "spread": result["spread"],
+            "z_score": result["z_score"],
+            "position": result["position"],
+            "pnl": result["pnl"],
+            "cumulative_pnl": result["cumulative_pnl"],
+        }
+    )
 
     expected = manual_backtest(
         data,
@@ -307,7 +327,9 @@ def test_zero_std_handling() -> None:
         stop_loss_multiplier=2.0,
         cooldown_periods=0,
     )
-    expected_for_comparison = expected[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
+    expected_for_comparison = expected[
+        ["spread", "z_score", "position", "pnl", "cumulative_pnl"]
+    ]
 
     pd.testing.assert_frame_equal(result_df, expected_for_comparison)
     assert isinstance(result["trades_log"], list)
