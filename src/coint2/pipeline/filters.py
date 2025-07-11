@@ -37,15 +37,7 @@ def filter_pairs_by_coint_and_half_life(
     min_half_life: float = 2,
     max_half_life: float = 100,
     min_mean_crossings: int = 8,
-    min_correlation: float = 0.5,
-    max_correlation: float = 0.95,
-    min_spread_std: float = 0.01,
-    max_spread_std: float = 0.5,
-    adaptive_quantiles: bool = True,
-    std_q_low: float = 0.10,
-    std_q_high: float = 0.90,
     min_history_ratio: float = 0.8,
-    save_std_histogram: bool = True,
     liquidity_usd_daily: float = 1_000_000.0,
     max_bid_ask_pct: float = 0.2,
     max_avg_funding_pct: float = 0.03,
@@ -56,13 +48,11 @@ def filter_pairs_by_coint_and_half_life(
     stable_tokens: Optional[List[str]] = None,
 ) -> List[Tuple[str, str, float, float, float, Dict[str, Any]]]:
     """
-    Фильтрует пары по расширенным критериям качества:
+    Фильтрует пары по ключевым критериям качества:
     1. p-value коинтеграции
     2. коэффициент beta
     3. half-life спреда
     4. Количество пересечений среднего
-    5. Корреляция между активами
-    6. Стандартное отклонение спреда
     
     Возвращает пары с параметрами (s1, s2, beta, mean, std, metrics), прошедшие все фильтры.
     """
@@ -90,8 +80,6 @@ def filter_pairs_by_coint_and_half_life(
         'pvalue': 0,
         'beta': 0,
         'half_life': 0,
-        'correlation': 0,
-        'std': 0,
         'crossings': 0,
         'hurst': 0,
     }
@@ -119,12 +107,8 @@ def filter_pairs_by_coint_and_half_life(
         if pair_data.empty or pair_data[s2].var() == 0:
             continue
             
-        # Проверка корреляции между активами
+        # Корреляция между активами (для метрик)
         corr = pair_data[s1].corr(pair_data[s2])
-        if not (min_correlation <= abs(corr) <= max_correlation):
-            filter_reasons.append((s1, s2, 'correlation'))
-            filter_stats['correlation'] += 1
-            continue
             
         # Коинтеграционный тест (Engle-Granger) - ускоренная версия
         try:
@@ -203,51 +187,10 @@ def filter_pairs_by_coint_and_half_life(
         
         tmp_stats.append((s1, s2, beta, mean, std, hl_days, 0.0, pvalue))  # mean_cross later
 
-    # --- Adaptive std quantiles ---
-    std_values = np.array([t[4] for t in tmp_stats])
-    if adaptive_quantiles and std_values.size > 0:
-        ql, qh = std_q_low, std_q_high
-        ql = max(0.0, min(ql, 0.5))  # safety bounds
-        qh = max(ql + 0.01, min(std_q_high, 1.0))
-        adaptive_std_low, adaptive_std_high = np.quantile(std_values, [ql, qh])
-        # Use the more lenient range: take the LOWER of the lower bounds and HIGHER of the upper bounds
-        std_low = min(min_spread_std, adaptive_std_low)
-        std_high = max(max_spread_std, adaptive_std_high)
-        
-        # Debug logging to see what values we're working with
-        logger.info(f"[DEBUG] Configured range: {min_spread_std:.4f}-{max_spread_std:.4f}")
-        logger.info(f"[DEBUG] Adaptive range: {adaptive_std_low:.4f}-{adaptive_std_high:.4f}")
-        logger.info(f"[DEBUG] Final range: {std_low:.4f}-{std_high:.4f}")
-    else:
-        std_low, std_high = min_spread_std, max_spread_std
-
-    # Save histogram
-    if save_std_histogram and std_values.size > 0:
-        out_dir = Path('results')
-        out_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.figure(figsize=(6,4))
-        plt.hist(std_values, bins=30, color='steelblue', alpha=0.8)
-        plt.axvline(std_low, color='red', linestyle='--')
-        plt.axvline(std_high, color='red', linestyle='--')
-        plt.title('Spread std distribution')
-        plt.xlabel('std')
-        plt.ylabel('Count')
-        plt.tight_layout()
-        hist_path = out_dir / f'spread_std_hist_{ts}.png'
-        plt.savefig(hist_path)
-        plt.close()
-        logger.info(f"Гистограмма σ спреда сохранена в {hist_path}")
-
-    # --- Second pass: crossings, cost & std filters ---
-    std_passed = mad_passed = mean_cross_passed = 0
+    # --- Second pass: crossings & metrics ---
+    mean_cross_passed = 0
     result = []
     for (s1, s2, beta, mean, std, hl_days, _, pvalue) in tmp_stats:
-        if not (std_low <= std <= std_high):
-            filter_reasons.append((s1, s2, 'std'))
-            filter_stats['std'] += 1
-            continue
-        std_passed += 1
 
         pair_data = price_df[[s1, s2]].dropna()
         spread = pair_data[s1] - beta * pair_data[s2]
@@ -294,9 +237,7 @@ def filter_pairs_by_coint_and_half_life(
         f"[ФИЛЬТР] Beta range {MIN_BETA}-{MAX_BETA}: {total_pairs_coint} → {beta_passed} пар"
     )
     logger.info(f"[ФИЛЬТР] Half-life: {total_pairs_coint} → {half_life_passed} пар")
-    logger.info(f"[ФИЛЬТР] Spread std (q={std_q_low:.2f}/{std_q_high:.2f}, range {std_low:.4f}-{std_high:.4f}): {len(tmp_stats)} → {std_passed} пар")
-    # Поскольку фильтр по стоимости удалён, теперь все пары проходят этот этап
-    logger.info(f"[ФИЛЬТР] Mean crossings: {std_passed} → {mean_cross_passed} пар")
+    logger.info(f"[ФИЛЬТР] Mean crossings: {len(tmp_stats)} → {mean_cross_passed} пар")
     logger.info(f"[ФИЛЬТР] После всех фильтров: {len(result)} пар ({len(result)/total_pairs*100:.1f}% от исходного числа)")
 
     # Сохраняем причины отсева в CSV

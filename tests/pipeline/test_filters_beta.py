@@ -23,11 +23,6 @@ def test_filter_pairs_beta_range() -> None:
         min_half_life=0.1,
         max_half_life=1000,
         min_mean_crossings=0,
-        min_correlation=0.0,
-        max_correlation=1.0,
-        min_spread_std=0.0,
-        max_spread_std=1000.0,
-        adaptive_quantiles=False,
     )
 
     assert result == []

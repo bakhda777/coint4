@@ -21,16 +21,12 @@ pair_selection:
   max_half_life_days: 35        # ≤1.5 месяца
   min_mean_crossings: 4         # Понижен порог пересечений (было 4) для 60-дневного окна
   # Новые параметры фильтрации пар
-  min_correlation: 0.15         # Еще более мягкий порог корреляции (было 0.30)
-  max_correlation: 0.98         # Разрешаем почти идентичные активы (было 0.95)
   adaptive_quantiles: false     # Используем абсолютные пороги std
   bar_minutes: 15               # Размер бара в минутах
   liquidity_usd_daily: 500_000      # Уменьшаем требование к ликвидности в 2 раза (было 1_000_000)
   max_bid_ask_pct: 0.2
   max_avg_funding_pct: 0.03
   save_filter_reasons: true
-  min_spread_std: 0.005         # Более мягкий порог волатильности
-  max_spread_std: 10.0          # Временно повышен порог максимальной волатильности (было 5.0)
   max_hurst_exponent: 0.5
   # Параметры min_abs_spread_mult и cost_filter удалены
   kpss_pvalue_threshold: 0.01   # Очень мягкий порог KPSS стационарности (было 0.10)
