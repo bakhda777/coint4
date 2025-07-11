@@ -292,6 +292,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) * 60 / 15),  # 15-минутный таймфрейм
                     wait_for_candle_close=getattr(cfg.backtest, 'wait_for_candle_close', False),
                     max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
+                    # half_life is required for time_stop logic
                     half_life=metrics.get('half_life'),
                     time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', None),
                 )

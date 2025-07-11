@@ -336,3 +336,31 @@ def test_zero_std_handling() -> None:
 
     metrics = bt.get_performance_metrics()
     assert metrics == {"sharpe_ratio": 0.0, "max_drawdown": 0.0, "total_pnl": 0.0}
+
+
+def test_time_stop() -> None:
+    """Ensures that trades are closed when the time stop is exceeded."""
+    data = pd.DataFrame({
+        "Y": np.arange(30) + 2 * np.sin(np.linspace(0, 2 * np.pi, 30)),
+        "X": np.arange(30),
+    })
+
+    bt = PairBacktester(
+        data,
+        rolling_window=5,
+        z_threshold=1.0,
+        z_exit=0.0,
+        commission_pct=0.0,
+        slippage_pct=0.0,
+        capital_at_risk=100.0,
+        stop_loss_multiplier=2.0,
+        cooldown_periods=0,
+        half_life=2,
+        time_stop_multiplier=2,
+    )
+    bt.run()
+
+    assert bt.trades_log, "No trades were executed"
+    first_trade = bt.trades_log[0]
+    assert first_trade["exit_reason"] == "time_stop"
+    assert first_trade["trade_duration_hours"] > bt.half_life * bt.time_stop_multiplier
