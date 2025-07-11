@@ -206,6 +206,14 @@ def test_backtester_outputs():
     bt.run()
     result = bt.get_results()
 
+    result_df = pd.DataFrame({
+        "spread": result["spread"],
+        "z_score": result["z_score"],
+        "position": result["position"],
+        "pnl": result["pnl"],
+        "cumulative_pnl": result["cumulative_pnl"],
+    })
+
     # Сравниваем с эталоном
     expected = manual_backtest(
         data,
@@ -220,7 +228,8 @@ def test_backtester_outputs():
     )
     expected_for_comparison = expected[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
     
-    pd.testing.assert_frame_equal(result, expected_for_comparison)
+    pd.testing.assert_frame_equal(result_df, expected_for_comparison)
+    assert isinstance(result["trades_log"], list)
 
     # Проверяем метрики
     metrics = bt.get_performance_metrics()
@@ -265,6 +274,14 @@ def test_zero_std_handling() -> None:
     bt.run()
     result = bt.get_results()
 
+    result_df = pd.DataFrame({
+        "spread": result["spread"],
+        "z_score": result["z_score"],
+        "position": result["position"],
+        "pnl": result["pnl"],
+        "cumulative_pnl": result["cumulative_pnl"],
+    })
+
     expected = manual_backtest(
         data,
         rolling_window,
@@ -278,7 +295,8 @@ def test_zero_std_handling() -> None:
     )
     expected_for_comparison = expected[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
 
-    pd.testing.assert_frame_equal(result, expected_for_comparison)
+    pd.testing.assert_frame_equal(result_df, expected_for_comparison)
+    assert isinstance(result["trades_log"], list)
 
     metrics = bt.get_performance_metrics()
     assert metrics == {"sharpe_ratio": 0.0, "max_drawdown": 0.0, "total_pnl": 0.0}

@@ -53,6 +53,9 @@ class PairBacktester:
         self.take_profit_multiplier = take_profit_multiplier
         self.wait_for_candle_close = wait_for_candle_close
         self.max_margin_usage = max_margin_usage
+        self.s1 = pair_data.columns[0]
+        self.s2 = pair_data.columns[1]
+        self.trades_log: list[dict] = []
 
     def run(self) -> None:
         """Run backtest and store results in ``self.results``."""
@@ -128,6 +131,13 @@ class PairBacktester:
         trades_col_idx = df.columns.get_loc("trades")
         costs_col_idx = df.columns.get_loc("costs")
         pnl_col_idx = df.columns.get_loc("pnl")
+
+        # Variables for detailed trade logging
+        entry_datetime = None
+        entry_spread = 0.0
+        entry_position_size = 0.0
+        entry_index = 0
+        current_trade_pnl = 0.0
 
         for i in range(1, len(df)):
             if (
@@ -337,7 +347,7 @@ class PairBacktester:
 
                 if current_exposure > max_allowed_exposure and max_allowed_exposure > 0:
                     new_position = new_position * (max_allowed_exposure / current_exposure)
-
+            # 1. Рассчитываем PnL и точные расходы (из версии main)
             # Стоимость изменения позиции, учитывая комиссии и проскальзывание
             price_s1 = df["y"].iat[i]
             price_s2 = df["x"].iat[i]
@@ -350,11 +360,54 @@ class PairBacktester:
             commission = (notional_change_s1 + notional_change_s2) * self.commission_pct
             slippage = (notional_change_s1 + notional_change_s2) * self.slippage_pct
             total_costs = commission + slippage
+            
+            step_pnl = pnl - total_costs
 
+            # 2. Обновляем основной DataFrame
             df.iat[i, position_col_idx] = new_position
             df.iat[i, trades_col_idx] = trades
             df.iat[i, costs_col_idx] = total_costs
-            df.iat[i, pnl_col_idx] = pnl - total_costs
+            df.iat[i, pnl_col_idx] = step_pnl
+
+            # 3. Накапливаем PnL для детального лога (из версии codex)
+            # Update trade PnL accumulator if a trade is open
+            if position != 0 or (position == 0 and new_position != 0):
+                current_trade_pnl += step_pnl
+
+            # Handle entry logging
+            if position == 0 and new_position != 0:
+                entry_datetime = df.index[i]
+                entry_spread = spread_curr
+                entry_position_size = new_position
+                entry_index = i
+
+            # Handle exit logging
+            if position != 0 and new_position == 0 and entry_datetime is not None:
+                exit_datetime = df.index[i]
+                if isinstance(df.index, pd.DatetimeIndex):
+                    duration_hours = (exit_datetime - entry_datetime).total_seconds() / 3600
+                else:
+                    duration_hours = float(i - entry_index)
+
+                trade_info = {
+                    'pair': f"{self.s1}-{self.s2}",
+                    'entry_datetime': entry_datetime,
+                    'exit_datetime': exit_datetime,
+                    'position_type': 'long' if entry_position_size > 0 else 'short',
+                    'entry_price_spread': entry_spread,
+                    'exit_price_spread': spread_curr,
+                    'pnl': current_trade_pnl,
+                    'exit_reason': df.loc[df.index[i], 'exit_reason'],
+                    'trade_duration_hours': duration_hours,
+                }
+                self.trades_log.append(trade_info)
+                
+                # Сбрасываем счетчики для следующей сделки
+                current_trade_pnl = 0.0
+                entry_datetime = None
+                entry_spread = 0.0
+                entry_position_size = 0.0
+
 
             position = new_position
 
@@ -362,10 +415,20 @@ class PairBacktester:
 
         self.results = df
 
-    def get_results(self) -> pd.DataFrame:
+    def get_results(self) -> dict:
         if self.results is None:
             raise ValueError("Backtest not yet run")
-        return self.results[["spread", "z_score", "position", "pnl", "cumulative_pnl"]]
+
+        return {
+            "spread": self.results["spread"],
+            "z_score": self.results["z_score"],
+            "position": self.results["position"],
+            "trades": self.results["trades"],
+            "costs": self.results["costs"],
+            "pnl": self.results["pnl"],
+            "cumulative_pnl": self.results["cumulative_pnl"],
+            "trades_log": self.trades_log,
+        }
 
     def get_performance_metrics(self) -> dict:
         if self.results is None or self.results.empty:
