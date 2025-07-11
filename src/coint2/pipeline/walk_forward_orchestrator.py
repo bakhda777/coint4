@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
+
 from coint2.core import math_utils, performance
+from coint2.utils.config import AppConfig
+from coint2.utils.logging_utils import get_logger
+from coint2.utils.timing_utils import ProgressTracker, logged_time, time_block
+from coint2.utils.visualization import calculate_extended_metrics, create_performance_report, format_metrics_summary
+
 # Import directly from the file path rather than the module
 from src.coint2.core.data_loader import DataHandler, load_master_dataset
 from src.coint2.core.normalization_improvements import preprocess_and_normalize_data
-from coint2.engine.backtest_engine import PairBacktester
-from coint2.utils.config import AppConfig
-from coint2.utils.logging_utils import get_logger
-from coint2.utils.timing_utils import logged_time, time_block, ProgressTracker
-from coint2.utils.visualization import (
-    create_performance_report, 
-    format_metrics_summary, 
-    calculate_extended_metrics
-)
+from src.coint2.core.pair_backtester import PairBacktester
+from src.coint2.core.portfolio import Portfolio
 
 
 @logged_time("run_walk_forward_analysis")
@@ -35,7 +34,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     # Для новой логики: нужны данные на training_period_days раньше start_date
     full_range_start = start_date - pd.Timedelta(days=cfg.walk_forward.training_period_days)
     
-    logger.info(f"📅 НОВАЯ ЛОГИКА: start_date = начало ТЕСТИРОВАНИЯ")
+    logger.info("📅 НОВАЯ ЛОГИКА: start_date = начало ТЕСТИРОВАНИЯ")
     logger.info(f"📊 Данные нужны с: {full_range_start.date()} (для тренировки первого шага)")
     
     logger.info(f"🎯 Walk-Forward анализ: {start_date.date()} → {end_date.date()}")
@@ -91,7 +90,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             logger.warning(f"   ✅ РЕШЕНИЕ: Продлите end_date до {would_be_testing_end.date()} или сократите testing_period_days")
         
     else:
-        logger.info(f"✅ Шаги успешно запланированы:")
+        logger.info("✅ Шаги успешно запланированы:")
         for i, (tr_start, tr_end, te_start, te_end) in enumerate(walk_forward_steps, 1):
             logger.info(f"   Шаг {i}: тренировка {tr_start.date()}-{tr_end.date()}, тест {te_start.date()}-{te_end.date()}")
 
@@ -102,9 +101,12 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     pair_count_data = []
     trade_stats = []
     all_trades_log = []
-    equity = cfg.portfolio.initial_capital
-    equity_curve = [equity]
-    equity_data.append((start_date, equity))
+
+    portfolio = Portfolio(
+        initial_capital=cfg.portfolio.initial_capital,
+        max_active_positions=cfg.portfolio.max_active_positions,
+    )
+    equity_data.append((start_date, portfolio.get_current_equity()))
 
     # Execute walk-forward steps
     step_tracker = ProgressTracker(len(walk_forward_steps), "Walk-forward steps", step=1)
@@ -166,7 +168,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     )
                     
                     # Выводим статистику нормализации
-                    logger.info(f"  Статистика нормализации:")
+                    logger.info("  Статистика нормализации:")
                     logger.info(f"    Исходные символы: {norm_stats['initial_symbols']}")
                     logger.info(f"    Недостаточная история: {norm_stats['low_history_ratio']}")
                     logger.info(f"    Постоянная цена: {norm_stats['constant_price']}")
@@ -227,7 +229,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             # Сортируем пары по стандартному отклонению спреда (больше = потенциально более прибыльно)
             quality_sorted_pairs = sorted(pairs, key=lambda x: abs(x[4]), reverse=True)  # x[4] = std
             active_pairs = quality_sorted_pairs[:cfg.portfolio.max_active_positions]
-            logger.info(f"  Топ-3 пары по волатильности спреда:")
+            logger.info("  Топ-3 пары по волатильности спреда:")
             for i, (s1, s2, beta, mean, std, metrics) in enumerate(active_pairs[:3], 1):
                 logger.info(f"    {i}. {s1}-{s2}: beta={beta:.4f}, std={std:.4f}")
         else:
@@ -239,11 +241,14 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         step_pnl = pd.Series(dtype=float)
         total_step_pnl = 0.0
 
+        current_equity = portfolio.get_current_equity()
         logger.info(
-            f"  Проверка расчета капитала: equity={equity}, num_active_pairs={num_active_pairs}"
+            f"  Проверка расчета капитала: equity={current_equity}, num_active_pairs={num_active_pairs}"
         )
         if num_active_pairs > 0:
-            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct / num_active_pairs
+            capital_per_pair = portfolio.calculate_position_risk_capital(
+                cfg.portfolio.risk_per_position_pct
+            )
         else:
             capital_per_pair = 0.0
 
@@ -269,6 +274,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     pair_data = pair_data / pair_data.iloc[0] * 100
 
                 bt = PairBacktester(
+                    f"{s1}-{s2}",
                     pair_data,
                     rolling_window=cfg.backtest.rolling_window,
                     z_threshold=cfg.backtest.zscore_threshold,
@@ -277,6 +283,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
                     annualizing_factor=getattr(cfg.backtest, 'annualizing_factor', 365),
                     capital_at_risk=capital_per_pair,
+                    risk_per_position_pct=cfg.portfolio.risk_per_position_pct,
                     stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
                     take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
                     # Convert hours to periods based on 15-minute timeframe
@@ -337,17 +344,18 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
 
         # Update equity and daily P&L
         if not step_pnl.empty:
-            running_equity = equity
+            running_equity = portfolio.get_current_equity()
             for date, pnl in step_pnl.items():
                 daily_pnl.append((date, pnl))
                 running_equity += pnl
                 equity_data.append((date, running_equity))
+                portfolio.record_daily_pnl(pd.Timestamp(date), pnl)
 
         aggregated_pnl = pd.concat([aggregated_pnl, step_pnl])
-        equity += total_step_pnl
-        equity_curve.append(equity)
-        
-        logger.info(f"  Шаг P&L: ${total_step_pnl:+,.2f}, Накопленный: ${equity:,.2f}")
+
+        logger.info(
+            f"  Шаг P&L: ${total_step_pnl:+,.2f}, Накопленный: ${portfolio.get_current_equity():,.2f}"
+        )
         step_tracker.update()
 
     step_tracker.finish()
@@ -365,9 +373,8 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         else:
             pnl_series = pd.Series(dtype=float)
         
-        if equity_data:
-            eq_dates, eq_values = zip(*equity_data)
-            equity_series = pd.Series(eq_values, index=pd.to_datetime(eq_dates))
+        if not portfolio.equity_curve.empty:
+            equity_series = portfolio.equity_curve.dropna()
         else:
             equity_series = pd.Series([cfg.portfolio.initial_capital])
 
@@ -383,12 +390,9 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         else:
             cumulative = aggregated_pnl.cumsum()
             # Используем капитал для расчета риска на сделку и доходности
-            capital_per_pair = equity * cfg.portfolio.risk_per_position_pct
-            if capital_per_pair < 0:
-                logger.error(
-                    f"КРИТИЧЕСКАЯ ОШИБКА: Капитал на пару стал отрицательным ({capital_per_pair})."
-                )
-                capital_per_pair = 0.0
+            capital_per_pair = portfolio.calculate_position_risk_capital(
+                cfg.portfolio.risk_per_position_pct
+            )
             sharpe_abs = performance.sharpe_ratio(aggregated_pnl, cfg.backtest.annualizing_factor)
             sharpe_on_returns = performance.sharpe_ratio_on_returns(
                 aggregated_pnl, capital_per_pair, cfg.backtest.annualizing_factor
