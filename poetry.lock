@@ -319,6 +319,21 @@ test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "cloudpickle", "dask", "d
 tqdm = ["tqdm"]
 
 [[package]]
+name = "hurst"
+version = "0.0.5"
+description = "Hurst exponent evaluation and R/S-analysis"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "hurst-0.0.5-py3-none-any.whl", hash = "sha256:d163f11fe2318aa8979c921d6667b8dfd6205c629924fefbed68505357cf995e"},
+]
+
+[package.dependencies]
+numpy = ">=1.10"
+pandas = ">=0.18"
+
+[[package]]
 name = "importlib-metadata"
 version = "8.7.0"
 description = "Read metadata from Python packages"
@@ -1739,4 +1754,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "fd0391819677dbec68c981b3b7dc90e40f4a3630f604680c0ce0fefff23a62c5"
+content-hash = "223478787e8a1e036bd920001981180523a04307601aebb7f02aaa19d040e1ef"
