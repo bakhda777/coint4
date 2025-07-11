@@ -87,7 +87,8 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
     equity_series = cum + cfg.portfolio.initial_capital
     capital_per_pair = cfg.portfolio.initial_capital * cfg.portfolio.risk_per_position_pct
 
-    sharpe_abs = performance.sharpe_ratio(overall, cfg.backtest.annualizing_factor)
+    daily_returns = equity_series.pct_change().dropna()
+    sharpe_abs = performance.sharpe_ratio(daily_returns, cfg.backtest.annualizing_factor)
     sharpe_ret = performance.sharpe_ratio_on_returns(
         overall, capital_per_pair, cfg.backtest.annualizing_factor
     )
