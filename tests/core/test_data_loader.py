@@ -435,3 +435,60 @@ def test__load_full_dataset(tmp_path: Path) -> None:
 
     assert not df.empty
     assert df["timestamp"].min() >= end_date - pd.Timedelta(days=10)
+
+
+def create_dataset_big_gap(tmp_path: Path) -> None:
+    idx = pd.date_range("2021-01-01", periods=20, freq="D")
+    a = pd.Series(range(20), index=idx, dtype=float)
+    b = a + 1
+    a[5:17] = np.nan  # 12 подряд идущих NaN
+    for sym, series in [("AAA", a), ("BBB", b)]:
+        part_dir = tmp_path / f"symbol={sym}" / "year=2021" / "month=01"
+        part_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame({"timestamp": idx, "close": series})
+        df.to_parquet(part_dir / "data.parquet")
+
+
+def test_fill_limit_respects_large_gaps(tmp_path: Path) -> None:
+    create_dataset_big_gap(tmp_path)
+
+    cfg = AppConfig(
+        data_dir=tmp_path,
+        results_dir=tmp_path,
+        portfolio=PortfolioConfig(
+            initial_capital=10000.0,
+            risk_per_position_pct=0.01,
+            max_active_positions=5,
+        ),
+        pair_selection=PairSelectionConfig(
+            lookback_days=20,
+            coint_pvalue_threshold=0.05,
+            ssd_top_n=1,
+            min_half_life_days=1,
+            max_half_life_days=30,
+            min_mean_crossings=12,
+        ),
+        backtest=BacktestConfig(
+            timeframe="1d",
+            rolling_window=1,
+            zscore_threshold=1.0,
+            stop_loss_multiplier=3.0,
+            fill_limit_pct=0.1,
+            commission_pct=0.0,
+            slippage_pct=0.0,
+            annualizing_factor=365,
+        ),
+        walk_forward=WalkForwardConfig(
+            start_date="2021-01-01",
+            end_date="2021-01-20",
+            training_period_days=1,
+            testing_period_days=1,
+        ),
+    )
+    handler = DataHandler(cfg)
+
+    end_date = pd.Timestamp("2021-01-20")
+    df = handler.load_all_data_for_period(lookback_days=20, end_date=end_date)
+
+    gap_series = df.loc[pd.Timestamp("2021-01-06"): pd.Timestamp("2021-01-16"), "AAA"]
+    assert gap_series.isna().any()

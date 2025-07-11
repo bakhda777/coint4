@@ -292,11 +292,12 @@ class DataHandler:
             with time_block("handling missing data"):
                 initial_symbols = len(result.columns)
                 
-                # Применяем fill_limit_pct
+                # Применяем fill_limit_pct, ограничивая максимальную длину
+                # заполняемых последовательных пропусков.
                 if hasattr(self, 'fill_limit_pct'):
                     fill_limit = max(1, int(len(result) * self.fill_limit_pct))
-                    result = result.ffill(limit=fill_limit)
-                    result = result.bfill(limit=fill_limit)
+                    limit = min(fill_limit, 5)
+                    result = result.ffill(limit=limit).bfill(limit=limit)
                 
                 # Удаляем столбцы с слишком большим количеством NaN
                 nan_threshold = 0.5  # Remove symbols with >50% NaN
@@ -310,7 +311,10 @@ class DataHandler:
                     f"Final result: {len(clean_result)} rows, {len(clean_result.columns)} symbols"
                 )
 
-                freq_val = pd.infer_freq(clean_result.index)
+                if len(clean_result.index) >= 3:
+                    freq_val = pd.infer_freq(clean_result.index)
+                else:
+                    freq_val = None
                 with self._lock:
                     self._freq = freq_val
 

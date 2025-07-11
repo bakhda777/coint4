@@ -79,9 +79,15 @@ def preprocess_and_normalize_data(
     
     # Этап 3: Заполнение пропусков
     if fill_method == "ffill":
-        filled_df = filtered_df.ffill().bfill()
+        limit = 5  # Максимальное число подряд идущих пропусков для заполнения
+        filled_df = filtered_df.ffill(limit=limit).bfill(limit=limit)
     elif fill_method == "linear":
-        filled_df = filtered_df.interpolate(method='linear', limit=5).ffill().bfill()
+        limit = 5
+        filled_df = (
+            filtered_df.interpolate(method='linear', limit=limit)
+            .ffill(limit=limit)
+            .bfill(limit=limit)
+        )
     else:
         filled_df = filtered_df
     
