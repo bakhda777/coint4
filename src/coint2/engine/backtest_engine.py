@@ -60,6 +60,8 @@ class PairBacktester:
         self.s1 = pair_data.columns[0]
         self.s2 = pair_data.columns[1]
         self.trades_log: list[dict] = []
+        # Track trade entry time for time based exits
+        self.entry_time = None
 
     def run(self) -> None:
         """Run backtest and store results in ``self.results``."""
@@ -171,10 +173,13 @@ class PairBacktester:
                 position != 0
                 and self.half_life is not None
                 and self.time_stop_multiplier is not None
+                and self.entry_time is not None
             ):
-                trade_duration = i - entry_index
+                trade_duration_days = (
+                    df.index[i] - self.entry_time
+                ).total_seconds() / (60 * 60 * 24)
                 time_stop_limit = self.half_life * self.time_stop_multiplier
-                if trade_duration > time_stop_limit:
+                if trade_duration_days >= time_stop_limit:
                     new_position = 0.0
                     cooldown_remaining = self.cooldown_periods
                     df.loc[df.index[i], 'exit_reason'] = 'time_stop'
@@ -468,6 +473,7 @@ class PairBacktester:
                 entry_spread = spread_curr
                 entry_position_size = new_position
                 entry_index = i
+                self.entry_time = df.index[i]
 
             # Handle exit logging
             if position != 0 and new_position == 0 and entry_datetime is not None:
@@ -497,6 +503,7 @@ class PairBacktester:
                 entry_datetime = None
                 entry_spread = 0.0
                 entry_position_size = 0.0
+                self.entry_time = None
 
             position = new_position
 
