@@ -160,16 +160,16 @@ class DataHandler:
             
             # Добавляем фильтры по дате, если они указаны
             if start_date is not None:
-                # Преобразуем в миллисекунды для фильтрации
-                start_ts = int(start_date.timestamp() * 1000)
-                logger.info(f"Фильтрация от даты: {start_date} (timestamp: {start_ts})")
-                filters.append(("timestamp", ">=", start_ts))
-                
+                if start_date.tzinfo is not None:
+                    start_date = start_date.tz_localize(None)
+                logger.info(f"Фильтрация от даты: {start_date}")
+                filters.append(("timestamp", ">=", start_date))
+
             if end_date is not None:
-                # Преобразуем в миллисекунды для фильтрации
-                end_ts = int(end_date.timestamp() * 1000)
-                logger.info(f"Фильтрация до даты: {end_date} (timestamp: {end_ts})")
-                filters.append(("timestamp", "<=", end_ts))
+                if end_date.tzinfo is not None:
+                    end_date = end_date.tz_localize(None)
+                logger.info(f"Фильтрация до даты: {end_date}")
+                filters.append(("timestamp", "<=", end_date))
             
             # Добавляем фильтры по символам, если указаны
             if symbols is not None and len(symbols) > 0:
@@ -186,13 +186,11 @@ class DataHandler:
                 engine="pyarrow",
                 columns=cols_to_load,
                 filters=filters if filters else None,
-                gather_statistics=True,  # Важно для отсечения партиций (partition pruning)
+                gather_statistics=True,
                 schema_overrides={
-                    # Явно указываем типы для предотвращения ошибок типов
-                    "timestamp": np.int64,
                     "close": np.float64,
-                    "symbol": str
-                }
+                    "symbol": str,
+                },
             )
 
             # Репартиционируем для лучшего параллелизма и кешируем в памяти
@@ -210,15 +208,22 @@ class DataHandler:
             return empty_ddf()
 
     @logged_time("load_all_data_for_period")
-    def load_all_data_for_period(self, lookback_days: int | None = None, symbols: list[str] = None) -> pd.DataFrame:
+    def load_all_data_for_period(
+        self,
+        lookback_days: int | None = None,
+        symbols: list[str] = None,
+        end_date: pd.Timestamp | None = None,
+    ) -> pd.DataFrame:
         """Load close prices for all symbols for the specified or configured lookback period.
         
         Parameters
         ----------
         lookback_days : int | None, optional
-            Number of days to look back. If None, uses self.lookback_days.
+            Number of days to look back. If None, uses ``self.lookback_days``.
         symbols : list[str], optional
             List of symbols to filter by. If None, loads data for all symbols.
+        end_date : pd.Timestamp | None, optional
+            Last date of the loaded period. Defaults to ``pd.Timestamp.now()``.
             
         Returns
         -------
@@ -228,7 +233,7 @@ class DataHandler:
         try:
             # Определяем временные рамки для загрузки
             days_back = lookback_days or self.lookback_days
-            end_date = pd.Timestamp.now()
+            end_date = end_date or pd.Timestamp.now()
             start_date = end_date - pd.Timedelta(days=days_back)
             
             logger.info(f"Загрузка данных за период: {start_date} - {end_date} ({days_back} дней)")
@@ -245,7 +250,7 @@ class DataHandler:
             with time_block("computing dataset and preparing data"):
                 # Приводим ddf['timestamp'] к datetime если это еще не сделано
                 if not pd.api.types.is_datetime64_any_dtype(ddf["timestamp"]):
-                    ddf["timestamp"] = dd.to_datetime(ddf["timestamp"], unit="ms")
+                    ddf["timestamp"] = dd.to_datetime(ddf["timestamp"])
 
                 # Вычисляем полные данные
                 all_data = ddf.compute()
@@ -257,7 +262,7 @@ class DataHandler:
                     return pd.DataFrame(columns=["timestamp", "symbol", "close"], index=pd.DatetimeIndex([], name="timestamp"))
 
                 # Преобразуем timestamp в datetime
-                all_data["timestamp"] = pd.to_datetime(all_data["timestamp"], unit="ms")
+                all_data["timestamp"] = pd.to_datetime(all_data["timestamp"])
 
             # Пивотируем данные
             with time_block("pivoting data"):
@@ -272,9 +277,9 @@ class DataHandler:
                 
                 # Применяем fill_limit_pct
                 if hasattr(self, 'fill_limit_pct'):
-                    fill_limit = int(len(result) * self.fill_limit_pct)
-                    result = result.fillna(method='ffill', limit=fill_limit)
-                    result = result.fillna(method='bfill', limit=fill_limit)
+                    fill_limit = max(1, int(len(result) * self.fill_limit_pct))
+                    result = result.ffill(limit=fill_limit)
+                    result = result.bfill(limit=fill_limit)
                 
                 # Удаляем столбцы с слишком большим количеством NaN
                 nan_threshold = 0.5  # Remove symbols with >50% NaN
