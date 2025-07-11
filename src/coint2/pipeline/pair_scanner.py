@@ -284,9 +284,11 @@ def find_cointegrated_pairs(
         logger.warning("  • Увеличить ssd_top_n")
     else:
         # Сортируем найденные пары по p-value коинтеграции и берем топ-N
-        pvalue_top_n = getattr(cfg.pair_selection, 'pvalue_top_n', 50)
+        pvalue_top_n = cfg.pair_selection.pvalue_top_n
         final_pairs = sorted(final_pairs, key=lambda x: x[5].get('pvalue', 1.0))[:pvalue_top_n]
-        logger.info(f"✅ ИТОГО найдено {len(final_pairs)} качественных пар (Топ-{pvalue_top_n} по p-value):")
+        logger.info(
+            f"✅ ИТОГО найдено {len(final_pairs)} качественных пар (Топ-{pvalue_top_n} по p-value):"
+        )
         for i, (s1, s2, beta, mean, std, metrics) in enumerate(final_pairs[:5], 1):
             logger.info(f"  {i}. {s1}-{s2}: beta={beta:.4f}, mean={mean:.4f}, std={std:.4f}, "  
                       f"half_life={metrics['half_life']:.1f}, corr={metrics['correlation']:.2f}, "  
