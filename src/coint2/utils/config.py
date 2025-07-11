@@ -27,6 +27,7 @@ class PairSelectionConfig(BaseModel):
     save_filter_reasons: bool | None = None
     min_spread_std: float | None = None
     max_spread_std: float | None = None
+    max_hurst_exponent: float | None = 0.5
     min_abs_spread_mult: float | None = None
     cost_filter: bool | None = None
     kpss_pvalue_threshold: float | None = None
