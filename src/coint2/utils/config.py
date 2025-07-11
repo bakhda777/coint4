@@ -17,16 +17,12 @@ class PairSelectionConfig(BaseModel):
     min_mean_crossings: int
 
     # Extended filters
-    min_correlation: float | None = None
-    max_correlation: float | None = None
     adaptive_quantiles: bool | None = None
     bar_minutes: int | None = None
     liquidity_usd_daily: float | None = None
     max_bid_ask_pct: float | None = None
     max_avg_funding_pct: float | None = None
     save_filter_reasons: bool | None = None
-    min_spread_std: float | None = None
-    max_spread_std: float | None = None
     max_hurst_exponent: float | None = 0.5
     min_abs_spread_mult: float | None = None
     cost_filter: bool | None = None

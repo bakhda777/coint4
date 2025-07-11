@@ -264,19 +264,15 @@ def find_cointegrated_pairs(
             min_half_life=cfg.pair_selection.min_half_life_days,
             max_half_life=cfg.pair_selection.max_half_life_days,
             min_mean_crossings=cfg.pair_selection.min_mean_crossings,
-            min_correlation=cfg.pair_selection.min_correlation,
-            max_correlation=cfg.pair_selection.max_correlation,
-            min_spread_std=cfg.pair_selection.min_spread_std,
-            max_spread_std=cfg.pair_selection.max_spread_std,
             max_hurst_exponent=getattr(cfg.pair_selection, 'max_hurst_exponent', 0.5),
             # Параметры commission_pct и slippage_pct удалены - больше не используются
         )
         success_rate = (len(final_pairs)/len(tradable_pairs)*100) if len(tradable_pairs) > 0 else 0
         logger.info(f"Прошли все фильтры: {len(final_pairs):,} из {len(tradable_pairs):,} пар ({success_rate:.1f}%)")
-        logger.info(f"Фильтры: p-value < {p_value_threshold}, half-life = {cfg.pair_selection.min_half_life_days}-{cfg.pair_selection.max_half_life_days}, "
-                  f"mean_crossings >= {cfg.pair_selection.min_mean_crossings}, "
-                  f"corr = {cfg.pair_selection.min_correlation}-{cfg.pair_selection.max_correlation}, "
-                  f"spread_std = {cfg.pair_selection.min_spread_std}-{cfg.pair_selection.max_spread_std}")
+        logger.info(
+            f"Фильтры: p-value < {p_value_threshold}, half-life = {cfg.pair_selection.min_half_life_days}-{cfg.pair_selection.max_half_life_days}, "
+            f"mean_crossings >= {cfg.pair_selection.min_mean_crossings}"
+        )
 
     
     # Summary
@@ -286,7 +282,6 @@ def find_cointegrated_pairs(
         logger.warning("  • Увеличить max_half_life_days")
         logger.warning("  • Уменьшить min_mean_crossings")
         logger.warning("  • Увеличить ssd_top_n")
-        logger.warning("  • Ослабить требования к корреляции или spread_std")
     else:
         # Сортируем найденные пары по p-value коинтеграции и берем топ-N
         pvalue_top_n = getattr(cfg.pair_selection, 'pvalue_top_n', 50)
