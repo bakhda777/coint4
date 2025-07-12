@@ -224,6 +224,12 @@ def find_cointegrated_pairs(
     with time_block("cointegration and metrics testing"):
         # Загружаем все данные для пар, прошедших tradability фильтр
         all_pairs_data = {}
+        max_pairs_in_memory = 1000  # Ограничение для контроля памяти
+        
+        if len(tradable_pairs) > max_pairs_in_memory:
+            logger.warning(f"Слишком много пар ({len(tradable_pairs)}), ограничиваем до {max_pairs_in_memory} для контроля памяти")
+            tradable_pairs = tradable_pairs[:max_pairs_in_memory]
+            
         for s1, s2 in tradable_pairs:
             pair_data = handler.load_pair_data(s1, s2, start_date, end_date).dropna()
             if not pair_data.empty and len(pair_data.columns) >= 2:

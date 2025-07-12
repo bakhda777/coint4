@@ -30,7 +30,7 @@ def audit_and_clean_parquet_files(data_dir: str = DATA_DIR, output_dir: str = CL
             print(f'[SKIP] Нет timestamp: {file_path}')
             continue
         # Переводим timestamp в datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
         df = df.sort_values('timestamp').drop_duplicates('timestamp')
         df = df.set_index('timestamp')
         # Выравнивание по target_freq

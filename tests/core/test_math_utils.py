@@ -87,9 +87,12 @@ def test_count_mean_crossings() -> None:
 
 
 def test_half_life_numba():
-    series = np.array([10.0, 9.0, 8.0, 7.0, 6.0, 5.0])
+    # Создаем серию с известным коэффициентом авторегрессии
+    phi = 0.8
+    series = np.array([phi**i for i in range(10)])
     result = half_life_numba(series)
-    assert np.isclose(result, 1.0)
+    expected = -np.log(2) / (phi - 1)
+    assert np.isclose(result, expected, rtol=0.05)
 
 
 def test_mean_crossings_numba():

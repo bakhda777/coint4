@@ -10,8 +10,14 @@ data_processing:
 portfolio:
   initial_capital: 10000.0      # Капитал $10,000
   risk_per_position_pct: 0.01   # Риск 1% на позицию
-  max_active_positions: 500    # Уменьшаем число позиций для снижения over-trading
+  max_active_positions: 15     # Максимум 15 позиций для лучшей диверсификации
   max_margin_usage: 0.5         # Максимальное использование маржи 50%
+  # Динамическое позиционирование на основе волатильности
+  volatility_based_sizing: true # Включить динамическое позиционирование
+  volatility_lookback_hours: 24 # Окно для расчета волатильности (24 часа)
+  min_position_size_pct: 0.005  # Минимальный размер позиции (0.5%)
+  max_position_size_pct: 0.02   # Максимальный размер позиции (2%)
+  volatility_adjustment_factor: 2.0 # Коэффициент корректировки на волатильность
 
 pair_selection:
   lookback_days: 60             # Коинтеграцию считать по последним 60 суткам
@@ -19,7 +25,7 @@ pair_selection:
   ssd_top_n: 5000              # Увеличиваем пул кандидатов для получения 10-20 торгуемых пар
   min_half_life_days: 1       # ≥24 часов (минимум 1 день)
   max_half_life_days: 35        # ≤1.5 месяца
-  min_mean_crossings: 4         # Понижен порог пересечений (было 4) для 60-дневного окна
+  min_mean_crossings: 2         # Понижен порог пересечений для увеличения количества пар
   # Новые параметры фильтрации пар
   adaptive_quantiles: false     # Используем абсолютные пороги std
   bar_minutes: 15               # Размер бара в минутах
@@ -41,13 +47,37 @@ backtest:
   zscore_exit: 0.8              # Выход при возврате к среднему (было 0.0)
   stop_loss_multiplier: 3.0     # Стоп-лосс при 3 std
   time_stop_multiplier: 2.0
-  take_profit_multiplier: 3.0   # Добавляем симметричный take-profit
+  take_profit_multiplier: 0.5   # Take-profit при 0.5 std (должен быть < 1.0)
   fill_limit_pct: 0.1          
   commission_pct: 0.004         # Комиссия Binance 
   slippage_pct: 0.002           # Проскальзывание
   annualizing_factor: 365
   cooldown_hours: 24            # Увеличиваем тайм-аут между сделками (было 4)
   wait_for_candle_close: true   # Ждем закрытия свечи перед входом
+  
+  # Определение рыночных режимов
+  market_regime_detection: true     # Включить определение рыночных режимов
+  hurst_window: 720                 # 30 дней для 15-минутных данных (30*24*4/3 = 720)
+  hurst_trending_threshold: 0.5     # H > 0.5 = trending режим
+  variance_ratio_window: 480        # 20 дней для Variance Ratio Test
+  variance_ratio_trending_min: 1.2  # VR > 1.2 = trending
+  variance_ratio_mean_reverting_max: 0.8  # VR < 0.8 = mean-reverting
+  
+  # Защита от структурных сдвигов
+  structural_break_protection: true # Включить защиту от структурных сдвигов
+  cointegration_test_frequency: 2688 # Каждые 7 дней (7*24*4*4 = 2688 15-минутных баров)
+  adf_pvalue_threshold: 0.05        # p-value > 0.05 → закрыть позицию
+  exclusion_period_days: 30         # Исключить пару на 30 дней
+  max_half_life_days: 10            # Если half-life > 10 дней → закрыть позицию
+  min_correlation_threshold: 0.6    # Корреляция < 0.6 → закрыть позицию
+  correlation_window: 720           # 30 дней для скользящей корреляции
+  # NEW: Enhanced risk management parameters
+  use_kelly_sizing: true        # Использовать Kelly criterion для размера позиций
+  max_kelly_fraction: 0.25      # Максимальная доля Kelly (25%)
+  volatility_lookback: 96       # Окно для расчета волатильности (24 часа для 15-мин данных)
+  adaptive_thresholds: true     # Адаптивные пороги входа на основе волатильности
+  var_confidence: 0.05          # Уровень доверия для VaR (5%)
+  max_var_multiplier: 3.0       # Максимальный множитель порога при высокой волатильности
 
 walk_forward:
   start_date: "2024-01-01"      # Первый бар, который попадает даже в train
@@ -56,6 +86,14 @@ walk_forward:
   testing_period_days: 30       # Торговля найденных пар ровно 30 суток
 
 max_shards: null
+
+filter_params:
+  min_beta: 0.1
+  max_beta: 10.0
+  min_half_life_days: 1
+  max_half_life_days: 252
+  max_hurst_exponent: 0.5
+  min_mean_crossings: 10
 
 logging:
   trade_details: true           # Логирование деталей сделок

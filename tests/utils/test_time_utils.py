@@ -16,10 +16,10 @@ def test_ensure_datetime_index_sorts_and_drops_tz() -> None:
     assert list(result.index) == expected
 
 
-@pytest.mark.parametrize("freq", ["D", "H", "15T"])
-def test_infer_frequency_regular(freq: str) -> None:
+@pytest.mark.parametrize("freq,expected", [("D", "D"), ("h", "h"), ("15min", "15min")])
+def test_infer_frequency_regular(freq: str, expected: str) -> None:
     idx = pd.date_range("2021-01-01", periods=5, freq=freq)
-    assert infer_frequency(idx) == freq
+    assert infer_frequency(idx) == expected
 
 
 def test_infer_frequency_irregular() -> None:

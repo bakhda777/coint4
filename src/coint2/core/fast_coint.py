@@ -35,7 +35,9 @@ def compute_aic_optimized(resid, nobs, k):
     """Оптимизированное вычисление AIC"""
     ssr = resid @ resid
     sigma2 = ssr / nobs
-    return np.log(sigma2) + 2 * (k + 1) / nobs
+    # Используем правильную формулу AIC: n*log(sigma2) + 2*k
+    # где k - это количество лагов (не включая константу)
+    return nobs * np.log(sigma2) + 2 * k
 
 
 @njit(cache=True, parallel=True, fastmath=True, nogil=True, error_model='numpy')
@@ -59,47 +61,53 @@ def _adf_autolag_numba_final(res, du_precomputed, k_max):
     # Создаем единичную матрицу максимального размера один раз
     eye_max = np.eye(k_max + 1, dtype=np.float64)
     
-    # Точно соответствуем реализации statsmodels
+    # Все модели должны использовать одинаковое количество наблюдений для корректного сравнения AIC
+    # Используем n_eff для максимального лага
+    n_eff_common = n - k_max - 1
+    if n_eff_common < 10:
+        return np.nan, 0
+    
+    # Проверяем все лаги и выбираем лучший по AIC
     for k in range(k_max + 1):
-        n_eff = n - k - 1
-        if n_eff < 10:
-            continue
-        
         m = k + 1
-        y = du_precomputed[k:]
-        # Используем часть предварительно выделенной матрицы
-        X = X_max[:n_eff, :m]
+        # Используем одинаковое количество наблюдений для всех моделей
+        y = du_precomputed[k_max:k_max + n_eff_common]
+        X = X_max[:n_eff_common, :m]
         X = np.ascontiguousarray(X)
-        X[:, 0] = res[k:-1]
+        # Для всех моделей используем остатки, сдвинутые на k_max позиций
+        X[:, 0] = res[k_max - k:k_max - k + n_eff_common]
         
-        # Формируем матрицу регрессоров точно как в statsmodels
         if k > 0:
             for j in prange(k):
-                X[:, j + 1] = du_precomputed[k - j - 1 : n - j - 2]
+                # Корректируем индексы для одинакового количества наблюдений
+                start_idx = k_max - j - 1
+                end_idx = k_max - j - 1 + n_eff_common
+                X[:, j + 1] = du_precomputed[start_idx:end_idx]
             
-        # Решаем нормальные уравнения через разложение Холецкого
         xtx = X.T @ X
         xty = X.T @ y
         
-        # Разложение Холецкого
-        L = np.linalg.cholesky(xtx)
+        det_xtx = np.linalg.det(xtx)
+        if det_xtx <= 1e-12:
+            continue
+            
+        try:
+            L = np.linalg.cholesky(xtx)
+        except:
+            continue
         
-        # Решаем две треугольные системы для beta
         z = np.linalg.solve(L, xty)
         beta = np.linalg.solve(L.T, z)
         
-        # Вычисляем сумму квадратов остатков
         y_hat = X @ beta
         resid_k = y - y_hat
         ssr = resid_k @ resid_k
-        nobs = n_eff
+        nobs = n_eff_common
         
-        # Вычисляем AIC
         aic = compute_aic_optimized(resid_k, nobs, k)
         aic_values[k] = aic
         valid_k[k] = True
         
-        # Стандартная ошибка
         df_resid = nobs - m
         if df_resid <= 0:
             continue
@@ -108,16 +116,38 @@ def _adf_autolag_numba_final(res, du_precomputed, k_max):
         eye_m = eye_max[:m, :m]
         xtx_inv_cols = np.linalg.solve(L.T, np.linalg.solve(L, eye_m))
         
-        # Вычисляем стандартную ошибку и t-статистику
         se_b0 = np.sqrt(sigma2_for_se * xtx_inv_cols[0, 0])
         tau = beta[0] / se_b0
         
         tau_values[k] = tau
         
+        # Выбираем лаг с лучшим AIC
         if aic < best_aic:
             best_aic, best_tau, best_k = aic, tau, k
     
-    # Возвращаем лучший результат по AIC (оптимизация: убран принудительный k=2)
+    # Если не найден валидный результат, возвращаем k=0
+    if best_k == 0 and not valid_k[0]:
+        # Попробуем k=0 принудительно
+        n_eff = n - 1
+        if n_eff >= 10:
+            y = du_precomputed[0:]
+            X = res[0:-1].reshape(-1, 1)
+            try:
+                xtx = X.T @ X
+                xty = X.T @ y
+                beta = xty / xtx[0, 0]
+                y_hat = X @ beta
+                resid_k = y - y_hat.flatten()
+                ssr = resid_k @ resid_k
+                df_resid = n_eff - 1
+                if df_resid > 0:
+                    sigma2_for_se = ssr / df_resid
+                    se_b0 = np.sqrt(sigma2_for_se / xtx[0, 0])
+                    best_tau = beta[0] / se_b0
+                    best_k = 0
+            except:
+                pass
+    
     return best_tau, best_k
 
 
@@ -220,4 +250,4 @@ def fast_coint(x, y, trend='n', k_max=12):
         # Для других трендов используем соответствующие параметры
         pvalue = float(sm.tsa.stattools.mackinnonp(tau, regression=trend, N=2))
     
-    return tau, pvalue, k 
+    return tau, pvalue, k

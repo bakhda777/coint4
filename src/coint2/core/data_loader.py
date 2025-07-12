@@ -1,10 +1,9 @@
 import logging
 import os
-
-import numpy as np
 import threading
 import time
 from pathlib import Path
+
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd  # type: ignore
@@ -416,7 +415,7 @@ class DataHandler:
         if pair_pdf.empty:
             logger.debug(f"Нет данных для пары {symbol1}-{symbol2}")
             return pd.DataFrame()
-        pair_pdf["timestamp"] = pd.to_datetime(pair_pdf["timestamp"], unit="ms").dt.tz_localize(None)
+        pair_pdf["timestamp"] = pd.to_datetime(pair_pdf["timestamp"], unit="ms", utc=True).dt.tz_localize(None)
 
         # Проверка на наличие дубликатов timestamp
         if pair_pdf.duplicated(subset=["timestamp", "symbol"]).any():
@@ -654,11 +653,11 @@ class DataHandler:
         
         if filtered_df.empty:
             logger.warning(f"No data found between {start_date} and {end_date}")
-            logger.debug(f"Доступный диапазон времени: {pd.to_datetime(all_data['timestamp'].min(), unit='ms')} - {pd.to_datetime(all_data['timestamp'].max(), unit='ms')}")
+            logger.debug(f"Доступный диапазон времени: {pd.to_datetime(all_data['timestamp'].min(), unit='ms', utc=True)} - {pd.to_datetime(all_data['timestamp'].max(), unit='ms', utc=True)}")
             return pd.DataFrame()
 
         # Преобразуем timestamp в datetime для индекса
-        filtered_df["timestamp"] = pd.to_datetime(filtered_df["timestamp"], unit="ms")
+        filtered_df["timestamp"] = pd.to_datetime(filtered_df["timestamp"], unit="ms", utc=True)
         
         if filtered_df.duplicated(subset=["timestamp", "symbol"]).any():
             wide_pdf = filtered_df.pivot_table(
@@ -798,7 +797,7 @@ def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.T
         # Преобразуем timestamp в datetime для pandas
         # ВАЖНО: наши timestamp хранятся в миллисекундах, поэтому используем правильное преобразование
         result = result.with_columns(
-            pl.col("timestamp").cast(pl.Int64).alias("timestamp_ms"),
+            pl.col("timestamp").round(0).cast(pl.Int64).alias("timestamp_ms"),
             (pl.col("timestamp") * 1000).cast(pl.Datetime).alias("timestamp")
         )
         

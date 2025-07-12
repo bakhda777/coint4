@@ -29,7 +29,8 @@ def rolling_beta(y: pd.Series, x: pd.Series, window: int) -> pd.Series:
     """
     cov = y.rolling(window).cov(x)
     var = x.rolling(window).var()
-    return cov / var
+    # Защита от деления на ноль
+    return cov / var.where(var != 0, np.nan)
 
 
 def rolling_zscore(series: pd.Series, window: int) -> pd.Series:
@@ -179,17 +180,36 @@ def half_life_numba(y: np.ndarray) -> float:
     y_lag = y[:-1]
     delta = np.diff(y)
 
-    # OLS regression using numpy formulas
-    cov = np.cov(delta, y_lag)[0, 1]
-    var = np.var(y_lag)
-
-    # Handle case where variance is zero or close to it
-    if np.isclose(var, 0):
+    # OLS regression: delta = alpha + lambda * y_lag + error
+    # Using matrix formulation: X = [ones, y_lag], beta = (X'X)^-1 X'y
+    n = len(y_lag)
+    if n == 0:
+        return np.inf
+        
+    # Create design matrix
+    X = np.column_stack((np.ones(n), y_lag))
+    
+    # Compute (X'X)^-1 X'y using normal equations
+    XtX = X.T @ X
+    Xty = X.T @ delta
+    
+    # Check if matrix is singular
+    det = XtX[0, 0] * XtX[1, 1] - XtX[0, 1] * XtX[1, 0]
+    if np.abs(det) < 1e-12:
+        return np.inf
+    
+    # Solve for coefficients
+    inv_det = 1.0 / det
+    beta0 = inv_det * (XtX[1, 1] * Xty[0] - XtX[0, 1] * Xty[1])
+    beta1 = inv_det * (-XtX[1, 0] * Xty[0] + XtX[0, 0] * Xty[1])
+    
+    lam = beta1
+    
+    # Защита от деления на ноль и проверка знака
+    if lam >= 0 or np.isclose(lam, 0):
         return np.inf
 
-    lam = cov / var
-
-    return -np.log(2.0) / lam if lam < 0 else np.inf
+    return -np.log(2.0) / lam
 
 
 @njit(cache=True)

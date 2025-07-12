@@ -14,11 +14,17 @@ from coint2.utils.config import (
 
 
 def create_random_shards(base: Path) -> None:
-    idx = pd.date_range("2021-01-01", periods=3, freq="D")
+    # Создаем данные с более ранними датами, чтобы покрыть lookback_days=2
+    idx = pd.date_range("2020-12-30", periods=5, freq="D")
     for sym in ["AAA", "BBB"]:
+        part = base / f"symbol={sym}" / "year=2020" / "month=12"
+        part.mkdir(parents=True, exist_ok=True)
+        df = pd.DataFrame({"timestamp": idx[:2], "close": range(2)})
+        df.to_parquet(part / f"{uuid4().hex}.parquet")
+        
         part = base / f"symbol={sym}" / "year=2021" / "month=01"
         part.mkdir(parents=True, exist_ok=True)
-        df = pd.DataFrame({"timestamp": idx, "close": range(len(idx))})
+        df = pd.DataFrame({"timestamp": idx[2:], "close": range(2, 5)})
         df.to_parquet(part / f"{uuid4().hex}.parquet")
 
 
@@ -55,6 +61,8 @@ def test_rglob_finds_all_files(tmp_path: Path) -> None:
     )
     handler = DataHandler(cfg)
 
-    df = handler.load_all_data_for_period()
+    # Указываем end_date явно, чтобы загрузить данные за нужный период
+    end_date = pd.Timestamp("2021-01-02")
+    df = handler.load_all_data_for_period(end_date=end_date)
 
     assert not df.empty

@@ -18,8 +18,9 @@ from coint2.utils.config import (
 
 
 def create_dataset(base_dir: Path) -> None:
-    idx = pd.date_range("2021-01-01", periods=12, freq="D")
-    a = pd.Series(range(len(idx)), index=idx)
+    # Создаем больше данных для корректной работы алгоритма
+    idx = pd.date_range("2021-01-01", periods=30, freq="D")
+    a = pd.Series(range(len(idx)), index=idx, dtype=float)
     b = a + 0.1
 
     for sym, series in [("A", a), ("B", b)]:
@@ -133,10 +134,10 @@ def test_walk_forward(tmp_path: Path) -> None:
             annualizing_factor=365,
         ),
         walk_forward=WalkForwardConfig(
-            start_date="2021-01-01",
-            end_date="2021-01-11",
-            training_period_days=2,
-            testing_period_days=2,
+            start_date="2021-01-10",
+            end_date="2021-01-25",
+            training_period_days=5,
+            testing_period_days=5,
         ),
     )
 

@@ -10,5 +10,17 @@ def calculate_hurst_exponent(series: pd.Series) -> float:
     series = series.dropna()
     if len(series) < 50:
         return 0.5
-    H, _c, _data = compute_Hc(series, kind="price", simplified=True)
-    return float(H)
+    
+    # Check for invalid values that would cause log10 errors
+    if (series <= 0).any() or not series.var() > 0:
+        return 0.5
+    
+    try:
+        H, _c, _data = compute_Hc(series, kind="price", simplified=True)
+        # Validate result
+        if pd.isna(H) or not (0 <= H <= 1):
+            return 0.5
+        return float(H)
+    except (FloatingPointError, ValueError, RuntimeWarning):
+        # Return neutral value if computation fails
+        return 0.5

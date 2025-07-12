@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Tuple, List
 
 import pandas as pd
 
@@ -17,6 +18,149 @@ from src.coint2.core.data_loader import DataHandler, load_master_dataset
 from src.coint2.core.normalization_improvements import preprocess_and_normalize_data
 from src.coint2.core.pair_backtester import PairBacktester
 from src.coint2.core.portfolio import Portfolio
+
+
+def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
+    """
+    Convert hours to number of periods based on bar timeframe.
+    
+    Args:
+        hours: Number of hours to convert
+        bar_minutes: Minutes per bar (timeframe)
+        
+    Returns:
+        Number of periods
+    """
+    if hours <= 0:
+        return 0
+    return int(hours * 60 / bar_minutes)
+
+
+def validate_time_windows(
+    training_start: pd.Timestamp,
+    training_end: pd.Timestamp,
+    testing_start: pd.Timestamp,
+    testing_end: pd.Timestamp,
+    bar_minutes: int
+) -> bool:
+    """
+    Validate that time windows don't have look-ahead bias.
+    
+    Args:
+        training_start: Start of training period
+        training_end: End of training period
+        testing_start: Start of testing period
+        testing_end: End of testing period
+        bar_minutes: Minutes per bar for minimum gap validation
+        
+    Returns:
+        True if windows are valid, False otherwise
+    """
+    logger = get_logger("walk_forward.validation")
+    
+    # Check basic chronological order
+    if training_start >= training_end:
+        logger.error(f"❌ Training period invalid: start {training_start} >= end {training_end}")
+        return False
+        
+    if testing_start >= testing_end:
+        logger.error(f"❌ Testing period invalid: start {testing_start} >= end {testing_end}")
+        return False
+    
+    # Critical: Check for look-ahead bias - training must end before testing starts
+    if training_end >= testing_start:
+        logger.error(f"❌ LOOK-AHEAD BIAS: Training ends {training_end} >= Testing starts {testing_start}")
+        logger.error("   This would allow future data to leak into training!")
+        return False
+    
+    # Ensure minimum gap between training and testing (at least one bar)
+    min_gap = pd.Timedelta(minutes=bar_minutes)
+    actual_gap = testing_start - training_end
+    if actual_gap < min_gap:
+        logger.warning(f"⚠️  Small gap between training and testing: {actual_gap} < {min_gap}")
+        logger.warning("   Consider increasing gap to avoid potential data leakage")
+    
+    # Log validation success
+    logger.debug(f"✅ Time windows validated:")
+    logger.debug(f"   Training: {training_start} → {training_end}")
+    logger.debug(f"   Testing:  {testing_start} → {testing_end}")
+    logger.debug(f"   Gap:      {actual_gap}")
+    
+    return True
+
+
+def validate_walk_forward_data(
+    df: pd.DataFrame,
+    training_start: pd.Timestamp,
+    training_end: pd.Timestamp,
+    testing_start: pd.Timestamp,
+    testing_end: pd.Timestamp,
+    min_training_days: int = 30,
+    min_testing_days: int = 1
+) -> Tuple[bool, str]:
+    """
+    Validate that sufficient data exists for walk-forward step.
+    
+    Args:
+        df: DataFrame with timestamp index
+        training_start: Start of training period
+        training_end: End of training period
+        testing_start: Start of testing period
+        testing_end: End of testing period
+        min_training_days: Minimum required training days
+        min_testing_days: Minimum required testing days
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    logger = get_logger("walk_forward.data_validation")
+    
+    if df.empty:
+        return False, "DataFrame is empty"
+    
+    # Check data availability for training period
+    training_data = df.loc[training_start:training_end]
+    if training_data.empty:
+        return False, f"No training data available for period {training_start} to {training_end}"
+    
+    # Check data availability for testing period
+    testing_data = df.loc[testing_start:testing_end]
+    if testing_data.empty:
+        return False, f"No testing data available for period {testing_start} to {testing_end}"
+    
+    # Check minimum training period length
+    training_days = (training_end - training_start).days
+    if training_days < min_training_days:
+        return False, f"Training period too short: {training_days} days < {min_training_days} required"
+    
+    # Check minimum testing period length
+    testing_days = (testing_end - testing_start).days
+    if testing_days < min_testing_days:
+        return False, f"Testing period too short: {testing_days} days < {min_testing_days} required"
+    
+    # Check for significant data gaps in training period
+    training_data_days = len(training_data)
+    expected_training_periods = training_days * (24 * 60 / 15)  # Assuming 15-min bars
+    data_coverage_ratio = training_data_days / expected_training_periods
+    
+    if data_coverage_ratio < 0.5:  # Less than 50% data coverage
+        logger.warning(f"⚠️  Low training data coverage: {data_coverage_ratio:.1%}")
+        logger.warning(f"   Expected ~{expected_training_periods:.0f} periods, got {training_data_days}")
+    
+    # Check for significant data gaps in testing period
+    testing_data_days = len(testing_data)
+    expected_testing_periods = testing_days * (24 * 60 / 15)  # Assuming 15-min bars
+    testing_coverage_ratio = testing_data_days / expected_testing_periods
+    
+    if testing_coverage_ratio < 0.3:  # Less than 30% data coverage
+        logger.warning(f"⚠️  Low testing data coverage: {testing_coverage_ratio:.1%}")
+        logger.warning(f"   Expected ~{expected_testing_periods:.0f} periods, got {testing_data_days}")
+    
+    logger.debug(f"✅ Data validation passed:")
+    logger.debug(f"   Training: {training_data_days} periods ({data_coverage_ratio:.1%} coverage)")
+    logger.debug(f"   Testing:  {testing_data_days} periods ({testing_coverage_ratio:.1%} coverage)")
+    
+    return True, "Data validation successful"
 
 
 @logged_time("run_walk_forward_analysis")
@@ -114,6 +258,12 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
     for step_idx, (training_start, training_end, testing_start, testing_end) in enumerate(walk_forward_steps, 1):
         step_tag = f"WF-шаг {step_idx}/{len(walk_forward_steps)}"
         
+        # КРИТИЧЕСКАЯ ВАЛИДАЦИЯ: Проверка временных окон на look-ahead bias
+        logger.info(f"🔍 {step_tag}: Валидация временных окон...")
+        if not validate_time_windows(training_start, training_end, testing_start, testing_end, bar_minutes):
+            logger.error(f"❌ {step_tag}: Валидация временных окон не пройдена, пропуск шага")
+            continue
+        
         with time_block(f"{step_tag}: training {training_start.date()}-{training_end.date()}, testing {testing_start.date()}-{testing_end.date()}"):
             # Load data only for this step
             with time_block("loading step data"):
@@ -124,8 +274,31 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 continue
 
             step_df = step_df_long.pivot_table(index="timestamp", columns="symbol", values="close")
+            
+            # ДОПОЛНИТЕЛЬНАЯ ВАЛИДАЦИЯ: Проверка наличия данных для временных окон
+            is_data_valid, data_error = validate_walk_forward_data(
+                step_df, training_start, training_end, testing_start, testing_end, bar_minutes
+            )
+            if not is_data_valid:
+                logger.warning(f"⚠️  {step_tag}: {data_error}, пропуск шага")
+                continue
+            
             training_slice = step_df.loc[training_start:training_end]
-            logger.info(f"  Training данные: {training_slice.shape[0]:,} строк × {training_slice.shape[1]} символов")
+            testing_slice = step_df.loc[testing_start:testing_end]
+            
+            # Детальное логирование границ данных
+            logger.info(f"📊 {step_tag}: Границы данных:")
+            logger.info(f"   Training: {training_start} → {training_end} ({training_slice.shape[0]:,} строк × {training_slice.shape[1]} символов)")
+            logger.info(f"   Testing:  {testing_start} → {testing_end} ({testing_slice.shape[0]:,} строк × {testing_slice.shape[1]} символов)")
+            logger.info(f"   Временной разрыв: {testing_start - training_end}")
+            
+            # Проверка на перекрытие данных (дополнительная защита)
+            if training_slice.index.max() >= testing_slice.index.min():
+                logger.error(f"❌ {step_tag}: ОБНАРУЖЕНО ПЕРЕКРЫТИЕ ДАННЫХ!")
+                logger.error(f"   Последняя тренировочная метка: {training_slice.index.max()}")
+                logger.error(f"   Первая тестовая метка: {testing_slice.index.min()}")
+                logger.error("   Это может привести к look-ahead bias! Пропуск шага.")
+                continue
                 
             if training_slice.empty or len(training_slice.columns) < 2:
                 logger.warning(f"  Недостаточно данных для обучения в шаге {step_idx}")
@@ -215,9 +388,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                             max_half_life=cfg.filter_params.max_half_life_days,
                             min_mean_crossings=cfg.filter_params.min_mean_crossings,
                             max_hurst_exponent=cfg.filter_params.max_hurst_exponent,
-                            adaptive_quantiles=cfg.pair_selection.adaptive_quantiles,
                             save_filter_reasons=cfg.pair_selection.save_filter_reasons,
-                            save_std_histogram=cfg.pair_selection.save_std_histogram,
                             kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
                             # Параметры commission_pct и slippage_pct удалены
                         )
@@ -288,13 +459,41 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                     risk_per_position_pct=cfg.portfolio.risk_per_position_pct,
                     stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
                     take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
-                    # Convert hours to periods based on 15-minute timeframe
-                    cooldown_periods=int(getattr(cfg.backtest, 'cooldown_hours', 0) * 60 / 15),  # 15-минутный таймфрейм
+                    # Convert hours to periods based on dynamic bar timeframe
+                    cooldown_periods=convert_hours_to_periods(getattr(cfg.backtest, 'cooldown_hours', 0), bar_minutes),
                     wait_for_candle_close=getattr(cfg.backtest, 'wait_for_candle_close', False),
                     max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
                     # half_life is required for time_stop logic
                     half_life=metrics.get('half_life'),
                     time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', None),
+                    # NEW: Enhanced risk management parameters
+                    use_kelly_sizing=getattr(cfg.backtest, 'use_kelly_sizing', True),
+                    max_kelly_fraction=getattr(cfg.backtest, 'max_kelly_fraction', 0.25),
+                    volatility_lookback=getattr(cfg.backtest, 'volatility_lookback', 96),
+                    adaptive_thresholds=getattr(cfg.backtest, 'adaptive_thresholds', True),
+                    var_confidence=getattr(cfg.backtest, 'var_confidence', 0.05),
+                    max_var_multiplier=getattr(cfg.backtest, 'max_var_multiplier', 3.0),
+                    # Market regime detection parameters
+                    market_regime_detection=getattr(cfg.backtest, 'market_regime_detection', True),
+                    hurst_window=getattr(cfg.backtest, 'hurst_window', 720),
+                    hurst_trending_threshold=getattr(cfg.backtest, 'hurst_trending_threshold', 0.5),
+                    variance_ratio_window=getattr(cfg.backtest, 'variance_ratio_window', 480),
+                    variance_ratio_trending_min=getattr(cfg.backtest, 'variance_ratio_trending_min', 1.2),
+                    variance_ratio_mean_reverting_max=getattr(cfg.backtest, 'variance_ratio_mean_reverting_max', 0.8),
+                    # Structural break protection parameters
+                    structural_break_protection=getattr(cfg.backtest, 'structural_break_protection', True),
+                    cointegration_test_frequency=getattr(cfg.backtest, 'cointegration_test_frequency', 2688),
+                    adf_pvalue_threshold=getattr(cfg.backtest, 'adf_pvalue_threshold', 0.05),
+                    exclusion_period_days=getattr(cfg.backtest, 'exclusion_period_days', 30),
+                    max_half_life_days=getattr(cfg.backtest, 'max_half_life_days', 10),
+                    min_correlation_threshold=getattr(cfg.backtest, 'min_correlation_threshold', 0.6),
+                    correlation_window=getattr(cfg.backtest, 'correlation_window', 720),
+                    # NEW: Volatility-based position sizing parameters
+                    volatility_based_sizing=getattr(cfg.portfolio, 'volatility_based_sizing', False),
+                    volatility_lookback_hours=getattr(cfg.portfolio, 'volatility_lookback_hours', 24),
+                    min_position_size_pct=getattr(cfg.portfolio, 'min_position_size_pct', 0.005),
+                    max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 0.02),
+                    volatility_adjustment_factor=getattr(cfg.portfolio, 'volatility_adjustment_factor', 2.0),
                 )
                 bt.run()
                 results = bt.get_results()
@@ -316,7 +515,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
 
                 # Новая логика подсчёта фактических сделок
                 if not positions.empty:
-                    positions = positions.fillna(method="ffill")
+                    positions = positions.ffill()
                     prev_positions = positions.shift(1).fillna(0)
                     is_trade_open_event = (prev_positions == 0) & (positions != 0)
                     actual_trade_count = int(is_trade_open_event.sum())
@@ -344,6 +543,8 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 pair_tracker.update()
             
             pair_tracker.finish()
+            logger.info(f"  ✓ Завершены бэктесты для {len(active_pairs)} пар")
+            logger.info(f"  ⇢ Обновление капитала и дневного P&L...")
 
         # Update equity and daily P&L
         if not step_pnl.empty:
@@ -362,10 +563,13 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         step_tracker.update()
 
     step_tracker.finish()
+    logger.info(f"✓ Завершены все {len(walk_forward_steps)} WF-шагов")
+    logger.info(f"⇢ Обработка финальных результатов и расчет метрик...")
 
     # Process results and create metrics
     with time_block("processing final results"):
         aggregated_pnl = aggregated_pnl.dropna()
+        logger.info(f"  ⇢ Агрегация данных P&L за {len(aggregated_pnl)} торговых дней")
         
         # Create series for analysis
         if daily_pnl:
@@ -382,6 +586,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             equity_series = pd.Series([cfg.portfolio.initial_capital])
 
         # Calculate metrics
+        logger.info(f"  ⇢ Расчет базовых метрик производительности...")
         if aggregated_pnl.empty:
             base_metrics = {
                 "sharpe_ratio_abs": 0.0,
@@ -417,6 +622,7 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
         extended_metrics = calculate_extended_metrics(pnl_series, equity_series)
         
         # Trade statistics
+        logger.info(f"  ⇢ Анализ статистики по {len(trade_stats)} парам...")
         trade_metrics = {}
         if trade_stats:
             trades_df = pd.DataFrame(trade_stats)
@@ -432,12 +638,19 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
             }
         
         all_metrics = {**base_metrics, **extended_metrics, **trade_metrics}
+        logger.info(f"✓ Рассчитаны метрики производительности")
+        logger.info(f"  - Общий P&L: ${all_metrics.get('total_pnl', 0):+,.2f}")
+        logger.info(f"  - Sharpe Ratio: {all_metrics.get('sharpe_ratio_abs', 0):.3f}")
+        logger.info(f"  - Максимальная просадка: {all_metrics.get('max_drawdown_abs', 0):.2%}")
+        logger.info(f"  - Всего сделок: {all_metrics.get('total_trades', 0)}")
     
     # Create reports
+    logger.info(f"⇢ Создание отчетов и сохранение результатов...")
     with time_block("generating reports"):
         results_dir = Path(cfg.results_dir)
         
         try:
+            logger.info(f"  ⇢ Создание отчета о производительности...")
             create_performance_report(
                 equity_curve=equity_series,
                 pnl_series=pnl_series,
@@ -446,12 +659,22 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 results_dir=results_dir,
                 strategy_name="CointegrationStrategy"
             )
+            logger.info(f"  ✓ Отчет о производительности создан")
             
             summary = format_metrics_summary(all_metrics)
             print(summary)
             
             # Save data
-            metrics_df = pd.DataFrame([all_metrics])
+            logger.info(f"  ⇢ Сохранение данных в CSV файлы...")
+            # Приводим все числовые значения к float для избежания проблем с типами Arrow
+            clean_metrics = {}
+            for key, value in all_metrics.items():
+                if isinstance(value, (int, float)):
+                    clean_metrics[key] = float(value)
+                else:
+                    clean_metrics[key] = value
+            
+            metrics_df = pd.DataFrame([clean_metrics])
             metrics_df.to_csv(results_dir / "strategy_metrics.csv", index=False)
             logger.info(f"📋 Метрики сохранены: {results_dir / 'strategy_metrics.csv'}")
             
@@ -472,6 +695,10 @@ def run_walk_forward(cfg: AppConfig) -> dict[str, float]:
                 trades_log_df = pd.DataFrame(all_trades_log)
                 trades_log_df.to_csv(results_dir / "trades_log.csv", index=False)
                 logger.info(f"📓 Детальный лог сделок сохранен: {results_dir / 'trades_log.csv'}")
+            
+            logger.info(f"🎉 Walk-Forward анализ полностью завершен!")
+            logger.info(f"📊 Все отчеты и данные сохранены в: {results_dir}")
+            logger.info(f"💼 Итоговый капитал: ${portfolio.get_current_equity():,.2f}")
                 
         except Exception as e:
             logger.error(f"Ошибка при создании отчетов: {e}")
