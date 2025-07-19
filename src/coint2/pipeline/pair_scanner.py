@@ -113,6 +113,11 @@ def _test_pair_for_coint(
         )
         return None
     
+    # Проверяем на пустые данные
+    if pair_data.empty or len(pair_data) == 0:
+        logger.debug(f"Пара {symbol1}-{symbol2}: пустые данные")
+        return None
+    
     # Проверяем на наличие NaN, если более 10% - отбрасываем пару
     nan_ratio1 = pair_data[symbol1].isna().mean()
     nan_ratio2 = pair_data[symbol2].isna().mean()
@@ -131,8 +136,20 @@ def _test_pair_for_coint(
 
     y = pair_data[symbol1]
     x = pair_data[symbol2]
+    
+    # Проверяем на пустые данные и нулевую дисперсию
+    if len(x) == 0 or x.var() == 0:
+        logger.debug(f"Пара {symbol1}-{symbol2}: нулевая дисперсия или пустые данные")
+        return None
+    
     beta = y.cov(x) / x.var()
     spread = y - beta * x
+    
+    # Проверяем спред на пустые данные
+    if len(spread) == 0 or spread.isna().all():
+        logger.debug(f"Пара {symbol1}-{symbol2}: пустой спред")
+        return None
+    
     mean = spread.mean()
     std = spread.std()
     

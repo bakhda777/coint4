@@ -43,7 +43,7 @@ def enhanced_pair_screening(
     max_beta: float = MAX_BETA,
     min_mean_crossings: int = 8,
     min_history_ratio: float = 0.8,
-    save_filter_reasons: bool = True,
+    save_filter_reasons: bool = False,
     kpss_pvalue_threshold: float = 0.05,
     max_hurst_exponent: float = 0.5,
     *,
@@ -153,6 +153,14 @@ def enhanced_pair_screening(
                 
                 # Calculate spread and statistics
                 spread = y_aligned - beta * x_aligned
+                
+                # Check for empty spread to avoid numpy warnings
+                if len(spread) == 0 or spread.isna().all():
+                    filter_stats["spread_empty"] = filter_stats.get("spread_empty", 0) + 1
+                    if save_filter_reasons:
+                        filter_reasons.append((s1, s2, "spread_empty"))
+                    continue
+                
                 mean_spread = spread.mean()
                 std_spread = spread.std()
                 
@@ -176,6 +184,14 @@ def enhanced_pair_screening(
                     
                     # Estimate daily volume (simplified - using price * typical volume multiplier)
                     # This is a placeholder - in real implementation, you'd use actual volume data
+                    
+                    # Check for empty recent data to avoid numpy warnings
+                    if len(recent_y) == 0 or recent_y.isna().all() or len(recent_x) == 0 or recent_x.isna().all():
+                        filter_stats["recent_data_empty"] = filter_stats.get("recent_data_empty", 0) + 1
+                        if save_filter_reasons:
+                            filter_reasons.append((s1, s2, "recent_data_empty"))
+                        continue
+                    
                     avg_price_s1 = recent_y.mean()
                     avg_price_s2 = recent_x.mean()
                     
@@ -302,7 +318,7 @@ def filter_pairs_by_coint_and_half_life(
     liquidity_usd_daily: float = 1_000_000.0,
     max_bid_ask_pct: float = 0.2,
     max_avg_funding_pct: float = 0.03,
-    save_filter_reasons: bool = True,
+    save_filter_reasons: bool = False,
     kpss_pvalue_threshold: float = 0.05,
     max_hurst_exponent: float = 0.5,
     *,
@@ -334,44 +350,35 @@ def filter_pairs_by_coint_and_half_life(
     def _is_stable(sym: str) -> bool:
         return sym in stable_tokens
     logger.info(f"[ФИЛЬТР] На входе после SSD: {len(pairs)} пар")
+    logger.info(f"[ФИЛЬТР] Применяем оптимизированный порядок: Коинтеграция → Beta → Half-life → Mean crossings → Hurst → KPSS → Market microstructure")
     
     # Словарь для отслеживания причин фильтрации по категориям
     filter_stats = {
         'total': len(pairs),
+        'insufficient_data': 0,
+        'zero_variance': 0,
         'pvalue': 0,
         'beta': 0,
         'half_life': 0,
         'crossings': 0,
         'hurst': 0,
+        'kpss': 0,
+        'history': 0,
+        'liquidity': 0,
     }
     
-    # Фильтр 1: Коинтеграция (p-value)
+    # Фильтр 1: Коинтеграция (p-value) - основной критерий качества
     coint_passed = []
     filter_reasons: list[tuple[str,str,str]] = []  # (s1,s2,reason)
     for s1, s2 in pairs:
-        # --- History coverage check ---
-        hist_ratio1 = price_df[s1].notna().mean()
-        hist_ratio2 = price_df[s2].notna().mean()
-        if min(hist_ratio1, hist_ratio2) < min_history_ratio:
-            filter_reasons.append((s1, s2, 'history'))
-            filter_stats['history'] = filter_stats.get('history', 0) + 1
-            continue
-
-        # --- Liquidity & market microstructure checks ---
-        vol1, ba1, fund1 = _get_market_metrics(s1)
-        vol2, ba2, fund2 = _get_market_metrics(s2)
-        if min(vol1, vol2) < liquidity_usd_daily or max(ba1, ba2) > max_bid_ask_pct or max(abs(fund1), abs(fund2)) > max_avg_funding_pct:
-            filter_reasons.append((s1, s2, 'liquidity'))
-            filter_stats['liquidity'] = filter_stats.get('liquidity', 0) + 1
-            continue
         pair_data = price_df[[s1, s2]].dropna()
         if pair_data.empty or len(pair_data) < 30:  # Минимум 30 наблюдений для статистических тестов
             filter_reasons.append((s1, s2, 'insufficient_data'))
-            filter_stats['insufficient_data'] = filter_stats.get('insufficient_data', 0) + 1
+            filter_stats['insufficient_data'] += 1
             continue
         if pair_data[s2].var() == 0:
             filter_reasons.append((s1, s2, 'zero_variance'))
-            filter_stats['zero_variance'] = filter_stats.get('zero_variance', 0) + 1
+            filter_stats['zero_variance'] += 1
             continue
             
         # Корреляция между активами (для метрик)
@@ -400,12 +407,8 @@ def filter_pairs_by_coint_and_half_life(
 
     logger.info(f"[ФИЛЬТР] После фильтра коинтеграции: {len(coint_passed)} пар")
 
-    total_pairs_coint = len(coint_passed)
-    half_life_passed = 0
-    beta_passed = 0
-
-    # Первичный проход — вычисляем half-life и std, собираем метрики
-    tmp_stats: list[tuple[str, str, float, float, float, float, float, float]] = []  # s1,s2,beta,mean,std,hl_days,mean_crossings,pvalue
+    # Фильтр 2: Beta range проверка (очень быстро)
+    beta_passed = []
     for s1, s2, corr, pvalue in coint_passed:
         pair_data = price_df[[s1, s2]].dropna()
         beta = pair_data[s1].cov(pair_data[s2]) / pair_data[s2].var()
@@ -415,15 +418,15 @@ def filter_pairs_by_coint_and_half_life(
             filter_stats['beta'] += 1
             continue
 
-        beta_passed += 1
+        beta_passed.append((s1, s2, corr, pvalue, beta))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра beta: {len(beta_passed)} пар")
 
+    # Фильтр 3: Half-life расчет (быстро)
+    half_life_passed = []
+    for s1, s2, corr, pvalue, beta in beta_passed:
+        pair_data = price_df[[s1, s2]].dropna()
         spread = pair_data[s1] - beta * pair_data[s2]
-
-        hurst_exponent = calculate_hurst_exponent(spread)
-        if hurst_exponent > max_hurst_exponent:
-            filter_reasons.append((s1, s2, f"hurst_too_high ({hurst_exponent:.2f})"))
-            filter_stats['hurst'] += 1
-            continue
 
         # Расчёт half-life (в барах)
         hl_bars = calculate_half_life(spread)
@@ -439,49 +442,93 @@ def filter_pairs_by_coint_and_half_life(
             filter_reasons.append((s1, s2, 'half_life'))
             filter_stats['half_life'] += 1
             continue
-        half_life_passed += 1
-        hl = hl_days  # сохраняем в днях для метрик
-            
-        # KPSS тест стационарности спреда
+        
+        half_life_passed.append((s1, s2, corr, pvalue, beta, hl_days, spread))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра half-life: {len(half_life_passed)} пар")
+
+    # Фильтр 4: Mean crossings (быстро)
+    crossings_passed = []
+    for s1, s2, corr, pvalue, beta, hl_days, spread in half_life_passed:
+        mean_crossings = count_mean_crossings(spread)
+        if mean_crossings < min_mean_crossings:
+            filter_reasons.append((s1, s2, 'crossings'))
+            filter_stats['crossings'] += 1
+            continue
+        
+        crossings_passed.append((s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра mean crossings: {len(crossings_passed)} пар")
+
+    # Фильтр 5: Hurst exponent (умеренно)
+    hurst_passed = []
+    for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in crossings_passed:
+        hurst_exponent = calculate_hurst_exponent(spread)
+        if hurst_exponent > max_hurst_exponent:
+            filter_reasons.append((s1, s2, f"hurst_too_high ({hurst_exponent:.2f})"))
+            filter_stats['hurst'] += 1
+            continue
+        
+        hurst_passed.append((s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра Hurst: {len(hurst_passed)} пар")
+
+    # Фильтр 6: KPSS тест (медленно)
+    kpss_passed = []
+    for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in hurst_passed:
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=InterpolationWarning)
                 p_kpss = kpss(spread, regression='c', nlags='auto')[1]
             if p_kpss < kpss_pvalue_threshold:
                 filter_reasons.append((s1, s2, 'kpss'))
-                filter_stats['kpss'] = filter_stats.get('kpss', 0) + 1
+                filter_stats['kpss'] += 1
                 continue  # отвергаем стационарность тренда
         except Exception:
             pass  # если тест не применим, пропускаем
+        
+        kpss_passed.append((s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра KPSS: {len(kpss_passed)} пар")
 
+    # Фильтр 7: Market microstructure (liquidity, bid-ask, funding)
+    microstructure_passed = []
+    for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in kpss_passed:
+        # --- History coverage check ---
+        hist_ratio1 = price_df[s1].notna().mean()
+        hist_ratio2 = price_df[s2].notna().mean()
+        if min(hist_ratio1, hist_ratio2) < min_history_ratio:
+            filter_reasons.append((s1, s2, 'history'))
+            filter_stats['history'] += 1
+            continue
+
+        # --- Liquidity & market microstructure checks ---
+        vol1, ba1, fund1 = _get_market_metrics(s1)
+        vol2, ba2, fund2 = _get_market_metrics(s2)
+        if min(vol1, vol2) < liquidity_usd_daily or max(ba1, ba2) > max_bid_ask_pct or max(abs(fund1), abs(fund2)) > max_avg_funding_pct:
+            filter_reasons.append((s1, s2, 'liquidity'))
+            filter_stats['liquidity'] += 1
+            continue
+        
         # Расчет стандартного отклонения спреда
+        if len(spread) == 0 or spread.isna().all():
+            filter_reasons.append((s1, s2, 'spread_empty_stats'))
+            filter_stats['spread_empty_stats'] = filter_stats.get('spread_empty_stats', 0) + 1
+            continue
+        
         mean = spread.mean()
         std = spread.std()
-        # отложим проверку std/other until we вычислим адаптивные пороги
         
-        tmp_stats.append((s1, s2, beta, mean, std, hl_days, 0.0, pvalue))  # mean_cross later
+        microstructure_passed.append((s1, s2, corr, pvalue, beta, hl_days, mean, std, mean_crossings))
+    
+    logger.info(f"[ФИЛЬТР] После фильтра market microstructure: {len(microstructure_passed)} пар")
 
-    # --- Second pass: crossings & metrics ---
-    mean_cross_passed = 0
+    # Формируем финальный результат
     result = []
-    for (s1, s2, beta, mean, std, hl_days, _, pvalue) in tmp_stats:
-
-        pair_data = price_df[[s1, s2]].dropna()
-        spread = pair_data[s1] - beta * pair_data[s2]
-        mean_crossings = count_mean_crossings(spread)
-        # Фильтр по количеству пересечений среднего
-        if mean_crossings < min_mean_crossings:
-            filter_reasons.append((s1, s2, 'crossings'))
-            filter_stats['crossings'] += 1
-            continue
-        mean_cross_passed += 1
-
-        # Вычисляем среднее абсолютное отклонение для метрики
-        mean_abs_dev = np.abs(spread - mean).mean()
-            
+    for s1, s2, corr, pvalue, beta, hl_days, mean, std, mean_crossings in microstructure_passed:
         # Сохраняем расширенные метрики для пары
         metrics = {
-            'half_life': hl,
+            'half_life': hl_days,
             'correlation': corr,
             'mean_crossings': mean_crossings,
             'spread_std': std,
@@ -491,21 +538,27 @@ def filter_pairs_by_coint_and_half_life(
         result.append((s1, s2, beta, mean, std, metrics))
         
     # Логирование итогов по этапам
-    # Рассчитываем процент отфильтрованных пар для каждой причины
     total_pairs = len(pairs)
+    
+    # Детальная статистика по фильтрам в порядке применения
+    logger.info(f"[ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):")
+    logger.info(f"  1. SSD → Коинтеграция: {total_pairs} → {len(coint_passed)} пар")
+    logger.info(f"  2. Коинтеграция → Beta: {len(coint_passed)} → {len(beta_passed)} пар")
+    logger.info(f"  3. Beta → Half-life: {len(beta_passed)} → {len(half_life_passed)} пар")
+    logger.info(f"  4. Half-life → Mean crossings: {len(half_life_passed)} → {len(crossings_passed)} пар")
+    logger.info(f"  5. Mean crossings → Hurst: {len(crossings_passed)} → {len(hurst_passed)} пар")
+    logger.info(f"  6. Hurst → KPSS: {len(hurst_passed)} → {len(kpss_passed)} пар")
+    logger.info(f"  7. KPSS → Market microstructure: {len(kpss_passed)} → {len(microstructure_passed)} пар")
+    
+    # Рассчитываем процент отфильтрованных пар для каждой причины
     filter_percentages = {reason: (count / total_pairs * 100) for reason, count in filter_stats.items() if count > 0}
     
-    # Детальная статистика по фильтрам
-    logger.info(f"[ФИЛЬТР] Статистика по причинам фильтрации:")
+    # Детальная статистика по причинам отсева
+    logger.info(f"[ФИЛЬТР] Причины отсева:")
     for reason, percent in sorted(filter_percentages.items(), key=lambda x: x[1], reverse=True):
         logger.info(f"  • {reason}: {filter_stats[reason]} пар ({percent:.1f}%)")
     
-    logger.info(
-        f"[ФИЛЬТР] Beta range {min_beta}-{max_beta}: {total_pairs_coint} → {beta_passed} пар"
-    )
-    logger.info(f"[ФИЛЬТР] Half-life: {total_pairs_coint} → {half_life_passed} пар")
-    logger.info(f"[ФИЛЬТР] Mean crossings: {len(tmp_stats)} → {mean_cross_passed} пар")
-    logger.info(f"[ФИЛЬТР] После всех фильтров: {len(result)} пар ({len(result)/total_pairs*100:.1f}% от исходного числа)")
+    logger.info(f"[ФИЛЬТР] Итого: {total_pairs} → {len(result)} пар ({len(result)/total_pairs*100:.1f}% прошли все фильтры)")
 
     # Сохраняем причины отсева в CSV
     if save_filter_reasons and filter_reasons:

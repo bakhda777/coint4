@@ -29,6 +29,14 @@ class PairSelectionConfig(BaseModel):
     kpss_pvalue_threshold: float | None = None
     pvalue_top_n: int | None = None
     save_std_histogram: bool | None = None
+    
+    # NEW: Pair tradeability filter parameters
+    enable_pair_tradeability_filter: bool = True
+    min_volume_usd_24h: float = 20_000_000  # 20M USD daily volume
+    min_days_live: int = 30  # 30 days since listing
+    max_funding_rate_abs: float = 0.0003  # 0.03% absolute funding rate
+    max_tick_size_pct: float = 0.0005  # 0.05% tick size relative to price
+    max_half_life_hours: float = 72.0  # 72 hours max half-life
 
     # -------- Validators --------
     @model_validator(mode="after")
@@ -111,6 +119,43 @@ class BacktestConfig(BaseModel):
     adaptive_thresholds: bool = True
     var_confidence: float = Field(default=0.05, gt=0.0, lt=1.0)
     max_var_multiplier: float = Field(default=3.0, gt=1.0)
+    
+    # NEW: Enhanced entry/exit rules
+    zscore_entry_threshold: float = Field(default=2.3, gt=0.0)  # New higher entry threshold
+    min_spread_move_sigma: float = Field(default=1.2, gt=0.0)  # Minimum spread movement since last flat
+    min_position_hold_minutes: int = Field(default=60, ge=0)  # Minimum hold time in minutes
+    anti_churn_cooldown_minutes: int = Field(default=60, ge=0)  # Anti-churn protection
+    
+    # NEW: Enhanced stop-loss rules
+    pair_stop_loss_usd: float = Field(default=75.0, gt=0.0)  # Pair-level stop loss in USD
+    pair_stop_loss_zscore: float = Field(default=3.0, gt=0.0)  # Z-score based stop loss
+    portfolio_daily_stop_pct: float = Field(default=0.02, gt=0.0, lt=1.0)  # 2% daily portfolio stop
+    
+    # NEW: Time-based filters
+    enable_funding_time_filter: bool = True
+    funding_blackout_minutes: int = Field(default=30, ge=0)  # Minutes before/after funding reset
+    funding_reset_hours: list[int] = Field(default_factory=lambda: [0, 8, 16])  # UTC hours for funding reset
+    enable_macro_event_filter: bool = True
+    macro_blackout_minutes: int = Field(default=30, ge=0)  # Minutes after macro events
+    
+    # NEW: Pair quarantine system
+    enable_pair_quarantine: bool = True
+    quarantine_pnl_threshold_sigma: float = Field(default=3.0, gt=0.0)  # -3 sigma PnL threshold
+    quarantine_drawdown_threshold_pct: float = Field(default=0.08, gt=0.0, lt=1.0)  # 8% drawdown threshold
+    quarantine_period_days: int = Field(default=7, ge=1)  # 7 days quarantine
+    quarantine_rolling_window_days: int = Field(default=30, ge=1)  # 30 days rolling window for PnL stats
+    
+    # NEW: Enhanced cost modeling
+    enable_realistic_costs: bool = True
+    commission_rate_per_leg: float = Field(default=0.0004, ge=0.0)  # 0.04% per leg
+    slippage_half_spread_multiplier: float = Field(default=2.0, ge=0.0)  # 2x half spread for slippage
+    funding_cost_enabled: bool = True
+    
+    # NEW: Enhanced position sizing with beta recalculation
+    beta_recalc_frequency_hours: int = Field(default=48, ge=1)  # Recalculate beta every 48 hours
+    beta_window_days_min: int = Field(default=60, ge=30)  # Minimum 60 days for beta calculation
+    beta_window_days_max: int = Field(default=120, ge=60)  # Maximum 120 days for beta calculation
+    use_ols_beta_sizing: bool = True  # Use OLS beta for position sizing
     
     # Market regime detection parameters
     market_regime_detection: bool = True

@@ -52,8 +52,17 @@ def rolling_zscore(series: pd.Series, window: int) -> pd.Series:
         Series of rolling z-score values aligned to the right edge of the
         window.
     """
+    # Check for empty series to avoid numpy warnings
+    if len(series) == 0:
+        return pd.Series(dtype=float)
+    
     mean = series.rolling(window).mean()
     std = series.rolling(window).std()
+    
+    # Replace NaN std with small value to avoid division by zero
+    std = std.fillna(1e-8)
+    std = std.replace(0, 1e-8)
+    
     return (series - mean) / std
 
 
@@ -165,6 +174,10 @@ def calculate_half_life(series: pd.Series) -> float:
 
 def count_mean_crossings(series: pd.Series) -> int:
     """Count how many times a series crosses its mean value."""
+    
+    # Check for empty series to avoid numpy warnings
+    if len(series) == 0 or series.isna().all():
+        return 0
 
     centered_series = series - series.mean()
     signs = np.sign(centered_series)

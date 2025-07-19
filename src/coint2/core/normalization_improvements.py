@@ -39,6 +39,12 @@ def preprocess_and_normalize_data(
         "final_symbols": 0
     }
     
+    # Проверка на пустые данные
+    if price_df.empty or price_df.shape[0] == 0 or price_df.shape[1] == 0:
+        logger.warning("Получен пустой DataFrame для нормализации")
+        stats["final_symbols"] = 0
+        return pd.DataFrame(), stats
+    
     # Этап 1: Фильтрация по истории данных
     history_ratios = price_df.notna().mean()
     valid_history = history_ratios >= min_history_ratio

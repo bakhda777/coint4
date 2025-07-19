@@ -39,11 +39,20 @@ pair_selection:
   pvalue_top_n: 50             # Число лучших пар по p-value после коинтеграции
   # Дополнительные параметры
   save_std_histogram: true     # Сохранять гистограмму σ
+  
+  # NEW: Фильтр допустимости пар
+  enable_pair_tradeability_filter: true
+  min_volume_usd_24h: 20_000_000    # 20M USD суточный объем
+  min_days_live: 30                 # 30 дней с листинга
+  max_funding_rate_abs: 0.0003      # 0.03% абсолютная ставка фандинга
+  max_tick_size_pct: 0.0005         # 0.05% размер тика относительно цены
+  max_half_life_hours: 72.0         # 72 часа максимальный полураспад
 
 backtest:
   timeframe: "15min"
   rolling_window: 30
-  zscore_threshold: 2.0         # Порог входа (было 2.5)
+  zscore_threshold: 1.0         # Очень низкий порог для диагностики
+  zscore_entry_threshold: 1.0   # Дублируем для совместимости
   zscore_exit: 0.8              # Выход при возврате к среднему (было 0.0)
   stop_loss_multiplier: 3.0     # Стоп-лосс при 3 std
   time_stop_multiplier: 2.0
@@ -54,6 +63,43 @@ backtest:
   annualizing_factor: 365
   cooldown_hours: 24            # Увеличиваем тайм-аут между сделками (было 4)
   wait_for_candle_close: true   # Ждем закрытия свечи перед входом
+  
+  # NEW: Улучшенные правила входа/выхода
+  min_spread_move_sigma: 1.2        # Минимальное движение спреда с последнего флета
+  min_position_hold_minutes: 60     # Минимальное удержание 1 час
+  anti_churn_cooldown_minutes: 60   # Защита от "пилы" - 60 минут
+  flat_zscore_threshold: 0.5        # Порог "плоского" z-score для отслеживания спреда
+  
+  # NEW: Улучшенные стоп-лоссы
+  pair_stop_loss_usd: 75.0          # Пара-стоп-лосс 75 USD
+  pair_stop_loss_zscore: 3.0        # Z-score стоп-лосс при 3 сигма
+  portfolio_daily_stop_pct: 0.02    # Портфельный стоп-аут 2%
+  
+  # NEW: Временные фильтры
+  enable_funding_time_filter: true
+  funding_blackout_minutes: 30      # 30 мин до/после фандинга
+  funding_reset_hours: [0, 8, 16]   # UTC часы сброса фандинга
+  enable_macro_event_filter: true
+  macro_blackout_minutes: 30        # 30 мин после макроданных
+  
+  # NEW: Карантин "сломанных" пар
+  enable_pair_quarantine: true
+  quarantine_pnl_threshold_sigma: 3.0    # -3 сигма PnL порог
+  quarantine_drawdown_threshold_pct: 0.08 # 8% просадка порог
+  quarantine_period_days: 7              # 7 дней карантина
+  quarantine_rolling_window_days: 30     # 30 дней окно для статистики
+  
+  # NEW: Реалистичные издержки
+  enable_realistic_costs: true
+  commission_rate_per_leg: 0.0004        # 0.04% за ногу
+  slippage_half_spread_multiplier: 2.0   # 2x полуспред для проскальзывания
+  funding_cost_enabled: true
+  
+  # NEW: Улучшенное позиционирование с пересчетом беты
+  beta_recalc_frequency_hours: 48        # Пересчет беты каждые 48 часов
+  beta_window_days_min: 60               # Минимум 60 дней для беты
+  beta_window_days_max: 120              # Максимум 120 дней для беты
+  use_ols_beta_sizing: true              # Использовать OLS бету для размера позиций
   
   # Определение рыночных режимов
   market_regime_detection: true     # Включить определение рыночных режимов
@@ -71,6 +117,19 @@ backtest:
   max_half_life_days: 10            # Если half-life > 10 дней → закрыть позицию
   min_correlation_threshold: 0.6    # Корреляция < 0.6 → закрыть позицию
   correlation_window: 720           # 30 дней для скользящей корреляции
+  
+  # Performance optimization parameters
+  regime_check_frequency: 192       # Проверять режим каждые 192 бара (48 часов для 15-мин данных) - УСКОРЕНИЕ
+  use_market_regime_cache: true     # Включить кэширование для Hurst/VR расчетов - УСКОРЕНИЕ
+  adf_check_frequency: 5376         # ADF тесты каждые 14 дней (14*24*4*4 = 5376 15-минутных баров) - УСКОРЕНИЕ
+  cache_cleanup_frequency: 1000     # Очищать кэш каждые 1000 баров
+  lazy_adf_threshold: 0.1           # Запускать ADF только при изменении корреляции > 0.1 - УСКОРЕНИЕ
+  hurst_neutral_band: 0.05          # Нейтральная зона вокруг 0.5 для Hurst - СТАБИЛЬНОСТЬ
+  vr_neutral_band: 0.2              # Нейтральная зона вокруг 1.0 для VR - СТАБИЛЬНОСТЬ
+  n_jobs: -1                        # Количество параллельных процессов (-1 = все доступные ядра) - УСКОРЕНИЕ
+  use_exponential_weighted_correlation: true  # Использовать экспоненциально взвешенную корреляцию - ТОЧНОСТЬ
+  ew_correlation_alpha: 0.1         # Параметр сглаживания для EW-корреляции (0.05-0.2) - ТОЧНОСТЬ
+  
   # NEW: Enhanced risk management parameters
   use_kelly_sizing: true        # Использовать Kelly criterion для размера позиций
   max_kelly_fraction: 0.25      # Максимальная доля Kelly (25%)
@@ -80,8 +139,8 @@ backtest:
   max_var_multiplier: 3.0       # Максимальный множитель порога при высокой волатильности
 
 walk_forward:
-  start_date: "2024-01-01"      # Первый бар, который попадает даже в train
-  end_date: "2024-01-31"        # Последний день тестового окна
+  start_date: "2024-02-01"      # Первый бар, который попадает даже в train
+  end_date: "2024-04-30"        # Последний день тестового окна
   training_period_days: 60      # Тренировка на 60 днях вместо года
   testing_period_days: 30       # Торговля найденных пар ровно 30 суток
 

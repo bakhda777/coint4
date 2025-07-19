@@ -292,11 +292,11 @@ def format_metrics_summary(metrics: Dict[str, Any]) -> str:
         "",
         "💰 ФИНАНСОВЫЕ РЕЗУЛЬТАТЫ:",
         f"   • Общий P&L:              {metrics.get('total_pnl', 0):>15,.0f}",
-        f"   • Максимальная просадка:  {metrics.get('max_drawdown', 0):>15,.0f}",
+        f"   • Максимальная просадка:  {metrics.get('max_drawdown_abs', 0):>15,.0f}",
         f"   • Средний дневной P&L:    {metrics.get('avg_daily_pnl', 0):>15,.0f}",
         "",
         "📈 МЕТРИКИ РИСКА:",
-        f"   • Коэффициент Шарпа:      {metrics.get('sharpe_ratio', 0):>15.4f}",
+        f"   • Коэффициент Шарпа:      {metrics.get('sharpe_ratio_abs', 0):>15.4f}",
         f"   • Волатильность P&L:      {metrics.get('volatility', 0):>15.2f}",
         f"   • Процент прибыльных дней: {metrics.get('win_rate', 0):>14.2%}",
         "",
@@ -318,7 +318,7 @@ def format_metrics_summary(metrics: Dict[str, Any]) -> str:
     ]
     
     # Добавляем оценку
-    sharpe = metrics.get('sharpe_ratio', 0)
+    sharpe = metrics.get('sharpe_ratio_abs', 0)
     total_pnl = metrics.get('total_pnl', 0)
     
     if sharpe > 0.5 and total_pnl > 0:
@@ -355,4 +355,4 @@ def calculate_extended_metrics(pnl_series: pd.Series, equity_curve: pd.Series) -
     metrics['max_single_gain'] = pnl_series.max()
     metrics['max_single_loss'] = pnl_series.min()
     
-    return metrics 
+    return metrics

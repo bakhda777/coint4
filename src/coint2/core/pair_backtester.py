@@ -1,8 +1,8 @@
 import logging
 import pandas as pd
 
-from coint2.engine.backtest_engine import PairBacktester as EnginePairBacktester
-from coint2.engine.backtest_engine import PairBacktester as IncrementalPairBacktester
+from coint2.engine.numba_backtest_engine_full import FullNumbaPairBacktester as EnginePairBacktester
+from coint2.engine.numba_backtest_engine_full import FullNumbaPairBacktester as IncrementalPairBacktester
 
 from .portfolio import Portfolio
 
@@ -20,6 +20,7 @@ class PairBacktester(IncrementalPairBacktester):
         self,
         pair_name: str,
         *args,
+        portfolio: Portfolio = None,
         risk_per_position_pct: float = 0.01,
         max_history_days: int = 252,
         **kwargs
@@ -27,7 +28,8 @@ class PairBacktester(IncrementalPairBacktester):
         self.pair_name = pair_name
         self.risk_per_position_pct = risk_per_position_pct
         self.max_history_days = max_history_days
-        super().__init__(*args, **kwargs)
+        # Pass portfolio and pair_name to the parent class
+        super().__init__(*args, portfolio=portfolio, pair_name=pair_name, **kwargs)
         
         # Initialize with empty data to be populated incrementally
         if hasattr(self, 'pair_data') and not self.pair_data.empty:

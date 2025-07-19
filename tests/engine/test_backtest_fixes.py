@@ -136,13 +136,29 @@ class TestBacktestFixes:
             'asset2': [50, 51, 52, 51.5, 50.5, 50, 49.5, 49, 50, 51]
         })
         
-        # Тест валидации: take_profit_multiplier должен быть < 1.0
-        with pytest.raises(ValueError, match="take_profit_multiplier.*must be less than 1.0"):
+        # Тест валидации: take_profit_multiplier >= 1.0 теперь разрешен с предупреждением
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            bt_warning = PairBacktester(
+                data,
+                rolling_window=3,
+                z_threshold=1.0,
+                take_profit_multiplier=1.5,  # Теперь разрешено с предупреждением
+                capital_at_risk=1000.0,
+                stop_loss_multiplier=2.0
+            )
+            # Проверяем, что выдается предупреждение
+            assert len(w) > 0, "Должно быть предупреждение для take_profit_multiplier >= 1.0"
+            assert "take_profit_multiplier" in str(w[0].message)
+            
+        # Тест валидации: отрицательный take_profit_multiplier должен вызывать ошибку
+        with pytest.raises(ValueError, match="take_profit_multiplier.*must be positive"):
             PairBacktester(
                 data,
                 rolling_window=3,
                 z_threshold=1.0,
-                take_profit_multiplier=1.5,  # Неправильное значение
+                take_profit_multiplier=-0.5,  # Отрицательное значение
                 capital_at_risk=1000.0,
                 stop_loss_multiplier=2.0
             )

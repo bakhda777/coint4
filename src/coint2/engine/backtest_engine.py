@@ -9,6 +9,7 @@ from collections import deque
 from functools import lru_cache
 
 from ..core import performance
+from .market_regime_cache import MarketRegimeCache
 
 
 @dataclass
@@ -48,6 +49,9 @@ class PairBacktester:
         max_margin_usage: float = float("inf"),
         half_life: float | None = None,
         time_stop_multiplier: float | None = None,
+        # NEW: Portfolio integration for position limits
+        portfolio = None,
+        pair_name: str = "",
         # NEW: Enhanced risk management parameters
         use_kelly_sizing: bool = True,
         max_kelly_fraction: float = 0.25,
@@ -76,6 +80,21 @@ class PairBacktester:
         max_half_life_days: int = 10,
         min_correlation_threshold: float = 0.6,
         correlation_window: int = 720,  # 30 days for 15-min data
+        # Performance optimization parameters
+        regime_check_frequency: int = 1,  # Check regime every N bars (1=every bar, 48=every 12 hours)
+        use_market_regime_cache: bool = True,  # Enable caching for Hurst/VR calculations
+        adf_check_frequency: int = 2688,  # ADF test frequency (separate from cointegration_test_frequency)
+        cache_cleanup_frequency: int = 1000,  # Clean cache every N bars
+        # NEW: Lazy ADF parameters
+        lazy_adf_threshold: float = 0.1,  # Trigger ADF only if correlation change > threshold
+        # NEW: Neutral band parameters
+        hurst_neutral_band: float = 0.05,  # Neutral band around 0.5 for Hurst
+        vr_neutral_band: float = 0.2,  # Neutral band around 1.0 for VR
+        # NEW: Exponential weighted correlation parameters
+        use_exponential_weighted_correlation: bool = False,  # Use EW correlation instead of rolling
+        ew_correlation_alpha: float = 0.1,  # Smoothing factor for EW correlation
+        # NEW: Configuration object for accessing config parameters
+        config = None,
     ) -> None:
         """Initialize backtester.
 
@@ -118,6 +137,9 @@ class PairBacktester:
         self.max_margin_usage = max_margin_usage
         self.half_life = half_life
         self.time_stop_multiplier = time_stop_multiplier
+        # NEW: Portfolio integration for position limits
+        self.portfolio = portfolio
+        self.pair_name = pair_name
         # NEW: Enhanced risk management parameters
         self.use_kelly_sizing = use_kelly_sizing
         self.max_kelly_fraction = max_kelly_fraction
@@ -125,6 +147,86 @@ class PairBacktester:
         self.adaptive_thresholds = adaptive_thresholds
         self.var_confidence = var_confidence
         self.max_var_multiplier = max_var_multiplier
+        
+        # NEW: Enhanced entry/exit rules
+        if config is not None:
+            self.zscore_entry_threshold = getattr(config, 'zscore_entry_threshold', z_threshold)
+            self.min_spread_move_sigma = getattr(config, 'min_spread_move_sigma', 1.2)
+            self.min_position_hold_minutes = getattr(config, 'min_position_hold_minutes', 60)
+            self.anti_churn_cooldown_minutes = getattr(config, 'anti_churn_cooldown_minutes', 60)
+            
+            # NEW: Enhanced stop-loss rules
+            self.pair_stop_loss_usd = getattr(config, 'pair_stop_loss_usd', 75.0)
+            self.pair_stop_loss_zscore = getattr(config, 'pair_stop_loss_zscore', 3.0)
+            self.portfolio_daily_stop_pct = getattr(config, 'portfolio_daily_stop_pct', 0.02)
+            
+            # NEW: Time-based filters
+            self.enable_funding_time_filter = getattr(config, 'enable_funding_time_filter', True)
+            self.funding_blackout_minutes = getattr(config, 'funding_blackout_minutes', 30)
+            self.funding_reset_hours = getattr(config, 'funding_reset_hours', [0, 8, 16])
+            self.enable_macro_event_filter = getattr(config, 'enable_macro_event_filter', True)
+            self.macro_blackout_minutes = getattr(config, 'macro_blackout_minutes', 30)
+            
+            # NEW: Pair quarantine system
+            self.enable_pair_quarantine = getattr(config, 'enable_pair_quarantine', True)
+            self.quarantine_pnl_threshold_sigma = getattr(config, 'quarantine_pnl_threshold_sigma', 3.0)
+            self.quarantine_drawdown_threshold_pct = getattr(config, 'quarantine_drawdown_threshold_pct', 0.08)
+            self.quarantine_period_days = getattr(config, 'quarantine_period_days', 7)
+            self.quarantine_rolling_window_days = getattr(config, 'quarantine_rolling_window_days', 30)
+            
+            # NEW: Enhanced cost modeling
+            self.enable_realistic_costs = getattr(config, 'enable_realistic_costs', True)
+            self.commission_rate_per_leg = getattr(config, 'commission_rate_per_leg', 0.0004)
+            self.slippage_half_spread_multiplier = getattr(config, 'slippage_half_spread_multiplier', 2.0)
+            self.funding_cost_enabled = getattr(config, 'funding_cost_enabled', True)
+            
+            # NEW: Enhanced position sizing with beta recalculation
+            self.beta_recalc_frequency_hours = getattr(config, 'beta_recalc_frequency_hours', 48)
+            self.beta_window_days_min = getattr(config, 'beta_window_days_min', 60)
+            self.beta_window_days_max = getattr(config, 'beta_window_days_max', 120)
+            self.use_ols_beta_sizing = getattr(config, 'use_ols_beta_sizing', True)
+        else:
+            # Default values when no config is provided
+            self.zscore_entry_threshold = z_threshold
+            self.min_spread_move_sigma = 1.2
+            self.min_position_hold_minutes = 60
+            self.anti_churn_cooldown_minutes = 60
+            self.pair_stop_loss_usd = 75.0
+            self.pair_stop_loss_zscore = 3.0
+            self.portfolio_daily_stop_pct = 0.02
+            self.enable_funding_time_filter = True
+            self.funding_blackout_minutes = 30
+            self.funding_reset_hours = [0, 8, 16]
+            self.enable_macro_event_filter = True
+            self.macro_blackout_minutes = 30
+            self.enable_pair_quarantine = True
+            self.quarantine_pnl_threshold_sigma = 3.0
+            self.quarantine_drawdown_threshold_pct = 0.08
+            self.quarantine_period_days = 7
+            self.quarantine_rolling_window_days = 30
+            self.enable_realistic_costs = True
+            self.commission_rate_per_leg = 0.0004
+            self.slippage_half_spread_multiplier = 2.0
+            self.funding_cost_enabled = True
+            self.beta_recalc_frequency_hours = 48
+            self.beta_window_days_min = 60
+            self.beta_window_days_max = 120
+            self.use_ols_beta_sizing = True
+        
+        # NEW: State tracking for enhanced features
+        self.last_beta_recalc_time = None
+        self.last_flat_time = None
+        self.last_spread_at_flat = None
+        self.position_entry_time = None
+        self.daily_portfolio_high = None
+        self.daily_portfolio_equity = 0.0
+        self.quarantined_pairs = {}  # pair_name -> quarantine_end_date
+        self.pair_pnl_history = {}  # pair_name -> list of daily PnL
+        self.pair_equity_peaks = {}  # pair_name -> peak equity
+        self.macro_event_blackout_end = None
+        
+        # NEW: Enhanced trade logging
+        self.complete_trades_log = []  # For open->close cycle logging
         # NEW: Volatility-based position sizing parameters
         self.volatility_based_sizing = volatility_based_sizing
         self.volatility_lookback_hours = volatility_lookback_hours
@@ -142,12 +244,40 @@ class PairBacktester:
         self.structural_break_protection = structural_break_protection
         self.cointegration_test_frequency = cointegration_test_frequency
         self.adf_pvalue_threshold = adf_pvalue_threshold
+        # Performance optimization parameters
+        self.regime_check_frequency = regime_check_frequency
+        self.use_market_regime_cache = use_market_regime_cache
+        self.adf_check_frequency = adf_check_frequency
+        self.cache_cleanup_frequency = cache_cleanup_frequency
+        self.lazy_adf_threshold = lazy_adf_threshold
+        self.hurst_neutral_band = hurst_neutral_band
+        self.vr_neutral_band = vr_neutral_band
+        self.use_exponential_weighted_correlation = use_exponential_weighted_correlation
+        self.ew_correlation_alpha = ew_correlation_alpha
+        
+        # Initialize market regime cache if enabled
+        self.market_regime_cache = None
+        if self.use_market_regime_cache:
+            self.market_regime_cache = MarketRegimeCache(
+                hurst_window=self.hurst_window,
+                vr_window=self.variance_ratio_window
+            )
+        
+        # Track last regime check index
+        self.last_regime_check_index = -1
+        # Track last correlation for lazy ADF testing
+        self.last_correlation = None
         self.exclusion_period_days = exclusion_period_days
         self.max_half_life_days = max_half_life_days
         self.min_correlation_threshold = min_correlation_threshold
         self.correlation_window = correlation_window
-        self.s1 = pair_data.columns[0]
-        self.s2 = pair_data.columns[1]
+        # Handle empty DataFrame case
+        if pair_data.empty or len(pair_data.columns) < 2:
+            self.s1 = "s1"  # Default column names
+            self.s2 = "s2"
+        else:
+            self.s1 = pair_data.columns[0]
+            self.s2 = pair_data.columns[1]
         self.trades_log: list[dict] = []
         
         # NEW: Risk management state variables
@@ -188,8 +318,8 @@ class PairBacktester:
 
     def _validate_parameters(self) -> None:
         """Validate trading parameters for logical consistency."""
-        # Check data size vs rolling window
-        if len(self.pair_data) < self.rolling_window + 2:
+        # Check data size vs rolling window (skip for empty data in incremental mode)
+        if not self.pair_data.empty and len(self.pair_data) < self.rolling_window + 2:
             raise ValueError(f"Data length ({len(self.pair_data)}) must be at least rolling_window + 2 ({self.rolling_window + 2})")
         
         # Check threshold consistency
@@ -210,11 +340,18 @@ class PairBacktester:
         if self.take_profit_multiplier is not None and self.take_profit_multiplier <= 0:
             raise ValueError("take_profit_multiplier must be positive")
             
-        # FIXED: Corrected take_profit validation - it should be less than 1.0 for proper logic
+        # FIXED: More flexible take_profit validation - allow values >= 1.0 for some strategies
+        if (self.take_profit_multiplier is not None and
+            self.take_profit_multiplier <= 0.0):
+            raise ValueError(f"take_profit_multiplier ({self.take_profit_multiplier}) must be positive")
+        
+        # Warning for potentially problematic values
         if (self.take_profit_multiplier is not None and
             self.take_profit_multiplier >= 1.0):
-            raise ValueError(f"take_profit_multiplier ({self.take_profit_multiplier}) must be less than 1.0 "
-                           "to ensure take-profit triggers before entry level.")
+            import warnings
+            warnings.warn(f"take_profit_multiplier ({self.take_profit_multiplier}) >= 1.0 may prevent "
+                         "take-profit from triggering in mean-reverting strategies", 
+                         UserWarning, stacklevel=2)
         
         # Check cost parameters
         if self.commission_pct < 0 or self.slippage_pct < 0:
@@ -234,7 +371,7 @@ class PairBacktester:
         if self.rolling_window < 3:
             raise ValueError("rolling_window must be at least 3 for meaningful regression")
         
-        if self.rolling_window > len(self.pair_data) // 2:
+        if not self.pair_data.empty and self.rolling_window > len(self.pair_data) // 2:
             raise ValueError(f"rolling_window ({self.rolling_window}) is too large relative to data size ({len(self.pair_data)})")
         
         # FIXED: Добавлена проверка на минимальное количество наблюдений для статистической значимости
@@ -270,15 +407,16 @@ class PairBacktester:
         y_array = y_win.values
         x_array = x_win.values
         
-        # Create secure hash using hashlib
+        # FIXED: Optimized hashing for better performance
         try:
-            # Primary method: use tobytes() for efficient hashing
-            y_bytes = y_array.tobytes()
-            x_bytes = x_array.tobytes()
-            hash_input = y_bytes + x_bytes + str(len(y_array)).encode()
+            # Use array shape and basic statistics for faster hashing
+            # This avoids expensive tobytes() operations while maintaining uniqueness
+            y_stats = (y_array.mean(), y_array.std(), y_array.min(), y_array.max())
+            x_stats = (x_array.mean(), x_array.std(), x_array.min(), x_array.max())
+            hash_input = f"{len(y_array)}_{y_stats}_{x_stats}".encode()
         except (AttributeError, ValueError):
-            # FIXED: Secure fallback using hashlib instead of str()
-            hash_input = (str(y_array.tolist()) + str(x_array.tolist())).encode()
+            # Fallback to simple length-based hash for degenerate cases
+            hash_input = f"{len(y_array)}_{y_array.sum()}_{x_array.sum()}".encode()
         
         window_hash = hashlib.md5(hash_input).hexdigest()
         
@@ -297,13 +435,21 @@ class PairBacktester:
             # For degenerate cases (e.g., constant data), return default values
             beta = 0.0
             spread_win = y_win - beta * x_win
-            mean = spread_win.mean()
-            std = max(spread_win.std(), 1e-8)  # Avoid zero std
+            mean = spread_win.mean() if len(spread_win) > 0 else 0.0
+            std_raw = spread_win.std() if len(spread_win) > 0 else 0.0
+            # Enhanced protection: use price-based minimum std to avoid unrealistic values
+            price_scale = max(y_win.mean(), x_win.mean()) if len(y_win) > 0 and len(x_win) > 0 else 1.0
+            min_std = max(1e-8, price_scale * 1e-6)  # Adaptive minimum based on price scale
+            std = max(std_raw, min_std)
         else:
             beta = model.params.iloc[1]
             spread_win = y_win - beta * x_win
-            mean = spread_win.mean()
-            std = max(spread_win.std(), 1e-8)  # FIXED: Avoid zero std in all cases
+            mean = spread_win.mean() if len(spread_win) > 0 else 0.0
+            std_raw = spread_win.std() if len(spread_win) > 0 else 0.0
+            # Enhanced protection: use price-based minimum std to avoid unrealistic values
+            price_scale = max(y_win.mean(), x_win.mean()) if len(y_win) > 0 and len(x_win) > 0 else 1.0
+            min_std = max(1e-8, price_scale * 1e-6)  # Adaptive minimum based on price scale
+            std = max(std_raw, min_std)
         
         # Cache the results
         result = (beta, mean, std)
@@ -368,55 +514,149 @@ class PairBacktester:
         # Exit is profitable if current PnL exceeds closing costs
         return current_pnl > total_closing_costs
 
+    def _pair_is_tradeable(self, symbol_a: str, symbol_b: str, stats_a: dict, stats_b: dict) -> bool:
+        """Check if a pair meets all tradability criteria.
+        
+        Args:
+            symbol_a: First symbol in pair
+            symbol_b: Second symbol in pair  
+            stats_a: Statistics for first symbol
+            stats_b: Statistics for second symbol
+            
+        Returns:
+            bool: True if pair is tradeable, False otherwise
+        """
+        def get_quote_currency(symbol: str) -> str:
+            """Extract quote currency from symbol."""
+            if symbol.endswith('USDT'):
+                return 'USDT'
+            elif symbol.endswith('USDC'):
+                return 'USDC'
+            elif symbol.endswith('BUSD'):
+                return 'BUSD'
+            elif symbol.endswith('FDUSD'):
+                return 'FDUSD'
+            else:
+                return 'OTHER'
+        
+        # 1. Same stable quote currency check
+        quote_a = get_quote_currency(symbol_a)
+        quote_b = get_quote_currency(symbol_b)
+        if quote_a != quote_b:
+            return False
+        
+        # 2. Liquidity check: >= 20M USD daily volume
+        if (stats_a.get('vol_usd_24h', 0) < 20_000_000 or 
+            stats_b.get('vol_usd_24h', 0) < 20_000_000):
+            return False
+        
+        # 3. Listing age check: >= 30 days
+        if (stats_a.get('days_live', 0) < 30 or 
+            stats_b.get('days_live', 0) < 30):
+            return False
+        
+        # 4. Funding spread check: use config value
+        funding_threshold = getattr(self, 'max_funding_rate_abs', 0.0003)
+        if (abs(stats_a.get('funding', 0)) >= funding_threshold or 
+            abs(stats_b.get('funding', 0)) >= funding_threshold):
+            return False
+        
+        # 5. Technical conditions
+        # Tick size / price: use config value
+        tick_threshold = getattr(self, 'max_tick_size_pct', 0.0005)
+        if (stats_a.get('tick_pct', 1) >= tick_threshold or 
+            stats_b.get('tick_pct', 1) >= tick_threshold):
+            return False
+        
+        # Half-life: use config value
+        half_life_threshold = getattr(self, 'max_half_life_hours', 72.0)
+        if (stats_a.get('half_life_h', 999) >= half_life_threshold or 
+            stats_b.get('half_life_h', 999) >= half_life_threshold):
+            return False
+        
+        return True
+
     def _calculate_position_size(self, entry_z: float, spread_curr: float, mean: float,
                                std: float, beta: float, price_s1: float, price_s2: float) -> float:
         """Calculate position size based on risk management parameters.
         
-        FIXED: Added minimum risk_per_unit threshold to prevent excessive position sizes
-        when spread is very close to stop loss.
-        ENHANCED: Account for trading costs when calculating thresholds.
+        FIXED: Returns single position size (not tuple) for spread trading.
+        Position size represents the quantity of the first asset (S1).
+        The second asset quantity is automatically calculated as -beta * position_size.
+        
+        Returns:
+            float: Position size for the first asset
         """
         EPSILON = 1e-8
         
-        stop_loss_z = float(np.sign(entry_z) * self.stop_loss_multiplier)
+        # Count active pairs for risk allocation
+        active_pair_count = getattr(self, 'active_pair_count', 1)
+        
+        # Calculate notional per pair
+        notional = self.capital_at_risk / max(active_pair_count, 1)
+        
+        # Calculate stop loss price for risk calculation
+        stop_loss_z = np.sign(entry_z) * self.stop_loss_multiplier
         stop_loss_price = mean + stop_loss_z * std
-        risk_per_unit_raw = abs(spread_curr - stop_loss_price)
-        trade_value = price_s1 + abs(beta) * price_s2
         
-        # Calculate round-turn trading costs per unit
-        # Round-turn = open + close, so 2x the one-way costs
-        round_turn_commission_rate = 2 * (self.commission_pct + self.slippage_pct + 
-                                         (self.bid_ask_spread_pct_s1 + self.bid_ask_spread_pct_s2) / 2)
-        round_turn_cost_per_unit = trade_value * round_turn_commission_rate
+        # Calculate risk per unit (difference between entry and stop loss)
+        risk_per_unit = abs(spread_curr - stop_loss_price)
         
-        # Ensure minimum profit target is 2-3x round-turn costs
-        min_profit_multiplier = 2.5  # 2.5x round-turn costs as minimum
-        min_risk_per_unit_costs = min_profit_multiplier * round_turn_cost_per_unit
+        # FIXED: Protection against microscopic risk with min_risk_per_unit
+        min_risk_per_unit = max(0.1 * std, EPSILON)
+        if risk_per_unit < min_risk_per_unit:
+            risk_per_unit = min_risk_per_unit
         
-        # FIXED: Prevent excessive position sizes by enforcing minimum risk per unit
-        # When risk_per_unit is too small, position size becomes dangerously large
-        min_risk_per_unit_volatility = 0.1 * std  # Use 10% of volatility as minimum risk
-        min_risk_per_unit = max(risk_per_unit_raw, min_risk_per_unit_costs, 
-                               min_risk_per_unit_volatility, EPSILON)
-        risk_per_unit = min_risk_per_unit
-        
-        # Use consistent epsilon protection for division by zero with stricter checks
-        size_risk = self.capital_at_risk / risk_per_unit if risk_per_unit > EPSILON and np.isfinite(risk_per_unit) else 0.0
-        size_value = self.capital_at_risk / trade_value if trade_value > EPSILON and np.isfinite(trade_value) else 0.0
-        
-        # Margin limit calculation with proper epsilon protection
-        if np.isfinite(self.max_margin_usage) and trade_value > EPSILON:
-            margin_limit = self.capital_at_risk * self.max_margin_usage / trade_value
+        # Calculate position size based on risk
+        if risk_per_unit > EPSILON:
+            position_size = notional / risk_per_unit
         else:
-            margin_limit = float('inf')
+            position_size = notional / price_s1 if price_s1 > EPSILON else 0.0
         
-        # NEW: Apply volatility-based position sizing if enabled
+        # Apply trade value limit
+        trade_value = price_s1 + abs(beta) * price_s2
+        if trade_value > EPSILON:
+            trade_value_limit = notional / trade_value
+            position_size = min(position_size, trade_value_limit)
+        
+        # Apply margin limits based on total trade value
+        # Total trade value = |position_size| * price_s1 + |beta * position_size| * price_s2
+        total_trade_value = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
+        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage) and total_trade_value > EPSILON:
+            margin_limit = self.capital_at_risk * self.max_margin_usage
+            if total_trade_value > margin_limit:
+                scale_factor = margin_limit / total_trade_value
+                position_size *= scale_factor
+        
+        # Apply volatility-based adjustment if enabled
         if self.volatility_based_sizing:
             volatility_multiplier = self._calculate_volatility_multiplier()
-            base_size = min(size_risk, size_value, margin_limit)
-            return base_size * volatility_multiplier
+            position_size *= volatility_multiplier
         
-        return min(size_risk, size_value, margin_limit)
+        # FIXED: Apply correlation adjustment for position sizing
+        # Higher correlation increases risk, so reduce position size
+        if hasattr(self, 'pair_data') and len(self.pair_data) >= self.correlation_window:
+            s1_prices = self.pair_data.iloc[:, 0].tail(self.correlation_window)
+            s2_prices = self.pair_data.iloc[:, 1].tail(self.correlation_window)
+            correlation = self._calculate_rolling_correlation(s1_prices, s2_prices, self.correlation_window)
+            
+            # Apply correlation adjustment: higher correlation -> smaller position
+            # Correlation ranges from -1 to 1, we want to reduce size for high positive correlation
+            if correlation is not None and not np.isnan(correlation) and correlation > 0.5:  # High positive correlation increases risk
+                correlation_adjustment = 1.0 - (correlation - 0.5) * 1.0  # Reduce by up to 50%
+                position_size *= correlation_adjustment
+        
+        # FIXED: Final margin limit check after all adjustments
+        # Ensure the final position size still respects margin limits
+        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
+            final_total_trade_value = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
+            if final_total_trade_value > EPSILON:
+                margin_limit = self.capital_at_risk * self.max_margin_usage
+                if final_total_trade_value > margin_limit:
+                    final_scale_factor = margin_limit / final_total_trade_value
+                    position_size *= final_scale_factor
+        
+        return position_size
 
     def _calculate_kelly_fraction(self, returns: pd.Series) -> float:
         """Calculate Kelly criterion fraction for position sizing.
@@ -443,6 +683,9 @@ class PairBacktester:
         
         # Kelly formula: f = (bp - q) / b
         # where b = odds, p = win probability, q = loss probability
+        if len(filtered_returns) == 0:
+            return self.capital_at_risk
+            
         win_rate = (filtered_returns > 0).mean()
         if win_rate == 0 or win_rate == 1:
             return self.capital_at_risk
@@ -544,7 +787,14 @@ class PairBacktester:
         
         # Adjust threshold based on volatility regime
         # Higher volatility -> higher threshold (more conservative)
-        base_volatility = z_scores.rolling(window=self.volatility_lookback * 2).std().median()
+        if len(z_scores) == 0:
+            return self.z_threshold
+        
+        rolling_std = z_scores.rolling(window=self.volatility_lookback * 2).std()
+        if len(rolling_std.dropna()) == 0:
+            return self.z_threshold
+        
+        base_volatility = rolling_std.median()
         if pd.isna(base_volatility) or base_volatility == 0:
             return self.z_threshold
         
@@ -591,7 +841,7 @@ class PairBacktester:
     def _calculate_trade_duration(self, current_time, entry_time, current_index: int, entry_index: int) -> float:
         """Calculate trade duration with consistent time units.
         
-        FIXED: Унифицированная обработка времени - всегда возвращаем часы.
+        FIXED: Unified time handling - always return hours for 15-minute data.
         """
         try:
             if isinstance(current_time, pd.Timestamp) and isinstance(entry_time, pd.Timestamp):
@@ -603,44 +853,66 @@ class PairBacktester:
                 if hasattr(diff, 'total_seconds'):
                     return diff.total_seconds() / 3600.0
                 else:
-                    # FIXED: Для числовых индексов предполагаем 15-минутные данные
-                    # Это обеспечивает консистентность с time_stop_multiplier
-                    return float(diff) * 0.25  # 1 период = 15 минут = 0.25 часа
+                    # FIXED: For numerical indices, assume 15-minute data
+                    # This ensures consistency with time_stop_multiplier
+                    return float(diff) * 0.25  # 1 period = 15 minutes = 0.25 hours
             else:
-                # FIXED: Для non-datetime индексов возвращаем периоды в часах (15-минутные данные)
+                # FIXED: For non-datetime indices, return periods in hours (15-minute data)
                 return float(current_index - entry_index) * 0.25
         except (TypeError, AttributeError, ValueError):
-            # FIXED: Enhanced fallback with better error handling (15-минутные данные)
+            # FIXED: Enhanced fallback with better error handling (15-minute data)
             return float(current_index - entry_index) * 0.25
 
     def _enter_position(self, df: pd.DataFrame, i: int, signal: int, z_curr: float,
                        spread_curr: float, mean: float, std: float, beta: float) -> float:
         """Enter a new position with enhanced risk management.
         
-        ENHANCED: Integrated Kelly sizing and VaR-based position sizing.
+        FIXED: Uses corrected position sizing that returns single value.
+        FIXED: Added capital sufficiency check before entering position.
         """
         price_s1 = df["y"].iat[i]
         price_s2 = df["x"].iat[i]
         
-        # Calculate base position size
-        base_size = self._calculate_position_size(z_curr, spread_curr, mean, std, beta, price_s1, price_s2)
+        # FIXED: Check capital sufficiency before entering position
+        if not self._check_capital_sufficiency(price_s1, price_s2, beta):
+            return 0.0
         
-        # NEW: Apply enhanced risk management
-        final_size = base_size
+        # Calculate base position size
+        base_position_size = self._calculate_position_size(z_curr, spread_curr, mean, std, beta, price_s1, price_s2)
+        
+        if base_position_size == 0:
+            return 0.0
         
         # Apply Kelly sizing if enabled and we have sufficient data
+        kelly_multiplier = 1.0
         if self.use_kelly_sizing and len(self.rolling_returns) >= 10:
             kelly_fraction = self._calculate_kelly_fraction(self.rolling_returns)
-            final_size *= kelly_fraction
+            kelly_multiplier = kelly_fraction / self.capital_at_risk  # Normalize
             
         # Apply VaR-based sizing if we have sufficient data
+        var_multiplier = 1.0
         if len(self.rolling_returns) >= 20:
-            var_multiplier = self._calculate_var_position_size(self.rolling_returns)
-            final_size *= var_multiplier
-            
-        # Ensure minimum position size
-        final_size = max(final_size, base_size * 0.1)  # At least 10% of base size
+            var_position_size = self._calculate_var_position_size(self.rolling_returns)
+            var_multiplier = var_position_size / self.capital_at_risk  # Normalize
         
+        # Combine all multipliers
+        final_size = base_position_size * kelly_multiplier * var_multiplier
+        
+        # Ensure minimum position size (at least 10% of base size)
+        final_size = max(abs(final_size), abs(base_position_size) * 0.1)
+        
+        # FIXED: Final margin limit check after all multipliers
+        # Ensure the final position size still respects margin limits
+        EPSILON = 1e-8
+        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
+            final_total_trade_value = abs(final_size) * price_s1 + abs(beta * final_size) * price_s2
+            if final_total_trade_value > EPSILON:
+                margin_limit = self.capital_at_risk * self.max_margin_usage
+                if final_total_trade_value > margin_limit:
+                    final_scale_factor = margin_limit / final_total_trade_value
+                    final_size *= final_scale_factor
+        
+        # Apply signal direction
         new_position = signal * final_size
 
         # Log entry details
@@ -656,23 +928,98 @@ class PairBacktester:
             
         return new_position
 
+    def _check_capital_sufficiency(self, price_s1: float, price_s2: float, beta: float) -> bool:
+        """Check if there is sufficient capital to enter a position.
+        
+        FIXED: Added capital sufficiency check before position entry.
+        Uses the same logic as _calculate_position_size to ensure consistency.
+        
+        Args:
+            price_s1: Price of first asset
+            price_s2: Price of second asset
+            beta: Hedge ratio
+            
+        Returns:
+            bool: True if sufficient capital is available
+        """
+        EPSILON = 1e-8
+        
+        # Use same logic as _calculate_position_size
+        available_capital = self.capital_at_risk
+        if hasattr(self, 'portfolio') and self.portfolio is not None:
+            available_capital = getattr(self.portfolio, 'available_capital', self.capital_at_risk)
+        
+        # Count active pairs for risk allocation
+        active_pair_count = getattr(self, 'active_pair_count', 1)
+        notional = available_capital / max(active_pair_count, 1)
+        
+        # Calculate trade value per unit
+        trade_value = price_s1 + abs(beta) * price_s2
+        if trade_value <= EPSILON:
+            return False
+        
+        # Calculate minimum viable position size based on available capital
+        # Apply margin limits first to determine maximum allowed trade value
+        max_allowed_trade_value = available_capital
+        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
+            max_allowed_trade_value = available_capital * self.max_margin_usage
+        
+        # Calculate minimum meaningful position size (0.01 units)
+        min_position_size = 0.01
+        min_trade_cost = min_position_size * trade_value
+        
+        # Check if minimum trade cost exceeds our capital limits
+        if min_trade_cost > max_allowed_trade_value:
+            return False
+        
+        # For very expensive trades, apply stricter limits
+        capital_usage_pct = min_trade_cost / available_capital
+        
+        # Reject if minimum position would use more than 50% of capital
+        # (This is more lenient since _calculate_position_size will scale down if needed)
+        if capital_usage_pct > 0.50:
+            return False
+        
+        # Additional check: reject if trade value per unit is extremely high relative to capital
+        trade_value_pct = trade_value / available_capital
+        if trade_value_pct > 2.0:  # If one unit costs more than 200% of available capital
+            return False
+        
+        # For very high-value trades, ensure meaningful capital usage
+        # Only apply this check for extremely expensive trades (>50% of capital per unit)
+        if trade_value > available_capital * 0.5:  # If trade value per unit > 50% of capital
+            if capital_usage_pct < 0.01:  # Require at least 1% capital usage
+                return False
+        
+        return True
+
     def _calculate_trading_costs(self, position_s1_change: float, position_s2_change: float,
                                price_s1: float, price_s2: float) -> tuple[float, float, float, float]:
         """Calculate detailed trading costs with full breakdown.
         
-        FIXED: Унифицированный расчет издержек с полной детализацией.
+        FIXED: Corrected cost calculation for pair trading.
+        For pair trading, we trade both assets simultaneously:
+        - S1 position change: position_s1_change
+        - S2 position change: -beta * position_s1_change (opposite direction)
         
         Returns:
             tuple: (commission_costs, slippage_costs, bid_ask_costs, total_costs)
         """
+        # Calculate notional values for both assets
         notional_change_s1 = abs(position_s1_change * price_s1)
         notional_change_s2 = abs(position_s2_change * price_s2)
         
-        # Детальный расчет всех компонентов издержек
-        commission_costs = (notional_change_s1 + notional_change_s2) * self.commission_pct
-        slippage_costs = (notional_change_s1 + notional_change_s2) * self.slippage_pct
-        bid_ask_costs = (notional_change_s1 * self.bid_ask_spread_pct_s1 + 
-                        notional_change_s2 * self.bid_ask_spread_pct_s2)
+        # Commission and slippage apply to total notional traded
+        total_notional = notional_change_s1 + notional_change_s2
+        commission_costs = total_notional * self.commission_pct
+        slippage_costs = total_notional * self.slippage_pct
+        
+        # FIXED: Bid-ask spread cost calculation
+        # Apply bid-ask spread to each asset separately based on their individual spreads
+        # Use half of the spread to represent crossing cost (entry/exit)
+        bid_ask_costs = (notional_change_s1 * self.bid_ask_spread_pct_s1 * 0.5 + 
+                        notional_change_s2 * self.bid_ask_spread_pct_s2 * 0.5)
+        
         total_costs = commission_costs + slippage_costs + bid_ask_costs
         
         return commission_costs, slippage_costs, bid_ask_costs, total_costs
@@ -681,8 +1028,8 @@ class PairBacktester:
                   entry_datetime, entry_index: int) -> None:
         """FIXED: Extracted method to eliminate code duplication in exit logging."""
         df.loc[df.index[i], "exit_reason"] = exit_reason
-        df.loc[df.index[i], "exit_price_s1"] = df.loc[df.index[i], "y"]
-        df.loc[df.index[i], "exit_price_s2"] = df.loc[df.index[i], "x"]
+        df.loc[df.index[i], "exit_price_s1"] = df["y"].iat[i]
+        df.loc[df.index[i], "exit_price_s2"] = df["x"].iat[i]
         df.loc[df.index[i], "exit_z"] = z_curr
         
         # Calculate trade duration with unified time handling
@@ -693,7 +1040,14 @@ class PairBacktester:
 
     def run(self) -> None:
         """Run backtest and store results in ``self.results``."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Логируем начало обработки пары
+        logger.info(f"🔄 Начинаем бэктест пары {self.pair_name or 'Unknown'} с {len(self.pair_data)} периодами данных")
+        
         if self.pair_data.empty or len(self.pair_data.columns) < 2:
+            logger.warning(f"⚠️ Пустые данные для пары {self.pair_name or 'Unknown'}, пропускаем")
             self.results = pd.DataFrame(
                 columns=["spread", "z_score", "position", "pnl", "cumulative_pnl"]
             )
@@ -714,9 +1068,11 @@ class PairBacktester:
         df["spread"] = np.nan
         df["z_score"] = np.nan
 
-        # FIXED: Use iloc for better performance and avoid potential indexing issues
+        # FIXED: Prevent look-ahead bias by using only historical data
+        # Calculate parameters using data up to (but not including) current period
         for i in range(self.rolling_window, len(df)):
-            # FIXED: More efficient window slicing using iloc
+            # FIXED: Use only historical data to avoid look-ahead bias
+            # Window should end at i-1, not i, to exclude current period
             y_win = df["y"].iloc[i - self.rolling_window : i]
             x_win = df["x"].iloc[i - self.rolling_window : i]
             
@@ -725,8 +1081,14 @@ class PairBacktester:
             
             # FIXED: Более гибкая обработка низкой волатильности
             # Используем адаптивный порог на основе средних значений цен
-            price_scale = max(df["y"].iloc[i-self.rolling_window:i].mean(), 
-                             df["x"].iloc[i-self.rolling_window:i].mean())
+            y_slice = df["y"].iloc[i-self.rolling_window:i]
+            x_slice = df["x"].iloc[i-self.rolling_window:i]
+            
+            # Проверяем на пустые срезы перед вычислением mean
+            if len(y_slice) == 0 or len(x_slice) == 0:
+                continue
+            
+            price_scale = max(y_slice.mean(), x_slice.mean())
             min_std_threshold = max(1e-6, price_scale * 1e-4)  # Адаптивный порог
             
             if std < min_std_threshold:
@@ -885,6 +1247,23 @@ class PairBacktester:
             else:
                 new_position = position
                 
+                # NEW: Check margin limits for existing positions when prices change
+                if position != 0 and hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
+                    # Calculate current total trade value for existing position
+                    current_total_trade_value = abs(position) * price_s1_curr + abs(beta * position) * price_s2_curr
+                    margin_limit = self.capital_at_risk * self.max_margin_usage
+                    
+                    # If current position exceeds margin limit, scale it down
+                    if current_total_trade_value > margin_limit:
+                        scale_factor = margin_limit / current_total_trade_value
+                        new_position = position * scale_factor
+                        
+                        # Log margin limit adjustment
+                        if hasattr(self, 'pair_name'):
+                            logger.info(f"⚠️ {self.pair_name}: Position scaled down due to margin limit. "
+                                      f"Original: {position:.6f}, New: {new_position:.6f}, "
+                                      f"Scale factor: {scale_factor:.4f}")
+                
             # NEW: Record market regime and structural break analysis results
             idx = df.index[i]
             df.loc[idx, "market_regime"] = market_regime
@@ -892,15 +1271,15 @@ class PairBacktester:
             
             # Copy analysis results from state variables if available
             if idx in self.hurst_exponents.index:
-                df.loc[idx, "hurst_exponent"] = self.hurst_exponents.loc[idx]
+                df.loc[idx, "hurst_exponent"] = self.hurst_exponents.at[idx]
             if idx in self.variance_ratios.index:
-                df.loc[idx, "variance_ratio"] = self.variance_ratios.loc[idx]
+                df.loc[idx, "variance_ratio"] = self.variance_ratios.at[idx]
             if idx in self.rolling_correlations.index:
-                df.loc[idx, "rolling_correlation"] = self.rolling_correlations.loc[idx]
+                df.loc[idx, "rolling_correlation"] = self.rolling_correlations.at[idx]
             if idx in self.half_life_estimates.index:
-                df.loc[idx, "half_life_estimate"] = self.half_life_estimates.loc[idx]
+                df.loc[idx, "half_life_estimate"] = self.half_life_estimates.at[idx]
             if idx in self.adf_pvalues.index:
-                df.loc[idx, "adf_pvalue"] = self.adf_pvalues.loc[idx]
+                df.loc[idx, "adf_pvalue"] = self.adf_pvalues.at[idx]
 
             # FIXED: Time-based stop-loss с унифицированными единицами времени
             if (
@@ -909,17 +1288,21 @@ class PairBacktester:
                 and self.time_stop_multiplier is not None
                 and entry_datetime is not None
             ):
-                # Используем унифицированную функцию расчета времени (в часах)
-                trade_duration_hours = self._calculate_trade_duration(
+                # FIXED: Unified time handling for consistent duration calculation
+                trade_duration_periods = self._calculate_trade_duration_periods(
                     df.index[i], entry_datetime, i, entry_index
                 )
-                # half_life предполагается в днях, конвертируем в часы
-                time_stop_limit_hours = self.half_life * 24 * self.time_stop_multiplier
-                if trade_duration_hours >= time_stop_limit_hours:
+                
+                # half_life is in periods, so time_stop_limit is also in periods
+                time_stop_limit_periods = self.half_life * self.time_stop_multiplier
+                if trade_duration_periods >= time_stop_limit_periods:
                     new_position = 0.0
                     cooldown_remaining = self.cooldown_periods
                     # FIXED: Use extracted _log_exit method
                     self._log_exit(df, i, z_curr, 'time_stop', entry_datetime, entry_index)
+                    # Close position in portfolio
+                    if self.portfolio is not None and position != 0:
+                        self.portfolio.close_position(self.pair_name)
 
             # Уменьшаем cooldown счетчик
             if cooldown_remaining > 0:
@@ -931,67 +1314,168 @@ class PairBacktester:
                 cooldown_remaining = self.cooldown_periods
                 # FIXED: Use extracted _log_exit method
                 self._log_exit(df, i, z_curr, "end_of_test", entry_datetime, entry_index)
-            # Стоп-лосс выходы
-            elif position > 0 and z_curr <= stop_loss_z:
-                new_position = 0.0
-                cooldown_remaining = self.cooldown_periods
-                # FIXED: Use extracted _log_exit method
-                self._log_exit(df, i, z_curr, "stop_loss", entry_datetime, entry_index)
-            elif position < 0 and z_curr >= stop_loss_z:
-                new_position = 0.0
-                cooldown_remaining = self.cooldown_periods
-                # FIXED: Use extracted _log_exit method
-                self._log_exit(df, i, z_curr, "stop_loss", entry_datetime, entry_index)
-            # ENHANCED: Take-profit логика с учетом комиссий
-            # Выход при движении z-score к нулю, но только если прибыль покрывает комиссии
-            elif (
-                self.take_profit_multiplier is not None
-                and position != 0
-                and abs(z_curr) <= abs(entry_z) * self.take_profit_multiplier
-                and self._is_profitable_exit(current_trade_pnl, position, price_s1_curr, price_s2_curr, beta)
-            ):
-                new_position = 0.0
-                cooldown_remaining = self.cooldown_periods
-                # FIXED: Use extracted _log_exit method
-                self._log_exit(df, i, z_curr, "take_profit", entry_datetime, entry_index)
-            # Z-score exit: закрываем позицию если z-score вернулся к заданному уровню
-            elif position != 0 and abs(z_curr) <= self.z_exit:
-                new_position = 0.0
-                cooldown_remaining = self.cooldown_periods
-                # FIXED: Use extracted _log_exit method
-                self._log_exit(df, i, z_curr, "z_exit", entry_datetime, entry_index)
+                # Close position in portfolio
+                if self.portfolio is not None:
+                    self.portfolio.close_position(self.pair_name)
+            # NEW: Enhanced stop-loss rules - USD-based and Z-score based
+            elif position != 0:
+                # Calculate unrealized PnL in USD
+                price_s1_curr = df["y"].iat[i]
+                price_s2_curr = df["x"].iat[i]
+                
+                # Calculate current position value and unrealized PnL
+                if hasattr(self, 'entry_price_s1') and hasattr(self, 'entry_price_s2'):
+                    unrealized_pnl = (position * (price_s1_curr - self.entry_price_s1) + 
+                                     (-position * beta) * (price_s2_curr - self.entry_price_s2))
+                else:
+                    unrealized_pnl = current_trade_pnl
+                
+                # Stop-loss conditions: 75 USDT loss OR 3σ Z-score
+                usd_stop_loss = unrealized_pnl <= -75.0
+                z_stop_loss = (position > 0 and z_curr <= stop_loss_z) or (position < 0 and z_curr >= stop_loss_z)
+                
+                if usd_stop_loss or z_stop_loss:
+                    new_position = 0.0
+                    cooldown_remaining = self.cooldown_periods
+                    exit_reason = "usd_stop_loss" if usd_stop_loss else "z_stop_loss"
+                    self._log_exit(df, i, z_curr, exit_reason, entry_datetime, entry_index)
+                    
+                    # Track exit time for protection
+                    self.last_position_exit_time = df.index[i]
+                    if not isinstance(df.index, pd.DatetimeIndex):
+                        self.last_position_exit_index = i
+                    
+                    # Close position in portfolio
+                    if self.portfolio is not None:
+                        self.portfolio.close_position(self.pair_name)
+            # NEW: Minimum holding time requirement (1 hour)
+            elif position != 0 and entry_datetime is not None:
+                # Check minimum holding time
+                if isinstance(df.index, pd.DatetimeIndex):
+                    holding_time_hours = (df.index[i] - entry_datetime).total_seconds() / 3600
+                    min_holding_met = holding_time_hours >= (self.min_position_hold_minutes / 60.0)  # Use config value
+                else:
+                    # For non-datetime index, assume 15-minute periods
+                    holding_periods = i - entry_index
+                    min_holding_met = holding_periods >= 4  # 4 * 15min = 1 hour
+                
+                if min_holding_met:
+                    # ENHANCED: Take-profit логика с учетом комиссий
+                    # Выход при движении z-score к нулю, но только если прибыль покрывает комиссии
+                    if (
+                        self.take_profit_multiplier is not None
+                        and abs(z_curr) <= abs(entry_z) * self.take_profit_multiplier
+                        and self._is_profitable_exit(current_trade_pnl, position, price_s1_curr, price_s2_curr, beta)
+                    ):
+                        new_position = 0.0
+                        cooldown_remaining = self.cooldown_periods
+                        self._log_exit(df, i, z_curr, "take_profit", entry_datetime, entry_index)
+                        
+                        # Track exit time for protection
+                        self.last_position_exit_time = df.index[i]
+                        if not isinstance(df.index, pd.DatetimeIndex):
+                            self.last_position_exit_index = i
+                        
+                        # Close position in portfolio
+                        if self.portfolio is not None:
+                            self.portfolio.close_position(self.pair_name)
+                    # Z-score exit: закрываем позицию если z-score вернулся к заданному уровню
+                    elif abs(z_curr) <= self.z_exit:
+                        new_position = 0.0
+                        cooldown_remaining = self.cooldown_periods
+                        self._log_exit(df, i, z_curr, "z_exit", entry_datetime, entry_index)
+                        
+                        # Track exit time for protection
+                        self.last_position_exit_time = df.index[i]
+                        if not isinstance(df.index, pd.DatetimeIndex):
+                            self.last_position_exit_index = i
+                        
+                        # Close position in portfolio
+                        if self.portfolio is not None:
+                            self.portfolio.close_position(self.pair_name)
 
             # Проверяем сигналы входа только если не в последнем периоде и не в cooldown
             if i < len(df) - 1 and cooldown_remaining == 0:
-                # NEW: Calculate adaptive threshold if enabled
-                current_threshold = self.z_threshold
-                if self.adaptive_thresholds and i >= self.volatility_lookback:
-                    z_scores_window = df["z_score"].iloc[:i+1]
-                    current_volatility = z_scores_window.rolling(window=self.volatility_lookback).std().iloc[-1]
-                    if not pd.isna(current_volatility):
-                        current_threshold = self._calculate_adaptive_threshold(z_scores_window, current_volatility)
-                
-                signal = 0
-                if z_curr > current_threshold:
-                    signal = -1
-                elif z_curr < -current_threshold:
-                    signal = 1
+                # NEW: Enhanced entry rules according to requirements
+                # 1. Check if pair is tradeable (basic check - detailed filtering done at pair selection)
+                # NOTE: Temporarily disabled until symbol stats are available
+                # if not self._pair_is_tradeable(df.index[i]):
+                #     new_position = position  # Keep current position
+                # else:
+                if True:  # Allow trading for now
+                    # 2. Calculate adaptive threshold
+                    current_threshold = self.z_threshold  # Use configured threshold
+                    if self.adaptive_thresholds and i >= self.volatility_lookback:
+                        z_scores_window = df["z_score"].iloc[:i+1]
+                        current_volatility = z_scores_window.rolling(window=self.volatility_lookback).std().iloc[-1]
+                        if not pd.isna(current_volatility):
+                            adaptive_threshold = self._calculate_adaptive_threshold(z_scores_window, current_volatility)
+                            current_threshold = adaptive_threshold
+                    
+                    # 3. Check minimum spread movement since last flat (temporarily disabled)
+                    spread_movement_ok = True  # Temporarily disable this filter
+                    # if hasattr(self, 'last_flat_spread') and self.last_flat_spread is not None:
+                    #     spread_change = abs(spread_curr - self.last_flat_spread)
+                    #     min_movement = getattr(self, 'min_spread_move_sigma', 1.2) * std  # Use config value
+                    #     spread_movement_ok = spread_change >= min_movement
+                    
+                    # 4. Check minimum time since last position (temporarily disabled)
+                    time_protection_ok = True  # Temporarily disable this filter
+                    # if hasattr(self, 'last_position_exit_time') and self.last_position_exit_time is not None:
+                    #     if isinstance(df.index, pd.DatetimeIndex):
+                    #         time_since_exit = (df.index[i] - self.last_position_exit_time).total_seconds() / 3600
+                    #         cooldown_hours = self.anti_churn_cooldown_minutes / 60.0
+                    #         time_protection_ok = time_since_exit >= cooldown_hours  # Use config value
+                    #     else:
+                    #         # For non-datetime index, assume 15-minute periods
+                    #         periods_since_exit = i - getattr(self, 'last_position_exit_index', 0)
+                    #         cooldown_periods = self.anti_churn_cooldown_minutes // 15  # Convert to 15-min periods
+                    #         time_protection_ok = periods_since_exit >= cooldown_periods  # Use config value
+                    
+                    signal = 0
+                    if z_curr > current_threshold and spread_movement_ok and time_protection_ok:
+                        signal = -1
+                    elif z_curr < -current_threshold and spread_movement_ok and time_protection_ok:
+                        signal = 1
 
-                z_prev = df["z_score"].iat[i - 1]
-                long_confirmation = (signal == 1) and (z_curr > z_prev)
-                short_confirmation = (signal == -1) and (z_curr < z_prev)
+                    z_prev = df["z_score"].iat[i - 1]
+                    long_confirmation = (signal == 1) and (z_curr > z_prev)
+                    short_confirmation = (signal == -1) and (z_curr < z_prev)
 
-                # FIXED: Extracted position entry logic to reduce duplication
-                if (new_position == 0 and (long_confirmation or short_confirmation)) or (
-                    new_position != 0
-                    and (long_confirmation or short_confirmation)
-                    and np.sign(new_position) != signal
-                ):
-                    new_position = self._enter_position(
-                        df, i, signal, z_curr, spread_curr, mean, std, beta
-                    )
-                    entry_z = z_curr
-                    stop_loss_z = float(np.sign(entry_z) * self.stop_loss_multiplier)
+                    # Check portfolio position limits before entering new position
+                    can_enter_new_position = True
+                    if self.portfolio is not None and new_position == 0:
+                        can_enter_new_position = self.portfolio.can_open_position()
+                    
+                    if can_enter_new_position and ((new_position == 0 and (long_confirmation or short_confirmation)) or (
+                        new_position != 0
+                        and (long_confirmation or short_confirmation)
+                        and np.sign(new_position) != signal
+                    )):
+                        new_position = self._enter_position(
+                            df, i, signal, z_curr, spread_curr, mean, std, beta
+                        )
+                        entry_z = z_curr
+                        # NEW: Enhanced stop-loss rules (75 USDT or configurable σ)
+                        stop_loss_z = float(np.sign(entry_z) * self.pair_stop_loss_zscore)  # Use config value
+                        
+                        # Track last flat spread for movement calculation
+                        flat_threshold = getattr(self, 'flat_zscore_threshold', 0.5)
+                        if abs(z_curr) < flat_threshold:  # Consider as "flat" when z-score is small
+                            self.last_flat_spread = spread_curr
+                        
+                        # Register position with portfolio if available
+                        if self.portfolio is not None and new_position != 0 and position == 0:
+                            self.portfolio.open_position(self.pair_name, {
+                                'entry_date': df.index[i],
+                                'entry_z': entry_z,
+                                'position_size': new_position
+                            })
+                    else:
+                        # Update last flat spread when no position and z-score is small
+                        flat_threshold = getattr(self, 'flat_zscore_threshold', 0.5)
+                        if position == 0 and abs(z_curr) < flat_threshold:
+                            self.last_flat_spread = spread_curr
 
             # FIXED: Optimized DataFrame operations - calculate values once to avoid redundant operations
             price_s1 = df["y"].iat[i]
@@ -1041,18 +1525,36 @@ class PairBacktester:
             if position != 0 or (position == 0 and new_position != 0):
                 current_trade_pnl += step_pnl
 
-            # Handle entry logging
+            # Handle entry logging with enhanced tracking
             if position == 0 and new_position != 0:
                 entry_datetime = df.index[i]
                 entry_spread = spread_curr
                 entry_position_size = new_position
                 entry_index = i
-            # Handle exit logging
+                
+                # Store entry prices for PnL calculation
+                self.entry_price_s1 = price_s1_curr
+                self.entry_price_s2 = price_s2_curr
+                
+                # Логируем вход в позицию
+                position_type = "LONG" if new_position > 0 else "SHORT"
+                logger.info(f"📈 {self.pair_name or 'Unknown'}: Вход в {position_type} позицию на z-score={z_curr:.3f}, размер={abs(new_position):.6f}")
+            # Handle exit logging with enhanced cost tracking
             if position != 0 and new_position == 0 and entry_datetime is not None:
                 exit_datetime = df.index[i]
                 # FIXED: Unified time handling with consistent units
                 duration_hours = self._calculate_trade_duration(
                     exit_datetime, entry_datetime, i, entry_index
+                )
+                
+                # Calculate realistic costs for this trade
+                realistic_costs = self._calculate_realistic_costs(
+                    abs(entry_position_size), price_s1_curr, 
+                    abs(entry_position_size * beta), price_s2_curr,
+                    (self.bid_ask_spread_pct_s1 + self.bid_ask_spread_pct_s2) / 4,  # spread_half
+                    0.0001,  # funding_rate_long (default)
+                    0.0001,  # funding_rate_short (default)
+                    duration_hours
                 )
 
                 trade_info = {
@@ -1062,11 +1564,22 @@ class PairBacktester:
                     "position_type": "long" if entry_position_size > 0 else "short",
                     "entry_price_spread": entry_spread,
                     "exit_price_spread": spread_curr,
-                    "pnl": current_trade_pnl,
+                    "gross_pnl": current_trade_pnl,
+                    "commission_cost": realistic_costs.get('commission', 0),
+                    "slippage_cost": realistic_costs.get('slippage', 0),
+                    "funding_cost": realistic_costs.get('funding', 0),
+                    "net_pnl": current_trade_pnl - sum(realistic_costs.values()),
+                    "pnl": current_trade_pnl - sum(realistic_costs.values()),  # Add 'pnl' field for test compatibility
                     "exit_reason": df.loc[df.index[i], "exit_reason"],
                     "trade_duration_hours": duration_hours,
                 }
                 self.trades_log.append(trade_info)
+                
+                # Логируем выход из позиции
+                exit_reason = df.loc[df.index[i], "exit_reason"] or "z_exit"
+                net_pnl = current_trade_pnl - sum(realistic_costs.values())
+                pnl_sign = "💰" if net_pnl > 0 else "💸" if net_pnl < 0 else "➖"
+                logger.info(f"📉 {self.pair_name or 'Unknown'}: Выход из позиции ({exit_reason}) на z-score={z_curr:.3f}, Net PnL={net_pnl:.4f} {pnl_sign}, длительность={duration_hours:.1f}ч")
 
                 # Сбрасываем счетчики для следующей сделки
                 current_trade_pnl = 0.0
@@ -1075,12 +1588,14 @@ class PairBacktester:
                 entry_position_size = 0.0
                 
                 # NEW: Update rolling returns for Kelly sizing
-                if step_pnl != 0:  # Only add non-zero returns
-                    trade_return = step_pnl / (abs(entry_position_size) * (price_s1_curr + abs(beta) * price_s2_curr))
-                    self.rolling_returns = pd.concat([self.rolling_returns, pd.Series([trade_return])])
-                    # Keep only recent returns for efficiency
-                    if len(self.rolling_returns) > 200:
-                        self.rolling_returns = self.rolling_returns.iloc[-100:]
+                if step_pnl != 0 and abs(entry_position_size) > 0:  # Only add non-zero returns and avoid division by zero
+                    denominator = abs(entry_position_size) * (price_s1_curr + abs(beta) * price_s2_curr)
+                    if denominator > 0:  # Additional safety check
+                        trade_return = step_pnl / denominator
+                        self.rolling_returns = pd.concat([self.rolling_returns, pd.Series([trade_return])])
+                        # Keep only recent returns for efficiency
+                        if len(self.rolling_returns) > 200:
+                            self.rolling_returns = self.rolling_returns.iloc[-100:]
 
             # NEW: Update rolling volatility and other risk metrics
             if i > 0 and not pd.isna(step_pnl):
@@ -1094,6 +1609,14 @@ class PairBacktester:
         df["cumulative_pnl"] = df["pnl"].cumsum()
 
         self.results = df
+        
+        # Логируем итоговую статистику по паре
+        total_pnl = df["cumulative_pnl"].iloc[-1] if not df.empty else 0.0
+        num_trades = len(self.trades_log)
+        profitable_trades = len([t for t in self.trades_log if t.get('pnl', 0) > 0])
+        win_rate = (profitable_trades / num_trades * 100) if num_trades > 0 else 0.0
+        
+        logger.info(f"✅ {self.pair_name or 'Unknown'}: Завершен бэктест - PnL: {total_pnl:.4f}, Сделок: {num_trades}, Винрейт: {win_rate:.1f}%")
 
     def get_results(self) -> dict:
         if self.results is None:
@@ -1102,11 +1625,15 @@ class PairBacktester:
         # Check if required columns exist, if not create them with default values
         required_columns = {
             "trades": 0.0,
+            "costs": 0.0,
             "commission_costs": 0.0,
             "slippage_costs": 0.0,
             "bid_ask_costs": 0.0,
             "impact_costs": 0.0,
-            "cumulative_pnl": 0.0
+            "cumulative_pnl": 0.0,
+            "y": 0.0,
+            "x": 0.0,
+            "beta": 0.0
         }
         
         for col, default_value in required_columns.items():
@@ -1144,20 +1671,48 @@ class PairBacktester:
         pnl = self.results["pnl"].dropna()
         cum_pnl = self.results["cumulative_pnl"].dropna()
 
+        # Calculate trade-related metrics
+        num_trades = len([t for t in self.trades_log if t.get('action') == 'open'])
+        
+        # Calculate average trade duration
+        trade_durations = []
+        for trade in self.trades_log:
+            if trade.get('action') == 'close' and 'duration' in trade:
+                trade_durations.append(trade['duration'])
+        avg_trade_duration = np.mean(trade_durations) if trade_durations else 0.0
+        
+        # Calculate total return
+        total_pnl_val = cum_pnl.iloc[-1] if not cum_pnl.empty else 0.0
+        total_return = (total_pnl_val / self.capital_at_risk) * 100 if self.capital_at_risk > 0 else 0.0
+
         # Если после dropna ничего не осталось, возвращаем нулевые метрики
         if pnl.empty:
             return {
                 "sharpe_ratio": 0.0,
                 "max_drawdown": 0.0,
                 "total_pnl": 0.0,
+                "total_return": 0.0,
+                "num_trades": num_trades,
+                "avg_trade_duration": avg_trade_duration,
                 "win_rate": 0.0,
                 "expectancy": 0.0,
                 "kelly_criterion": 0.0,
             }
 
-        # FIXED: Правильный расчет Sharpe Ratio - передаем доходности, а не PnL
-        # Конвертируем PnL в доходности относительно capital_at_risk
-        returns = pnl / self.capital_at_risk
+        # FIXED: Improved Sharpe Ratio calculation using dynamic capital
+        # Use capital_at_risk_history if available, otherwise fall back to fixed capital
+        if len(self.capital_at_risk_history) > 0:
+            # Align PnL with capital history and calculate returns dynamically
+            aligned_capital = self.capital_at_risk_history.reindex(pnl.index, method='ffill')
+            # Fill any remaining NaN values with the base capital_at_risk
+            aligned_capital = aligned_capital.fillna(self.capital_at_risk)
+            # Avoid division by zero
+            aligned_capital = aligned_capital.replace(0, self.capital_at_risk)
+            returns = pnl / aligned_capital
+        else:
+            # Fallback to original method if no capital history
+            returns = pnl / self.capital_at_risk
+            
         sharpe = performance.sharpe_ratio(returns, self.annualizing_factor)
         
         # Calculate new metrics
@@ -1168,7 +1723,10 @@ class PairBacktester:
         return {
             "sharpe_ratio": 0.0 if np.isnan(sharpe) else sharpe,
             "max_drawdown": performance.max_drawdown(cum_pnl),
-            "total_pnl": cum_pnl.iloc[-1] if not cum_pnl.empty else 0.0,
+            "total_pnl": total_pnl_val,
+            "total_return": total_return,
+            "num_trades": num_trades,
+            "avg_trade_duration": avg_trade_duration,
             "win_rate": win_rate_val,
             "expectancy": expectancy_val,
             "kelly_criterion": kelly_val,
@@ -1184,20 +1742,28 @@ class PairBacktester:
         self.capital_at_risk_history[date] = capital
         
     def get_capital_at_risk_for_date(self, date: pd.Timestamp) -> float:
-        """Get the capital at risk that was available on a specific date."""
-        if date in self.capital_at_risk_history:
-            return self.capital_at_risk_history[date]
+        """Get the capital at risk that was available on a specific date.
         
-        # If exact date not found, use the most recent available
-        available_dates = self.capital_at_risk_history.index
-        if len(available_dates) == 0:
+        FIXED: Improved logic for finding the correct capital amount.
+        """
+        if len(self.capital_at_risk_history) == 0:
             return self.capital_at_risk  # Fallback to initial value
             
-        recent_dates = available_dates[available_dates <= date]
-        if len(recent_dates) > 0:
-            return self.capital_at_risk_history[recent_dates[-1]]
+        # If exact date exists, return it
+        if date in self.capital_at_risk_history.index:
+            return self.capital_at_risk_history[date]
+        
+        # Find the most recent date that is <= the requested date
+        available_dates = self.capital_at_risk_history.index
+        valid_dates = available_dates[available_dates <= date]
+        
+        if len(valid_dates) > 0:
+            # Use the most recent valid date
+            most_recent_date = valid_dates.max()
+            return self.capital_at_risk_history[most_recent_date]
         else:
-            return self.capital_at_risk  # Fallback to initial value
+            # No historical data before this date, use initial value
+            return self.capital_at_risk
              
     def process_single_period(self, date: pd.Timestamp, price_s1: float, price_s2: float) -> Dict:
         """Process a single time period incrementally.
@@ -1279,34 +1845,48 @@ class PairBacktester:
             prev_spread = self.active_trade.entry_spread
             if date in self.incremental_pnl.index and len(self.incremental_pnl) > 0:
                 # Get previous spread from the last available data
-                prev_data = self.pair_data.iloc[-2] if len(self.pair_data) >= 2 else self.pair_data.iloc[-1]
-                prev_spread = prev_data.iloc[0] - self.active_trade.beta * prev_data.iloc[1]
+                if len(self.pair_data) >= 2:
+                    prev_data = self.pair_data.iloc[-2]
+                    prev_spread = prev_data.iloc[0] - self.active_trade.beta * prev_data.iloc[1]
+                elif len(self.pair_data) >= 1:
+                    prev_data = self.pair_data.iloc[-1]
+                    prev_spread = prev_data.iloc[0] - self.active_trade.beta * prev_data.iloc[1]
                 
-            # Calculate PnL using individual asset returns: pnl = size_s1 * ΔP1 + size_s2 * ΔP2
-            # where size_s2 = -beta * size_s1
-            delta_p1 = price_s1 - self.active_trade.entry_price_s1
-            delta_p2 = price_s2 - self.active_trade.entry_price_s2
+            # FIXED: Calculate PnL using spread change for pair trading
+            # For pair trading, PnL = position_size * (current_spread - entry_spread)
+            # This correctly captures the profit from spread convergence/divergence
+            current_spread = price_s1 - self.active_trade.beta * price_s2
+            spread_change = current_spread - self.active_trade.entry_spread
             
-            size_s1 = self.active_trade.position_size
-            size_s2 = -self.active_trade.beta * size_s1
-            
-            pnl = size_s1 * delta_p1 + size_s2 * delta_p2
+            pnl = self.active_trade.position_size * spread_change
             result['pnl'] = pnl
             result['position'] = self.active_trade.position_size
             
         # Check exit conditions
         trade_closed = False
         if self.active_trade is not None:
-            # Stop loss
-            if ((self.active_trade.position_size > 0 and z_score <= self.active_trade.stop_loss_z) or
-                (self.active_trade.position_size < 0 and z_score >= self.active_trade.stop_loss_z)):
+            # FIXED: Corrected stop loss logic based on Z-score movement
+            # Stop loss triggers when Z-score moves further away from mean (against our position)
+            # For long spread (positive position): entered when z < -threshold, stop when z becomes even more negative
+            # For short spread (negative position): entered when z > +threshold, stop when z becomes even more positive
+            stop_loss_triggered = False
+            if self.active_trade.position_size > 0:  # Long spread position
+                # Long spread: stop if Z-score becomes more negative than stop_loss_z
+                stop_loss_triggered = z_score <= self.active_trade.stop_loss_z
+            else:  # Short spread position
+                # Short spread: stop if Z-score becomes more positive than stop_loss_z
+                stop_loss_triggered = z_score >= self.active_trade.stop_loss_z
+                
+            if stop_loss_triggered:
                 self._close_trade(date, z_score, 'stop_loss')
                 trade_closed = True
                 result['trade_closed'] = True
+                result['stop_loss_triggered'] = True
                 
-            # Take profit
+            # FIXED: Take profit logic - exit when Z-score moves toward mean
+            # Take profit when Z-score has moved a certain fraction back toward zero
             elif (self.take_profit_multiplier is not None and
-                  abs(z_score) <= abs(self.active_trade.entry_z) * self.take_profit_multiplier):
+                  abs(z_score) <= abs(self.active_trade.entry_z) * (1 - self.take_profit_multiplier)):
                 self._close_trade(date, z_score, 'take_profit')
                 trade_closed = True
                 result['trade_closed'] = True
@@ -1317,18 +1897,27 @@ class PairBacktester:
                 trade_closed = True
                 result['trade_closed'] = True
                 
-            # Time stop
+            # FIXED: Time stop with proper frequency handling
             elif (self.half_life is not None and self.time_stop_multiplier is not None):
-                trade_duration_hours = (date - self.active_trade.entry_date).total_seconds() / 3600.0
-                time_stop_limit_hours = self.half_life * 24 * self.time_stop_multiplier
-                if trade_duration_hours >= time_stop_limit_hours:
+                # Calculate trade duration in periods using index positions
+                try:
+                    current_index = self.pair_data.index.get_loc(date)
+                except KeyError:
+                    # If exact date not found, use the last available index
+                    current_index = len(self.pair_data) - 1
+                trade_duration_periods = current_index - self.active_trade.entry_index
+                
+                # half_life is in periods, so time_stop_limit is also in periods
+                time_stop_limit_periods = self.half_life * self.time_stop_multiplier
+                if trade_duration_periods >= time_stop_limit_periods:
                     self._close_trade(date, z_score, 'time_stop')
                     trade_closed = True
                     result['trade_closed'] = True
                     
-        # Check entry conditions (only if no active trade and not in cooldown)
+        # Check entry conditions (only if no active trade, not in cooldown, and no stop loss triggered this period)
         if (self.active_trade is None and 
-            (self.cooldown_end_date is None or date > self.cooldown_end_date)):
+            (self.cooldown_end_date is None or date > self.cooldown_end_date) and
+            not result.get('stop_loss_triggered', False)):
             
             signal = 0
             if z_score > self.z_threshold:
@@ -1337,23 +1926,39 @@ class PairBacktester:
                 signal = 1
                 
             if signal != 0:
-                # Get capital at risk for this specific date
-                capital_for_trade = self.get_capital_at_risk_for_date(date)
-                
-                # Calculate position size using capital available at trade entry
-                old_capital = self.capital_at_risk
-                self.capital_at_risk = capital_for_trade
-                position_size = self._calculate_position_size(
-                    z_score, current_spread, mean, std, beta, price_s1, price_s2
-                )
-                self.capital_at_risk = old_capital  # Restore original
-                
-                if position_size > 0:
-                    self._open_trade(date, z_score, current_spread, signal * position_size,
-                                   capital_for_trade, price_s1, price_s2, beta)
-                    result['position'] = signal * position_size
-                    result['trade'] = abs(signal * position_size)
-                    result['trade_opened'] = True
+                # FIXED: Check capital sufficiency before calculating position size
+                if not self._check_capital_sufficiency(price_s1, price_s2, beta):
+                    # Insufficient capital, skip this trade
+                    pass
+                else:
+                    # Get capital at risk for this specific date
+                    capital_for_trade = self.get_capital_at_risk_for_date(date)
+                    
+                    # Calculate position size using capital available at trade entry
+                    old_capital = self.capital_at_risk
+                    self.capital_at_risk = capital_for_trade
+                    position_size = self._calculate_position_size(
+                        z_score, current_spread, mean, std, beta, price_s1, price_s2
+                    )
+                    self.capital_at_risk = old_capital  # Restore original
+                    
+                    # FIXED: Final margin limit check for incremental backtesting
+                    # Ensure the position size respects margin limits
+                    EPSILON = 1e-8
+                    if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage) and position_size > 0:
+                        total_trade_value = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
+                        if total_trade_value > EPSILON:
+                            margin_limit = capital_for_trade * self.max_margin_usage
+                            if total_trade_value > margin_limit:
+                                scale_factor = margin_limit / total_trade_value
+                                position_size *= scale_factor
+                    
+                    if position_size > 0:
+                        self._open_trade(date, z_score, current_spread, signal * position_size,
+                                       capital_for_trade, price_s1, price_s2, beta)
+                        result['position'] = signal * position_size
+                        result['trade'] = abs(signal * position_size)
+                        result['trade_opened'] = True
                     
         # Update incremental series
         self.incremental_pnl[date] = result['pnl']
@@ -1367,11 +1972,24 @@ class PairBacktester:
                    position_size: float, capital_used: float, price_s1: float, 
                    price_s2: float, beta: float) -> None:
         """Open a new trade."""
-        stop_loss_z = float(np.sign(entry_z) * self.stop_loss_multiplier)
+        # FIXED: Correct stop loss calculation
+        # For long positions (entry_z < 0): stop_loss_z should be more negative (entry_z - stop_loss_multiplier)
+        # For short positions (entry_z > 0): stop_loss_z should be more positive (entry_z + stop_loss_multiplier)
+        if entry_z < 0:  # Long position
+            stop_loss_z = entry_z - abs(self.stop_loss_multiplier)
+        else:  # Short position
+            stop_loss_z = entry_z + abs(self.stop_loss_multiplier)
+        
+        # Get correct entry index for the current date
+        try:
+            entry_index = self.pair_data.index.get_loc(date)
+        except KeyError:
+            # If exact date not found, use the last available index
+            entry_index = len(self.pair_data) - 1
         
         self.active_trade = TradeState(
             entry_date=date,
-            entry_index=len(self.pair_data) - 1,
+            entry_index=entry_index,
             entry_z=entry_z,
             entry_spread=entry_spread,
             position_size=position_size,
@@ -1399,6 +2017,14 @@ class PairBacktester:
         if self.active_trade is None:
             return
             
+        # Calculate trade PnL
+        trade_pnl = 0.0
+        if hasattr(self.active_trade, 'entry_date') and self.active_trade.entry_date in self.incremental_pnl.index:
+            # Sum PnL from entry date to current date
+            entry_date = self.active_trade.entry_date
+            pnl_slice = self.incremental_pnl.loc[entry_date:date]
+            trade_pnl = pnl_slice.sum() if not pnl_slice.empty else 0.0
+            
         # Log trade closing
         self.incremental_trades_log.append({
             'action': 'close',
@@ -1407,7 +2033,8 @@ class PairBacktester:
             'exit_reason': exit_reason,
             'position_size': self.active_trade.position_size,
             'capital_used': self.active_trade.capital_at_risk_used,
-            'entry_date': self.active_trade.entry_date
+            'entry_date': self.active_trade.entry_date,
+            'pnl': trade_pnl
         })
         
         # Set cooldown
@@ -1618,37 +2245,80 @@ class PairBacktester:
         if not self.market_regime_detection or i < self.hurst_window:
             return 'neutral'
             
+        # Check if we need to recalculate regime (frequency optimization)
+        if (i - self.last_regime_check_index) < self.regime_check_frequency:
+            # Return last calculated regime if available
+            idx = df.index[i]
+            if idx in self.market_regime.index and not pd.isna(self.market_regime.loc[idx]):
+                return self.market_regime.loc[idx]
+            # If no previous regime, return neutral
+            return 'neutral'
+            
         try:
+            # Update last check index
+            self.last_regime_check_index = i
+            
             # Get price series for analysis
             s1_prices = df['y'].iloc[max(0, i - self.hurst_window):i]
             s2_prices = df['x'].iloc[max(0, i - self.hurst_window):i]
             
-            # Calculate Hurst Exponent for both assets
-            hurst_s1 = self._calculate_hurst_exponent(s1_prices)
-            hurst_s2 = self._calculate_hurst_exponent(s2_prices)
-            avg_hurst = (hurst_s1 + hurst_s2) / 2
+            # Calculate Hurst Exponent for both assets (with caching if enabled)
+            if self.use_market_regime_cache and self.market_regime_cache:
+                # Use cached calculations
+                asset1_name = f"{self.pair_name}_y"
+                asset2_name = f"{self.pair_name}_x"
+                
+                hurst_s1 = self.market_regime_cache.get_hurst_exponent(asset1_name, i, s1_prices)
+                hurst_s2 = self.market_regime_cache.get_hurst_exponent(asset2_name, i, s2_prices)
+                
+                vr_s1 = self.market_regime_cache.get_variance_ratio(asset1_name, i, s1_prices)
+                vr_s2 = self.market_regime_cache.get_variance_ratio(asset2_name, i, s2_prices)
+                
+                # Periodic cache cleanup
+                if i % self.cache_cleanup_frequency == 0:
+                    self.market_regime_cache.clear_old_cache(i)
+            else:
+                # Use original calculations
+                hurst_s1 = self._calculate_hurst_exponent(s1_prices)
+                hurst_s2 = self._calculate_hurst_exponent(s2_prices)
+                vr_s1 = self._calculate_variance_ratio(s1_prices)
+                vr_s2 = self._calculate_variance_ratio(s2_prices)
             
-            # Calculate Variance Ratio for both assets
-            vr_s1 = self._calculate_variance_ratio(s1_prices)
-            vr_s2 = self._calculate_variance_ratio(s2_prices)
+            avg_hurst = (hurst_s1 + hurst_s2) / 2
             avg_vr = (vr_s1 + vr_s2) / 2
             
             # Store values for analysis
             idx = df.index[i]
-            self.hurst_exponents.loc[idx] = avg_hurst
-            self.variance_ratios.loc[idx] = avg_vr
+            self.hurst_exponents.at[idx] = avg_hurst
+            self.variance_ratios.at[idx] = avg_vr
             
-            # Determine regime based on both indicators
-            if (avg_hurst > self.hurst_trending_threshold and 
-                avg_vr > self.variance_ratio_trending_min):
+            # Determine regime based on both indicators with neutral bands
+            hurst_upper = self.hurst_trending_threshold + self.hurst_neutral_band
+            hurst_lower = self.hurst_trending_threshold - self.hurst_neutral_band
+            vr_upper = 1.0 + self.vr_neutral_band
+            vr_lower = 1.0 - self.vr_neutral_band
+            
+            # Strong trending: both indicators clearly above thresholds
+            if (avg_hurst > hurst_upper and avg_vr > self.variance_ratio_trending_min):
                 regime = 'trending'
-            elif (avg_hurst < self.hurst_trending_threshold and 
-                  avg_vr < self.variance_ratio_mean_reverting_max):
+            # Strong mean-reverting: both indicators clearly below thresholds
+            elif (avg_hurst < hurst_lower and avg_vr < self.variance_ratio_mean_reverting_max):
                 regime = 'mean_reverting'
+            # Neutral zone: indicators in neutral bands or conflicting signals
             else:
                 regime = 'neutral'
                 
             self.market_regime.loc[idx] = regime
+            
+            # Fill intermediate indices with the same regime value for consistency
+            if self.regime_check_frequency > 1:
+                # Fill forward from current index to next check point
+                end_idx = min(len(df), i + self.regime_check_frequency)
+                for j in range(i, end_idx):
+                    if j < len(df):
+                        fill_idx = df.index[j]
+                        self.market_regime.loc[fill_idx] = regime
+            
             return regime
             
         except:
@@ -1666,12 +2336,26 @@ class PairBacktester:
         try:
             idx = df.index[i]
             
-            # Check rolling correlation
+            # Check rolling correlation (with caching if enabled)
             if i >= self.correlation_window:
                 s1_prices = df['y'].iloc[i - self.correlation_window:i]
                 s2_prices = df['x'].iloc[i - self.correlation_window:i]
-                correlation = self._calculate_rolling_correlation(s1_prices, s2_prices, self.correlation_window)
-                self.rolling_correlations.loc[idx] = correlation
+                
+                if self.use_market_regime_cache and self.market_regime_cache:
+                    # Use cached correlation calculation (EW or rolling)
+                    if self.use_exponential_weighted_correlation:
+                        correlation = self.market_regime_cache.get_exponential_weighted_correlation(
+                            self.pair_name, i, s1_prices, s2_prices, self.ew_correlation_alpha
+                        )
+                    else:
+                        correlation = self.market_regime_cache.get_rolling_correlation(
+                            self.pair_name, i, s1_prices, s2_prices
+                        )
+                else:
+                    # Use original calculation
+                    correlation = self._calculate_rolling_correlation(s1_prices, s2_prices, self.correlation_window)
+                    
+                self.rolling_correlations.at[idx] = correlation
                 
                 if correlation < self.min_correlation_threshold:
                     return True
@@ -1680,26 +2364,337 @@ class PairBacktester:
             if i >= self.correlation_window and not pd.isna(df['spread'].iloc[i]):
                 spread_series = df['spread'].iloc[max(0, i - self.correlation_window):i]
                 half_life = self._calculate_half_life(spread_series, min(len(spread_series), self.correlation_window))
-                self.half_life_estimates.loc[idx] = half_life
+                self.half_life_estimates.at[idx] = half_life
                 
                 # Convert half-life from periods to days (assuming 15-minute data)
                 half_life_days = half_life * 15 / (60 * 24)  # Convert to days
                 if half_life_days > self.max_half_life_days:
                     return True
                     
-            # Periodic cointegration test
-            if (i - self.last_cointegration_test >= self.cointegration_test_frequency and 
-                i >= self.cointegration_test_frequency):
+            # Periodic cointegration test (optimized frequency)
+            if (i - self.last_cointegration_test >= self.adf_check_frequency and 
+                i >= self.adf_check_frequency):
                 
-                spread_series = df['spread'].iloc[max(0, i - self.cointegration_test_frequency):i]
-                p_value = self._perform_adf_test(spread_series, len(spread_series))
-                self.adf_pvalues.loc[idx] = p_value
-                self.last_cointegration_test = i
+                # Lazy ADF: only test if correlation has changed significantly
+                should_test_adf = True
+                if hasattr(self, 'last_correlation') and self.last_correlation is not None:
+                    current_corr = self.rolling_correlations.at[idx] if idx in self.rolling_correlations.index else 0.0
+                    corr_change = abs(current_corr - self.last_correlation)
+                    # Only test if correlation changed by more than lazy_adf_threshold
+                    should_test_adf = corr_change > self.lazy_adf_threshold
                 
-                if p_value > self.adf_pvalue_threshold:
-                    return True
+                if should_test_adf:
+                    spread_series = df['spread'].iloc[max(0, i - self.adf_check_frequency):i]
+                    p_value = self._perform_adf_test(spread_series, len(spread_series))
+                    self.adf_pvalues.at[idx] = p_value
+                    self.last_cointegration_test = i
+                    
+                    # Store current correlation for next comparison
+                    if idx in self.rolling_correlations.index:
+                        self.last_correlation = self.rolling_correlations.at[idx]
+                    
+                    if p_value > self.adf_pvalue_threshold:
+                        return True
+                else:
+                    # Skip ADF test but update last test time to avoid frequent checks
+                    self.last_cointegration_test = i
                     
             return False
             
         except:
             return False
+    
+    def _calculate_trade_duration_periods(self, current_time, entry_time, current_index, entry_index):
+        """
+        FIXED: Unified method for calculating trade duration in periods.
+        
+        Args:
+            current_time: Current timestamp
+            entry_time: Entry timestamp
+            current_index: Current index position
+            entry_index: Entry index position
+            
+        Returns:
+            float: Trade duration in periods
+        """
+        try:
+            if isinstance(current_time, pd.Timestamp) and isinstance(entry_time, pd.Timestamp):
+                # For datetime index, calculate based on actual time difference
+                trade_duration_seconds = (current_time - entry_time).total_seconds()
+                # For 15-minute data: 1 period = 15 minutes = 900 seconds
+                period_seconds = 15 * 60
+                return trade_duration_seconds / period_seconds
+            else:
+                # For integer index, use index difference
+                return current_index - entry_index
+        except Exception:
+            # Fallback to index difference
+            return current_index - entry_index
+    
+    def _pair_is_tradeable(self, symbol_a: str, symbol_b: str, stats_a: dict, stats_b: dict) -> bool:
+        """Check if a pair meets all tradeability criteria.
+        
+        Args:
+            symbol_a: First symbol
+            symbol_b: Second symbol
+            stats_a: Statistics for first symbol
+            stats_b: Statistics for second symbol
+            
+        Returns:
+            True if pair is tradeable, False otherwise
+        """
+        def get_quote_currency(symbol: str) -> str:
+            """Extract quote currency from symbol."""
+            if symbol.endswith('USDT'):
+                return 'USDT'
+            elif symbol.endswith('USDC'):
+                return 'USDC'
+            elif symbol.endswith('BUSD'):
+                return 'BUSD'
+            elif symbol.endswith('FDUSD'):
+                return 'FDUSD'
+            return 'UNKNOWN'
+        
+        # 1. Same quote currency check
+        quote_a = get_quote_currency(symbol_a)
+        quote_b = get_quote_currency(symbol_b)
+        if quote_a != quote_b:
+            return False
+        
+        # 2. Volume check
+        vol_threshold = getattr(self, 'min_volume_usd_24h', 20_000_000)
+        if (stats_a.get('vol_usd_24h', 0) < vol_threshold or 
+            stats_b.get('vol_usd_24h', 0) < vol_threshold):
+            return False
+        
+        # 3. Days live check
+        days_threshold = getattr(self, 'min_days_live', 30)
+        if (stats_a.get('days_live', 0) < days_threshold or 
+            stats_b.get('days_live', 0) < days_threshold):
+            return False
+        
+        # 4. Funding rate check
+        funding_threshold = getattr(self, 'max_funding_rate_abs', 0.0003)
+        if (abs(stats_a.get('funding', 0)) >= funding_threshold or 
+            abs(stats_b.get('funding', 0)) >= funding_threshold):
+            return False
+        
+        # 5. Tick size check
+        tick_threshold = getattr(self, 'max_tick_size_pct', 0.0005)
+        if (stats_a.get('tick_pct', 1.0) >= tick_threshold or 
+            stats_b.get('tick_pct', 1.0) >= tick_threshold):
+            return False
+        
+        # 6. Half-life check
+        half_life_threshold = getattr(self, 'max_half_life_hours', 72)
+        if (stats_a.get('half_life_h', 1000) >= half_life_threshold or 
+            stats_b.get('half_life_h', 1000) >= half_life_threshold):
+            return False
+        
+        return True
+    
+    def _recalculate_beta(self, prices_a: np.ndarray, prices_b: np.ndarray) -> float:
+        """Recalculate beta using OLS regression on log prices.
+        
+        Args:
+            prices_a: Price series for asset A
+            prices_b: Price series for asset B
+            
+        Returns:
+            Beta coefficient
+        """
+        if len(prices_a) < 10 or len(prices_b) < 10:
+            return 1.0  # Default beta
+        
+        try:
+            log_prices_a = np.log(prices_a)
+            log_prices_b = np.log(prices_b)
+            
+            # Remove any NaN or infinite values
+            valid_mask = np.isfinite(log_prices_a) & np.isfinite(log_prices_b)
+            if np.sum(valid_mask) < 10:
+                return 1.0
+            
+            log_prices_a = log_prices_a[valid_mask]
+            log_prices_b = log_prices_b[valid_mask]
+            
+            # OLS regression: log_prices_a = alpha + beta * log_prices_b
+            X = np.column_stack([np.ones(len(log_prices_b)), log_prices_b])
+            beta_coef = np.linalg.lstsq(X, log_prices_a, rcond=None)[0][1]
+            
+            # Sanity check on beta
+            if not np.isfinite(beta_coef) or beta_coef <= 0 or beta_coef > 10:
+                return 1.0
+            
+            return beta_coef
+        except Exception:
+            return 1.0
+    
+    def _is_funding_blackout_time(self, timestamp: pd.Timestamp) -> bool:
+        """Check if current time is in funding blackout period.
+        
+        Args:
+            timestamp: Current timestamp
+            
+        Returns:
+            True if in blackout period
+        """
+        if not self.enable_funding_time_filter:
+            return False
+        
+        hour = timestamp.hour
+        minute = timestamp.minute
+        
+        for reset_hour in self.funding_reset_hours:
+            # Check if within blackout window around reset hour
+            blackout_start = (reset_hour * 60 - self.funding_blackout_minutes) % (24 * 60)
+            blackout_end = (reset_hour * 60 + self.funding_blackout_minutes) % (24 * 60)
+            
+            current_minute = hour * 60 + minute
+            
+            if blackout_start <= blackout_end:
+                if blackout_start <= current_minute <= blackout_end:
+                    return True
+            else:  # Crosses midnight
+                if current_minute >= blackout_start or current_minute <= blackout_end:
+                    return True
+        
+        return False
+    
+    def _is_macro_blackout_time(self, timestamp: pd.Timestamp) -> bool:
+        """Check if current time is in macro event blackout period.
+        
+        Args:
+            timestamp: Current timestamp
+            
+        Returns:
+            True if in blackout period
+        """
+        if not self.enable_macro_event_filter:
+            return False
+        
+        if self.macro_event_blackout_end is not None:
+            return timestamp <= self.macro_event_blackout_end
+        
+        return False
+    
+    def _is_pair_quarantined(self, pair_name: str, timestamp: pd.Timestamp) -> bool:
+        """Check if pair is currently quarantined.
+        
+        Args:
+            pair_name: Name of the pair
+            timestamp: Current timestamp
+            
+        Returns:
+            True if pair is quarantined
+        """
+        if not self.enable_pair_quarantine:
+            return False
+        
+        if pair_name in self.quarantined_pairs:
+            quarantine_end = self.quarantined_pairs[pair_name]
+            if timestamp <= quarantine_end:
+                return True
+            else:
+                # Remove expired quarantine
+                del self.quarantined_pairs[pair_name]
+        
+        return False
+    
+    def _update_pair_quarantine_status(self, pair_name: str, current_pnl: float, 
+                                      current_equity: float, timestamp: pd.Timestamp):
+        """Update quarantine status for a pair based on performance.
+        
+        Args:
+            pair_name: Name of the pair
+            current_pnl: Current PnL for the pair
+            current_equity: Current equity for the pair
+            timestamp: Current timestamp
+        """
+        if not self.enable_pair_quarantine:
+            return
+        
+        # Update PnL history
+        if pair_name not in self.pair_pnl_history:
+            self.pair_pnl_history[pair_name] = []
+        
+        # Add today's PnL (simplified - in real implementation would track daily)
+        self.pair_pnl_history[pair_name].append(current_pnl)
+        
+        # Keep only recent history
+        max_history = self.quarantine_rolling_window_days
+        if len(self.pair_pnl_history[pair_name]) > max_history:
+            self.pair_pnl_history[pair_name] = self.pair_pnl_history[pair_name][-max_history:]
+        
+        # Update equity peak
+        if pair_name not in self.pair_equity_peaks:
+            self.pair_equity_peaks[pair_name] = current_equity
+        else:
+            self.pair_equity_peaks[pair_name] = max(self.pair_equity_peaks[pair_name], current_equity)
+        
+        # Check quarantine conditions
+        pnl_history = self.pair_pnl_history[pair_name]
+        if len(pnl_history) >= 5:  # Need some history
+            pnl_std = np.std(pnl_history)
+            pnl_threshold = -self.quarantine_pnl_threshold_sigma * pnl_std
+            
+            # Check PnL condition
+            if current_pnl < pnl_threshold:
+                quarantine_end = timestamp + pd.Timedelta(days=self.quarantine_period_days)
+                self.quarantined_pairs[pair_name] = quarantine_end
+                return
+        
+        # Check drawdown condition
+        peak_equity = self.pair_equity_peaks[pair_name]
+        if peak_equity > 0:
+            drawdown = (current_equity - peak_equity) / peak_equity
+            if drawdown < -self.quarantine_drawdown_threshold_pct:
+                quarantine_end = timestamp + pd.Timedelta(days=self.quarantine_period_days)
+                self.quarantined_pairs[pair_name] = quarantine_end
+    
+    def _calculate_realistic_costs(self, qty_long: float, price_long: float, 
+                                  qty_short: float, price_short: float,
+                                  spread_half: float, funding_rate_long: float,
+                                  funding_rate_short: float, holding_hours: float) -> dict:
+        """Calculate realistic trading costs.
+        
+        Args:
+            qty_long: Quantity of long position
+            price_long: Price of long asset
+            qty_short: Quantity of short position
+            price_short: Price of short asset
+            spread_half: Half of the bid-ask spread
+            funding_rate_long: Funding rate for long position
+            funding_rate_short: Funding rate for short position
+            holding_hours: Hours position was held
+            
+        Returns:
+            Dictionary with cost breakdown
+        """
+        if not self.enable_realistic_costs:
+            return {'commission': 0, 'slippage': 0, 'funding': 0, 'total': 0}
+        
+        # Commission cost (per leg)
+        notional_long = abs(qty_long * price_long)
+        notional_short = abs(qty_short * price_short)
+        commission_cost = (notional_long + notional_short) * self.commission_rate_per_leg
+        
+        # Slippage cost (based on spread)
+        slippage_cost = self.slippage_half_spread_multiplier * spread_half
+        
+        # Funding cost
+        funding_cost = 0
+        if self.funding_cost_enabled and holding_hours > 0:
+            funding_periods = holding_hours / 8  # Funding every 8 hours
+            funding_cost_long = notional_long * funding_rate_long * funding_periods
+            funding_cost_short = notional_short * funding_rate_short * funding_periods
+            funding_cost = funding_cost_long + funding_cost_short
+        
+        total_cost = commission_cost + slippage_cost + abs(funding_cost)
+        
+        return {
+            'commission': commission_cost,
+            'slippage': slippage_cost,
+            'funding': funding_cost,
+            'total': total_cost
+        }

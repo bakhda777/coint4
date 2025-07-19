@@ -10,7 +10,7 @@ import logging
 import sys
 
 from coint2.core.data_loader import DataHandler
-from coint2.engine.backtest_engine import PairBacktester
+from coint2.engine.numba_backtest_engine_full import FullNumbaPairBacktester as PairBacktester
 from coint2.pipeline.walk_forward_orchestrator import run_walk_forward
 from coint2.utils.config import load_config, AppConfig
 from coint2.utils.timing_utils import setup_timing_logger

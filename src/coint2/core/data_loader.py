@@ -502,6 +502,9 @@ class DataHandler:
         dropped: dict[str, str] = {}
         for col in numeric_cols:
             ser = data_df[col]
+            if len(ser) == 0:
+                dropped[col] = "empty_series"
+                continue
             if ser.nunique() <= 1:
                 dropped[col] = "constant_series"
                 continue
