@@ -58,8 +58,17 @@ backtest:
   time_stop_multiplier: 2.0
   take_profit_multiplier: 0.5   # Take-profit при 0.5 std (должен быть < 1.0)
   fill_limit_pct: 0.1          
-  commission_pct: 0.004         # Комиссия Binance 
-  slippage_pct: 0.002           # Проскальзывание
+  # Старые параметры (deprecated)
+  commission_pct: 0.004         # Комиссия Binance (deprecated)
+  slippage_pct: 0.002           # Проскальзывание (deprecated)
+  
+  # Новые детализированные параметры издержек
+  fee_maker: 0.0002             # Комиссия мейкера (0.02%)
+  fee_taker: 0.0004             # Комиссия тейкера (0.04%)
+  slippage_bps: 2.0             # Проскальзывание в базисных пунктах
+  half_spread_bps: 1.5          # Половина спреда в базисных пунктах
+  slippage_stress_multiplier: 1.0  # Множитель для стресс-тестирования
+  always_model_slippage: true   # Всегда моделировать проскальзывание
   annualizing_factor: 365
   cooldown_hours: 24            # Увеличиваем тайм-аут между сделками (было 4)
   wait_for_candle_close: true   # Ждем закрытия свечи перед входом
@@ -139,10 +148,37 @@ backtest:
   max_var_multiplier: 3.0       # Максимальный множитель порога при высокой волатильности
 
 walk_forward:
+  enabled: true                 # Включить walk-forward тестирование
   start_date: "2024-02-01"      # Первый бар, который попадает даже в train
   end_date: "2024-04-30"        # Последний день тестового окна
   training_period_days: 60      # Тренировка на 60 днях вместо года
   testing_period_days: 30       # Торговля найденных пар ровно 30 суток
+  step_size_days: 15            # Шаг сдвига окна (половина тестового периода)
+  min_training_samples: 1000    # Минимум образцов для обучения
+  refit_frequency: "monthly"    # Частота переобучения: daily, weekly, monthly
+  
+# Нормализация fit/transform
+normalization:
+  method: "log_returns"         # log_returns, minmax, zscore
+  fit_on_training_only: true    # Fit только на train, transform на train+test
+  prevent_refit_on_test: true   # Запрет повторного fit на test данных
+  log_returns_base: "natural"   # natural, log10, log2
+  
+# Онлайновые статистики
+online_statistics:
+  enabled: true                 # Использовать только исторические данные
+  volatility_method: "ewm"      # ewm, rolling для расчета волатильности
+  ewm_alpha: 0.05              # Параметр сглаживания для EWM
+  kelly_lookback_trades: 50     # Количество последних сделок для Kelly
+  adaptive_threshold_lookback: 96  # Окно для адаптивных порогов (24 часа)
+  beta_recalc_online: true      # Пересчет беты только на исторических данных
+  
+# Сдвиг сигналов
+signal_shift:
+  enabled: true                 # Включить сдвиг сигналов
+  shift_periods: 1              # Сигналы на баре i, исполнение на i+1
+  skip_last_bar: true           # Не торговать последний бар
+  signal_delay_minutes: 0       # Дополнительная задержка в минутах
 
 max_shards: null
 

@@ -777,6 +777,11 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     for step_idx, (training_start, training_end, testing_start, testing_end) in enumerate(walk_forward_steps, 1):
         step_tag = f"WF-шаг {step_idx}/{len(walk_forward_steps)}"
         
+        # Initialize equity curve with first test window start date (removes artificial 1970-01-01)
+        if step_idx == 1:
+            portfolio.initialize_equity_curve(testing_start)
+            logger.info(f"📈 Инициализация equity кривой с первой тестовой даты: {testing_start}")
+        
         # КРИТИЧЕСКАЯ ВАЛИДАЦИЯ: Проверка временных окон на look-ahead bias
         logger.info(f"🔍 {step_tag}: Валидация временных окон...")
         if not validate_time_windows(training_start, training_end, testing_start, testing_end, bar_minutes):

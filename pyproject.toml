@@ -28,13 +28,14 @@ polars = "^1.31.0"
 tqdm = "^4.67.1"
 hurst = "*"
 psutil = "*"
+scikit-learn = "*"
 
-[tool.poetry.dev-dependencies]
-pytest = "*"
+# Moved to tool.poetry.group.dev.dependencies
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.4"
 mypy = "^1.10"
+pytest = "*"
 
 [tool.poetry.scripts]
 coint2 = "coint2.cli:main"

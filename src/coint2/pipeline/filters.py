@@ -179,8 +179,8 @@ def enhanced_pair_screening(
                 
                 if recent_data_days > 0:
                     recent_periods = recent_data_days * bars_per_day
-                    recent_y = y_aligned.tail(recent_periods)
-                    recent_x = x_aligned.tail(recent_periods)
+                    recent_y = y_aligned.iloc[-recent_periods:] if len(y_aligned) >= recent_periods else y_aligned
+                    recent_x = x_aligned.iloc[-recent_periods:] if len(x_aligned) >= recent_periods else x_aligned
                     
                     # Estimate daily volume (simplified - using price * typical volume multiplier)
                     # This is a placeholder - in real implementation, you'd use actual volume data

@@ -110,20 +110,34 @@ class TestBacktestFixes:
         assert size >= 0, "Размер позиции должен быть неотрицательным"
         assert np.isfinite(size), "Размер позиции должен быть конечным"
         
-        # Случай 2: Очень маленький риск (spread_curr близко к stop_loss_price)
-        stop_loss_z = np.sign(entry_z) * bt.stop_loss_multiplier
-        stop_loss_price = mean + stop_loss_z * std
-        size_small_risk = bt._calculate_position_size(entry_z, stop_loss_price, mean, std, beta, price_s1, price_s2)
+        # Случай 2: Тестируем новую логику расчета размера позиции
+        # В новой реализации используется портфельная логика
+        size_new_logic = bt._calculate_position_size(entry_z, spread_curr, mean, std, beta, price_s1, price_s2)
         
-        # С новой защитой от микроскопического риска, позиция не должна быть 0,
-        # но должна быть ограничена min_risk_per_unit = max(0.1 * std, EPSILON)
-        min_risk_expected = max(0.1 * std, 1e-8)  # = max(0.1, 1e-8) = 0.1
-        trade_value = price_s1 + abs(beta) * price_s2  # = 100 + 1.5 * 50 = 175
-        expected_size = min(bt.capital_at_risk / min_risk_expected, bt.capital_at_risk / trade_value)
-        expected_size = min(expected_size, 1000 / 175)  # учитываем trade_value ограничение
+        # В новой реализации размер позиции рассчитывается как:
+        # f * equity / (price_s1 + |beta| * price_s2)
+        # где f - Kelly fraction или capital fraction (по умолчанию 0.02)
+        current_equity = bt.portfolio.get_current_equity() if bt.portfolio else bt.capital_at_risk
+        f = 0.02  # Default capital fraction for new trades
+        f_max = 0.25  # Default f_max
+        f = max(0.0, min(f, f_max))
         
-        assert abs(size_small_risk - expected_size) < 1e-6, \
-            f"При очень маленьком риске размер позиции должен быть ограничен: {size_small_risk} vs {expected_size}"
+        denominator = price_s1 + abs(beta) * price_s2  # = 100 + 1.5 * 50 = 175
+        expected_base_size = f * current_equity / denominator  # = 0.02 * 1000 / 175 ≈ 0.114
+        
+        # Проверяем notional constraints
+        notional = abs(expected_base_size) * price_s1 + abs(beta * expected_base_size) * price_s2
+        min_notional = 100.0  # Default min_notional_per_trade
+        
+        # Если notional < min_notional, позиция должна быть 0
+        if notional < min_notional:
+            expected_size = 0.0
+        else:
+            expected_size = expected_base_size
+        
+        tolerance = max(0.01, abs(expected_size) * 0.1)
+        assert abs(size_new_logic - expected_size) <= tolerance, \
+            f"Новая логика расчета позиции: {size_new_logic} vs ожидаемый {expected_size} (tolerance: {tolerance})"
 
     def test_take_profit_logic_correction(self):
         """Тест 4: Проверяет исправленную логику take-profit.

@@ -77,6 +77,12 @@ class PortfolioConfig(BaseModel):
     risk_per_position_pct: float
     max_active_positions: int
     max_margin_usage: float = 1.0
+    # NEW: Leverage and margin requirements
+    leverage_limit: float = 2.0
+    # NEW: Position sizing parameters
+    f_max: float = 0.25  # Maximum Kelly fraction
+    min_notional_per_trade: float = 100.0  # Minimum notional value per trade
+    max_notional_per_trade: float = 10000.0  # Maximum notional value per trade
     # NEW: Volatility-based position sizing parameters
     volatility_based_sizing: bool = False
     volatility_lookback_hours: int = 24
@@ -93,6 +99,18 @@ class PortfolioConfig(BaseModel):
         
         if not (0 < self.risk_per_position_pct <= 1):
             raise ValueError("`risk_per_position_pct` must be between 0 and 1")
+        
+        if self.leverage_limit <= 0:
+            raise ValueError("`leverage_limit` must be greater than 0")
+        
+        if not (0 < self.f_max <= 1):
+            raise ValueError("`f_max` must be between 0 and 1")
+        
+        if self.min_notional_per_trade <= 0:
+            raise ValueError("`min_notional_per_trade` must be greater than 0")
+        
+        if self.max_notional_per_trade <= self.min_notional_per_trade:
+            raise ValueError("`max_notional_per_trade` must be greater than `min_notional_per_trade`")
         
         return self
 

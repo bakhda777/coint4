@@ -1,0 +1,574 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Детализированный отчет бэктеста - 20250720_014337</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #7f8c8d;
+            margin-top: 20px;
+        }
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #ecf0f1;
+            border-radius: 5px;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .metric-item {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #3498db;
+        }
+        .metric-label {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .metric-value {
+            color: #27ae60;
+            font-size: 1.1em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .positive {
+            color: #27ae60;
+        }
+        .negative {
+            color: #e74c3c;
+        }
+        .warning {
+            color: #f39c12;
+        }
+        .timestamp {
+            text-align: center;
+            color: #7f8c8d;
+            font-style: italic;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Детализированный отчет бэктеста</h1>
+        <div class="timestamp">Сгенерирован: 20250720_014337</div>
+<div class="section"><h2>Конфигурация бэктеста</h2><h3>Walk Forward</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Обучающее окно:</div>
+                    <div class="metric-value">252 баров</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Тестовое окно:</div>
+                    <div class="metric-value">63 баров</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Скользящее окно:</div>
+                    <div class="metric-value">50 баров</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Шаг сдвига:</div>
+                    <div class="metric-value">21 баров</div>
+                </div>
+                </div><h3>Signals</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Порог входа (Z-score):</div>
+                    <div class="metric-value">2.0</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Порог выхода (Z-score):</div>
+                    <div class="metric-value">0.5</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Стоп-лосс (Z-score):</div>
+                    <div class="metric-value">3.0</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Мин. период полураспада:</div>
+                    <div class="metric-value">5.0 дней</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Макс. период полураспада:</div>
+                    <div class="metric-value">50.0 дней</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Мин. корреляция:</div>
+                    <div class="metric-value">0.7</div>
+                </div>
+                </div><h3>Risk Management</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Капитал под риском:</div>
+                    <div class="metric-value">$100,000</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Макс. активных позиций:</div>
+                    <div class="metric-value">3</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Лимит плеча:</div>
+                    <div class="metric-value">2.0x</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Макс. доля капитала (f_max):</div>
+                    <div class="metric-value">25.0%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Множитель стоп-лосса:</div>
+                    <div class="metric-value">3.0</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Множитель тайм-стопа:</div>
+                    <div class="metric-value">2.0</div>
+                </div>
+                </div><h3>Costs</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Комиссия:</div>
+                    <div class="metric-value">0.100%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Проскальзывание:</div>
+                    <div class="metric-value">0.050%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Спред S1:</div>
+                    <div class="metric-value">0.0200%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Спред S2:</div>
+                    <div class="metric-value">0.0200%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Ставка финансирования:</div>
+                    <div class="metric-value">0.0100%</div>
+                </div>
+                </div><h3>Metadata</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Версия конфигурации:</div>
+                    <div class="metric-value">1.0.0</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Random seed:</div>
+                    <div class="metric-value">42</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Время генерации:</div>
+                    <div class="metric-value">2025-07-20T01:43:37.630339</div>
+                </div>
+                </div></div><div class="section"><h2>Тестовые метрики и статистики</h2><h3>Returns</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Общая доходность:</div>
+                    <div class="metric-value ">0.64%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Годовая доходность:</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Волатильность:</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Sharpe Ratio:</div>
+                    <div class="metric-value positive">0.436</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Sortino Ratio:</div>
+                    <div class="metric-value negative">0.000</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Calmar Ratio:</div>
+                    <div class="metric-value negative">0.000</div>
+                </div>
+                </div><h3>Risk Metrics</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Максимальная просадка:</div>
+                    <div class="metric-value ">-554.96%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">VaR (95%):</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">CVaR (95%):</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Скос доходности:</div>
+                    <div class="metric-value ">0.000</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Эксцесс доходности:</div>
+                    <div class="metric-value ">0.000</div>
+                </div>
+                </div><h3>Trading Stats</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Количество сделок:</div>
+                    <div class="metric-value ">0</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Процент прибыльных:</div>
+                    <div class="metric-value ">51.6%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Средняя прибыль:</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Средний убыток:</div>
+                    <div class="metric-value ">0.00%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Profit Factor:</div>
+                    <div class="metric-value ">0.00</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Средняя длительность позиции:</div>
+                    <div class="metric-value ">0.0 баров</div>
+                </div>
+                </div><h3>Statistical Tests</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Тест Жарка-Бера (p-value):</div>
+                    <div class="metric-value ">0.0000</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Тест на автокорреляцию (p-value):</div>
+                    <div class="metric-value ">0.0000</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Тест на стационарность (p-value):</div>
+                    <div class="metric-value ">0.0000</div>
+                </div>
+                </div></div><div class="section"><h2>Анализ оборачиваемости</h2><h3>Overall</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Общий оборот:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Годовой оборот:</div>
+                    <div class="metric-value">967</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Средний дневной оборот:</div>
+                    <div class="metric-value">967</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Оборот на сделку:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                </div><h3>Monthly Stats</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Средний месячный оборот:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Медианный месячный оборот:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Стд. откл. месячного оборота:</div>
+                    <div class="metric-value">nan</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Макс. месячный оборот:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Мин. месячный оборот:</div>
+                    <div class="metric-value">40</div>
+                </div>
+                </div></div><div class="section"><h2>Детализация издержек</h2><h3>Разбивка издержек</h3>
+            <table>
+                <tr>
+                    <th>Тип издержек</th>
+                    <th>Общая сумма</th>
+                    <th>Процент</th>
+                    <th>На сделку</th>
+                    <th>Годовые</th>
+                </tr>
+            
+                <tr>
+                    <td>Комиссии</td>
+                    <td>$0.00</td>
+                    <td>0.0%</td>
+                    <td>$0.00</td>
+                    <td>$0.00</td>
+                </tr>
+                
+                <tr>
+                    <td>Проскальзывание</td>
+                    <td>$0.00</td>
+                    <td>0.0%</td>
+                    <td>$0.00</td>
+                    <td>$0.00</td>
+                </tr>
+                
+                <tr>
+                    <td>Bid-Ask спреды</td>
+                    <td>$0.00</td>
+                    <td>0.0%</td>
+                    <td>$0.00</td>
+                    <td>$0.00</td>
+                </tr>
+                
+                <tr>
+                    <td>Общие издержки</td>
+                    <td>$3.10</td>
+                    <td>0</td>
+                    <td>$3.10</td>
+                    <td>$781.20</td>
+                </tr>
+                </table><h3>Impact Analysis</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Валовая прибыль:</div>
+                    <div class="metric-value">$6.36</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Общие издержки:</div>
+                    <div class="metric-value">$3.10</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Чистая прибыль:</div>
+                    <div class="metric-value">$3.26</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Влияние издержек:</div>
+                    <div class="metric-value">48.8% от валовой прибыли</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Издержки к капиталу:</div>
+                    <div class="metric-value">0.00%</div>
+                </div>
+                </div><h3>Cost Efficiency</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Издержки на $1 оборота:</div>
+                    <div class="metric-value">$0.0776</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Издержки на $1 прибыли:</div>
+                    <div class="metric-value">$0.4876</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Breakeven оборот:</div>
+                    <div class="metric-value">3,100</div>
+                </div>
+                </div></div><div class="section"><h2>Таблица просадок</h2><h3>Статистики просадок</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Просадки:</div>
+                    <div class="metric-value">Не обнаружены</div>
+                </div>
+                </div></div><div class="section"><h2>Анализ чувствительности к комиссиям</h2><h3>Результаты анализа чувствительности</h3>
+            <table>
+                <tr>
+                    <th>Множитель комиссий</th>
+                    <th>Комиссия</th>
+                    <th>Доходность</th>
+                    <th>Sharpe Ratio</th>
+                    <th>Макс. просадка</th>
+                    <th>Количество сделок</th>
+                    <th>Общие издержки</th>
+                </tr>
+            
+                    <tr>
+                        <td>0.5x</td>
+                        <td>0.0500%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$1.60</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>1.0x</td>
+                        <td>0.1000%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$3.20</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>1.5x</td>
+                        <td>0.1500%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$4.80</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>2.0x</td>
+                        <td>0.2000%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$6.40</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>3.0x</td>
+                        <td>0.3000%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$9.60</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>5.0x</td>
+                        <td>0.5000%</td>
+                        <td class="positive">0.70%</td>
+                        <td class="positive">0.536</td>
+                        <td class="negative">-610.68%</td>
+                        <td>0</td>
+                        <td>$16.00</td>
+                    </tr>
+                    </table><h3>Анализ результатов</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Базовый Sharpe:</div>
+                    <div class="metric-value">0.536</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Базовая доходность:</div>
+                    <div class="metric-value">0.70%</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Эластичность Sharpe:</div>
+                    <div class="metric-value">0.00</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Эластичность доходности:</div>
+                    <div class="metric-value">0.00</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Критический множитель:</div>
+                    <div class="metric-value">N/A</div>
+                </div>
+                </div><h3>Интерпретация результатов</h3><div class="metric-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Низкая чувствительность:</div>
+                    <div class="metric-value">Эластичность < 0.5 - стратегия устойчива к издержкам</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Средняя чувствительность:</div>
+                    <div class="metric-value">Эластичность 0.5-2.0 - умеренное влияние издержек</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Высокая чувствительность:</div>
+                    <div class="metric-value">Эластичность > 2.0 - стратегия очень чувствительна к издержкам</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">Критический уровень:</div>
+                    <div class="metric-value">Множитель при котором стратегия становится убыточной</div>
+                </div>
+                </div></div>
+    </div>
+</body>
+</html>

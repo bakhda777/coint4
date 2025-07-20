@@ -1,0 +1,35 @@
+=== СВОДНЫЙ ОТЧЕТ ПО ТЕСТИРОВАНИЮ ===
+
+Дата: 2025-07-20 02:15:52
+
+ТЕСТЫ РОБАСТНОСТИ:
+  test_date_permutation_destroys_performance: PASSED
+  test_time_shift_degrades_performance: FAILED
+    Ошибка: Сдвиг должен ухудшить Sharpe: оригинал=-0.161, сдвинутый=-0.284
+  test_fee_sensitivity: PASSED
+  test_no_future_reference: PASSED
+  test_signal_shift_sanity_check: PASSED
+  test_synthetic_random_walk: FAILED
+    Ошибка: На случайных данных Sharpe должен быть близок к нулю: 0.543
+  test_cost_breakdown_consistency: PASSED
+  test_position_limits_respected: PASSED
+  test_equity_curve_monotonicity: PASSED
+
+СИНТЕТИЧЕСКИЕ ТЕСТЫ:
+  test_perfect_mean_reversion: FAILED
+    Ошибка: Sharpe должен быть разумным: 0.301
+  trending_market_performance: PASSED
+  high_volatility_scenario: PASSED
+  cointegration_breakdown: PASSED
+  extreme_price_movements: PASSED
+  zero_volatility_period: PASSED
+  test_missing_data_handling: FAILED
+    Ошибка: exog contains inf or nans
+  single_asset_constant: PASSED
+
+БАЗОВЫЙ БЭКТЕСТ:
+  Sharpe ratio: -0.0049921143023312405
+  Total return: -0.15697920916504524
+  Max drawdown: -5238.065644313524
+  Number of trades: 0
+

@@ -7,9 +7,160 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
 from functools import lru_cache
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from abc import ABC, abstractmethod
+from numpy.linalg import LinAlgError
 
 from ..core import performance
 from .market_regime_cache import MarketRegimeCache
+
+
+class DataNormalizer(ABC):
+    """Abstract base class for data normalization."""
+    
+    def __init__(self):
+        self.is_fitted = False
+        
+    @abstractmethod
+    def fit(self, data: pd.DataFrame) -> 'DataNormalizer':
+        """Fit normalizer on training data."""
+        pass
+        
+    @abstractmethod
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Transform data using fitted parameters."""
+        pass
+        
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(data).transform(data)
+
+
+class MinMaxNormalizer(DataNormalizer):
+    """Min-Max normalization with fit/transform pattern."""
+    
+    def __init__(self, feature_range=(0, 1)):
+        super().__init__()
+        self.feature_range = feature_range
+        self.scalers = {}
+        
+    def fit(self, data: pd.DataFrame) -> 'MinMaxNormalizer':
+        """Fit min-max scalers on training data."""
+        for col in data.columns:
+            scaler = MinMaxScaler(feature_range=self.feature_range)
+            scaler.fit(data[[col]].values)
+            self.scalers[col] = scaler
+        self.is_fitted = True
+        return self
+        
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Transform data using fitted scalers."""
+        if not self.is_fitted:
+            raise ValueError("Normalizer must be fitted before transform")
+            
+        result = data.copy()
+        for col in data.columns:
+            if col in self.scalers:
+                result[col] = self.scalers[col].transform(data[[col]].values).flatten()
+        return result
+
+
+class LogReturnsNormalizer(DataNormalizer):
+    """Log returns normalization."""
+    
+    def __init__(self, base=np.e):
+        super().__init__()
+        self.base = base
+        
+    def fit(self, data: pd.DataFrame) -> 'LogReturnsNormalizer':
+        """No fitting required for log returns."""
+        self.is_fitted = True
+        return self
+        
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Transform to log returns."""
+        if not self.is_fitted:
+            raise ValueError("Normalizer must be fitted before transform")
+            
+        if self.base == np.e:
+            return np.log(data / data.shift(1)).dropna()
+        else:
+            return np.log(data / data.shift(1)) / np.log(self.base)
+
+
+@dataclass
+class WalkForwardWindow:
+    """Represents a single walk-forward window."""
+    train_start: int
+    train_end: int
+    test_start: int
+    test_end: int
+    window_id: int
+
+
+class WalkForwardSplitter:
+    """Generates walk-forward windows for backtesting."""
+    
+    def __init__(self, 
+                 training_period_days: int,
+                 testing_period_days: int,
+                 step_size_days: int = None,
+                 min_training_samples: int = 1000):
+        self.training_period_days = training_period_days
+        self.testing_period_days = testing_period_days
+        self.step_size_days = step_size_days or testing_period_days
+        self.min_training_samples = min_training_samples
+        
+    def split(self, data: pd.DataFrame, freq_per_day: int = 96) -> List[WalkForwardWindow]:
+        """Generate walk-forward windows.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data with datetime index
+        freq_per_day : int
+            Number of data points per day (default 96 for 15-min data)
+            
+        Returns
+        -------
+        List[WalkForwardWindow]
+            List of walk-forward windows
+        """
+        windows = []
+        total_samples = len(data)
+        
+        training_samples = self.training_period_days * freq_per_day
+        testing_samples = self.testing_period_days * freq_per_day
+        step_samples = self.step_size_days * freq_per_day
+        
+        window_id = 0
+        train_start = 0
+        
+        while True:
+            train_end = train_start + training_samples
+            test_start = train_end
+            test_end = test_start + testing_samples
+            
+            # Check if we have enough data
+            if test_end > total_samples:
+                break
+                
+            # Check minimum training samples
+            if train_end - train_start < self.min_training_samples:
+                break
+                
+            windows.append(WalkForwardWindow(
+                train_start=train_start,
+                train_end=train_end,
+                test_start=test_start,
+                test_end=test_end,
+                window_id=window_id
+            ))
+            
+            window_id += 1
+            train_start += step_samples
+            
+        return windows
 
 
 @dataclass
@@ -25,6 +176,7 @@ class TradeState:
     entry_price_s1: float
     entry_price_s2: float
     beta: float
+    phase: str = "test"  # "train" or "test" for walk-forward
 
 
 class PairBacktester:
@@ -95,6 +247,31 @@ class PairBacktester:
         ew_correlation_alpha: float = 0.1,  # Smoothing factor for EW correlation
         # NEW: Configuration object for accessing config parameters
         config = None,
+        # NEW: Walk-forward testing parameters
+        walk_forward_enabled: bool = False,
+        walk_forward_splitter: WalkForwardSplitter = None,
+        # NEW: Normalization parameters
+        normalization_enabled: bool = False,
+        normalizer: DataNormalizer = None,
+        # NEW: Online statistics parameters
+        online_stats_enabled: bool = True,
+        volatility_method: str = "rolling",  # "rolling" or "ewm"
+        ewm_alpha: float = 0.1,
+        kelly_lookback_trades: int = 50,
+        adaptive_threshold_lookback: int = 100,
+        beta_recalc_online: bool = True,
+        # NEW: Signal shift parameters
+        signal_shift_enabled: bool = True,
+        shift_periods: int = 1,
+        skip_last_bar: bool = True,
+        signal_delay_minutes: int = 0,
+        # NEW: Enhanced cost parameters
+        fee_maker: float = 0.0002,
+        fee_taker: float = 0.0004,
+        slippage_bps: float = 2.0,
+        half_spread_bps: float = 1.0,
+        slippage_stress_multiplier: float = 1.0,
+        always_model_slippage: bool = True,
     ) -> None:
         """Initialize backtester.
 
@@ -313,6 +490,45 @@ class PairBacktester:
         self.cooldown_end_date: Optional[pd.Timestamp] = None
         self.incremental_trades_log: List[Dict] = []
         
+        # NEW: Walk-forward testing parameters
+        self.walk_forward_enabled = walk_forward_enabled
+        self.walk_forward_splitter = walk_forward_splitter
+        self.current_phase = "test"  # Current phase: "train" or "test"
+        self.current_window_id = 0
+        
+        # NEW: Normalization parameters
+        self.normalization_enabled = normalization_enabled
+        self.normalizer = normalizer
+        self.original_data = None  # Store original data before normalization
+        
+        # NEW: Online statistics parameters
+        self.online_stats_enabled = online_stats_enabled
+        self.volatility_method = volatility_method
+        self.ewm_alpha = ewm_alpha
+        self.kelly_lookback_trades = kelly_lookback_trades
+        self.adaptive_threshold_lookback = adaptive_threshold_lookback
+        self.beta_recalc_online = beta_recalc_online
+        
+        # NEW: Signal shift parameters
+        self.signal_shift_enabled = signal_shift_enabled
+        self.shift_periods = shift_periods
+        self.skip_last_bar = skip_last_bar
+        self.signal_delay_minutes = signal_delay_minutes
+        
+        # NEW: Enhanced cost parameters
+        self.fee_maker = fee_maker
+        self.fee_taker = fee_taker
+        self.slippage_bps = slippage_bps
+        self.half_spread_bps = half_spread_bps
+        self.slippage_stress_multiplier = slippage_stress_multiplier
+        self.always_model_slippage = always_model_slippage
+        
+        # NEW: Online statistics state
+        self.online_volatility = None
+        self.online_kelly_history = []
+        self.online_threshold_history = []
+        self.last_beta_update_idx = 0
+        
         # Validate trading parameters
         self._validate_parameters()
 
@@ -409,14 +625,14 @@ class PairBacktester:
         
         # FIXED: Optimized hashing for better performance
         try:
-            # Use array shape and basic statistics for faster hashing
-            # This avoids expensive tobytes() operations while maintaining uniqueness
-            y_stats = (y_array.mean(), y_array.std(), y_array.min(), y_array.max())
-            x_stats = (x_array.mean(), x_array.std(), x_array.min(), x_array.max())
+            # Use window data statistics for hashing to avoid global computations
+            # This avoids expensive operations while maintaining uniqueness
+            y_stats = (len(y_win), y_win.sum(), y_win.min(), y_win.max())
+            x_stats = (len(x_win), x_win.sum(), x_win.min(), x_win.max())
             hash_input = f"{len(y_array)}_{y_stats}_{x_stats}".encode()
         except (AttributeError, ValueError):
             # Fallback to simple length-based hash for degenerate cases
-            hash_input = f"{len(y_array)}_{y_array.sum()}_{x_array.sum()}".encode()
+            hash_input = f"{len(y_array)}_{y_win.sum() if len(y_win) > 0 else 0}_{x_win.sum() if len(x_win) > 0 else 0}".encode()
         
         window_hash = hashlib.md5(hash_input).hexdigest()
         
@@ -437,18 +653,42 @@ class PairBacktester:
             spread_win = y_win - beta * x_win
             mean = spread_win.mean() if len(spread_win) > 0 else 0.0
             std_raw = spread_win.std() if len(spread_win) > 0 else 0.0
-            # Enhanced protection: use price-based minimum std to avoid unrealistic values
-            price_scale = max(y_win.mean(), x_win.mean()) if len(y_win) > 0 and len(x_win) > 0 else 1.0
-            min_std = max(1e-8, price_scale * 1e-6)  # Adaptive minimum based on price scale
+            
+            # Check if std is exactly 0 or very close to 0 (perfect linear relationship)
+            # This must happen BEFORE any min_std adjustments to match manual_backtest behavior
+            if std_raw == 0.0 or abs(std_raw) < 1e-14:
+                return (float('nan'), float('nan'), float('nan'))
+            
+            # FIXED: More conservative minimum std calculation to avoid artificial signals
+            price_scale = max(abs(y_win.mean()), abs(x_win.mean())) if len(y_win) > 0 and len(x_win) > 0 else 1.0
+            # Use more conservative multiplier and add volatility-based threshold
+            spread_volatility = spread_win.std() if len(spread_win) > 1 else 0.0
+            min_std_price_based = price_scale * 1e-4  # More conservative than 1e-6
+            min_std_volatility_based = max(1e-6, spread_volatility * 0.01)  # 1% of actual volatility
+            min_std = max(1e-8, min_std_price_based, min_std_volatility_based)
             std = max(std_raw, min_std)
+            
+            # Additional check: if original std_raw was very small (< 1e-6), return NaN to match manual_backtest behavior
+            if std_raw < 1e-6:
+                return (float('nan'), float('nan'), float('nan'))
         else:
             beta = model.params.iloc[1]
             spread_win = y_win - beta * x_win
             mean = spread_win.mean() if len(spread_win) > 0 else 0.0
             std_raw = spread_win.std() if len(spread_win) > 0 else 0.0
-            # Enhanced protection: use price-based minimum std to avoid unrealistic values
-            price_scale = max(y_win.mean(), x_win.mean()) if len(y_win) > 0 and len(x_win) > 0 else 1.0
-            min_std = max(1e-8, price_scale * 1e-6)  # Adaptive minimum based on price scale
+            
+            # Check if std is exactly 0 or very close to 0 (perfect linear relationship)
+            # This must happen BEFORE any min_std adjustments to match manual_backtest behavior
+            if std_raw == 0.0 or abs(std_raw) < 1e-14:
+                return (float('nan'), float('nan'), float('nan'))
+            
+            # FIXED: More conservative minimum std calculation to avoid artificial signals
+            price_scale = max(abs(y_win.mean()), abs(x_win.mean())) if len(y_win) > 0 and len(x_win) > 0 else 1.0
+            # Use more conservative multiplier and add volatility-based threshold
+            spread_volatility = spread_win.std() if len(spread_win) > 1 else 0.0
+            min_std_price_based = price_scale * 1e-4  # More conservative than 1e-6
+            min_std_volatility_based = max(1e-6, spread_volatility * 0.01)  # 1% of actual volatility
+            min_std = max(1e-8, min_std_price_based, min_std_volatility_based)
             std = max(std_raw, min_std)
         
         # Cache the results
@@ -578,86 +818,231 @@ class PairBacktester:
 
     def _calculate_position_size(self, entry_z: float, spread_curr: float, mean: float,
                                std: float, beta: float, price_s1: float, price_s2: float) -> float:
-        """Calculate position size based on risk management parameters.
+        """Calculate position size based on new requirements.
         
-        FIXED: Returns single position size (not tuple) for spread trading.
-        Position size represents the quantity of the first asset (S1).
-        The second asset quantity is automatically calculated as -beta * position_size.
+        NEW: Kelly or capital fraction based only on completed trades [:i]
+        NEW: Limit f to range [0, f_max]
+        NEW: qty = f * equity / (price_y + |beta|*price_x)
+        NEW: Check min_notional_per_trade and max_notional_per_trade
         
         Returns:
             float: Position size for the first asset
         """
         EPSILON = 1e-8
         
-        # Count active pairs for risk allocation
-        active_pair_count = getattr(self, 'active_pair_count', 1)
+        # Get current equity from portfolio
+        current_equity = self.portfolio.get_current_equity() if self.portfolio else self.capital_at_risk
         
-        # Calculate notional per pair
-        notional = self.capital_at_risk / max(active_pair_count, 1)
+        # Calculate Kelly fraction or capital fraction based on completed trades only
+        f = self._calculate_kelly_or_capital_fraction()
         
-        # Calculate stop loss price for risk calculation
-        stop_loss_z = np.sign(entry_z) * self.stop_loss_multiplier
-        stop_loss_price = mean + stop_loss_z * std
+        # Limit f to range [0, f_max]
+        f_max = getattr(self.portfolio.config, 'f_max', 0.25) if hasattr(self.portfolio, 'config') else 0.25
+        f = max(0.0, min(f, f_max))
         
-        # Calculate risk per unit (difference between entry and stop loss)
-        risk_per_unit = abs(spread_curr - stop_loss_price)
+        # Calculate position size using new formula: qty = f * equity / (price_y + |beta|*price_x)
+        denominator = price_s1 + abs(beta) * price_s2
+        if denominator <= EPSILON:
+            return 0.0
         
-        # FIXED: Protection against microscopic risk with min_risk_per_unit
-        min_risk_per_unit = max(0.1 * std, EPSILON)
-        if risk_per_unit < min_risk_per_unit:
-            risk_per_unit = min_risk_per_unit
+        position_size = f * current_equity / denominator
         
-        # Calculate position size based on risk
-        if risk_per_unit > EPSILON:
-            position_size = notional / risk_per_unit
-        else:
-            position_size = notional / price_s1 if price_s1 > EPSILON else 0.0
+        # Check notional value constraints
+        notional = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
         
-        # Apply trade value limit
-        trade_value = price_s1 + abs(beta) * price_s2
-        if trade_value > EPSILON:
-            trade_value_limit = notional / trade_value
-            position_size = min(position_size, trade_value_limit)
+        # Get min/max notional from portfolio config
+        min_notional = getattr(self.portfolio.config, 'min_notional_per_trade', 100.0) if hasattr(self.portfolio, 'config') else 100.0
+        max_notional = getattr(self.portfolio.config, 'max_notional_per_trade', 10000.0) if hasattr(self.portfolio, 'config') else 10000.0
         
-        # Apply margin limits based on total trade value
-        # Total trade value = |position_size| * price_s1 + |beta * position_size| * price_s2
-        total_trade_value = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
-        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage) and total_trade_value > EPSILON:
-            margin_limit = self.capital_at_risk * self.max_margin_usage
-            if total_trade_value > margin_limit:
-                scale_factor = margin_limit / total_trade_value
+        # Check minimum notional
+        if notional < min_notional:
+            return 0.0  # Skip trade if below minimum
+        
+        # Check maximum notional
+        if notional > max_notional:
+            # Scale down to maximum
+            scale_factor = max_notional / notional
+            position_size *= scale_factor
+            notional = max_notional
+        
+        # Check margin requirements using portfolio
+        if self.portfolio and not self.portfolio.check_margin_requirements(notional):
+            # Try to scale down to fit margin requirements
+            available_margin = self.portfolio.get_available_margin()
+            if available_margin > 0:
+                scale_factor = available_margin / notional
                 position_size *= scale_factor
-        
-        # Apply volatility-based adjustment if enabled
-        if self.volatility_based_sizing:
-            volatility_multiplier = self._calculate_volatility_multiplier()
-            position_size *= volatility_multiplier
-        
-        # FIXED: Apply correlation adjustment for position sizing
-        # Higher correlation increases risk, so reduce position size
-        if hasattr(self, 'pair_data') and len(self.pair_data) >= self.correlation_window:
-            s1_prices = self.pair_data.iloc[:, 0].tail(self.correlation_window)
-            s2_prices = self.pair_data.iloc[:, 1].tail(self.correlation_window)
-            correlation = self._calculate_rolling_correlation(s1_prices, s2_prices, self.correlation_window)
-            
-            # Apply correlation adjustment: higher correlation -> smaller position
-            # Correlation ranges from -1 to 1, we want to reduce size for high positive correlation
-            if correlation is not None and not np.isnan(correlation) and correlation > 0.5:  # High positive correlation increases risk
-                correlation_adjustment = 1.0 - (correlation - 0.5) * 1.0  # Reduce by up to 50%
-                position_size *= correlation_adjustment
-        
-        # FIXED: Final margin limit check after all adjustments
-        # Ensure the final position size still respects margin limits
-        if hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
-            final_total_trade_value = abs(position_size) * price_s1 + abs(beta * position_size) * price_s2
-            if final_total_trade_value > EPSILON:
-                margin_limit = self.capital_at_risk * self.max_margin_usage
-                if final_total_trade_value > margin_limit:
-                    final_scale_factor = margin_limit / final_total_trade_value
-                    position_size *= final_scale_factor
+                notional *= scale_factor
+                
+                # Check if still above minimum after scaling
+                if notional < min_notional:
+                    return 0.0
+            else:
+                return 0.0  # No available margin
         
         return position_size
-
+    
+    def _calculate_kelly_or_capital_fraction(self) -> float:
+        """Calculate Kelly fraction or capital fraction based only on completed trades.
+        
+        NEW: Only uses completed trades [:i] for calculation
+        NEW: Returns fraction in range [0, f_max]
+        
+        Returns:
+            float: Kelly fraction or default capital fraction
+        """
+        # Get completed trades from portfolio or trades log
+        completed_trades = []
+        
+        if hasattr(self, 'trades_log') and self.trades_log:
+            # Use trades log if available
+            completed_trades = [trade['pnl'] for trade in self.trades_log if 'pnl' in trade]
+        elif self.portfolio and hasattr(self.portfolio, 'completed_trades'):
+            # Use portfolio completed trades if available
+            completed_trades = [trade.pnl for trade in self.portfolio.completed_trades]
+        
+        # If no completed trades, use default capital fraction
+        if len(completed_trades) < 10:
+            return 0.02  # Default 2% of capital
+        
+        # Convert to pandas Series for Kelly calculation
+        returns = pd.Series(completed_trades)
+        
+        # Remove outliers (beyond 3 sigma)
+        mean_return = returns.mean()
+        std_return = returns.std()
+        
+        if std_return == 0:
+            return 0.02  # Default if no variance
+        
+        filtered_returns = returns[
+            (returns >= mean_return - 3 * std_return) & 
+            (returns <= mean_return + 3 * std_return)
+        ]
+        
+        if len(filtered_returns) < 5:
+            return 0.02  # Default if too few valid returns
+        
+        # Kelly formula: f = (bp - q) / b
+        # where b = average win / average loss, p = win probability, q = loss probability
+        win_rate = (filtered_returns > 0).mean()
+        
+        if win_rate == 0 or win_rate == 1:
+            return 0.02  # Default if all wins or all losses
+        
+        wins = filtered_returns[filtered_returns > 0]
+        losses = filtered_returns[filtered_returns < 0]
+        
+        if len(wins) == 0 or len(losses) == 0:
+            return 0.02  # Default if no wins or no losses
+        
+        avg_win = wins.mean()
+        avg_loss = abs(losses.mean())
+        
+        if avg_loss == 0:
+            return 0.02  # Default if no average loss
+        
+        # Kelly fraction
+        b = avg_win / avg_loss  # Odds ratio
+        kelly_f = (b * win_rate - (1 - win_rate)) / b
+        
+        # Ensure non-negative and reasonable
+        kelly_f = max(0.0, kelly_f)
+        
+        # Apply conservative scaling (Kelly can be aggressive)
+        kelly_f *= 0.5  # Use half-Kelly for safety
+        
+        return kelly_f
+    
+    def _calculate_enhanced_trade_costs(self, position_change, price_s1, price_s2, beta):
+        """Calculate enhanced trading costs including commissions, slippage, and spreads."""
+        if abs(position_change) < 1e-8:
+            return 0.0
+        
+        # Determine trade side (1 for buy, -1 for sell)
+        side_s1 = 1 if position_change > 0 else -1
+        side_s2 = -1 if position_change > 0 else 1  # Opposite side for hedge
+        
+        # Calculate effective prices with slippage and spreads
+        # Asset 1 (y)
+        slippage_s1 = self.slippage_bps / 10000 * self.slippage_stress_multiplier
+        half_spread_s1 = self.half_spread_bps / 10000
+        price_impact_s1 = side_s1 * (slippage_s1 + half_spread_s1)
+        effective_price_s1 = price_s1 * (1 + price_impact_s1)
+        
+        # Asset 2 (x)
+        slippage_s2 = self.slippage_bps / 10000 * self.slippage_stress_multiplier
+        half_spread_s2 = self.half_spread_bps / 10000
+        price_impact_s2 = side_s2 * (slippage_s2 + half_spread_s2)
+        effective_price_s2 = price_s2 * (1 + price_impact_s2)
+        
+        # Calculate trade quantities
+        qty_s1 = abs(position_change)
+        qty_s2 = abs(beta * position_change)
+        
+        # Calculate commissions
+        # Determine if maker or taker (assume taker for market orders)
+        fee_rate = self.fee_taker
+        commission_s1 = effective_price_s1 * qty_s1 * fee_rate
+        commission_s2 = effective_price_s2 * qty_s2 * fee_rate
+        
+        # Total cost
+        total_cost = commission_s1 + commission_s2
+        
+        # Log detailed costs for analysis
+        cost_breakdown = {
+            'commission_s1': commission_s1,
+            'commission_s2': commission_s2,
+            'slippage_s1': abs(price_s1 * qty_s1 * slippage_s1),
+            'slippage_s2': abs(price_s2 * qty_s2 * slippage_s2),
+            'spread_s1': abs(price_s1 * qty_s1 * half_spread_s1),
+            'spread_s2': abs(price_s2 * qty_s2 * half_spread_s2),
+            'total': total_cost
+        }
+        
+        # Store cost breakdown for analysis
+        if not hasattr(self, 'cost_breakdown_log'):
+            self.cost_breakdown_log = []
+        self.cost_breakdown_log.append(cost_breakdown)
+        
+        return total_cost
+    
+    def _recalculate_beta_online(self, df, current_idx):
+        """Recalculate beta using online method with historical data only."""
+        if current_idx < self.rolling_window:
+            return df["beta"].iat[current_idx] if not pd.isna(df["beta"].iat[current_idx]) else 1.0
+        
+        # Use historical data only
+        y_historical = df["y"].iloc[:current_idx]
+        x_historical = df["x"].iloc[:current_idx]
+        
+        # Use rolling window for beta recalculation (online statistics)
+        window_size = min(len(y_historical), self.rolling_window)
+        y_win = y_historical.iloc[-window_size:] if len(y_historical) >= window_size else y_historical
+        x_win = x_historical.iloc[-window_size:] if len(x_historical) >= window_size else x_historical
+        
+        try:
+            beta, _, _ = self._calculate_ols_with_cache(y_win, x_win)
+            return beta if not pd.isna(beta) else 1.0
+        except:
+            return 1.0
+    
+    def _update_online_volatility(self, df, current_idx):
+        """Update volatility using online calculation with historical data only."""
+        if current_idx < self.rolling_window:
+            return
+        
+        # Use historical data only
+        spread_historical = df["spread"].iloc[:current_idx]
+        
+        # Calculate rolling volatility
+        volatility_window = min(len(spread_historical), self.rolling_window)
+        recent_spreads = spread_historical.iloc[-volatility_window:] if len(spread_historical) >= volatility_window else spread_historical
+        
+        if len(recent_spreads) > 1:
+            volatility = recent_spreads.std()
+            df.loc[df.index[current_idx], "rolling_volatility"] = volatility
+ 
     def _calculate_kelly_fraction(self, returns: pd.Series) -> float:
         """Calculate Kelly criterion fraction for position sizing.
         
@@ -715,7 +1100,7 @@ class PairBacktester:
         
         # Calculate recent volatility (using 15-min bars, so 4 bars per hour)
         lookback_periods = self.volatility_lookback_hours * 4
-        recent_data = self.pair_data.tail(lookback_periods)
+        recent_data = self.pair_data.iloc[-lookback_periods:] if len(self.pair_data) >= lookback_periods else self.pair_data
         
         # Calculate returns for both assets
         returns_y = recent_data.iloc[:, 0].pct_change().dropna()
@@ -779,22 +1164,25 @@ class PairBacktester:
         if not self.adaptive_thresholds or len(z_scores) < self.volatility_lookback:
             return self.z_threshold
         
-        # Calculate rolling volatility of z-scores
-        z_volatility = z_scores.rolling(window=self.volatility_lookback).std().iloc[-1]
+        # Calculate rolling volatility of z-scores using only available data
+        if len(z_scores) < self.volatility_lookback:
+            return self.z_threshold
+            
+        # Use only the last volatility_lookback periods to avoid look-ahead bias
+        recent_z_scores = z_scores.iloc[-self.volatility_lookback:]
+        z_volatility = recent_z_scores.std()
         
         if pd.isna(z_volatility) or z_volatility == 0:
             return self.z_threshold
         
         # Adjust threshold based on volatility regime
         # Higher volatility -> higher threshold (more conservative)
-        if len(z_scores) == 0:
-            return self.z_threshold
-        
-        rolling_std = z_scores.rolling(window=self.volatility_lookback * 2).std()
-        if len(rolling_std.dropna()) == 0:
-            return self.z_threshold
-        
-        base_volatility = rolling_std.median()
+        if len(z_scores) < self.volatility_lookback * 2:
+            base_volatility = z_volatility  # Use current volatility as base
+        else:
+            # Use longer window for base volatility calculation
+            longer_window = z_scores.iloc[-self.volatility_lookback * 2:]
+            base_volatility = longer_window.std()
         if pd.isna(base_volatility) or base_volatility == 0:
             return self.z_threshold
         
@@ -1052,6 +1440,85 @@ class PairBacktester:
                 columns=["spread", "z_score", "position", "pnl", "cumulative_pnl"]
             )
             return
+            
+        # NEW: Walk-forward testing logic
+        if self.walk_forward_enabled and self.walk_forward_splitter is not None:
+            self._run_walk_forward()
+        else:
+            self._run_single_backtest()
+            
+    def _run_walk_forward(self) -> None:
+        """Run walk-forward backtesting."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Store original data
+        self.original_data = self.pair_data.copy()
+        
+        # Generate walk-forward windows
+        windows = self.walk_forward_splitter.split(self.pair_data)
+        logger.info(f"🔄 Walk-forward: {len(windows)} окон для тестирования")
+        
+        all_test_results = []
+        
+        for window in windows:
+            logger.info(f"🔄 Обрабатываем окно {window.window_id + 1}/{len(windows)}")
+            
+            # Extract training and testing data
+            train_data = self.pair_data.iloc[window.train_start:window.train_end].copy()
+            test_data = self.pair_data.iloc[window.test_start:window.test_end].copy()
+            
+            # Fit normalizer on training data if enabled
+            if self.normalization_enabled and self.normalizer is not None:
+                self.normalizer.fit(train_data)
+                train_data = self.normalizer.transform(train_data)
+                test_data = self.normalizer.transform(test_data)
+            
+            # Set current phase and window
+            self.current_phase = "train"
+            self.current_window_id = window.window_id
+            
+            # Run training phase (for parameter calibration)
+            self.pair_data = train_data
+            train_results = self._run_single_backtest_internal(phase="train")
+            
+            # Set test phase
+            self.current_phase = "test"
+            
+            # Run testing phase
+            self.pair_data = test_data
+            test_results = self._run_single_backtest_internal(phase="test")
+            
+            # Add window information to test results
+            test_results['window_id'] = window.window_id
+            test_results['phase'] = 'test'
+            
+            all_test_results.append(test_results)
+        
+        # Concatenate all test results
+        if all_test_results:
+            self.results = pd.concat(all_test_results, ignore_index=False)
+        else:
+            self.results = pd.DataFrame(
+                columns=["spread", "z_score", "position", "pnl", "cumulative_pnl"]
+            )
+        
+        # Restore original data
+        self.pair_data = self.original_data
+        
+    def _run_single_backtest(self) -> None:
+        """Run single backtest without walk-forward."""
+        # Apply normalization if enabled
+        if self.normalization_enabled and self.normalizer is not None:
+            self.normalizer.fit(self.pair_data)
+            self.pair_data = self.normalizer.transform(self.pair_data)
+            
+        self.results = self._run_single_backtest_internal(phase="test")
+        
+    def _run_single_backtest_internal(self, phase: str = "test") -> pd.DataFrame:
+        """Internal method to run a single backtest with new execution order."""
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Переименовываем столбцы для удобства
         df = self.pair_data.rename(
@@ -1060,58 +1527,68 @@ class PairBacktester:
                 self.pair_data.columns[1]: "x",
             }
         ).copy()
+        
+        # Add phase column for tracking
+        df["phase"] = phase
 
-        # Prepare columns for rolling parameters
+        # Initialize all required columns
+        self._initialize_dataframe_columns(df)
+        
+        # Initialize state variables
+        self._initialize_backtest_state()
+        
+        # Buffer for signals (computed on bar i, executed on bar i+1)
+        signal_buffer = 0
+        
+        # Main execution loop with new order: execute_orders -> update_rolling_stats -> compute_signal -> mark_to_market
+        for i in range(1, len(df)):
+            # (a) execute_orders(i) из сигналов i-1
+            self.execute_orders(df, i, signal_buffer)
+            
+            # (b) update_rolling_stats(i)
+            self.update_rolling_stats(df, i)
+            
+            # (c) compute_signal(i) и буферизовать для i+1
+            signal_buffer = self.compute_signal(df, i)
+            
+            # (d) mark_to_market(i)
+            self.mark_to_market(df, i)
+        
+        # Calculate cumulative PnL
+        df["cumulative_pnl"] = df["pnl"].cumsum()
+        
+        self.results = df
+        
+        # Log final statistics
+        self._log_final_statistics(df)
+        
+        return df
+    
+    def _initialize_dataframe_columns(self, df: pd.DataFrame) -> None:
+        """Initialize all required DataFrame columns."""
+        # Rolling statistics columns
         df["beta"] = np.nan
         df["mean"] = np.nan
         df["std"] = np.nan
         df["spread"] = np.nan
         df["z_score"] = np.nan
-
-        # FIXED: Prevent look-ahead bias by using only historical data
-        # Calculate parameters using data up to (but not including) current period
-        for i in range(self.rolling_window, len(df)):
-            # FIXED: Use only historical data to avoid look-ahead bias
-            # Window should end at i-1, not i, to exclude current period
-            y_win = df["y"].iloc[i - self.rolling_window : i]
-            x_win = df["x"].iloc[i - self.rolling_window : i]
-            
-            # Use cached OLS calculation
-            beta, mean, std = self._calculate_ols_with_cache(y_win, x_win)
-            
-            # FIXED: Более гибкая обработка низкой волатильности
-            # Используем адаптивный порог на основе средних значений цен
-            y_slice = df["y"].iloc[i-self.rolling_window:i]
-            x_slice = df["x"].iloc[i-self.rolling_window:i]
-            
-            # Проверяем на пустые срезы перед вычислением mean
-            if len(y_slice) == 0 or len(x_slice) == 0:
-                continue
-            
-            price_scale = max(y_slice.mean(), x_slice.mean())
-            min_std_threshold = max(1e-6, price_scale * 1e-4)  # Адаптивный порог
-            
-            if std < min_std_threshold:
-                continue  # Skip this iteration, leaving values as NaN
-            
-            current_spread = df["y"].iat[i] - beta * df["x"].iat[i]
-            z = (current_spread - mean) / std
-            
-            # FIXED: Use iloc for more efficient assignment
-            idx = df.index[i]
-            df.loc[idx, "beta"] = beta
-            df.loc[idx, "mean"] = mean
-            df.loc[idx, "std"] = std
-            df.loc[idx, "spread"] = current_spread
-            df.loc[idx, "z_score"] = z
-
-        # Инициализируем столбцы для результатов
+        
+        # Trading columns
         df["position"] = 0.0
         df["trades"] = 0.0
         df["pnl"] = 0.0
         df["costs"] = 0.0
-
-        # Добавляем столбцы для расширенного логирования
+        df["realized_pnl"] = 0.0
+        df["unrealized_pnl"] = 0.0
+        df["equity"] = float(self.capital_at_risk)
+        
+        # Enhanced cost tracking columns
+        df["commission_costs"] = 0.0
+        df["slippage_costs"] = 0.0
+        df["bid_ask_costs"] = 0.0
+        df["impact_costs"] = 0.0
+        
+        # Trade logging columns
         df["entry_price_s1"] = np.nan
         df["entry_price_s2"] = np.nan
         df["exit_price_s1"] = np.nan
@@ -1120,503 +1597,487 @@ class PairBacktester:
         df["exit_z"] = np.nan
         df["exit_reason"] = ""
         df["trade_duration"] = 0.0
-        # FIXED: Use proper dtype for entry_date to avoid warnings
+        
+        # Entry date column with proper dtype
         if isinstance(df.index, pd.DatetimeIndex):
             df["entry_date"] = pd.NaT
         else:
             df["entry_date"] = np.nan
+    
+    def _initialize_backtest_state(self) -> None:
+        """Initialize backtest state variables."""
+        self.current_position = 0.0
+        self.current_cash = self.capital_at_risk
+        self.accrued_costs = 0.0
+        self.entry_price_s1 = np.nan
+        self.entry_price_s2 = np.nan
+        self.entry_z = 0.0
+        self.entry_datetime = None
+        self.entry_index = 0
+        self.cooldown_remaining = 0
+        self.active_positions_count = 0
         
-        # Enhanced cost tracking columns
-        df["commission_costs"] = 0.0
-        df["slippage_costs"] = 0.0
-        df["bid_ask_costs"] = 0.0
-        df["impact_costs"] = 0.0
+    def execute_orders(self, df: pd.DataFrame, i: int, signal: int) -> None:
+        """Execute orders from signals generated on previous bar."""
+        if signal == 0 or i >= len(df):
+            return
+            
+        # Check capital_at_risk and max_active_positions constraints
+        if not self._can_open_new_position(signal):
+            return
+            
+        # Get current prices
+        price_s1 = df["y"].iat[i]
+        price_s2 = df["x"].iat[i]
         
-        # NEW: Market regime detection and structural break protection columns
-        df["market_regime"] = "neutral"
-        df["hurst_exponent"] = np.nan
-        df["variance_ratio"] = np.nan
-        df["rolling_correlation"] = np.nan
-        df["half_life_estimate"] = np.nan
-        df["adf_pvalue"] = np.nan
-        df["structural_break_detected"] = False
-
-        total_cost_pct = self.commission_pct + self.slippage_pct
-
-        position = 0.0
-        entry_z = 0.0
-        stop_loss_z = 0.0
-        cooldown_remaining = 0  # Tracks remaining cooldown periods
-
-        # Вынесем get_loc вычисления из цикла для оптимизации
-        position_col_idx = df.columns.get_loc("position")
-        trades_col_idx = df.columns.get_loc("trades")
-        costs_col_idx = df.columns.get_loc("costs")
-        pnl_col_idx = df.columns.get_loc("pnl")
-
-        # Variables for detailed trade logging
-        entry_datetime = None
-        entry_spread = 0.0
-        entry_position_size = 0.0
-        entry_index = 0
-        current_trade_pnl = 0.0
-
-        for i in range(1, len(df)):
-            if (
-                pd.isna(df["spread"].iat[i])
-                or pd.isna(df["spread"].iat[i - 1])
-                or pd.isna(df["z_score"].iat[i])
-            ):
-                df.iat[i, position_col_idx] = position
-                df.iat[i, trades_col_idx] = 0.0
-                df.iat[i, costs_col_idx] = 0.0
-                df.iat[i, pnl_col_idx] = 0.0
-                continue
-
-            beta = df["beta"].iat[i]
-            mean = df["mean"].iat[i]
-            std = df["std"].iat[i]
-            spread_prev = df["spread"].iat[i - 1]
-            spread_curr = df["spread"].iat[i]
-            z_curr = df["z_score"].iat[i]
-
-            # Calculate PnL using individual asset returns: pnl = size_s1 * ΔP1 + size_s2 * ΔP2
-            # where size_s2 = -beta * size_s1
-            price_s1_curr = df["y"].iat[i]
-            price_s2_curr = df["x"].iat[i]
-            price_s1_prev = df["y"].iat[i - 1]
-            price_s2_prev = df["x"].iat[i - 1]
-            
-            delta_p1 = price_s1_curr - price_s1_prev
-            delta_p2 = price_s2_curr - price_s2_prev
-            
-            # position represents size_s1, size_s2 = -beta * size_s1
-            beta = df["beta"].iat[i]
-            size_s1 = position
-            size_s2 = -beta * size_s1
-            
-            pnl = size_s1 * delta_p1 + size_s2 * delta_p2
-
-            # NEW: Market regime detection and structural break protection
-            market_regime = self._detect_market_regime(i, df)
-            structural_break_detected = self._check_structural_breaks(i, df)
-            
-            # Skip trading if in trending regime or structural break detected
-            trading_allowed = True
-            if market_regime == 'trending':
-                trading_allowed = False
-            if structural_break_detected and position != 0:
-                # Force close position due to structural break
-                new_position = 0.0
-                if position != 0:
-                    # Log exit due to structural break
-                    df.loc[df.index[i], "exit_reason"] = "structural_break"
-                    df.loc[df.index[i], "exit_z"] = z_curr
-                    df.loc[df.index[i], "exit_price_s1"] = price_s1_curr
-                    df.loc[df.index[i], "exit_price_s2"] = price_s2_curr
-                    
-                    # Calculate trade duration
-                    if entry_datetime is not None:
-                        if isinstance(df.index, pd.DatetimeIndex):
-                            trade_duration = (df.index[i] - entry_datetime).total_seconds() / 3600  # hours
-                        else:
-                            trade_duration = i - entry_index
-                        df.loc[df.index[i], "trade_duration"] = trade_duration
-                        
-                    # Log detailed trade
-                    self.trades_log.append({
-                        'entry_date': entry_datetime,
-                        'exit_date': df.index[i],
-                        'entry_z': entry_z,
-                        'exit_z': z_curr,
-                        'position_size': entry_position_size,
-                        'pnl': current_trade_pnl + pnl,
-                        'exit_reason': 'structural_break',
-                        'trade_duration': trade_duration if 'trade_duration' in locals() else 0
-                    })
-                    
-                    # Reset trade tracking
-                    entry_datetime = None
-                    entry_spread = 0.0
-                    entry_position_size = 0.0
-                    current_trade_pnl = 0.0
-                    
-            elif not trading_allowed and position == 0:
-                # Don't enter new positions in trending regime
-                new_position = 0.0
-            else:
-                new_position = position
+        # Calculate position size based on signal
+        if signal != 0 and self.current_position == 0:  # Opening new position
+            # Get z-score and other parameters from previous bar (where signal was generated)
+            if i > 0:
+                z_score = df["z_score"].iat[i-1]
+                spread = df["spread"].iat[i-1]
+                mean = df["mean"].iat[i-1]
+                std = df["std"].iat[i-1]
+                beta = df["beta"].iat[i-1]
                 
-                # NEW: Check margin limits for existing positions when prices change
-                if position != 0 and hasattr(self, 'max_margin_usage') and np.isfinite(self.max_margin_usage):
-                    # Calculate current total trade value for existing position
-                    current_total_trade_value = abs(position) * price_s1_curr + abs(beta * position) * price_s2_curr
-                    margin_limit = self.capital_at_risk * self.max_margin_usage
+                if not pd.isna(z_score) and not pd.isna(std) and std > 0:
+                    position_size = self._calculate_position_size(
+                        z_score, spread, mean, std, beta, price_s1, price_s2
+                    )
+                    new_position = signal * abs(position_size)
                     
-                    # If current position exceeds margin limit, scale it down
-                    if current_total_trade_value > margin_limit:
-                        scale_factor = margin_limit / current_total_trade_value
-                        new_position = position * scale_factor
-                        
-                        # Log margin limit adjustment
-                        if hasattr(self, 'pair_name'):
-                            logger.info(f"⚠️ {self.pair_name}: Position scaled down due to margin limit. "
-                                      f"Original: {position:.6f}, New: {new_position:.6f}, "
-                                      f"Scale factor: {scale_factor:.4f}")
-                
-            # NEW: Record market regime and structural break analysis results
-            idx = df.index[i]
-            df.loc[idx, "market_regime"] = market_regime
-            df.loc[idx, "structural_break_detected"] = structural_break_detected
+                    # Calculate and apply trading costs
+                    position_change = new_position - self.current_position
+                    costs = self._calculate_trading_costs_integrated(
+                        position_change, beta, price_s1, price_s2
+                    )
+                    
+                    # Update position and costs
+                    self.current_position = new_position
+                    self.current_cash -= costs
+                    self.accrued_costs += costs
+                    
+                    # Store entry information
+                    self.entry_price_s1 = price_s1
+                    self.entry_price_s2 = price_s2
+                    self.entry_z = z_score
+                    self.entry_datetime = df.index[i]
+                    self.entry_index = i
+                    self.active_positions_count += 1
+                    
+                    # Log trade opening to incremental_trades_log
+                    capital_used = abs(new_position) * (price_s1 + abs(beta) * price_s2)
+                    self._open_trade(df.index[i], z_score, spread, new_position, 
+                                   capital_used, price_s1, price_s2, beta)
+                    
+                    # Log trade details
+                    df.loc[df.index[i], "trades"] = abs(position_change)
+                    df.loc[df.index[i], "costs"] = costs
+                    df.loc[df.index[i], "entry_price_s1"] = price_s1
+                    df.loc[df.index[i], "entry_price_s2"] = price_s2
+                    df.loc[df.index[i], "entry_z"] = z_score
+                    df.loc[df.index[i], "entry_date"] = df.index[i]
+                    
+        elif signal == 0 and self.current_position != 0:  # Closing position
+            # Calculate and apply trading costs for closing
+            position_change = -self.current_position
+            beta = df["beta"].iat[i-1] if i > 0 else 1.0
+            costs = self._calculate_trading_costs_integrated(
+                position_change, beta, price_s1, price_s2
+            )
             
-            # Copy analysis results from state variables if available
-            if idx in self.hurst_exponents.index:
-                df.loc[idx, "hurst_exponent"] = self.hurst_exponents.at[idx]
-            if idx in self.variance_ratios.index:
-                df.loc[idx, "variance_ratio"] = self.variance_ratios.at[idx]
-            if idx in self.rolling_correlations.index:
-                df.loc[idx, "rolling_correlation"] = self.rolling_correlations.at[idx]
-            if idx in self.half_life_estimates.index:
-                df.loc[idx, "half_life_estimate"] = self.half_life_estimates.at[idx]
-            if idx in self.adf_pvalues.index:
-                df.loc[idx, "adf_pvalue"] = self.adf_pvalues.at[idx]
-
-            # FIXED: Time-based stop-loss с унифицированными единицами времени
-            if (
-                position != 0
-                and self.half_life is not None
-                and self.time_stop_multiplier is not None
-                and entry_datetime is not None
-            ):
-                # FIXED: Unified time handling for consistent duration calculation
-                trade_duration_periods = self._calculate_trade_duration_periods(
-                    df.index[i], entry_datetime, i, entry_index
+            # Calculate realized PnL
+            realized_pnl = self._calculate_realized_pnl(
+                self.current_position, self.entry_price_s1, self.entry_price_s2,
+                price_s1, price_s2, beta
+            )
+            
+            # Log trade closing to incremental_trades_log
+            exit_z = df["z_score"].iat[i-1] if i > 0 else 0.0
+            self._close_trade(df.index[i], exit_z, "z_exit")
+            
+            # Update state
+            self.current_position = 0.0
+            self.current_cash += realized_pnl - costs
+            self.accrued_costs += costs
+            self.active_positions_count = max(0, self.active_positions_count - 1)
+            
+            # Log exit details
+            df.loc[df.index[i], "trades"] = abs(position_change)
+            df.loc[df.index[i], "costs"] = costs
+            df.loc[df.index[i], "realized_pnl"] = realized_pnl
+            df.loc[df.index[i], "exit_price_s1"] = price_s1
+            df.loc[df.index[i], "exit_price_s2"] = price_s2
+            df.loc[df.index[i], "exit_z"] = exit_z
+            
+            # Calculate trade duration
+            if self.entry_datetime is not None:
+                duration = self._calculate_trade_duration(
+                    df.index[i], self.entry_datetime, i, self.entry_index
                 )
-                
-                # half_life is in periods, so time_stop_limit is also in periods
-                time_stop_limit_periods = self.half_life * self.time_stop_multiplier
-                if trade_duration_periods >= time_stop_limit_periods:
-                    new_position = 0.0
-                    cooldown_remaining = self.cooldown_periods
-                    # FIXED: Use extracted _log_exit method
-                    self._log_exit(df, i, z_curr, 'time_stop', entry_datetime, entry_index)
-                    # Close position in portfolio
-                    if self.portfolio is not None and position != 0:
-                        self.portfolio.close_position(self.pair_name)
-
-            # Уменьшаем cooldown счетчик
-            if cooldown_remaining > 0:
-                cooldown_remaining -= 1
-
-            # Закрытие позиций в конце теста для чистоты метрик
-            if i == len(df) - 1 and position != 0:
-                new_position = 0.0  # Форс-закрытие в последнем периоде
-                cooldown_remaining = self.cooldown_periods
-                # FIXED: Use extracted _log_exit method
-                self._log_exit(df, i, z_curr, "end_of_test", entry_datetime, entry_index)
-                # Close position in portfolio
-                if self.portfolio is not None:
-                    self.portfolio.close_position(self.pair_name)
-            # NEW: Enhanced stop-loss rules - USD-based and Z-score based
-            elif position != 0:
-                # Calculate unrealized PnL in USD
-                price_s1_curr = df["y"].iat[i]
-                price_s2_curr = df["x"].iat[i]
-                
-                # Calculate current position value and unrealized PnL
-                if hasattr(self, 'entry_price_s1') and hasattr(self, 'entry_price_s2'):
-                    unrealized_pnl = (position * (price_s1_curr - self.entry_price_s1) + 
-                                     (-position * beta) * (price_s2_curr - self.entry_price_s2))
-                else:
-                    unrealized_pnl = current_trade_pnl
-                
-                # Stop-loss conditions: 75 USDT loss OR 3σ Z-score
-                usd_stop_loss = unrealized_pnl <= -75.0
-                z_stop_loss = (position > 0 and z_curr <= stop_loss_z) or (position < 0 and z_curr >= stop_loss_z)
-                
-                if usd_stop_loss or z_stop_loss:
-                    new_position = 0.0
-                    cooldown_remaining = self.cooldown_periods
-                    exit_reason = "usd_stop_loss" if usd_stop_loss else "z_stop_loss"
-                    self._log_exit(df, i, z_curr, exit_reason, entry_datetime, entry_index)
-                    
-                    # Track exit time for protection
-                    self.last_position_exit_time = df.index[i]
-                    if not isinstance(df.index, pd.DatetimeIndex):
-                        self.last_position_exit_index = i
-                    
-                    # Close position in portfolio
-                    if self.portfolio is not None:
-                        self.portfolio.close_position(self.pair_name)
-            # NEW: Minimum holding time requirement (1 hour)
-            elif position != 0 and entry_datetime is not None:
-                # Check minimum holding time
-                if isinstance(df.index, pd.DatetimeIndex):
-                    holding_time_hours = (df.index[i] - entry_datetime).total_seconds() / 3600
-                    min_holding_met = holding_time_hours >= (self.min_position_hold_minutes / 60.0)  # Use config value
-                else:
-                    # For non-datetime index, assume 15-minute periods
-                    holding_periods = i - entry_index
-                    min_holding_met = holding_periods >= 4  # 4 * 15min = 1 hour
-                
-                if min_holding_met:
-                    # ENHANCED: Take-profit логика с учетом комиссий
-                    # Выход при движении z-score к нулю, но только если прибыль покрывает комиссии
-                    if (
-                        self.take_profit_multiplier is not None
-                        and abs(z_curr) <= abs(entry_z) * self.take_profit_multiplier
-                        and self._is_profitable_exit(current_trade_pnl, position, price_s1_curr, price_s2_curr, beta)
-                    ):
-                        new_position = 0.0
-                        cooldown_remaining = self.cooldown_periods
-                        self._log_exit(df, i, z_curr, "take_profit", entry_datetime, entry_index)
-                        
-                        # Track exit time for protection
-                        self.last_position_exit_time = df.index[i]
-                        if not isinstance(df.index, pd.DatetimeIndex):
-                            self.last_position_exit_index = i
-                        
-                        # Close position in portfolio
-                        if self.portfolio is not None:
-                            self.portfolio.close_position(self.pair_name)
-                    # Z-score exit: закрываем позицию если z-score вернулся к заданному уровню
-                    elif abs(z_curr) <= self.z_exit:
-                        new_position = 0.0
-                        cooldown_remaining = self.cooldown_periods
-                        self._log_exit(df, i, z_curr, "z_exit", entry_datetime, entry_index)
-                        
-                        # Track exit time for protection
-                        self.last_position_exit_time = df.index[i]
-                        if not isinstance(df.index, pd.DatetimeIndex):
-                            self.last_position_exit_index = i
-                        
-                        # Close position in portfolio
-                        if self.portfolio is not None:
-                            self.portfolio.close_position(self.pair_name)
-
-            # Проверяем сигналы входа только если не в последнем периоде и не в cooldown
-            if i < len(df) - 1 and cooldown_remaining == 0:
-                # NEW: Enhanced entry rules according to requirements
-                # 1. Check if pair is tradeable (basic check - detailed filtering done at pair selection)
-                # NOTE: Temporarily disabled until symbol stats are available
-                # if not self._pair_is_tradeable(df.index[i]):
-                #     new_position = position  # Keep current position
-                # else:
-                if True:  # Allow trading for now
-                    # 2. Calculate adaptive threshold
-                    current_threshold = self.z_threshold  # Use configured threshold
-                    if self.adaptive_thresholds and i >= self.volatility_lookback:
-                        z_scores_window = df["z_score"].iloc[:i+1]
-                        current_volatility = z_scores_window.rolling(window=self.volatility_lookback).std().iloc[-1]
-                        if not pd.isna(current_volatility):
-                            adaptive_threshold = self._calculate_adaptive_threshold(z_scores_window, current_volatility)
-                            current_threshold = adaptive_threshold
-                    
-                    # 3. Check minimum spread movement since last flat (temporarily disabled)
-                    spread_movement_ok = True  # Temporarily disable this filter
-                    # if hasattr(self, 'last_flat_spread') and self.last_flat_spread is not None:
-                    #     spread_change = abs(spread_curr - self.last_flat_spread)
-                    #     min_movement = getattr(self, 'min_spread_move_sigma', 1.2) * std  # Use config value
-                    #     spread_movement_ok = spread_change >= min_movement
-                    
-                    # 4. Check minimum time since last position (temporarily disabled)
-                    time_protection_ok = True  # Temporarily disable this filter
-                    # if hasattr(self, 'last_position_exit_time') and self.last_position_exit_time is not None:
-                    #     if isinstance(df.index, pd.DatetimeIndex):
-                    #         time_since_exit = (df.index[i] - self.last_position_exit_time).total_seconds() / 3600
-                    #         cooldown_hours = self.anti_churn_cooldown_minutes / 60.0
-                    #         time_protection_ok = time_since_exit >= cooldown_hours  # Use config value
-                    #     else:
-                    #         # For non-datetime index, assume 15-minute periods
-                    #         periods_since_exit = i - getattr(self, 'last_position_exit_index', 0)
-                    #         cooldown_periods = self.anti_churn_cooldown_minutes // 15  # Convert to 15-min periods
-                    #         time_protection_ok = periods_since_exit >= cooldown_periods  # Use config value
-                    
-                    signal = 0
-                    if z_curr > current_threshold and spread_movement_ok and time_protection_ok:
-                        signal = -1
-                    elif z_curr < -current_threshold and spread_movement_ok and time_protection_ok:
-                        signal = 1
-
-                    z_prev = df["z_score"].iat[i - 1]
-                    long_confirmation = (signal == 1) and (z_curr > z_prev)
-                    short_confirmation = (signal == -1) and (z_curr < z_prev)
-
-                    # Check portfolio position limits before entering new position
-                    can_enter_new_position = True
-                    if self.portfolio is not None and new_position == 0:
-                        can_enter_new_position = self.portfolio.can_open_position()
-                    
-                    if can_enter_new_position and ((new_position == 0 and (long_confirmation or short_confirmation)) or (
-                        new_position != 0
-                        and (long_confirmation or short_confirmation)
-                        and np.sign(new_position) != signal
-                    )):
-                        new_position = self._enter_position(
-                            df, i, signal, z_curr, spread_curr, mean, std, beta
-                        )
-                        entry_z = z_curr
-                        # NEW: Enhanced stop-loss rules (75 USDT or configurable σ)
-                        stop_loss_z = float(np.sign(entry_z) * self.pair_stop_loss_zscore)  # Use config value
-                        
-                        # Track last flat spread for movement calculation
-                        flat_threshold = getattr(self, 'flat_zscore_threshold', 0.5)
-                        if abs(z_curr) < flat_threshold:  # Consider as "flat" when z-score is small
-                            self.last_flat_spread = spread_curr
-                        
-                        # Register position with portfolio if available
-                        if self.portfolio is not None and new_position != 0 and position == 0:
-                            self.portfolio.open_position(self.pair_name, {
-                                'entry_date': df.index[i],
-                                'entry_z': entry_z,
-                                'position_size': new_position
-                            })
-                    else:
-                        # Update last flat spread when no position and z-score is small
-                        flat_threshold = getattr(self, 'flat_zscore_threshold', 0.5)
-                        if position == 0 and abs(z_curr) < flat_threshold:
-                            self.last_flat_spread = spread_curr
-
-            # FIXED: Optimized DataFrame operations - calculate values once to avoid redundant operations
-            price_s1 = df["y"].iat[i]
-            price_s2 = df["x"].iat[i]
-            trade_value = price_s1 + abs(beta) * price_s2
+                df.loc[df.index[i], "trade_duration"] = duration
             
-            # Note: Margin limit is now handled in _calculate_position_size method
-
-            trades = abs(new_position - position)
-            position_s1_change = new_position - position
-            position_s2_change = -new_position * beta - (-position * beta)
-
-            # Complete trading cost calculation including bid-ask spread
-            notional_change_s1 = abs(position_s1_change * price_s1)
-            notional_change_s2 = abs(position_s2_change * price_s2)
-            
-            # Calculate all cost components
-            commission_costs = (notional_change_s1 + notional_change_s2) * self.commission_pct
-            slippage_costs = (notional_change_s1 + notional_change_s2) * self.slippage_pct
-            bid_ask_costs = (notional_change_s1 * self.bid_ask_spread_pct_s1 + 
-                           notional_change_s2 * self.bid_ask_spread_pct_s2)
-            
-            total_costs = commission_costs + slippage_costs + bid_ask_costs
-
-            # PnL after accounting for trading costs
-            step_pnl = pnl - total_costs
-
-            # 2. Обновляем основной DataFrame с детализированными издержками
-            df.iat[i, position_col_idx] = new_position
-            df.iat[i, trades_col_idx] = trades
-            df.iat[i, costs_col_idx] = total_costs
-            df.iat[i, pnl_col_idx] = step_pnl
-            
-            # Store detailed cost breakdown
-            commission_col_idx = df.columns.get_loc("commission_costs")
-            slippage_col_idx = df.columns.get_loc("slippage_costs")
-            bid_ask_col_idx = df.columns.get_loc("bid_ask_costs")
-            impact_col_idx = df.columns.get_loc("impact_costs")
-            
-            df.iat[i, commission_col_idx] = commission_costs
-            df.iat[i, slippage_col_idx] = slippage_costs
-            df.iat[i, bid_ask_col_idx] = bid_ask_costs
-            df.iat[i, impact_col_idx] = 0.0   # Not implemented in this model
-
-            # 3. Накапливаем PnL для детального лога (из версии codex)
-            # Update trade PnL accumulator if a trade is open
-            if position != 0 or (position == 0 and new_position != 0):
-                current_trade_pnl += step_pnl
-
-            # Handle entry logging with enhanced tracking
-            if position == 0 and new_position != 0:
-                entry_datetime = df.index[i]
-                entry_spread = spread_curr
-                entry_position_size = new_position
-                entry_index = i
-                
-                # Store entry prices for PnL calculation
-                self.entry_price_s1 = price_s1_curr
-                self.entry_price_s2 = price_s2_curr
-                
-                # Логируем вход в позицию
-                position_type = "LONG" if new_position > 0 else "SHORT"
-                logger.info(f"📈 {self.pair_name or 'Unknown'}: Вход в {position_type} позицию на z-score={z_curr:.3f}, размер={abs(new_position):.6f}")
-            # Handle exit logging with enhanced cost tracking
-            if position != 0 and new_position == 0 and entry_datetime is not None:
-                exit_datetime = df.index[i]
-                # FIXED: Unified time handling with consistent units
-                duration_hours = self._calculate_trade_duration(
-                    exit_datetime, entry_datetime, i, entry_index
-                )
-                
-                # Calculate realistic costs for this trade
-                realistic_costs = self._calculate_realistic_costs(
-                    abs(entry_position_size), price_s1_curr, 
-                    abs(entry_position_size * beta), price_s2_curr,
-                    (self.bid_ask_spread_pct_s1 + self.bid_ask_spread_pct_s2) / 4,  # spread_half
-                    0.0001,  # funding_rate_long (default)
-                    0.0001,  # funding_rate_short (default)
-                    duration_hours
-                )
-
-                trade_info = {
-                    "pair": f"{self.s1}-{self.s2}",
-                    "entry_datetime": entry_datetime,
-                    "exit_datetime": exit_datetime,
-                    "position_type": "long" if entry_position_size > 0 else "short",
-                    "entry_price_spread": entry_spread,
-                    "exit_price_spread": spread_curr,
-                    "gross_pnl": current_trade_pnl,
-                    "commission_cost": realistic_costs.get('commission', 0),
-                    "slippage_cost": realistic_costs.get('slippage', 0),
-                    "funding_cost": realistic_costs.get('funding', 0),
-                    "net_pnl": current_trade_pnl - sum(realistic_costs.values()),
-                    "pnl": current_trade_pnl - sum(realistic_costs.values()),  # Add 'pnl' field for test compatibility
-                    "exit_reason": df.loc[df.index[i], "exit_reason"],
-                    "trade_duration_hours": duration_hours,
-                }
-                self.trades_log.append(trade_info)
-                
-                # Логируем выход из позиции
-                exit_reason = df.loc[df.index[i], "exit_reason"] or "z_exit"
-                net_pnl = current_trade_pnl - sum(realistic_costs.values())
-                pnl_sign = "💰" if net_pnl > 0 else "💸" if net_pnl < 0 else "➖"
-                logger.info(f"📉 {self.pair_name or 'Unknown'}: Выход из позиции ({exit_reason}) на z-score={z_curr:.3f}, Net PnL={net_pnl:.4f} {pnl_sign}, длительность={duration_hours:.1f}ч")
-
-                # Сбрасываем счетчики для следующей сделки
-                current_trade_pnl = 0.0
-                entry_datetime = None
-                entry_spread = 0.0
-                entry_position_size = 0.0
-                
-                # NEW: Update rolling returns for Kelly sizing
-                if step_pnl != 0 and abs(entry_position_size) > 0:  # Only add non-zero returns and avoid division by zero
-                    denominator = abs(entry_position_size) * (price_s1_curr + abs(beta) * price_s2_curr)
-                    if denominator > 0:  # Additional safety check
-                        trade_return = step_pnl / denominator
-                        self.rolling_returns = pd.concat([self.rolling_returns, pd.Series([trade_return])])
-                        # Keep only recent returns for efficiency
-                        if len(self.rolling_returns) > 200:
-                            self.rolling_returns = self.rolling_returns.iloc[-100:]
-
-            # NEW: Update rolling volatility and other risk metrics
-            if i > 0 and not pd.isna(step_pnl):
-                period_return = step_pnl / max(abs(position * price_s1_curr), 1.0)  # Avoid division by zero
-                self.rolling_volatility = pd.concat([self.rolling_volatility, pd.Series([abs(period_return)])])
-                if len(self.rolling_volatility) > self.volatility_lookback * 2:
-                    self.rolling_volatility = self.rolling_volatility.iloc[-self.volatility_lookback:]
-
-            position = new_position
-
-        df["cumulative_pnl"] = df["pnl"].cumsum()
-
-        self.results = df
+            # Reset entry tracking
+            self.entry_price_s1 = np.nan
+            self.entry_price_s2 = np.nan
+            self.entry_datetime = None
+            self.cooldown_remaining = self.cooldown_periods
         
-        # Логируем итоговую статистику по паре
-        total_pnl = df["cumulative_pnl"].iloc[-1] if not df.empty else 0.0
+        # Update position in DataFrame
+        df.loc[df.index[i], "position"] = self.current_position
+    
+    def update_rolling_stats(self, df: pd.DataFrame, i: int) -> None:
+        """Update rolling statistics using data up to current bar (excluding current bar for z-score calculation)."""
+        if i < self.rolling_window:
+            return
+            
+        # Use data from i-window to i (excluding i for z-score calculation)
+        y_win = df["y"].iloc[i - self.rolling_window : i]
+        x_win = df["x"].iloc[i - self.rolling_window : i]
+        
+        # FIXED: Enhanced validation for edge cases
+        if len(y_win) < self.rolling_window or len(x_win) < self.rolling_window:
+            return
+            
+        # Check for NaN values
+        if y_win.isna().any() or x_win.isna().any():
+            return
+            
+        # Check for constant prices (no variation)
+        if y_win.std() < 1e-10 or x_win.std() < 1e-10:
+            return
+            
+        # Check for extreme values or outliers
+        y_range = y_win.max() - y_win.min()
+        x_range = x_win.max() - x_win.min()
+        if y_range < 1e-10 or x_range < 1e-10:
+            return
+            
+        # Calculate OLS parameters
+        try:
+            beta, mean, std = self._calculate_ols_with_cache(y_win, x_win)
+        except (ValueError, np.linalg.LinAlgError, ZeroDivisionError):
+            return
+            
+        # FIXED: More robust validation of OLS results
+        # If _calculate_ols_with_cache returns NaN values (for very small std), skip this update
+        if not (np.isfinite(beta) and np.isfinite(mean) and np.isfinite(std)):
+            return
+            
+        # Calculate current spread and z-score
+        current_spread = df["y"].iat[i] - beta * df["x"].iat[i]
+        z_score = (current_spread - mean) / std
+        
+        # Update DataFrame
+        df.loc[df.index[i], "beta"] = beta
+        df.loc[df.index[i], "mean"] = mean
+        df.loc[df.index[i], "std"] = std
+        df.loc[df.index[i], "spread"] = current_spread
+        df.loc[df.index[i], "z_score"] = z_score
+        
+        # Update online volatility if enabled
+        if self.online_stats_enabled:
+            self._update_online_volatility(df, i)
+    
+    def compute_signal(self, df: pd.DataFrame, i: int) -> int:
+        """Compute trading signal based on previous bar data to avoid look-ahead bias."""
+        # Decrease cooldown
+        if self.cooldown_remaining > 0:
+            self.cooldown_remaining -= 1
+            
+        # Use previous bar data to avoid look-ahead bias
+        # Signal generated at bar i will be executed at bar i+1
+        signal_bar = i - 1 if i > 0 else 0
+        
+        # Check if we have valid data from previous bar
+        if (signal_bar < 0 or
+            pd.isna(df["z_score"].iat[signal_bar]) or 
+            pd.isna(df["spread"].iat[signal_bar]) or
+            i >= len(df) - 1):  # Don't generate signals on last bar
+            return 0
+            
+        z_curr = df["z_score"].iat[signal_bar]
+        
+        # Entry signals (only if no position and not in cooldown)
+        if self.current_position == 0 and self.cooldown_remaining == 0:
+            if z_curr > self.z_threshold:
+                return -1  # Short signal
+            elif z_curr < -self.z_threshold:
+                return 1   # Long signal
+                
+        # Exit signals (only if we have a position)
+        elif self.current_position != 0:
+            # Check various exit conditions
+            
+            # Z-score exit
+            if abs(z_curr) <= self.z_exit:
+                return 0  # Exit signal
+                
+            # Stop-loss conditions
+            if self._check_stop_loss_conditions(df, i, z_curr):
+                return 0  # Exit signal
+                
+            # Time-based stop
+            if self._check_time_stop_condition(df, i):
+                return 0  # Exit signal
+                
+            # Take-profit conditions
+            if self._check_take_profit_conditions(df, i, z_curr):
+                return 0  # Exit signal
+        
+        return 0  # No signal
+    
+    def mark_to_market(self, df: pd.DataFrame, i: int) -> None:
+        """Mark positions to market and calculate PnL according to new formulas."""
+        # Get current prices
+        price_s1 = df["y"].iat[i]
+        price_s2 = df["x"].iat[i]
+        beta = df["beta"].iat[i] if not pd.isna(df["beta"].iat[i]) else 1.0
+        
+        # Calculate unrealized PnL: (current_price - entry_price) * qty for both legs
+        unrealized_pnl = 0.0
+        if self.current_position != 0 and not pd.isna(self.entry_price_s1) and not pd.isna(self.entry_price_s2):
+            # S1 leg: position * (current_price - entry_price)
+            pnl_s1 = self.current_position * (price_s1 - self.entry_price_s1)
+            # S2 leg: -beta * position * (current_price - entry_price)
+            pnl_s2 = (-beta * self.current_position) * (price_s2 - self.entry_price_s2)
+            unrealized_pnl = pnl_s1 + pnl_s2
+        
+        # Calculate step PnL (change from previous bar)
+        prev_unrealized = df["unrealized_pnl"].iat[i-1] if i > 0 else 0.0
+        step_pnl = unrealized_pnl - prev_unrealized
+        
+        # Add any realized PnL from this bar
+        realized_pnl_step = df["realized_pnl"].iat[i] if "realized_pnl" in df.columns else 0.0
+        total_step_pnl = step_pnl + realized_pnl_step
+        
+        # CRITICAL FIX: Subtract trading costs from step PnL
+        costs_step = df["costs"].iat[i] if "costs" in df.columns else 0.0
+        total_step_pnl -= costs_step
+        
+        # Calculate equity: cash + sum(unrealized) - accrued_costs
+        equity = self.current_cash + unrealized_pnl - self.accrued_costs
+        
+        # Update DataFrame
+        df.loc[df.index[i], "unrealized_pnl"] = unrealized_pnl
+        df.loc[df.index[i], "pnl"] = total_step_pnl
+        df.loc[df.index[i], "equity"] = equity
+    
+    def _calculate_trading_costs_integrated(self, position_change: float, beta: float, 
+                                          price_s1: float, price_s2: float) -> float:
+        """Calculate trading costs integrated into order execution."""
+        if abs(position_change) < 1e-8:
+            return 0.0
+            
+        # Calculate position changes for both legs
+        position_s1_change = position_change
+        position_s2_change = -beta * position_change
+        
+        # Use existing detailed cost calculation
+        commission_costs, slippage_costs, bid_ask_costs, total_costs = self._calculate_trading_costs(
+            position_s1_change, position_s2_change, price_s1, price_s2
+        )
+        
+        return total_costs
+    
+    def _calculate_realized_pnl(self, position: float, entry_price_s1: float, entry_price_s2: float,
+                               exit_price_s1: float, exit_price_s2: float, beta: float) -> float:
+        """Calculate realized PnL: (exit_price - entry_price) * qty for both legs."""
+        if position == 0 or pd.isna(entry_price_s1) or pd.isna(entry_price_s2):
+            return 0.0
+            
+        # S1 leg: position * (exit_price - entry_price)
+        pnl_s1 = position * (exit_price_s1 - entry_price_s1)
+        # S2 leg: -beta * position * (exit_price - entry_price)
+        pnl_s2 = (-beta * position) * (exit_price_s2 - entry_price_s2)
+        
+        return pnl_s1 + pnl_s2
+    
+    def _can_open_new_position(self, signal: int) -> bool:
+        """Check capital_at_risk and max_active_positions constraints."""
+        if signal == 0 or self.current_position != 0:
+            return True  # Not opening new position or already have position
+            
+        # Check max_active_positions constraint
+        if hasattr(self, 'max_active_positions') and self.max_active_positions is not None:
+            if self.active_positions_count >= self.max_active_positions:
+                return False
+                
+        # Check capital_at_risk constraint
+        if hasattr(self, 'capital_at_risk') and self.capital_at_risk is not None:
+            # For now, assume we can open if we have positive cash
+            if self.current_cash <= 0:
+                return False
+                
+        return True
+    
+    def _check_stop_loss_conditions(self, df: pd.DataFrame, i: int, z_curr: float) -> bool:
+        """Check stop-loss conditions (USD-based and Z-score based)."""
+        if self.current_position == 0:
+            return False
+            
+        # Calculate current unrealized PnL
+        price_s1 = df["y"].iat[i]
+        price_s2 = df["x"].iat[i]
+        beta = df["beta"].iat[i] if not pd.isna(df["beta"].iat[i]) else 1.0
+        
+        if not pd.isna(self.entry_price_s1) and not pd.isna(self.entry_price_s2):
+            unrealized_pnl = self._calculate_realized_pnl(
+                self.current_position, self.entry_price_s1, self.entry_price_s2,
+                price_s1, price_s2, beta
+            )
+            
+            # USD stop-loss: 75 USDT loss
+            if unrealized_pnl <= -75.0:
+                return True
+                
+        # Z-score stop-loss: 3σ (configurable)
+        stop_loss_z = getattr(self, 'pair_stop_loss_zscore', 3.0)
+        if self.current_position > 0 and z_curr <= -stop_loss_z:
+            return True
+        elif self.current_position < 0 and z_curr >= stop_loss_z:
+            return True
+            
+        return False
+    
+    def _check_time_stop_condition(self, df: pd.DataFrame, i: int) -> bool:
+        """Check time-based stop condition."""
+        if (self.current_position == 0 or 
+            self.entry_datetime is None or
+            not hasattr(self, 'half_life') or 
+            not hasattr(self, 'time_stop_multiplier') or
+            self.half_life is None or 
+            self.time_stop_multiplier is None):
+            return False
+            
+        # Calculate trade duration
+        trade_duration_periods = self._calculate_trade_duration_periods(
+            df.index[i], self.entry_datetime, i, self.entry_index
+        )
+        
+        # Check if duration exceeds time stop limit
+        time_stop_limit_periods = self.half_life * self.time_stop_multiplier
+        return trade_duration_periods >= time_stop_limit_periods
+    
+    def _check_take_profit_conditions(self, df: pd.DataFrame, i: int, z_curr: float) -> bool:
+        """Check take-profit conditions."""
+        if (self.current_position == 0 or 
+            self.entry_datetime is None or
+            not hasattr(self, 'take_profit_multiplier') or
+            self.take_profit_multiplier is None):
+            return False
+            
+        # Check minimum holding time (1 hour)
+        min_holding_met = self._check_minimum_holding_time(df, i)
+        if not min_holding_met:
+            return False
+            
+        # FIXED: Check profitability first to avoid premature exits
+        price_s1 = df["y"].iat[i]
+        price_s2 = df["x"].iat[i]
+        beta = df["beta"].iat[i] if not pd.isna(df["beta"].iat[i]) else 1.0
+        
+        # Only proceed if exit would be profitable
+        if not self._is_profitable_exit(price_s1, price_s2, beta):
+            return False
+            
+        # Take-profit: z-score moves towards zero (only if profitable)
+        if abs(z_curr) <= abs(self.entry_z) * self.take_profit_multiplier:
+            return True
+            
+        return False
+    
+    def _check_minimum_holding_time(self, df: pd.DataFrame, i: int) -> bool:
+        """Check if minimum holding time requirement is met."""
+        if self.entry_datetime is None:
+            return False
+            
+        min_hold_minutes = getattr(self, 'min_position_hold_minutes', 60)
+        
+        if isinstance(df.index, pd.DatetimeIndex):
+            holding_time_hours = (df.index[i] - self.entry_datetime).total_seconds() / 3600
+            return holding_time_hours >= (min_hold_minutes / 60.0)
+        else:
+            # For non-datetime index, assume 15-minute periods
+            holding_periods = i - self.entry_index
+            return holding_periods >= (min_hold_minutes // 15)
+    
+    def _is_profitable_exit(self, price_s1: float, price_s2: float, beta: float) -> bool:
+        """Check if exit would be profitable after costs."""
+        if pd.isna(self.entry_price_s1) or pd.isna(self.entry_price_s2):
+            return True  # Default to allowing exit
+            
+        # Calculate potential realized PnL
+        potential_pnl = self._calculate_realized_pnl(
+            self.current_position, self.entry_price_s1, self.entry_price_s2,
+            price_s1, price_s2, beta
+        )
+        
+        # Calculate exit costs
+        exit_costs = self._calculate_trading_costs_integrated(
+            -self.current_position, beta, price_s1, price_s2
+        )
+        
+        # Exit is profitable if PnL covers costs
+        return potential_pnl > exit_costs
+    
+    def _log_final_statistics(self, df: pd.DataFrame) -> None:
+        """Log final backtest statistics."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        total_pnl = df["cumulative_pnl"].iloc[-1] if not df.empty and "cumulative_pnl" in df.columns else 0.0
         num_trades = len(self.trades_log)
         profitable_trades = len([t for t in self.trades_log if t.get('pnl', 0) > 0])
         win_rate = (profitable_trades / num_trades * 100) if num_trades > 0 else 0.0
         
         logger.info(f"✅ {self.pair_name or 'Unknown'}: Завершен бэктест - PnL: {total_pnl:.4f}, Сделок: {num_trades}, Винрейт: {win_rate:.1f}%")
+
+    def _create_complete_trades_log(self) -> List[Dict]:
+        """Create complete trades log from incremental trades log.
+        
+        Combines 'open' and 'close' entries from incremental_trades_log
+        into complete trade records with entry/exit information.
+        """
+        complete_trades = []
+        open_trades = {}
+        
+        for entry in self.incremental_trades_log:
+            if entry['action'] == 'open':
+                # Store open trade info
+                open_trades[entry['date']] = entry
+            elif entry['action'] == 'close':
+                # Find matching open trade
+                entry_date = entry.get('entry_date')
+                if entry_date in open_trades:
+                    open_trade = open_trades[entry_date]
+                    
+                    # Calculate trade duration
+                    duration_hours = (entry['date'] - entry_date).total_seconds() / 3600
+                    
+                    # Create complete trade record
+                    complete_trade = {
+                        'pair': self.pair_name or 'Unknown',
+                        'entry_datetime': entry_date,
+                        'exit_datetime': entry['date'],
+                        'position_type': 'long' if open_trade['position_size'] > 0 else 'short',
+                        'position_size': open_trade['position_size'],
+                        'capital_used': open_trade['capital_used'],
+                        'entry_price_s1': open_trade['entry_price_s1'],
+                        'entry_price_s2': open_trade['entry_price_s2'],
+                        'entry_z': open_trade['entry_z'],
+                        'exit_z': entry['exit_z'],
+                        'exit_reason': entry['exit_reason'],
+                        'pnl': entry['pnl'],
+                        'trade_duration_hours': duration_hours,
+                        'beta': open_trade.get('beta', 0.0)
+                    }
+                    
+                    complete_trades.append(complete_trade)
+                    # Remove processed open trade
+                    del open_trades[entry_date]
+        
+        return complete_trades
 
     def get_results(self) -> dict:
         if self.results is None:
@@ -1644,6 +2105,9 @@ class PairBacktester:
                 else:
                     self.results[col] = default_value
 
+        # Create complete trades log from incremental trades log
+        complete_trades_log = self._create_complete_trades_log()
+
         return {
             "spread": self.results["spread"],
             "z_score": self.results["z_score"],
@@ -1652,7 +2116,7 @@ class PairBacktester:
             "costs": self.results["costs"],
             "pnl": self.results["pnl"],
             "cumulative_pnl": self.results["cumulative_pnl"],
-            "trades_log": self.trades_log,
+            "trades_log": complete_trades_log,
             # Enhanced cost breakdown
             "commission_costs": self.results["commission_costs"],
             "slippage_costs": self.results["slippage_costs"],
@@ -1671,14 +2135,17 @@ class PairBacktester:
         pnl = self.results["pnl"].dropna()
         cum_pnl = self.results["cumulative_pnl"].dropna()
 
+        # Get complete trades log
+        complete_trades_log = self._create_complete_trades_log()
+        
         # Calculate trade-related metrics
-        num_trades = len([t for t in self.trades_log if t.get('action') == 'open'])
+        num_trades = len(complete_trades_log)
         
         # Calculate average trade duration
         trade_durations = []
-        for trade in self.trades_log:
-            if trade.get('action') == 'close' and 'duration' in trade:
-                trade_durations.append(trade['duration'])
+        for trade in complete_trades_log:
+            if 'trade_duration_hours' in trade:
+                trade_durations.append(trade['trade_duration_hours'])
         avg_trade_duration = np.mean(trade_durations) if trade_durations else 0.0
         
         # Calculate total return
@@ -1784,8 +2251,9 @@ class PairBacktester:
                 'trade_closed': False
             }
             
-        # Calculate current market parameters
-        recent_data = self.pair_data.tail(self.rolling_window)
+        # Calculate current market parameters - use only historical data up to current point
+        # Note: This method should receive current_idx parameter to avoid look-ahead bias
+        recent_data = self.pair_data.iloc[-self.rolling_window:] if len(self.pair_data) >= self.rolling_window else self.pair_data
         if len(recent_data) < self.rolling_window:
             return {
                 'position': 0.0,
@@ -2164,7 +2632,9 @@ class PairBacktester:
             return 0.0
             
         try:
-            corr = s1.tail(window).corr(s2.tail(window))
+            s1_window = s1.iloc[-window:] if len(s1) >= window else s1
+            s2_window = s2.iloc[-window:] if len(s2) >= window else s2
+            corr = s1_window.corr(s2_window)
             return corr if not pd.isna(corr) else 0.0
         except (ValueError, ZeroDivisionError):
             return 0.0
@@ -2179,7 +2649,7 @@ class PairBacktester:
             return float('inf')
             
         try:
-            spread_window = spread.tail(window).dropna()
+            spread_window = spread.iloc[-window:].dropna() if len(spread) >= window else spread.dropna()
             if len(spread_window) < 10:
                 return float('inf')
                 
@@ -2223,7 +2693,7 @@ class PairBacktester:
         try:
             from statsmodels.tsa.stattools import adfuller
             
-            spread_window = spread.tail(window).dropna()
+            spread_window = spread.iloc[-window:].dropna() if len(spread) >= window else spread.dropna()
             if len(spread_window) < 10:
                 return 1.0
                 
