@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from coint2.engine.backtest_engine import PairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class TestEnhancedRiskManagement:

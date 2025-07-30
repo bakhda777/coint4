@@ -20,8 +20,8 @@ import warnings
 # Добавляем путь к проекту
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from coint2.utils.config_loader import get_config
-from coint2.engine.backtest_engine import PairBacktester
+from coint2.utils.config import load_config
+from coint2.engine.base_engine import BasePairBacktester
 from coint2.reporting.detailed_report import DetailedReportGenerator
 try:
     from coint2.testing.test_backtest_robustness import BacktestRobustnessTests
@@ -41,7 +41,7 @@ class ComprehensiveTestRunner:
         Args:
             config_path: Путь к файлу конфигурации
         """
-        self.config = get_config(config_path)
+        self.config = load_config(config_path)
         self.logger = self._setup_logging()
         
         # Подавляем предупреждения для чистого вывода
@@ -225,7 +225,7 @@ class ComprehensiveTestRunner:
             }
             
             # Запускаем бэктест
-            engine = PairBacktester(pair_data=pair_data, **params)
+            engine = BasePairBacktester(pair_data=pair_data, **params)
             engine.run()
             
             # Получаем результаты

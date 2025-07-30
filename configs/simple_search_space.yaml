@@ -1,0 +1,87 @@
+# Упрощенное пространство поиска для быстрой оптимизации
+# Фокус на ключевых параметрах стратегии
+
+# Параметры стратегии
+strategy:
+  # Основные торговые параметры
+  entry_threshold:
+    type: float
+    low: 1.5
+    high: 3.0
+    
+  exit_threshold:
+    type: float
+    low: 0.1
+    high: 1.0
+    
+  stop_loss_threshold:
+    type: float
+    low: 3.0
+    high: 6.0
+    
+  # Управление позициями
+  max_position_size:
+    type: float
+    low: 0.05
+    high: 0.3
+    
+  # Временные параметры
+  lookback_window:
+    type: int
+    low: 20
+    high: 100
+    
+  half_life_window:
+    type: int
+    low: 10
+    high: 50
+
+# Упрощенные параметры отбора пар
+pair_selection:
+  # Основные фильтры
+  min_half_life_days:
+    type: float
+    low: 0.5
+    high: 5.0
+    
+  max_half_life_days:
+    type: float
+    low: 5.0
+    high: 20.0
+    
+  pvalue_threshold:
+    type: float
+    low: 0.01
+    high: 0.1
+    
+  # Упрощенная нормализация
+  normalization_method:
+    type: categorical
+    choices: ["minmax", "log_returns"]
+    
+  # Менее строгие требования
+  min_mean_crossings:
+    type: int
+    low: 5
+    high: 20
+    
+  max_hurst_exponent:
+    type: float
+    low: 0.4
+    high: 0.6
+    
+  kpss_pvalue_threshold:
+    type: float
+    low: 0.01
+    high: 0.1
+
+# Управление рисками
+risk_management:
+  max_drawdown:
+    type: float
+    low: 0.1
+    high: 0.3
+    
+  position_sizing_method:
+    type: categorical
+    choices: ["fixed", "volatility_adjusted"]

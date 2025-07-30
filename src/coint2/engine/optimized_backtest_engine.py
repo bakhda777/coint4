@@ -5,14 +5,14 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Dict, Any
 
-from .backtest_engine import PairBacktester
+from .base_engine import BasePairBacktester
 from ..core.global_rolling_cache import get_global_rolling_manager
 from ..core.memory_optimization import GLOBAL_PRICE
 
 logger = logging.getLogger(__name__)
 
 
-class OptimizedPairBacktester(PairBacktester):
+class OptimizedPairBacktester(BasePairBacktester):
     """
     Optimized PairBacktester that uses global rolling statistics cache.
     
@@ -328,11 +328,15 @@ class OptimizedPairBacktester(PairBacktester):
             elif z_score < -self.z_threshold:
                 return 1   # Long spread (buy y, sell x)
                 
-        # Exit signals
-        elif current_position == 1 and z_score > -self.z_exit:
-            return 0  # Close long position
-        elif current_position == -1 and z_score < self.z_exit:
-            return 0  # Close short position
+        # Exit signals - ИСПРАВЛЕНО: правильная логика выхода
+        elif current_position == 1:  # Long position
+            # Exit long when z_score moves back toward mean (becomes less negative)
+            if z_score > -abs(self.z_exit):
+                return 0  # Close long position
+        elif current_position == -1:  # Short position  
+            # Exit short when z_score moves back toward mean (becomes less positive)
+            if z_score < abs(self.z_exit):
+                return 0  # Close short position
             
         return current_position
     

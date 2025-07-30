@@ -1,0 +1,92 @@
+# Агрессивное пространство поиска для генерации большего количества сделок
+# Цель: достичь Sharpe > 1 за счет более либеральных параметров
+
+# Группа 1: Фильтры отбора пар (более либеральные)
+filters:
+  ssd_top_n:
+    low: 15000  # Больше пар для анализа
+    high: 50000
+    step: 5000
+  
+  kpss_pvalue_threshold:
+    low: 0.01   # Более либеральный порог стационарности
+    high: 0.15
+  
+  coint_pvalue_threshold:
+    low: 0.01   # Более либеральный порог коинтеграции
+    high: 0.15
+  
+  min_half_life_days:
+    low: 0.5    # Более короткий минимальный период полураспада
+    high: 3.0
+  
+  max_half_life_days:
+    low: 10.0   # Более длинный максимальный период
+    high: 30.0
+  
+  min_mean_crossings:
+    low: 5      # Меньше требований к пересечениям
+    high: 20
+
+# Группа 2: Сигналы (более чувствительные)
+signals:
+  zscore_threshold:
+    low: 1.0    # Более низкий порог входа
+    high: 2.0
+  
+  zscore_exit:
+    low: -0.5   # Более широкий диапазон выхода
+    high: 0.5
+  
+  rolling_window:
+    low: 48     # Более короткие окна для быстрой реакции
+    high: 144
+
+# Группа 3: Управление рисками (более агрессивное)
+risk_management:
+  stop_loss_multiplier:
+    low: 1.5    # Более близкие стоп-лоссы
+    high: 3.0
+  
+  time_stop_multiplier:
+    low: 1.0    # Более короткие временные стопы
+    high: 2.5
+  
+  cooldown_hours:
+    low: 0      # Без кулдауна или очень короткий
+    high: 12
+
+# Группа 4: Портфель (более активная торговля)
+portfolio:
+  max_active_positions:
+    low: 10     # Больше активных позиций
+    high: 50
+    step: 5
+  
+  risk_per_position_pct:
+    low: 0.005  # Меньший риск на позицию, но больше позиций
+    high: 0.025
+  
+  max_position_size_pct:
+    low: 0.02   # Меньший размер позиции
+    high: 0.08
+
+# Группа 5: Издержки (оптимистичные)
+costs:
+  commission_pct:
+    low: 0.0001 # Очень низкие комиссии
+    high: 0.001
+  
+  slippage_pct:
+    low: 0.0001 # Минимальное проскальзывание
+    high: 0.0005
+
+# Группа 6: Нормализация
+normalization:
+  normalization_method:
+    type: categorical
+    choices: ["minmax", "log_returns"]
+  
+  min_history_ratio:
+    low: 0.3    # Меньше требований к истории
+    high: 0.7

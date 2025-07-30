@@ -20,7 +20,7 @@ from src.coint2.core.memory_optimization import (
     verify_rolling_stats_correctness
 )
 from src.coint2.engine.optimized_backtest_engine import OptimizedPairBacktester
-from src.coint2.engine.backtest_engine import PairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as PairBacktester
 from src.coint2.utils.config import DataProcessingConfig
 
 

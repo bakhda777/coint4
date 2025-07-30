@@ -15,7 +15,7 @@ import os
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from coint2.engine.backtest_engine import PairBacktester
+from coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class SyntheticScenariosTests:

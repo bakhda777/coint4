@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from coint2.engine.backtest_engine import PairBacktester
+from coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class TestWalkForwardEnhancements:

@@ -189,10 +189,11 @@ def calculate_positions_and_pnl(y: np.ndarray, x: np.ndarray,
             positions[i] = position
             continue
             
-        # Вычисление z-score с защитой от деления на ноль
-        if not np.isnan(sigma[i]) and sigma[i] > 1e-12:
-            spread_curr = y[i] - beta[i] * x[i]
-            z_curr = (spread_curr - mu[i]) / sigma[i]
+        # CRITICAL FIX: Calculate z-score using PREVIOUS bar data to avoid lookahead bias
+        if i > 1 and not np.isnan(sigma[i]) and sigma[i] > 1e-12:
+            # Use previous bar prices with current rolling stats
+            prev_spread = y[i-1] - beta[i] * x[i-1]
+            z_curr = (prev_spread - mu[i]) / sigma[i]
         else:
             z_curr = 0.0
         
@@ -200,9 +201,11 @@ def calculate_positions_and_pnl(y: np.ndarray, x: np.ndarray,
         if position != 0.0:
             delta_y = y[i] - y[i-1]
             delta_x = x[i] - x[i-1]
+            # CRITICAL FIX: Use beta from previous bar for PnL calculation to avoid lookahead bias
+            beta_for_pnl = beta[i-1] if i > 1 else beta[i]
             # position представляет size_s1, size_s2 = -beta * size_s1
             size_s1 = position
-            size_s2 = -beta[i] * size_s1
+            size_s2 = -beta_for_pnl * size_s1
             pnl_change = size_s1 * delta_y + size_s2 * delta_x
             total_pnl += pnl_change
             pnl_series[i] = pnl_change

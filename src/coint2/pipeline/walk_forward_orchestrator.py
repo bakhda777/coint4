@@ -16,16 +16,17 @@ from coint2.utils.timing_utils import ProgressTracker, logged_time, time_block
 from coint2.utils.visualization import calculate_extended_metrics, create_performance_report, format_metrics_summary
 
 # Import directly from the file path rather than the module
-from src.coint2.core.data_loader import DataHandler, load_master_dataset
-from src.coint2.core.normalization_improvements import preprocess_and_normalize_data
-from src.coint2.core.memory_optimization import (
+from coint2.core.data_loader import DataHandler, load_master_dataset
+from coint2.core.normalization_improvements import preprocess_and_normalize_data
+from coint2.core.memory_optimization import (
     consolidate_price_data, initialize_global_price_data, get_price_data_view,
     setup_blas_threading_limits, monitor_memory_usage, verify_no_data_copies,
     cleanup_global_data
 )
-from src.coint2.engine.numba_backtest_engine_full import FullNumbaPairBacktester as PairBacktester
-from src.coint2.core.portfolio import Portfolio
-from src.coint2.utils.vectorized_ops import VectorizedStatsCalculator, vectorized_eval_expression
+# from src.optimiser.metric_utils import validate_params  # Moved to function level to avoid circular import
+from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
+from coint2.core.portfolio import Portfolio
+from coint2.utils.vectorized_ops import VectorizedStatsCalculator, vectorized_eval_expression
 
 
 def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
@@ -44,100 +45,28 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     return int(hours * 60 / bar_minutes)
 
 
-def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg, 
-                            capital_per_pair, bar_minutes, period_label, pair_stats=None):
+def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes, period_label, metrics):
     """
-    Process a single pair using memory-mapped data for optimal performance.
+    Helper function to run backtest for a pair with given data.
     
     Args:
-        pair_symbols: Tuple of (s1, s2) symbol names
-        testing_start, testing_end: Testing period boundaries
+        pair_data: Normalized pair data DataFrame
+        s1, s2: Symbol names
         cfg: Configuration object
         capital_per_pair: Capital allocated per pair
         bar_minutes: Minutes per bar
         period_label: Label for the current period
-        pair_stats: Optional pre-computed pair statistics (beta, mean, std, metrics)
+        metrics: Pair metrics dictionary
         
     Returns:
         Dictionary with pair results
     """
-    # Setup BLAS threading limits to prevent oversubscription
-    from coint2.core.memory_optimization import setup_blas_threading_limits
-    setup_blas_threading_limits(num_threads=1, verbose=False)
-    
-    s1, s2 = pair_symbols
-    
-    # Логирование начала обработки пары
     from coint2.utils.logging_utils import get_logger
     logger = get_logger("pair_processing")
-    logger.debug(f"📊 Начинаем обработку пары {s1}-{s2} (memory-mapped)")
-    
-    # Extract pair statistics if provided
-    if pair_stats is not None:
-        beta, mean, std, metrics = pair_stats
-    else:
-        # Fallback values if no statistics provided
-        beta, mean, std = 1.0, 0.0, 1.0
-        metrics = {}
     
     try:
-        # Get memory-mapped data view for this pair (no copy)
-        pair_data_view = get_price_data_view([s1, s2], testing_start, testing_end)
-        
-        # Check if both symbols are available
-        if s1 not in pair_data_view.columns or s2 not in pair_data_view.columns:
-            return {
-                'success': False,
-                'error': f'Missing data for symbols {s1} or {s2}',
-                'trade_stat': {
-                    'pair': f'{s1}-{s2}',
-                    'period': period_label,
-                    'total_pnl': 0.0,
-                    'trade_count': 0,
-                    'win_rate': 0.0,
-                    'avg_win': 0.0,
-                    'avg_loss': 0.0,
-                    'profit_factor': 0.0,
-                    'max_drawdown': 0.0,
-                    'sharpe_ratio': 0.0
-                },
-                'pnl_series': pd.Series(dtype=float),
-                'trades_log': []
-            }
-            
-        # Work with data view (no copy) and drop NaN
-        pair_data = pair_data_view[[s1, s2]].dropna()
-        
-        if pair_data.empty:
-            return {
-                'success': False,
-                'error': 'No valid data after filtering',
-                'trade_stat': {
-                    'pair': f'{s1}-{s2}',
-                    'period': period_label,
-                    'total_pnl': 0.0,
-                    'trade_count': 0,
-                    'win_rate': 0.0,
-                    'avg_win': 0.0,
-                    'avg_loss': 0.0,
-                    'profit_factor': 0.0,
-                    'max_drawdown': 0.0,
-                    'sharpe_ratio': 0.0
-                },
-                'pnl_series': pd.Series(dtype=float),
-                'trades_log': []
-            }
-        
-        # Vectorized normalization using numpy operations (no copy)
-        import numpy as np
-        data_values = pair_data.to_numpy(copy=False)  # Use memory view
-        first_row = data_values[0]
-        # Vectorized division and multiplication
-        normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
-        pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
-        
         # Create a temporary portfolio for this pair
-        from src.coint2.core.portfolio import Portfolio
+        from coint2.core.portfolio import Portfolio
         temp_portfolio = Portfolio(
             initial_capital=capital_per_pair,
             max_active_positions=1  # Single pair
@@ -221,6 +150,7 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
         
         # Vectorized calculation of actual trade count
         if not positions.empty:
+            import numpy as np
             positions_values = positions.ffill().values
             prev_positions_values = np.concatenate([[0], positions_values[:-1]])
             # Vectorized boolean operations
@@ -231,6 +161,7 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
         
         # Vectorized calculation of pair statistics using numpy
         if not pnl_series.empty:
+            import numpy as np
             pnl_values = pnl_series.values
             pair_pnl = np.sum(pnl_values)
             win_days = int(np.sum(pnl_values > 0))
@@ -242,7 +173,12 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
             win_days = lose_days = 0
             max_daily_gain = max_daily_loss = 0.0
         
-        pair_costs = np.sum(costs.values) if not costs.empty else 0
+        # CRITICAL FIX: Правильный расчет издержек с обработкой NaN
+        if not costs.empty:
+            costs_clean = costs.fillna(0)  # Заменяем NaN на 0
+            pair_costs = float(np.sum(costs_clean.values))
+        else:
+            pair_costs = 0.0
         
         trade_stat = {
             'pair': f'{s1}-{s2}',
@@ -295,8 +231,168 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
         }
 
 
+def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg, 
+                            capital_per_pair, bar_minutes, period_label, pair_stats=None, training_normalization_params=None):
+    """
+    Process a single pair using memory-mapped data for optimal performance.
+    
+    Args:
+        pair_symbols: Tuple of (s1, s2) symbol names
+        testing_start, testing_end: Testing period boundaries
+        cfg: Configuration object
+        capital_per_pair: Capital allocated per pair
+        bar_minutes: Minutes per bar
+        period_label: Label for the current period
+        pair_stats: Optional pre-computed pair statistics (beta, mean, std, metrics)
+        
+    Returns:
+        Dictionary with pair results
+    """
+    # Setup BLAS threading limits to prevent oversubscription
+    from coint2.core.memory_optimization import setup_blas_threading_limits
+    setup_blas_threading_limits(num_threads=1, verbose=False)
+    
+    s1, s2 = pair_symbols
+    
+    # Логирование начала обработки пары
+    from coint2.utils.logging_utils import get_logger
+    logger = get_logger("pair_processing")
+    logger.debug(f"📊 Начинаем обработку пары {s1}-{s2} (memory-mapped)")
+    
+    # Extract pair statistics if provided
+    if pair_stats is not None:
+        beta, mean, std, metrics = pair_stats
+    else:
+        # Fallback values if no statistics provided
+        beta, mean, std = 1.0, 0.0, 1.0
+        metrics = {}
+    
+    try:
+        # Get memory-mapped data view for this pair (no copy)
+        pair_data_view = get_price_data_view([s1, s2], testing_start, testing_end)
+        
+        # Check if both symbols are available
+        if s1 not in pair_data_view.columns or s2 not in pair_data_view.columns:
+            return {
+                'success': False,
+                'error': f'Missing data for symbols {s1} or {s2}',
+                'trade_stat': {
+                    'pair': f'{s1}-{s2}',
+                    'period': period_label,
+                    'total_pnl': 0.0,
+                    'trade_count': 0,
+                    'win_rate': 0.0,
+                    'avg_win': 0.0,
+                    'avg_loss': 0.0,
+                    'profit_factor': 0.0,
+                    'max_drawdown': 0.0,
+                    'sharpe_ratio': 0.0
+                },
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+            
+        # Work with data view (no copy) and drop NaN
+        pair_data = pair_data_view[[s1, s2]].dropna()
+        
+        if pair_data.empty:
+            return {
+                'success': False,
+                'error': 'No valid data after filtering',
+                'trade_stat': {
+                    'pair': f'{s1}-{s2}',
+                    'period': period_label,
+                    'total_pnl': 0.0,
+                    'trade_count': 0,
+                    'win_rate': 0.0,
+                    'avg_win': 0.0,
+                    'avg_loss': 0.0,
+                    'profit_factor': 0.0,
+                    'max_drawdown': 0.0,
+                    'sharpe_ratio': 0.0
+                },
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+        
+        # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Используем нормализационные параметры из тренировочного периода
+        import numpy as np
+        data_values = pair_data.to_numpy(copy=False)  # Use memory view
+        
+        if training_normalization_params and s1 in training_normalization_params and s2 in training_normalization_params:
+            norm_s1 = training_normalization_params[s1]
+            norm_s2 = training_normalization_params[s2]
+            
+            if norm_s1 != 0 and norm_s2 != 0:
+                # Применяем нормализацию к столбцам DataFrame
+                first_row = np.array([norm_s1, norm_s2])
+                logger.debug(f"Используем нормализацию из тренировочного периода для {s1}-{s2}: {first_row}")
+                
+                # Vectorized division and multiplication
+                normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
+                pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+            else:
+                # Логируем ошибку и пропускаем пару, так как нормализация невозможна
+                logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                return {
+                    'success': False,
+                    'error': f'Zero normalization parameter for {s1} or {s2}',
+                    'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                    'pnl_series': pd.Series(dtype=float),
+                    'trades_log': []
+                }
+        else:
+            # Логируем ошибку и пропускаем пару, если нет параметров
+            logger.error(f"Нет параметров нормализации для {s1}-{s2}. Пропуск.")
+            return {
+                'success': False,
+                'error': f'Missing normalization parameters for {s1} or {s2}',
+                'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+        
+        # Use helper function to run backtest
+        return _run_backtest_for_pair(
+            pair_data=pair_data,
+            s1=s1,
+            s2=s2,
+            cfg=cfg,
+            capital_per_pair=capital_per_pair,
+            bar_minutes=bar_minutes,
+            metrics=metrics,
+            period_label=period_label
+        )
+        
+    except Exception as e:
+        # Логирование ошибки обработки
+        logger.warning(f"❌ Ошибка обработки пары {s1}-{s2}: {str(e)}")
+        
+        # Return empty results for failed pairs
+        return {
+            'pnl_series': pd.Series(dtype=float),
+            'trades_log': [],
+            'trade_stat': {
+                'pair': f'{s1}-{s2}',
+                'period': period_label,
+                'total_pnl': 0.0,
+                'total_costs': 0.0,
+                'trade_count': 0,
+                'avg_pnl_per_trade': 0.0,
+                'win_days': 0,
+                'lose_days': 0,
+                'total_days': 0,
+                'max_daily_gain': 0.0,
+                'max_daily_loss': 0.0,
+                'error': str(e)
+            },
+            'success': False,
+            'error': str(e)
+        }
+
+
 def process_single_pair(pair_data_tuple, step_df, testing_start, testing_end, cfg, 
-                       capital_per_pair, bar_minutes, period_label):
+                       capital_per_pair, bar_minutes, period_label, training_normalization_params=None):
     """
     Process a single pair for parallel execution with vectorized optimizations.
     
@@ -308,6 +404,7 @@ def process_single_pair(pair_data_tuple, step_df, testing_start, testing_end, cf
         capital_per_pair: Capital allocated per pair
         bar_minutes: Minutes per bar
         period_label: Label for the current period
+        training_normalization_params: Dict with normalization parameters from training data
         
     Returns:
         Dictionary with pair results
@@ -326,148 +423,55 @@ def process_single_pair(pair_data_tuple, step_df, testing_start, testing_end, cf
     
     try:
         pair_data = step_df.loc[testing_start:testing_end, [s1, s2]].dropna()
-        # Vectorized normalization using numpy operations
+        # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Используем нормализационные параметры из тренировочного периода
         if not pair_data.empty:
-            # Use numpy for faster normalization
             import numpy as np
             data_values = pair_data.values
-            first_row = data_values[0]
-            # Vectorized division and multiplication
-            normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
-            pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+            
+            if training_normalization_params and s1 in training_normalization_params and s2 in training_normalization_params:
+                norm_s1 = training_normalization_params[s1]
+                norm_s2 = training_normalization_params[s2]
+                
+                if norm_s1 != 0 and norm_s2 != 0:
+                    # Применяем нормализацию к столбцам DataFrame
+                    first_row = np.array([norm_s1, norm_s2])
+                    logger.debug(f"Используем нормализацию из тренировочного периода для {s1}-{s2}: {first_row}")
+                    
+                    # Vectorized division and multiplication
+                    normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
+                    pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+                else:
+                    # Логируем ошибку и пропускаем пару, так как нормализация невозможна
+                    logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                    return {
+                        'success': False,
+                        'error': f'Zero normalization parameter for {s1} or {s2}',
+                        'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                        'pnl_series': pd.Series(dtype=float),
+                        'trades_log': []
+                    }
+            else:
+                # Логируем ошибку и пропускаем пару, если нет параметров
+                logger.error(f"Нет параметров нормализации для {s1}-{s2}. Пропуск.")
+                return {
+                    'success': False,
+                    'error': f'Missing normalization parameters for {s1} or {s2}',
+                    'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                    'pnl_series': pd.Series(dtype=float),
+                    'trades_log': []
+                }
         
-        # Create a temporary portfolio for this pair (will be merged later)
-        from src.coint2.core.portfolio import Portfolio
-        temp_portfolio = Portfolio(
-            initial_capital=capital_per_pair,
-            max_active_positions=1  # Single pair
-        )
-        
-        bt = PairBacktester(
+        # Use helper function to run backtest
+        return _run_backtest_for_pair(
             pair_data=pair_data,
-            rolling_window=cfg.backtest.rolling_window,
-            portfolio=temp_portfolio,
-            pair_name=f"{s1}-{s2}",
-            z_threshold=cfg.backtest.zscore_threshold,
-            z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
-            commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),
-            slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
-            annualizing_factor=getattr(cfg.backtest, 'annualizing_factor', 365),
-            capital_at_risk=capital_per_pair,
-            stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
-            take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
-            cooldown_periods=convert_hours_to_periods(getattr(cfg.backtest, 'cooldown_hours', 0), bar_minutes),
-            wait_for_candle_close=getattr(cfg.backtest, 'wait_for_candle_close', False),
-            max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
-            half_life=metrics.get('half_life'),
-            time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', None),
-            # Enhanced risk management parameters
-            use_kelly_sizing=getattr(cfg.backtest, 'use_kelly_sizing', True),
-            max_kelly_fraction=getattr(cfg.backtest, 'max_kelly_fraction', 0.25),
-            volatility_lookback=getattr(cfg.backtest, 'volatility_lookback', 96),
-            adaptive_thresholds=getattr(cfg.backtest, 'adaptive_thresholds', True),
-            var_confidence=getattr(cfg.backtest, 'var_confidence', 0.05),
-            max_var_multiplier=getattr(cfg.backtest, 'max_var_multiplier', 3.0),
-            # Market regime detection parameters
-            market_regime_detection=getattr(cfg.backtest, 'market_regime_detection', True),
-            hurst_window=getattr(cfg.backtest, 'hurst_window', 720),
-            hurst_trending_threshold=getattr(cfg.backtest, 'hurst_trending_threshold', 0.5),
-            variance_ratio_window=getattr(cfg.backtest, 'variance_ratio_window', 480),
-            variance_ratio_trending_min=getattr(cfg.backtest, 'variance_ratio_trending_min', 1.2),
-            variance_ratio_mean_reverting_max=getattr(cfg.backtest, 'variance_ratio_mean_reverting_max', 0.8),
-            # Structural break protection parameters
-            structural_break_protection=getattr(cfg.backtest, 'structural_break_protection', True),
-            cointegration_test_frequency=getattr(cfg.backtest, 'cointegration_test_frequency', 2688),
-            adf_pvalue_threshold=getattr(cfg.backtest, 'adf_pvalue_threshold', 0.05),
-            exclusion_period_days=getattr(cfg.backtest, 'exclusion_period_days', 30),
-            max_half_life_days=getattr(cfg.backtest, 'max_half_life_days', 10),
-            min_correlation_threshold=getattr(cfg.backtest, 'min_correlation_threshold', 0.6),
-            correlation_window=getattr(cfg.backtest, 'correlation_window', 720),
-            # Performance optimization parameters
-            regime_check_frequency=getattr(cfg.backtest, 'regime_check_frequency', 96),
-            use_market_regime_cache=getattr(cfg.backtest, 'use_market_regime_cache', True),
-            adf_check_frequency=getattr(cfg.backtest, 'adf_check_frequency', 5376),
-            lazy_adf_threshold=getattr(cfg.backtest, 'lazy_adf_threshold', 0.1),
-            # EW correlation parameters
-            use_exponential_weighted_correlation=getattr(cfg.backtest, 'use_exponential_weighted_correlation', False),
-            ew_correlation_alpha=getattr(cfg.backtest, 'ew_correlation_alpha', 0.1),
-            # Volatility-based position sizing parameters
-            volatility_based_sizing=getattr(cfg.portfolio, 'volatility_based_sizing', False),
-            volatility_lookback_hours=getattr(cfg.portfolio, 'volatility_lookback_hours', 24),
-            min_position_size_pct=getattr(cfg.portfolio, 'min_position_size_pct', 0.005),
-            max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 0.02),
-            volatility_adjustment_factor=getattr(cfg.portfolio, 'volatility_adjustment_factor', 2.0),
+            s1=s1,
+            s2=s2,
+            cfg=cfg,
+            capital_per_pair=capital_per_pair,
+            bar_minutes=bar_minutes,
+            metrics=metrics,
+            period_label=period_label
         )
-        
-        # Run backtest with timing for debugging
-        backtest_start = time.time()
-        bt.run()
-        backtest_time = time.time() - backtest_start
-        results = bt.get_results()
-        
-        # Process results
-        pnl_series = results["pnl"]
-        trades_log = results.get('trades_log', [])
-        
-        # Calculate trade statistics
-        if isinstance(results, dict):
-            trades = results.get("trades", pd.Series())
-            positions = results.get("position", pd.Series(dtype=float))
-            costs = results.get("costs", pd.Series())
-        else:
-            trades = results.get("trades", pd.Series())
-            positions = results.get("position", pd.Series(dtype=float))
-            costs = results.get("costs", pd.Series())
-        
-        # Vectorized calculation of actual trade count
-        if not positions.empty:
-            import numpy as np
-            positions_values = positions.ffill().values
-            prev_positions_values = np.concatenate([[0], positions_values[:-1]])
-            # Vectorized boolean operations
-            is_trade_open_event = (prev_positions_values == 0) & (positions_values != 0)
-            actual_trade_count = int(np.sum(is_trade_open_event))
-        else:
-            actual_trade_count = 0
-        
-        # Vectorized calculation of pair statistics using numpy
-        if not pnl_series.empty:
-            pnl_values = pnl_series.values
-            pair_pnl = np.sum(pnl_values)
-            win_days = int(np.sum(pnl_values > 0))
-            lose_days = int(np.sum(pnl_values < 0))
-            max_daily_gain = np.max(pnl_values)
-            max_daily_loss = np.min(pnl_values)
-        else:
-            pair_pnl = 0.0
-            win_days = lose_days = 0
-            max_daily_gain = max_daily_loss = 0.0
-        
-        pair_costs = np.sum(costs.values) if not costs.empty else 0
-        
-        trade_stat = {
-            'pair': f'{s1}-{s2}',
-            'period': period_label,
-            'total_pnl': pair_pnl,
-            'total_costs': pair_costs,
-            'trade_count': actual_trade_count,
-            'avg_pnl_per_trade': pair_pnl / max(actual_trade_count, 1),
-            'win_days': win_days,
-            'lose_days': lose_days,
-            'total_days': len(pnl_series),
-            'max_daily_gain': max_daily_gain,
-            'max_daily_loss': max_daily_loss
-        }
-        
-        # Логирование результатов обработки
-        logger.debug(f"✅ Пара {s1}-{s2} обработана успешно: PnL={trade_stat['total_pnl']:.2f}, сделок={trade_stat['trade_count']}")
-        
-        return {
-            'pnl_series': pnl_series,
-            'trades_log': trades_log,
-            'trade_stat': trade_stat,
-            'success': True
-        }
         
     except Exception as e:
         # Логирование ошибки обработки
@@ -663,6 +667,48 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     logger.info(f"💰 Начальный капитал: ${cfg.portfolio.initial_capital:,.0f}")
     logger.info(f"⚙️ Максимум позиций: {cfg.portfolio.max_active_positions}")
     logger.info(f"📊 Риск на позицию: {cfg.portfolio.risk_per_position_pct:.1%}")
+    
+    # Validate configuration parameters
+    logger.info("🔍 Валидация параметров конфигурации...")
+    try:
+        # Extract parameters for validation
+        params = {
+            'z_entry': getattr(cfg.backtest, 'zscore_threshold', 2.0),
+            'z_exit': getattr(cfg.backtest, 'zscore_exit', 0.0),
+            'sl_mult': getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
+            'time_stop_mult': getattr(cfg.backtest, 'time_stop_multiplier', None),
+            'max_active_positions': cfg.portfolio.max_active_positions,
+            'max_position_size_pct': getattr(cfg.portfolio, 'max_position_size_pct', 1.0),
+            'risk_per_position_pct': cfg.portfolio.risk_per_position_pct
+        }
+        
+        from src.optimiser.metric_utils import validate_params
+        validated_params = validate_params(params)
+        logger.info("✅ Параметры конфигурации валидны")
+        
+        # Update config with validated parameters if they were corrected
+        if validated_params != params:
+            logger.info("📝 Некоторые параметры были скорректированы:")
+            if hasattr(cfg.backtest, 'zscore_threshold'):
+                cfg.backtest.zscore_threshold = validated_params['z_entry']
+            if hasattr(cfg.backtest, 'zscore_exit'):
+                cfg.backtest.zscore_exit = validated_params['z_exit']
+            if hasattr(cfg.backtest, 'stop_loss_multiplier'):
+                cfg.backtest.stop_loss_multiplier = validated_params['sl_mult']
+            if hasattr(cfg.backtest, 'time_stop_multiplier') and validated_params['time_stop_mult'] is not None:
+                cfg.backtest.time_stop_multiplier = validated_params['time_stop_mult']
+            cfg.portfolio.max_active_positions = validated_params['max_active_positions']
+            if hasattr(cfg.portfolio, 'max_position_size_pct'):
+                cfg.portfolio.max_position_size_pct = validated_params['max_position_size_pct']
+            cfg.portfolio.risk_per_position_pct = validated_params['risk_per_position_pct']
+            
+            for key, (old_val, new_val) in zip(params.keys(), zip(params.values(), validated_params.values())):
+                if old_val != new_val:
+                    logger.info(f"   {key}: {old_val} → {new_val}")
+                    
+    except ValueError as e:
+        logger.error(f"❌ Ошибка валидации параметров: {e}")
+        raise
 
 
     # Calculate walk-forward steps
@@ -679,11 +725,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         testing_start = current_test_start
         testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
         
-        # ИСПРАВЛЕНИЕ: Позволяем тестовому окну выходить на несколько дней за end_date
-        # если доступны данные. Проверяем наличие данных вместо жесткой проверки дат.
-        buffer_days = 5  # Позволяем до 5 дней буфера
-        if testing_end > end_date + pd.Timedelta(days=buffer_days):
-            logger.info(f"  Тестовое окно {testing_end.date()} слишком далеко за end_date {end_date.date()}")
+        # ИСПРАВЛЕНИЕ: Простая проверка для прекращения, если начало следующего теста выходит за рамки end_date
+        if testing_start >= end_date:
             break
         
             
@@ -828,6 +871,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 logger.warning(f"  Недостаточно данных для обучения в шаге {step_idx}")
                 pairs = []
             else:
+                # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Собираем параметры нормализации из ТРЕНИРОВОЧНОГО периода ПЕРЕД нормализацией
+                training_normalization_params = {}
+                if not training_slice.empty:
+                    for col in training_slice.columns:
+                        first_valid_idx = training_slice[col].first_valid_index()
+                        if first_valid_idx is not None:
+                            training_normalization_params[col] = training_slice.loc[first_valid_idx, col]
+                
                 # Normalize training data
                 with time_block("normalizing training data"):
                     logger.debug(f"  Нормализация данных для {len(training_slice.columns)} символов")
@@ -939,13 +990,34 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         total_step_pnl = 0.0
 
         current_equity = portfolio.get_current_equity()
+        
+        # Рассчитываем target_concurrency для правильного логирования
+        target_concurrency = min(cfg.portfolio.max_active_positions, num_active_pairs) if num_active_pairs > 0 else 0
+        
         logger.info(
-            f"  Проверка расчета капитала: equity={current_equity}, num_active_pairs={num_active_pairs}"
+            f"  💰 Проверка расчета капитала: equity=${current_equity:,.2f}, кандидатных_пар={num_active_pairs}, max_позиций={cfg.portfolio.max_active_positions}"
         )
+        logger.info(
+            f"  🎯 Target concurrency: {target_concurrency} (ожидаемое одновременное число позиций)"
+        )
+        
         if num_active_pairs > 0:
             capital_per_pair = portfolio.calculate_position_risk_capital(
-                cfg.portfolio.risk_per_position_pct
+                risk_per_position_pct=cfg.portfolio.risk_per_position_pct,
+                max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 1.0),
+                num_selected_pairs=num_active_pairs
             )
+            
+            # Дополнительная диагностика расчетов
+            risk_capital = current_equity * cfg.portfolio.risk_per_position_pct
+            max_position_capital = current_equity * getattr(cfg.portfolio, 'max_position_size_pct', 1.0)
+            base_capital_per_pair = current_equity / target_concurrency if target_concurrency > 0 else 0
+            
+            logger.info(f"  📊 Детали расчета капитала:")
+            logger.info(f"     • Базовый капитал на пару: ${base_capital_per_pair:,.2f} (equity / target_concurrency)")
+            logger.info(f"     • Риск-капитал: ${risk_capital:,.2f} ({cfg.portfolio.risk_per_position_pct:.1%} от equity)")
+            logger.info(f"     • Макс. размер позиции: ${max_position_capital:,.2f} ({getattr(cfg.portfolio, 'max_position_size_pct', 1.0):.1%} от equity)")
+            logger.info(f"     • Итоговый капитал на пару: ${capital_per_pair:,.2f}")
         else:
             capital_per_pair = 0.0
 
@@ -954,8 +1026,6 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 f"КРИТИЧЕСКАЯ ОШИБКА: Капитал на пару стал отрицательным ({capital_per_pair})."
             )
             capital_per_pair = 0.0
-
-        logger.info(f"  Капитал на пару: ${capital_per_pair:,.2f}")
 
         period_label = f"{training_start.strftime('%m/%d')}-{testing_end.strftime('%m/%d')}"
         pair_count_data.append((period_label, len(active_pairs)))
@@ -993,7 +1063,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                         (pair_data_tuple[0], pair_data_tuple[1]),  # (s1, s2)
                         testing_start, testing_end, cfg,
                         capital_per_pair, bar_minutes, period_label,
-                        (pair_data_tuple[2], pair_data_tuple[3], pair_data_tuple[4], pair_data_tuple[5])  # (beta, mean, std, metrics)
+                        (pair_data_tuple[2], pair_data_tuple[3], pair_data_tuple[4], pair_data_tuple[5]),  # (beta, mean, std, metrics)
+                        training_normalization_params
                     )
                     for pair_data_tuple in active_pairs
                 )
@@ -1002,7 +1073,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 pair_results = Parallel(n_jobs=n_jobs, backend='threading')(
                     delayed(process_single_pair)(
                         pair_data_tuple, step_df, testing_start, testing_end, cfg,
-                        capital_per_pair, bar_minutes, period_label
+                        capital_per_pair, bar_minutes, period_label, training_normalization_params
                     )
                     for pair_data_tuple in active_pairs
                 )
@@ -1219,7 +1290,9 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             cumulative = aggregated_pnl.cumsum()
             # Используем капитал для расчета риска на сделку и доходности
             capital_per_pair = portfolio.calculate_position_risk_capital(
-                cfg.portfolio.risk_per_position_pct
+                risk_per_position_pct=cfg.portfolio.risk_per_position_pct,
+                max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 1.0),
+                num_selected_pairs=1  # For final metrics calculation, use 1 as default
             )
             # Calculate Sharpe ratio using portfolio percentage returns
             daily_returns = equity_series.pct_change().dropna()

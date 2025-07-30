@@ -17,7 +17,7 @@ from pathlib import Path
 # Добавляем путь к проекту
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from coint2.engine.backtest_engine import PairBacktester
+from coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class BacktestRobustnessTests:

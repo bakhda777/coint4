@@ -25,8 +25,7 @@ class Portfolio:
         """Initialize equity curve with first test window start date (removes artificial 1970-01-01)."""
         if not self.equity_initialized:
             self.first_test_start = first_test_date
-            self.equity_curve = pd.Series(dtype=float)
-            self.equity_curve[first_test_date] = self.initial_capital
+            self.equity_curve = pd.Series({first_test_date: self.initial_capital}, dtype=float)
             self.equity_initialized = True
 
     def can_open_position(self) -> bool:
@@ -52,9 +51,47 @@ class Portfolio:
         total_margin_after = self.reserved_margin + notional
         return total_margin_after <= current_equity * self.leverage_limit
 
-    def calculate_position_risk_capital(self, risk_per_position_pct: float) -> float:
-        """Amount of capital to risk for a new position."""
-        return self.get_current_equity() * risk_per_position_pct
+    def calculate_position_risk_capital(self, risk_per_position_pct: float, max_position_size_pct: float = 1.0, num_selected_pairs: int = None) -> float:
+        """Amount of capital to risk for a new position.
+        
+        Args:
+            risk_per_position_pct: Risk percentage per position
+            max_position_size_pct: Maximum position size as percentage of equity
+            num_selected_pairs: Number of selected pairs for target concurrency calculation
+            
+        Returns:
+            Capital amount for position sizing
+        """
+        current_equity = self.get_current_equity()
+        
+        # Calculate target concurrency (expected simultaneous positions)
+        if num_selected_pairs is not None:
+            target_concurrency = min(self.max_active_positions, num_selected_pairs)
+        else:
+            target_concurrency = self.max_active_positions
+            
+        # ИСПРАВЛЕНИЕ: Правильное распределение капитала
+        # 1. Базовый капитал на пару основан на target_concurrency
+        capital_per_pair = current_equity / target_concurrency
+        
+        # 2. Если используется риск на позицию, рассчитываем от equity
+        risk_capital = current_equity * risk_per_position_pct
+        
+        # 3. Применяем ограничение по максимальному размеру позиции
+        max_position_capital = current_equity * max_position_size_pct
+        
+        # 4. Логика выбора (ИСПРАВЛЕНО):
+        # Используем максимум из risk_capital и capital_per_pair, но ограничиваем max_position_capital
+        if risk_per_position_pct > 0:
+            # Берем больший из риск-капитала и базового капитала на пару
+            base_capital = max(risk_capital, capital_per_pair)
+            # Ограничиваем максимальным размером позиции
+            final_capital = min(base_capital, max_position_capital)
+        else:
+            # Равномерное распределение с ограничением по размеру позиции
+            final_capital = min(capital_per_pair, max_position_capital)
+            
+        return final_capital
 
     def record_daily_pnl(self, date: pd.Timestamp, daily_pnl: float) -> None:
         """Update equity curve with daily PnL."""

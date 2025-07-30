@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.coint2.engine.backtest_engine import PairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class TestVolatilityBasedSizing:
@@ -75,7 +75,7 @@ class TestVolatilityBasedSizing:
             pair_data=data,
             rolling_window=30,
             z_threshold=2.0,
-            capital_at_risk=1000.0,
+            capital_at_risk=10000.0,  # Увеличиваем капитал для прохождения min_notional
             volatility_based_sizing=False
         )
         
@@ -84,7 +84,7 @@ class TestVolatilityBasedSizing:
             pair_data=data,
             rolling_window=30,
             z_threshold=2.0,
-            capital_at_risk=1000.0,
+            capital_at_risk=10000.0,  # Увеличиваем капитал для прохождения min_notional
             volatility_based_sizing=True,
             volatility_lookback_hours=24,
             min_position_size_pct=0.005,

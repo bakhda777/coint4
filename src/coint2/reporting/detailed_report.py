@@ -19,14 +19,14 @@ import logging
 from pathlib import Path
 import json
 
-from ..utils.config_loader import BacktestConfig
-from ..engine.backtest_engine import PairBacktester
+from ..utils.config import AppConfig
+from ..engine.base_engine import BasePairBacktester
 
 
 class DetailedReportGenerator:
     """Генератор детализированного отчета."""
     
-    def __init__(self, config: BacktestConfig):
+    def __init__(self, config: AppConfig):
         """Инициализация генератора отчета.
         
         Args:
@@ -384,7 +384,7 @@ class DetailedReportGenerator:
                 test_params['bid_ask_spread_pct_s2'] *= multiplier
                 
                 # Запускаем бэктест
-                engine = PairBacktester(pair_data=pair_data, **test_params)
+                engine = BasePairBacktester(pair_data=pair_data, **test_params)
                 engine.run()
                 metrics = engine.get_performance_metrics()
                 

@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import Mock
 
 from src.coint2.core.portfolio import Portfolio
-from src.coint2.engine.backtest_engine import PairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class TestPortfolioPositionLimits:

@@ -1,0 +1,86 @@
+# Best Practice Balanced Search Space
+# Оптимизированное пространство поиска с правильными соотношениями zscore параметров
+
+signals:
+  zscore_threshold:
+    type: float
+    low: 1.6
+    high: 2.3
+    description: "Порог входа в позицию (z-score спреда)"
+  
+  hysteresis:
+    type: float
+    low: 0.7
+    high: 1.1
+    description: "Гистерезис между входом и выходом (zscore_exit = zscore_threshold - hysteresis)"
+  
+  rolling_window:
+    type: int
+    low: 20
+    high: 40
+    step: 5
+    description: "Размер скользящего окна для расчета z-score"
+
+portfolio:
+  max_active_positions:
+    type: int
+    low: 10
+    high: 20
+    step: 5
+    description: "Максимальное количество активных позиций"
+  
+  risk_per_position_pct:
+    type: float
+    low: 0.008
+    high: 0.020
+    description: "Риск на позицию в процентах от капитала"
+  
+  max_position_size_pct:
+    type: float
+    low: 0.10
+    high: 0.22
+    description: "Максимальный размер позиции в процентах от капитала"
+
+risk_management:
+  stop_loss_multiplier:
+    type: float
+    low: 3.0
+    high: 6.0
+    description: "Множитель для стоп-лосса относительно волатильности"
+  
+  time_stop_multiplier:
+    type: float
+    low: 3.0
+    high: 7.0
+    description: "Множитель для временного стопа"
+  
+  cooldown_hours:
+    type: int
+    low: 3
+    high: 8
+    step: 1
+    description: "Время охлаждения между сделками по паре (часы)"
+
+normalization:
+  normalization_method:
+    type: categorical
+    choices: ["minmax", "zscore"]
+    description: "Метод нормализации данных"
+  
+  min_history_ratio:
+    type: float
+    low: 0.55
+    high: 0.85
+    description: "Минимальная доля истории для включения символа"
+
+# Фиксированные параметры (не оптимизируются)
+fixed_params:
+  commission_pct: 0.0002  # 0.02%
+  slippage_pct: 0.0003    # 0.03%
+  
+# Настройки валидации
+validation:
+  min_zscore_gap: 0.7  # Минимальная разница между входом и выходом
+  max_zscore_exit: 0.6  # Максимальный zscore_exit
+  max_trades_per_day: 5  # Максимальное количество сделок в день
+  anti_churn_penalty: 0.02  # Коэффициент штрафа за частые сделки

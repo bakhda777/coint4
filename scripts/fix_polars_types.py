@@ -157,17 +157,20 @@ def process_parquet_file(file_path: Path, save_fixed: bool = True) -> Tuple[bool
         return False, None
 
 
-def fix_types_in_directory(data_dir: Path = Path("data_clean"), limit: int = None):
+def fix_types_in_directory(data_dir: Path = Path("data_clean"), limit: int = None) -> Dict[str, int]:
     """
     Исправляет типы данных во всех parquet файлах в указанной директории.
     
     Args:
         data_dir: Директория с данными
         limit: Ограничение на количество обрабатываемых файлов (для тестирования)
+        
+    Returns:
+        Dict[str, int]: Словарь с проблемными столбцами и количеством файлов
     """
     if not data_dir.exists():
         logger.error(f"Папка {data_dir} не существует")
-        return
+        return {}
     
     logger.info(f"Поиск parquet файлов в {data_dir}")
     parquet_files = find_parquet_files(data_dir)
@@ -179,7 +182,7 @@ def fix_types_in_directory(data_dir: Path = Path("data_clean"), limit: int = Non
     
     if not parquet_files:
         logger.warning("Parquet файлы не найдены")
-        return
+        return {}
     
     # Статистика
     files_fixed = 0
@@ -235,6 +238,8 @@ def fix_types_in_directory(data_dir: Path = Path("data_clean"), limit: int = Non
         logger.info("✅ Типы данных исправлены!")
     else:
         logger.info("✅ Проблем с типами данных не обнаружено!")
+    
+    return all_problematic_columns
 
 
 def analyze_single_file(file_path: str):
@@ -326,13 +331,13 @@ def main():
         analyze_single_file(args.file)
     else:
         # Обрабатываем все файлы в директории
-        fix_types_in_directory(Path(args.dir), args.limit)
+        all_problematic_columns = fix_types_in_directory(Path(args.dir), args.limit)
         
         # Обновляем конфигурацию, если указан флаг
         if args.update_config:
-            # Здесь нужно собрать информацию о проблемных столбцах и обновить конфигурацию
-            # В текущей реализации это не реализовано полностью
-            logger.info("Обновление конфигурации не реализовано полностью")
+            # all_problematic_columns был собран ранее в цикле обработки файлов
+            # Вызываем функцию для обновления YAML-файла
+            update_config_with_dtypes(args.config, all_problematic_columns)
 
 
 if __name__ == "__main__":

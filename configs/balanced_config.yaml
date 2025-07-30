@@ -1,0 +1,186 @@
+# Компромиссная конфигурация для балансировки производительности и торговой активности
+# Основана на анализе optimized_fast.yaml и main_2024.yaml
+
+data_processing:
+  start_date: "2020-01-01"
+  end_date: "2024-12-31"
+  min_history_days: 252
+  price_data_source: "yfinance"
+  cache_data: true
+  data_dir: "data"
+  use_adjusted_close: true
+  handle_missing_data: "forward_fill"
+  max_missing_days: 5
+  outlier_detection: true
+  outlier_threshold: 5.0
+  volume_filter: true
+  min_avg_volume: 100000
+  price_filter: true
+  min_price: 5.0
+  max_price: 1000.0
+
+portfolio:
+  initial_capital: 10000
+  # Компромисс между агрессивностью оптимизированной (3.27%) и консерватизмом базовой (1.5%)
+  risk_per_position_pct: 0.025  # 2.5%
+  # Умеренное увеличение размера позиции
+  max_position_size_pct: 0.04   # 4%
+  # Компромисс между 15 (базовая) и 10 (оптимизированная)
+  max_active_positions: 12
+  commission: 0.001
+  slippage: 0.0005
+  min_position_value: 100
+  position_sizing_method: "equal_risk"
+  rebalance_frequency: "daily"
+  cash_buffer_pct: 0.05
+
+pair_selection:
+  method: "market_cap_correlation"
+  min_correlation: 0.7
+  max_correlation: 0.95
+  correlation_window: 252
+  min_market_cap: 1000000000
+  sector_diversification: true
+  max_pairs_per_sector: 5
+  exclude_sectors: ["Real Estate", "Utilities"]
+  liquidity_filter: true
+  min_avg_dollar_volume: 10000000
+  stability_filter: true
+  max_volatility: 0.5
+  cointegration_test: true
+  adf_pvalue_threshold: 0.05
+  johansen_test: true
+  min_half_life: 5
+  max_half_life: 252
+  rolling_cointegration: true
+  reselection_frequency: 63
+
+backtest:
+  # Компромисс: немного более агрессивный вход чем базовая (1.5), но консервативнее оптимизированной (1.12)
+  zscore_entry_threshold: 1.35
+  # Возврат к нейтральному выходу вместо отрицательного
+  zscore_exit: 0.0
+  # Сохраняем оптимизированные значения стоп-лоссов
+  stop_loss_multiplier: 3.068
+  time_stop_multiplier: 2.906
+  max_holding_period: 60
+  min_holding_period: 1
+  entry_method: "market"
+  exit_method: "market"
+  allow_short_selling: true
+  hedge_ratio_method: "ols"
+  hedge_ratio_window: 60
+  dynamic_hedge_ratio: true
+  hedge_ratio_update_frequency: 5
+  position_entry_delay: 0
+  position_exit_delay: 0
+  market_impact_model: "linear"
+  market_impact_factor: 0.0001
+  
+  # Улучшенные правила входа/выхода
+  enhanced_entry_rules:
+    volume_confirmation: true
+    min_volume_ratio: 1.2
+    momentum_filter: true
+    momentum_threshold: 0.02
+    volatility_filter: true
+    max_volatility_ratio: 2.0
+  
+  # Улучшенные стоп-лоссы
+  enhanced_stop_loss:
+    trailing_stop: true
+    trailing_stop_pct: 0.02
+    volatility_adjusted: true
+    time_decay_factor: 0.95
+  
+  # Временные фильтры
+  time_filters:
+    avoid_earnings: true
+    earnings_buffer_days: 2
+    avoid_dividends: true
+    dividend_buffer_days: 1
+    market_hours_only: true
+  
+  # Карантин "сломанных" пар
+  pair_quarantine:
+    enabled: true
+    max_consecutive_losses: 3
+    quarantine_period_days: 30
+    performance_threshold: -0.05
+  
+  # Реалистичные издержки
+  realistic_costs:
+    bid_ask_spread_pct: 0.001
+    borrowing_cost_pct: 0.02
+    margin_requirement: 0.5
+    overnight_fees: true
+  
+  # Улучшенное позиционирование
+  enhanced_positioning:
+    kelly_criterion: true
+    max_kelly_fraction: 0.25
+    volatility_scaling: true
+    correlation_adjustment: true
+  
+  # Определение рыночных режимов
+  market_regime:
+    enabled: true
+    volatility_threshold: 0.02
+    trend_threshold: 0.01
+    regime_window: 20
+    adjust_thresholds: true
+  
+  # Защита от структурных сдвигов
+  structural_break_protection:
+    enabled: true
+    detection_method: "cusum"
+    significance_level: 0.05
+    min_observations: 100
+    action_on_break: "pause_trading"
+
+walk_forward:
+  enabled: true
+  start_date: "2024-01-15"
+  end_date: "2024-02-08"
+  training_period_days: 10
+  testing_period_days: 3
+  step_size_days: 3
+  min_training_samples: 500
+  refit_frequency: "weekly"
+
+normalization:
+  method: "zscore"
+  window: 60
+  min_periods: 30
+  center: true
+  robust: false
+  outlier_treatment: "winsorize"
+  winsorize_limits: [0.01, 0.99]
+
+online_stats:
+  enabled: true
+  update_frequency: "daily"
+  metrics: ["mean", "std", "skew", "kurt"]
+  window_type: "rolling"
+  decay_factor: 0.94
+  min_periods_stats: 30
+
+signal_shift:
+  enabled: true
+  shift_periods: 1
+  method: "forward"
+  handle_weekends: true
+  handle_holidays: true
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/balanced_backtest.log"
+  console: true
+  max_file_size: "10MB"
+  backup_count: 5
+  log_trades: true
+  log_positions: true
+  log_performance: true
+  log_signals: false
+  log_data_quality: true

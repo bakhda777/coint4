@@ -1,0 +1,150 @@
+backtest:
+  adaptive_thresholds: true
+  adf_check_frequency: 5376
+  adf_pvalue_threshold: 0.05
+  always_model_slippage: true
+  annualizing_factor: 365
+  anti_churn_cooldown_minutes: 60
+  beta_recalc_frequency_hours: 48
+  beta_window_days_max: 120
+  beta_window_days_min: 60
+  cache_cleanup_frequency: 1000
+  cointegration_test_frequency: 2688
+  commission_pct: 0.0001
+  commission_rate_per_leg: 0.0004
+  cooldown_hours: 1
+  correlation_window: 720
+  enable_funding_time_filter: true
+  enable_macro_event_filter: true
+  enable_pair_quarantine: false
+  enable_realistic_costs: true
+  ew_correlation_alpha: 0.1
+  exclusion_period_days: 30
+  fee_maker: 0.0002
+  fee_taker: 0.0004
+  fill_limit_pct: 0.1
+  flat_zscore_threshold: 0.5
+  funding_blackout_minutes: 30
+  funding_cost_enabled: true
+  funding_reset_hours:
+  - 0
+  - 8
+  - 16
+  half_spread_bps: 1.5
+  hurst_neutral_band: 0.05
+  hurst_trending_threshold: 0.5
+  hurst_window: 720
+  lazy_adf_threshold: 0.1
+  macro_blackout_minutes: 30
+  market_regime_detection: true
+  max_half_life_days: 14
+  max_kelly_fraction: 0.25
+  max_var_multiplier: 3.0
+  min_correlation_threshold: 0.6
+  min_position_hold_minutes: 60
+  min_spread_move_sigma: 0.1
+  n_jobs: -1
+  pair_stop_loss_usd: 75.0
+  pair_stop_loss_zscore: 3.0
+  portfolio_daily_stop_pct: 0.02
+  quarantine_drawdown_threshold_pct: 0.08
+  quarantine_period_days: 7
+  quarantine_pnl_threshold_sigma: 3.0
+  quarantine_rolling_window_days: 30
+  regime_check_frequency: 192
+  rolling_window: 20
+  slippage_bps: 2.0
+  slippage_half_spread_multiplier: 2.0
+  slippage_pct: 0.0001
+  slippage_stress_multiplier: 1.0
+  stop_loss_multiplier: 10.0
+  structural_break_protection: true
+  time_stop_multiplier: 10.0
+  timeframe: 15min
+  use_exponential_weighted_correlation: true
+  use_kelly_sizing: true
+  use_market_regime_cache: true
+  use_ols_beta_sizing: true
+  var_confidence: 0.05
+  variance_ratio_mean_reverting_max: 0.8
+  variance_ratio_trending_min: 1.2
+  variance_ratio_window: 480
+  volatility_lookback: 96
+  vr_neutral_band: 0.2
+  wait_for_candle_close: true
+  zscore_entry_threshold: 1.5
+  zscore_exit: 0.1
+  zscore_threshold: 0.5
+data_dir: data_downloaded
+data_processing:
+  fill_method: linear
+  handle_constant: true
+  min_history_ratio: 0.8
+  normalization_method: minmax
+filter_params:
+  max_beta: 10.0
+  max_half_life_days: 252
+  max_hurst_exponent: 0.5
+  min_beta: 0.1
+  min_half_life_days: 1
+  min_mean_crossings: 10
+logging:
+  debug_level: INFO
+  trade_details: true
+max_shards: null
+normalization:
+  fit_on_training_only: true
+  log_returns_base: natural
+  method: log_returns
+  prevent_refit_on_test: true
+online_statistics:
+  adaptive_threshold_lookback: 96
+  beta_recalc_online: true
+  enabled: true
+  ewm_alpha: 0.05
+  kelly_lookback_trades: 50
+  volatility_method: ewm
+pair_selection:
+  adaptive_quantiles: false
+  bar_minutes: 15
+  coint_pvalue_threshold: 0.1
+  enable_pair_tradeability_filter: true
+  kpss_pvalue_threshold: 0.005
+  liquidity_usd_daily: 100000
+  lookback_days: 60
+  max_avg_funding_pct: 0.05
+  max_bid_ask_pct: 0.5
+  max_funding_rate_abs: 0.001
+  max_half_life_days: 30
+  max_half_life_hours: 720.0
+  max_hurst_exponent: 0.5
+  max_tick_size_pct: 0.002
+  min_days_live: 7
+  min_half_life_days: 0.5
+  min_mean_crossings: 5
+  min_volume_usd_24h: 200000
+  pvalue_top_n: 1000
+  save_filter_reasons: true
+  save_std_histogram: true
+  ssd_top_n: 1000
+portfolio:
+  initial_capital: 10000.0
+  max_active_positions: 20
+  max_margin_usage: 0.5
+  max_position_size_pct: 0.2
+  min_position_size_pct: 0.005
+  risk_per_position_pct: 0.005
+  volatility_adjustment_factor: 2.0
+  volatility_based_sizing: true
+  volatility_lookback_hours: 24
+results_dir: results
+signal_shift:
+  enabled: true
+  shift_periods: 1
+  signal_delay_minutes: 0
+  skip_last_bar: true
+walk_forward:
+  end_date: '2024-02-15'
+  start_date: '2024-01-01'
+  testing_period_days: 7
+  training_period_days: 20

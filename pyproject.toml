@@ -31,6 +31,7 @@ psutil = "*"
 scikit-learn = "*"
 
 # Moved to tool.poetry.group.dev.dependencies
+optuna = "^4.4.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.4"

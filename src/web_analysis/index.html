@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализ расхождения оптимизации и валидации</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔍 Анализ расхождения оптимизации и валидации</h1>
+            <p class="subtitle">Диагностика переоптимизации в парном трейдинге</p>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Results Summary Cards -->
+            <div class="results-grid">
+                <div class="result-card optimization-card">
+                    <div class="card-header">
+                        <div class="card-icon">📈</div>
+                        <h3 class="card-title">Результаты оптимизации</h3>
+                    </div>
+                    <!-- Заполняется JavaScript -->
+                </div>
+                
+                <div class="result-card validation-card">
+                    <div class="card-header">
+                        <div class="card-icon">📉</div>
+                        <h3 class="card-title">Результаты валидации</h3>
+                    </div>
+                    <!-- Заполняется JavaScript -->
+                </div>
+                
+                <div class="result-card degradation-card">
+                    <div class="card-header">
+                        <div class="card-icon">⚠️</div>
+                        <h3 class="card-title">Анализ деградации</h3>
+                    </div>
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+
+            <!-- Детальный анализ деградации -->
+            <div class="section">
+                <h2 class="section-title">Детальный анализ деградации</h2>
+                <div id="degradationDetails">
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Диагностика переоптимизации -->
+            <div class="section">
+                <h2 class="section-title">Диагностика переоптимизации</h2>
+                <div id="overfittingIssues" class="causes-grid">
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Основные причины расхождения -->
+            <div class="section">
+                <h2 class="section-title">Основные причины расхождения</h2>
+                <div class="causes-grid">
+                    <div class="cause-item">
+                        <div class="cause-title">1. Переоптимизация (Overfitting)</div>
+                        <div class="cause-description">
+                            Модель слишком точно подстроилась под исторические данные периода оптимизации, 
+                            потеряв способность к генерализации на новых данных.
+                        </div>
+                    </div>
+                    
+                    <div class="cause-item">
+                        <div class="cause-title">2. Различие в периодах данных</div>
+                        <div class="cause-description">
+                            Период оптимизации (2024-01-15 до 2024-02-08) и валидации (2024-02-01 до 2024-02-15) 
+                            имеют разные рыночные условия и структурные характеристики.
+                        </div>
+                    </div>
+                    
+                    <div class="cause-item">
+                        <div class="cause-title">3. Изменение рыночных условий</div>
+                        <div class="cause-description">
+                            Возможные структурные сдвиги в корреляциях между парами, 
+                            изменение волатильности или ликвидности рынка.
+                        </div>
+                    </div>
+                    
+                    <div class="cause-item">
+                        <div class="cause-title">4. Слишком строгие фильтры</div>
+                        <div class="cause-description">
+                            Оптимизированные параметры могут быть настолько специфичными, 
+                            что не генерируют сигналы в новых рыночных условиях.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Подобранные параметры оптимизации -->
+            <div class="section">
+                <h2 class="section-title">🎯 Подобранные параметры оптимизации</h2>
+                <div id="optimizedParameters">
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+
+            <!-- Сравнение параметров -->
+            <div class="section">
+                <h2 class="section-title">Сравнение параметров: Текущие → Рекомендуемые</h2>
+                <div id="parametersComparison">
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Метрики робастности -->
+            <div class="section">
+                <h2 class="section-title">Метрики робастности стратегии</h2>
+                <div id="robustnessMetrics">
+                    <!-- Заполняется JavaScript -->
+                </div>
+            </div>
+
+            <!-- Рекомендуемые решения -->
+            <div class="section">
+                <h2 class="section-title">Рекомендуемые решения</h2>
+                <div class="recommendations-grid">
+                    <div class="recommendation-category">
+                        <h3 class="category-title">Немедленные действия</h3>
+                        <div id="immediateActions">
+                            <!-- Заполняется JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div class="recommendation-category">
+                        <h3 class="category-title">Долгосрочные улучшения</h3>
+                        <div id="longTermImprovements">
+                            <!-- Заполняется JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Визуализация деградации -->
+            <div class="chart-container">
+                <h2 class="chart-title">Визуализация деградации показателей</h2>
+                <canvas id="degradationChart"></canvas>
+            </div>
+            
+            <!-- Панель управления -->
+            <div class="section">
+                <h2 class="section-title">Панель управления</h2>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    <button id="refreshData" class="btn btn-primary" style="background: #3498db; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.3s ease;">🔄 Обновить данные</button>
+                    <button id="exportReport" class="btn btn-secondary" style="background: #2ecc71; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.3s ease;">📊 Экспортировать отчет</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Анализ оптимизации парного трейдинга | Создано для диагностики переоптимизации</p>
+        </div>
+    </div>
+
+    <script src="analysis.js"></script>
+    <script src="app.js"></script>
+
+</body>
+</html>

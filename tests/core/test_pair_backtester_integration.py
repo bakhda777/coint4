@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from src.coint2.core.pair_backtester import PairBacktester
 from src.coint2.core.portfolio import Portfolio
-from src.coint2.engine.backtest_engine import PairBacktester as IncrementalPairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as IncrementalPairBacktester
 
 
 class TestPairBacktesterIntegration:

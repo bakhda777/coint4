@@ -1,0 +1,55 @@
+# Пространство поиска для БЫСТРОЙ оптимизации
+# ВАЖНО: Исключены параметры фильтрации пар (filters), так как пары предотобраны
+
+signals:
+  zscore_threshold:
+    low: 0.5
+    high: 2.5
+  zscore_exit:
+    low: 0.1
+    high: 0.8
+  rolling_window:
+    low: 20
+    high: 100
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 3
+    high: 30
+    step: 3
+  risk_per_position_pct:
+    low: 0.005
+    high: 0.1
+  max_position_size_pct:
+    low: 0.05
+    high: 0.3
+
+costs:
+  commission_pct:
+    low: 0.0001
+    high: 0.001
+  slippage_pct:
+    low: 0.0001
+    high: 0.001
+
+normalization:
+  normalization_method:
+    - minmax
+    - zscore
+    - log_returns
+  min_history_ratio:
+    low: 0.3
+    high: 0.9
+
+risk_management:
+  stop_loss_multiplier:
+    low: 1.5
+    high: 8.0
+  time_stop_multiplier:
+    low: 2.0
+    high: 10.0
+  cooldown_hours:
+    low: 1
+    high: 12
+    step: 1

@@ -9,7 +9,7 @@ from ..core.numba_backtest_full import (
     rolling_ols, 
     calculate_positions_and_pnl_full
 )
-from .backtest_engine import PairBacktester
+from .base_engine import BasePairBacktester
 
 
 @dataclass
@@ -26,7 +26,7 @@ class FullNumbaBacktestResult:
     sigma: np.ndarray
 
 
-class FullNumbaPairBacktester(PairBacktester):
+class FullNumbaPairBacktester(BasePairBacktester):
     
     def _validate_parameters(self) -> None:
         """Override validation to handle edge cases more gracefully."""
@@ -183,17 +183,34 @@ class FullNumbaPairBacktester(PairBacktester):
             )
             return
         
+        # Обеспечиваем отсутствие look-ahead bias: первые rolling_window значений должны быть NaN
+        beta_corrected = numba_result.beta.copy()
+        mu_corrected = numba_result.mu.copy()
+        sigma_corrected = numba_result.sigma.copy()
+        z_scores_corrected = numba_result.z_scores.copy()
+        spread_corrected = numba_result.spread.copy()
+        
+        # Устанавливаем NaN для первых rolling_window периодов
+        beta_corrected[:self.rolling_window] = np.nan
+        mu_corrected[:self.rolling_window] = np.nan
+        sigma_corrected[:self.rolling_window] = np.nan
+        z_scores_corrected[:self.rolling_window] = np.nan
+        spread_corrected[:self.rolling_window] = np.nan
+        
         # Формируем результаты в формате оригинального PairBacktester
         results_data = {
-            'spread': numba_result.spread,
-            'z_score': numba_result.z_scores,
+            'spread': spread_corrected,
+            'z_score': z_scores_corrected,
             'position': numba_result.positions,
             'pnl': numba_result.pnl_series,
             'cumulative_pnl': np.cumsum(numba_result.pnl_series),
-            'beta': numba_result.beta,
-            'mu': numba_result.mu,
-            'sigma': numba_result.sigma,
-            'trades': numba_result.trades_series
+            'beta': beta_corrected,
+            'mu': mu_corrected,
+            'sigma': sigma_corrected,
+            'std': sigma_corrected,  # Алиас для совместимости с тестами
+            'trades': numba_result.trades_series,
+            'x': self.pair_data.iloc[:, 1].values,  # Второй актив
+            'y': self.pair_data.iloc[:, 0].values   # Первый актив
         }
         
         # Создаем DataFrame с тем же индексом, что и исходные данные
@@ -203,7 +220,7 @@ class FullNumbaPairBacktester(PairBacktester):
         self.results['entry_price_s1'] = np.nan
         self.results['entry_price_s2'] = np.nan
         self.results['entry_z'] = np.nan
-        self.results['entry_date'] = np.nan
+        self.results['entry_date'] = pd.Series(dtype='object', index=self.results.index)
         self.results['exit_reason'] = ''
         self.results['exit_price_s1'] = np.nan
         self.results['exit_price_s2'] = np.nan
@@ -218,9 +235,9 @@ class FullNumbaPairBacktester(PairBacktester):
                 self.results.iloc[idx, self.results.columns.get_loc('entry_price_s2')] = self.pair_data.iloc[idx, 1]
                 self.results.iloc[idx, self.results.columns.get_loc('entry_z')] = numba_result.z_scores[idx]
                 if isinstance(self.pair_data.index, pd.DatetimeIndex):
-                    self.results.iloc[idx, self.results.columns.get_loc('entry_date')] = self.pair_data.index[idx]
+                    self.results.at[self.results.index[idx], 'entry_date'] = self.pair_data.index[idx]
                 else:
-                    self.results.iloc[idx, self.results.columns.get_loc('entry_date')] = float(idx)
+                    self.results.at[self.results.index[idx], 'entry_date'] = float(idx)
         
         # Логируем итоговую статистику
         total_pnl = numba_result.total_pnl
@@ -278,12 +295,12 @@ class FullNumbaPairBacktester(PairBacktester):
         
         return metrics
     
-    def compare_with_original(self, original_backtester: PairBacktester, 
+    def compare_with_original(self, original_backtester: BasePairBacktester, 
                             tolerance: float = 0.01) -> dict:
         """Сравнение результатов с оригинальным бэктестером.
         
         Args:
-            original_backtester: Оригинальный PairBacktester для сравнения
+            original_backtester: Оригинальный BasePairBacktester для сравнения
             tolerance: Допустимая относительная погрешность
             
         Returns:

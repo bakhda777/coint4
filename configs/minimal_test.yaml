@@ -1,0 +1,24 @@
+backtest:
+  commission_pct: 0.0001
+  cooldown_hours: 1
+  rolling_window: 30
+  slippage_pct: 0.0001
+  stop_loss_multiplier: 5.0
+  time_stop_multiplier: 10.0
+  timeframe: 15min
+  zscore_exit: 0.0
+  zscore_threshold: 1.0
+data_dir: data_downloaded
+portfolio:
+  initial_capital: 10000.0
+  max_active_positions: 1
+  max_position_size_pct: 1.0
+  risk_per_position_pct: 0.02
+results_dir: results
+walk_forward:
+  enabled: true
+  end_date: '2024-01-20'
+  start_date: '2024-01-15'
+  step_size_days: 1
+  testing_period_days: 3
+  training_period_days: 10

@@ -23,16 +23,19 @@ class PairBacktester(IncrementalPairBacktester):
         portfolio: Portfolio = None,
         risk_per_position_pct: float = 0.01,
         max_history_days: int = 252,
+        incremental_mode: bool = False,
         **kwargs
     ) -> None:
         self.pair_name = pair_name
         self.risk_per_position_pct = risk_per_position_pct
         self.max_history_days = max_history_days
+        self.incremental_mode = incremental_mode
+        
         # Pass portfolio and pair_name to the parent class
         super().__init__(*args, portfolio=portfolio, pair_name=pair_name, **kwargs)
         
-        # Initialize with empty data to be populated incrementally
-        if hasattr(self, 'pair_data') and not self.pair_data.empty:
+        # Only clear data if in incremental mode
+        if self.incremental_mode and hasattr(self, 'pair_data') and not self.pair_data.empty:
             # Keep only the column structure, clear the data
             self.pair_data = self.pair_data.iloc[:0].copy()
         
@@ -68,7 +71,8 @@ class PairBacktester(IncrementalPairBacktester):
         
         # Calculate capital at risk for this specific date
         current_capital_at_risk = portfolio.calculate_position_risk_capital(
-            self.risk_per_position_pct
+            risk_per_position_pct=self.risk_per_position_pct,
+            max_position_size_pct=getattr(portfolio, 'max_position_size_pct', 1.0)
         )
         
         # Set capital at risk for this date in the time series

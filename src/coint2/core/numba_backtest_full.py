@@ -356,6 +356,7 @@ def calculate_positions_and_pnl_full(
     current_position = 0.0
     entry_price_y = 0.0
     entry_price_x = 0.0
+    entry_beta = 0.0  # CRITICAL FIX: Store entry beta for consistent PnL calculation
     entry_time = -1
     total_pnl = 0.0
     
@@ -366,10 +367,23 @@ def calculate_positions_and_pnl_full(
             cumulative_pnl[i] = total_pnl
             continue
             
-        # Расчет spread и z-score
-        spread = y[i] - beta[i] * x[i]
-        sigma_val = max(sigma[i], min_volatility)
-        z_score = (spread - mu[i]) / sigma_val
+        # CRITICAL FIX: Decision at bar 'i' must use information available up to 'i-1'.
+        if i > rolling_window:
+            beta_prev = beta[i-1]
+            mu_prev = mu[i-1]
+            sigma_prev = sigma[i-1]
+            
+            if np.isnan(beta_prev) or np.isnan(mu_prev) or np.isnan(sigma_prev):
+                # CRITICAL FIX: Use NaN for z_score when data is invalid to avoid false signals
+                z_score = np.nan
+                sigma_val = min_volatility
+            else:
+                spread_for_decision = y[i-1] - beta_prev * x[i-1]
+                sigma_val = max(sigma_prev, min_volatility)
+                z_score = (spread_for_decision - mu_prev) / sigma_val
+        else:
+            z_score = 0.0
+            sigma_val = min_volatility
         
         # Проверка рыночного режима
         regime_ok = True
@@ -387,7 +401,9 @@ def calculate_positions_and_pnl_full(
             start_idx = max(0, i - 30)
             end_idx = min(i + 1, n)
             if end_idx - start_idx > 10:
-                has_break = check_structural_breaks(y[start_idx:end_idx], x[start_idx:end_idx], spread)
+                # Use previous spread for structural break detection
+                current_spread = y[i-1] - beta[i] * x[i-1] if i > rolling_window else 0.0
+                has_break = check_structural_breaks(y[start_idx:end_idx], x[start_idx:end_idx], current_spread)
                 if has_break:
                     structural_ok = False
         
@@ -399,7 +415,7 @@ def calculate_positions_and_pnl_full(
         # Логика торговли
         new_position = current_position
         trade_cost = 0.0
-        
+
         # Проверка на принудительное закрытие
         force_close = False
         if current_position != 0.0:
@@ -409,38 +425,53 @@ def calculate_positions_and_pnl_full(
             # Режим или структурные сдвиги
             if not regime_ok or not structural_ok:
                 force_close = True
-        
+
         if force_close:
             # Принудительное закрытие позиции
             new_position = 0.0
             if current_position != 0.0:
                 trade_cost = commission + slippage
+                # Reset entry parameters when closing position
+                entry_beta = 0.0
         elif current_position == 0.0:
             # Вход в позицию
-            if regime_ok and structural_ok:
+            if regime_ok and structural_ok and not np.isnan(z_score):
                 if z_score > current_threshold:
                     new_position = -1.0  # Short spread
+                    # CRITICAL FIX: Use current bar prices for entry execution
+                    # Decision made on i-1 data, execution at current bar i prices
                     entry_price_y = y[i]
                     entry_price_x = x[i]
+                    # CRITICAL FIX: Store beta used for entry decision for consistent PnL calculation
+                    entry_beta = beta_prev if i > rolling_window else beta[i]
                     entry_time = i
                     trade_cost = commission + slippage
                 elif z_score < -current_threshold:
                     new_position = 1.0   # Long spread
+                    # CRITICAL FIX: Use current bar prices for entry execution
+                    # Decision made on i-1 data, execution at current bar i prices
                     entry_price_y = y[i]
                     entry_price_x = x[i]
+                    # CRITICAL FIX: Store beta used for entry decision for consistent PnL calculation
+                    entry_beta = beta_prev if i > rolling_window else beta[i]
                     entry_time = i
                     trade_cost = commission + slippage
         else:
             # Выход из позиции
             exit_condition = False
-            if current_position > 0 and z_score > -exit_threshold:
+            # CRITICAL FIX: Handle NaN z_score - force exit if data is invalid
+            if np.isnan(z_score):
+                exit_condition = True  # Force exit on invalid data
+            elif current_position > 0 and z_score > -exit_threshold:
                 exit_condition = True
             elif current_position < 0 and z_score < exit_threshold:
                 exit_condition = True
-                
+
             if exit_condition:
                 new_position = 0.0
                 trade_cost = commission + slippage
+                # Reset entry parameters when closing position
+                entry_beta = 0.0
         
         # Расчет PnL
         period_pnl = 0.0
@@ -448,7 +479,10 @@ def calculate_positions_and_pnl_full(
             # PnL от изменения цен
             delta_y = y[i] - y[i-1]
             delta_x = x[i] - x[i-1]
-            spread_pnl = current_position * (delta_y - beta[i] * delta_x)
+            # CRITICAL FIX: Use entry_beta for consistent PnL calculation
+            # This ensures PnL is calculated using the same beta that was used for position sizing
+            beta_for_pnl = entry_beta if entry_beta != 0.0 else (beta[i-1] if i > rolling_window else 0.0)
+            spread_pnl = current_position * (delta_y - beta_for_pnl * delta_x)
             period_pnl = spread_pnl
         
         # Вычитаем торговые издержки

@@ -1,0 +1,86 @@
+# Best Practice Conservative Search Space
+# Консервативное пространство поиска для высоких комиссий
+
+signals:
+  zscore_threshold:
+    type: float
+    low: 1.8
+    high: 2.8
+    description: "Порог входа в позицию (z-score спреда) - консервативный"
+  
+  hysteresis:
+    type: float
+    low: 0.8
+    high: 1.4
+    description: "Гистерезис между входом и выходом - увеличенный"
+  
+  rolling_window:
+    type: int
+    low: 30
+    high: 60
+    step: 5
+    description: "Размер скользящего окна - больше для стабильности"
+
+portfolio:
+  max_active_positions:
+    type: int
+    low: 10
+    high: 20
+    step: 5
+    description: "Максимальное количество активных позиций"
+  
+  risk_per_position_pct:
+    type: float
+    low: 0.008
+    high: 0.020
+    description: "Риск на позицию в процентах от капитала"
+  
+  max_position_size_pct:
+    type: float
+    low: 0.10
+    high: 0.22
+    description: "Максимальный размер позиции в процентах от капитала"
+
+risk_management:
+  stop_loss_multiplier:
+    type: float
+    low: 3.0
+    high: 6.0
+    description: "Множитель для стоп-лосса относительно волатильности"
+  
+  time_stop_multiplier:
+    type: float
+    low: 3.0
+    high: 7.0
+    description: "Множитель для временного стопа"
+  
+  cooldown_hours:
+    type: int
+    low: 3
+    high: 8
+    step: 1
+    description: "Время охлаждения между сделками по паре (часы)"
+
+normalization:
+  normalization_method:
+    type: categorical
+    choices: ["minmax", "zscore"]
+    description: "Метод нормализации данных"
+  
+  min_history_ratio:
+    type: float
+    low: 0.55
+    high: 0.85
+    description: "Минимальная доля истории для включения символа"
+
+# Фиксированные параметры (не оптимизируются)
+fixed_params:
+  commission_pct: 0.0002  # 0.02%
+  slippage_pct: 0.0003    # 0.03%
+  
+# Настройки валидации
+validation:
+  min_zscore_gap: 0.7  # Минимальная разница между входом и выходом
+  max_zscore_exit: 0.6  # Максимальный zscore_exit
+  max_trades_per_day: 4  # Более строгий лимит для консервативного режима
+  anti_churn_penalty: 0.03  # Больший штраф за частые сделки

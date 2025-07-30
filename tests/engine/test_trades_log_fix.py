@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from src.coint2.engine.backtest_engine import PairBacktester
+from src.coint2.engine.base_engine import BasePairBacktester as PairBacktester
 
 
 class TestTradesLogFix:
