@@ -1,0 +1,23 @@
+# configs/paper_v1.yaml
+signal:
+  z_enter: 2.0         # вход, |z| >= 2.0
+  z_exit: 0.5          # выход, |z| <= 0.5
+  z_stop: 3.5          # аварийный стоп, |z| >= 3.5
+  lookback: 96         # ~1 сутки на 15m
+  z_method: rolling     # z по rolling mean/std
+  beta_mode: fixed      # β фиксируем (соответствует фильтру beta_drift в отборе)
+  beta_refresh_bars: 0  # 0 = не обновляем β внутри трейда
+
+risk:
+  risk_pct: 0.005        # 0.5% капитала на сделку
+  cap_per_pair: 0.05     # ≤5% на пару
+  max_open_pairs: 10
+  time_stop_bars: 192    # ~2×lookback, страховка от «залипания»
+
+costs:
+  fee_bps_per_side: 5    # 5 б.п. на сторону
+  slippage_bps_per_side: 2
+
+exec:
+  sizing: dollar_neutral  # делаем рыночно-нейтральный размер
+  rebalance_on_exit: true

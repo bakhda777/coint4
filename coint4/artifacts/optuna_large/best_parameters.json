@@ -1,0 +1,25 @@
+{
+  "study_name": "large_scale_optuna_20250810_200130",
+  "best_value": -25.0,
+  "best_params": {
+    "rolling_window": 51,
+    "zscore_threshold": 2.721142890255866,
+    "zscore_exit": 0.6515921243548266,
+    "max_holding_period": 163,
+    "cooldown_hours": 1,
+    "stop_loss_multiplier": 2.3119890406724055
+  },
+  "best_trial_number": 0,
+  "optimization_completed": "2025-08-10T20:02:10.819448",
+  "data_period": {
+    "start": "2024-01-01 00:00:00",
+    "end": "2024-06-30 00:00:00",
+    "bars_count": 17377
+  },
+  "trials_summary": {
+    "total": 250,
+    "completed": 250,
+    "pruned": 0,
+    "failed": 0
+  }
+}

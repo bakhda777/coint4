@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-08-10T22:20:37.360046",
+  "risk_state": {
+    "current_vol": 0.34585685012628586,
+    "target_vol": 0.15,
+    "max_drawdown": 0.2,
+    "current_drawdown": 0,
+    "turnover_limit": 2.0,
+    "current_turnover": 0.36629455236977637,
+    "risk_scalar": 0.4337054476302237
+  },
+  "active_overlays": {
+    "vol_targeting": true,
+    "drawdown_control": false,
+    "turnover_limit": "True"
+  },
+  "risk_scalar": 0.4337054476302237,
+  "warnings": [
+    "\u26a0\ufe0f High volatility: 34.6% vs target 15.0%",
+    "\u26a0\ufe0f Significant risk reduction applied: 43.4%"
+  ]
+}

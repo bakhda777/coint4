@@ -1,0 +1,46 @@
+# Fast optimization search space - reduced ranges for quick testing
+
+signals:
+  zscore_threshold:
+    type: float
+    low: 0.8
+    high: 2.0
+    step: 0.2
+    
+  zscore_exit:
+    type: float
+    low: -0.2
+    high: 0.2
+    step: 0.1
+    
+  rolling_window:
+    type: int
+    low: 20
+    high: 50
+    step: 10
+
+risk:
+  stop_loss_multiplier:
+    type: float
+    low: 2.5
+    high: 3.5
+    step: 0.5
+    
+  time_stop_multiplier:
+    type: float
+    low: 1.5
+    high: 2.5
+    step: 0.5
+
+filters:
+  coint_pvalue_threshold:
+    type: float
+    low: 0.05
+    high: 0.15
+    step: 0.05
+    
+  min_half_life_days:
+    type: float
+    low: 1.0
+    high: 5.0
+    step: 1.0

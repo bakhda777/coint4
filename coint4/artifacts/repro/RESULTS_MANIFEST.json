@@ -1,0 +1,188 @@
+{
+  "generated_at": "2025-08-11T20:30:56.434251",
+  "version": "1.0",
+  "git": {
+    "commit": "c5c3a017f165d25feea668f229e9df147d8b4684",
+    "short_commit": "c5c3a01",
+    "branch": "feature/optuna-best-practice-zscore",
+    "has_uncommitted_changes": true,
+    "timestamp": "2025-08-11T20:30:56.551305"
+  },
+  "environment": {
+    "env_lock_json": {
+      "path": "artifacts/env/ENV_LOCK.json",
+      "hash": "cfc5b8f5279cda80725fcf76be1c2a06c35d73545816b1e3bc83ec022f66bb2b",
+      "exists": true
+    },
+    "env_lock_txt": {
+      "path": "artifacts/env/ENV_LOCK.txt",
+      "hash": "66a3cbdd2e2f6469d5d0ec65f0fdd399e83bdd0f862917f3967abb7376c8deee",
+      "exists": true
+    },
+    "python_version": "3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 08:28:27) [Clang 14.0.6 ]",
+    "python_executable": "/opt/anaconda3/bin/python"
+  },
+  "data": {
+    "data_lock_json": {
+      "path": "artifacts/data/DATA_LOCK.json",
+      "hash": "ae4c9f2f234a94e4506a7ee78c51d7df82271e82a71da1b4e0339a13b367e984",
+      "exists": true
+    },
+    "data_lock_md": {
+      "path": "artifacts/data/DATA_LOCK.md",
+      "hash": "9af3a98db1233e30976280ce446ea5af3b5803698b9079c19f81a06364ce5679",
+      "exists": true
+    },
+    "data_root": "data_downloaded"
+  },
+  "configuration": {
+    "main_2024": {
+      "path": "configs/main_2024.yaml",
+      "hash": "6ed54d8f92b1c7a257f2f58aaa41097381018a23f917eb3d0259a81b0f4bcd10",
+      "exists": true,
+      "modified": "2025-08-09T16:58:09.133462"
+    },
+    "portfolio_optimizer": {
+      "path": "configs/portfolio_optimizer.yaml",
+      "hash": "11f4485cc4724b1a0e9651b684954334cf89c48f2a3591a454f72afee586ec0f",
+      "exists": true,
+      "modified": "2025-08-11T00:09:53.715494"
+    },
+    "ci_gates": {
+      "path": "configs/ci_gates.yaml",
+      "hash": "ccf746eaafaab53f63b83fb15c0b54b133e163dac1b6e24093429f7d26a1a91b",
+      "exists": true,
+      "modified": "2025-08-11T20:29:16.505986"
+    },
+    "drift_monitor": {
+      "path": "configs/drift_monitor.yaml",
+      "hash": "7fd24ad69ddfd74154898867e30be8c54ec11eb9ee9bd465b7c1180a65b998e8",
+      "exists": true,
+      "modified": "2025-08-11T00:07:38.305210"
+    },
+    "pyproject": {
+      "path": "pyproject.toml",
+      "hash": "f3d897db110e05a1ed5dbcd65709b7cfd46857f65647d94bdee04bc0a82c7b4b",
+      "exists": true,
+      "modified": "2025-08-10T23:10:07.538526"
+    }
+  },
+  "execution": {
+    "seed": null,
+    "working_directory": "/Users/admin/Desktop/coint4",
+    "timestamp": "2025-08-11T20:30:56.558350",
+    "user": "system"
+  },
+  "artifacts": {
+    "wfa_WFA_REPORT_md": {
+      "path": "artifacts/wfa/WFA_REPORT.md",
+      "hash": "baed114cb737cc4af53a2df9258ff4a5c04c4ffaf44fe4305aff717cb985905c",
+      "exists": true,
+      "size_bytes": 1336,
+      "modified": "2025-08-11T00:35:53.045302"
+    },
+    "portfolio_weights_csv": {
+      "path": "artifacts/portfolio/weights.csv",
+      "hash": "1d66650416331b24742dcbd3f1d655ab177e1df7eca55bd696df33ee96bad16f",
+      "exists": true,
+      "size_bytes": 120,
+      "modified": "2025-08-11T00:11:15.976061"
+    },
+    "portfolio_PORTFOLIO_REPORT_md": {
+      "path": "artifacts/portfolio/PORTFOLIO_REPORT.md",
+      "hash": "75d88c0a3796d537ea88678dd6a0490aa3f80df913e779e9f3f31ac954e1e25c",
+      "exists": true,
+      "size_bytes": 2234,
+      "modified": "2025-08-11T00:11:15.983762"
+    },
+    "uncertainty_CONFIDENCE_REPORT_md": {
+      "path": "artifacts/uncertainty/CONFIDENCE_REPORT.md",
+      "hash": "98d74184ba5f0ad2653ab33bffc4325bc6efd9dcc04fe7ac6c51a85e5a320503",
+      "exists": true,
+      "size_bytes": 1569,
+      "modified": "2025-08-11T00:35:53.040971"
+    },
+    "monitoring_DRIFT_DASHBOARD_md": {
+      "path": "artifacts/monitoring/DRIFT_DASHBOARD.md",
+      "hash": "4e183665575294e63ad1e794836c02e4d4a725bf9e193e5e0c6e4fd52771fdae",
+      "exists": true,
+      "size_bytes": 1231,
+      "modified": "2025-08-11T00:35:59.489132"
+    },
+    "bench_pairs_portfolio_yaml": {
+      "path": "bench/pairs_portfolio.yaml",
+      "hash": "89e74e291ab3879194310fbf2df32d48bfda27336dde049537285fc2e9c41cb9",
+      "exists": true,
+      "size_bytes": 830,
+      "modified": "2025-08-11T20:28:14.357387"
+    },
+    "optuna_studies": [
+      {
+        "path": "outputs/studies/numba_parity_20250810_184921.db",
+        "name": "numba_parity_20250810_184921",
+        "hash": "137c93c88c36efda9715d15073448c382c8b297738a629188052e9e3b169b3fa",
+        "size_mb": 0.14453125
+      },
+      {
+        "path": "outputs/studies/reference_optuna_20250810_184136.db",
+        "name": "reference_optuna_20250810_184136",
+        "hash": "ab6a0bda83e5aa559129d857e1cd9963df47cf3e44f6fca917beca1acbf14619",
+        "size_mb": 0.14453125
+      },
+      {
+        "path": "outputs/studies/reference_optuna_20250810_174218.db",
+        "name": "reference_optuna_20250810_174218",
+        "hash": "7a247af223a57f86b027d694e35b47309172038f37fb20c05609bab7c5acfeb1",
+        "size_mb": 0.1171875
+      },
+      {
+        "path": "outputs/studies/pairs_strategy_v1.db",
+        "name": "pairs_strategy_v1",
+        "hash": "31eba8f5843ffbc7a95e03e029b2b0aec67bd49859eaa959e1cc0267e43a0898",
+        "size_mb": 0.609375
+      },
+      {
+        "path": "outputs/studies/reference_optuna_20250810_184337.db",
+        "name": "reference_optuna_20250810_184337",
+        "hash": "573eb860d2240141f6ebcc9710760c8165c082829d39667f552f7cb81f47e350",
+        "size_mb": 0.14453125
+      }
+    ]
+  },
+  "reproduction": {
+    "commands": [
+      {
+        "step": "verify_environment",
+        "command": "python scripts/env_lock.py --verify artifacts/env/ENV_LOCK.json",
+        "description": "Проверить совместимость окружения"
+      },
+      {
+        "step": "verify_data",
+        "command": "python scripts/data_lock.py --verify artifacts/data/DATA_LOCK.json",
+        "description": "Проверить целостность данных"
+      },
+      {
+        "step": "run_uncertainty",
+        "command": "python scripts/run_uncertainty.py --output-dir artifacts/uncertainty",
+        "description": "Воспроизвести анализ неопределённости"
+      },
+      {
+        "step": "run_drift_monitoring",
+        "command": "python scripts/monitor_drift.py --config configs/drift_monitor.yaml",
+        "description": "Воспроизвести мониторинг дрейфа"
+      },
+      {
+        "step": "run_paper_week",
+        "command": "python scripts/run_paper_week.py --pairs-file bench/pairs_portfolio.yaml",
+        "description": "Воспроизвести paper week симуляцию"
+      },
+      {
+        "step": "run_ci_gates",
+        "command": "python scripts/ci_gates.py --config configs/ci_gates.yaml --verbose",
+        "description": "Запустить CI gates для проверки качества"
+      }
+    ],
+    "total_steps": 6,
+    "estimated_duration_minutes": 12
+  }
+}

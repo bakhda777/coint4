@@ -1,0 +1,65 @@
+# Portfolio Risk Overlay Configuration
+# Controls risk management overlays applied to portfolio positions
+
+# Volatility Targeting
+vol_target: 0.15  # 15% annualized target volatility
+vol_lookback_days: 20  # Rolling window for volatility calculation
+vol_scale_speed: 0.5  # Speed of volatility scaling (0-1, higher = faster)
+
+# Drawdown Control
+max_drawdown: 0.20  # Maximum allowed drawdown (20%)
+drawdown_reduction_rate: 0.5  # Position reduction rate when in drawdown
+drawdown_threshold: 0.10  # Start reducing at 50% of max DD (0.10 = 10% DD)
+
+# Turnover Constraints
+turnover_limit_daily: 2.0  # Maximum 2x portfolio turnover per day
+turnover_limit_weekly: 5.0  # Maximum 5x portfolio turnover per week
+turnover_penalty: 0.001  # Cost penalty per unit of turnover
+
+# Risk Scalars
+min_risk_scalar: 0.1  # Minimum position scaling (10% of target)
+max_risk_scalar: 2.0  # Maximum position scaling (200% of target)
+risk_rebalance_frequency: "daily"  # How often to rebalance risk
+
+# Regime-Specific Settings
+regime_overrides:
+  high_volatility:
+    vol_target: 0.10  # Reduce target in high vol
+    max_risk_scalar: 1.0  # Cap leverage
+    turnover_limit_daily: 1.5  # Reduce turnover
+  
+  low_volatility:
+    vol_target: 0.20  # Increase target in low vol
+    max_risk_scalar: 2.5  # Allow more leverage
+    turnover_limit_daily: 3.0  # Allow more turnover
+  
+  crisis:
+    vol_target: 0.05  # Minimal risk in crisis
+    max_risk_scalar: 0.5  # De-lever significantly
+    turnover_limit_daily: 1.0  # Limit trading
+
+# Correlation Limits
+max_correlation: 0.8  # Maximum allowed correlation between pairs
+correlation_lookback: 60  # Days for correlation calculation
+correlation_action: "reduce"  # Action when limit breached: "reduce" or "exclude"
+
+# Position Limits
+max_position_per_pair: 0.30  # Maximum 30% allocation to single pair
+min_position_per_pair: 0.02  # Minimum 2% allocation (or exclude)
+max_number_of_pairs: 20  # Maximum pairs in portfolio
+
+# Emergency Controls
+emergency_stop_loss: 0.25  # Stop all trading at 25% drawdown
+emergency_vol_threshold: 0.50  # Stop trading if vol > 50% annualized
+emergency_correlation_threshold: 0.95  # Stop if avg correlation > 0.95
+
+# Reporting
+report_frequency: "daily"
+report_metrics:
+  - current_volatility
+  - current_drawdown
+  - turnover_1d
+  - turnover_7d
+  - risk_scalar
+  - active_pairs
+  - correlation_matrix

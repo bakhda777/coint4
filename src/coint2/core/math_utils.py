@@ -198,52 +198,41 @@ def half_life_numba(y: np.ndarray) -> float:
     n = len(y_lag)
     if n == 0:
         return np.inf
+
+    sum_x = np.sum(y_lag)
+    sum_y = np.sum(delta)
+    sum_xx = np.sum(y_lag * y_lag)
+    sum_xy = np.sum(y_lag * delta)
+
+    denominator = n * sum_xx - sum_x * sum_x
+    if abs(denominator) < 1e-10:
+        return np.inf
+
+    lambda_coef = (n * sum_xy - sum_x * sum_y) / denominator
+
+    if lambda_coef >= 0:
+        return np.inf
+
+    return -np.log(2.0) / lambda_coef
+
+
+def safe_div(num: float, denom: float, default: float | None = None) -> float:
+    """Safely divide two numbers, handling zero and NaN denominators.
+    
+    Parameters
+    ----------
+    num : float
+        Numerator.
+    denom : float
+        Denominator.
+    default : float, optional
+        Value to return if denominator is invalid. If None, returns NaN.
         
-    # Create design matrix
-    X = np.column_stack((np.ones(n), y_lag))
-    
-    # Compute (X'X)^-1 X'y using normal equations
-    XtX = X.T @ X
-    Xty = X.T @ delta
-    
-    # Check if matrix is singular
-    det = XtX[0, 0] * XtX[1, 1] - XtX[0, 1] * XtX[1, 0]
-    if np.abs(det) < 1e-12:
-        return np.inf
-    
-    # Solve for coefficients
-    inv_det = 1.0 / det
-    beta0 = inv_det * (XtX[1, 1] * Xty[0] - XtX[0, 1] * Xty[1])
-    beta1 = inv_det * (-XtX[1, 0] * Xty[0] + XtX[0, 0] * Xty[1])
-    
-    lam = beta1
-    
-    # Защита от деления на ноль и проверка знака
-    if lam >= 0 or np.isclose(lam, 0):
-        return np.inf
-
-    return -np.log(2.0) / lam
-
-
-@njit(cache=True)
-def mean_crossings_numba(arr: np.ndarray) -> int:
-    """Numba-optimized mean crossings calculation."""
-    if arr.size < 2:
-        return 0
-
-    m = arr.mean()
-    crosses = 0
-    prev = arr[0] - m
-
-    for v in arr[1:]:
-        cur = v - m
-        # Check for sign change
-        if (prev <= 0 < cur) or (prev >= 0 > cur):
-            crosses += 1
-        # Update previous value only if it's not zero to handle multiple touches
-        if cur != 0:
-            prev = cur
-
-    return crosses
-
-# --- КОНЕЦ НОВОГО КОДА ---
+    Returns
+    -------
+    float
+        Result of division or default value.
+    """
+    if denom is None or denom == 0 or np.isnan(denom):
+        return default if default is not None else np.nan
+    return num / denom

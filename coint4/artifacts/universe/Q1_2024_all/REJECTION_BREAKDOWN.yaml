@@ -1,0 +1,8 @@
+passed_pairs: 13591
+reasons:
+  beta_drift: 7815
+  crossings: 1
+  half_life: 938
+  hurst: 1893
+  pvalue: 18540
+tested_pairs: 42778

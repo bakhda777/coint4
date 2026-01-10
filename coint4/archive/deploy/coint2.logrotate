@@ -1,0 +1,193 @@
+# Logrotate configuration for coint2 trading system
+#
+# Installation:
+#   sudo cp deploy/coint2.logrotate /etc/logrotate.d/coint2
+#   sudo chmod 644 /etc/logrotate.d/coint2
+#
+# Test rotation:
+#   sudo logrotate -d /etc/logrotate.d/coint2
+#   sudo logrotate -f /etc/logrotate.d/coint2
+
+# Main application logs
+/opt/coint2/artifacts/live/logs/*.log
+/opt/coint2/artifacts/live/logs/*.jsonl {
+    # Rotation frequency
+    daily
+    
+    # Keep 30 days of logs
+    rotate 30
+    
+    # Rotate when larger than 50MB
+    size 50M
+    
+    # Don't rotate empty files
+    notifempty
+    
+    # Don't fail if log files are missing
+    missingok
+    
+    # Compress old logs (except most recent)
+    compress
+    delaycompress
+    
+    # Create new log files with specific permissions
+    create 644 coint2 coint2
+    
+    # Copy and truncate instead of moving (safer for active logging)
+    copytruncate
+    
+    # Run commands after rotation
+    postrotate
+        # Send USR1 signal to reload logs if process is running
+        if [ -f /opt/coint2/artifacts/live/coint2.pid ]; then
+            /bin/kill -USR1 `cat /opt/coint2/artifacts/live/coint2.pid` 2>/dev/null || true
+        fi
+        
+        # Optional: restart systemd service
+        # /bin/systemctl reload coint2.service 2>/dev/null || true
+        
+        # Clean up old compressed logs (older than 60 days)
+        /usr/bin/find /opt/coint2/artifacts/live/logs -name "*.gz" -mtime +60 -delete 2>/dev/null || true
+    endscript
+    
+    # Use sharedscripts to run postrotate only once for all log files
+    sharedscripts
+}
+
+# Trade history logs (keep longer)
+/opt/coint2/artifacts/live/trades*.json
+/opt/coint2/artifacts/live/TRADES_INDEX.csv {
+    # Rotate weekly for trade data
+    weekly
+    
+    # Keep 52 weeks (1 year) of trade history
+    rotate 52
+    
+    # Rotate when larger than 100MB
+    size 100M
+    
+    notifempty
+    missingok
+    compress
+    delaycompress
+    
+    create 644 coint2 coint2
+    
+    # Don't truncate trade files (preserve for analysis)
+    nocopytruncate
+    
+    postrotate
+        echo "$(date): Trade logs rotated" >> /opt/coint2/artifacts/live/logs/rotation.log
+    endscript
+}
+
+# Metrics and performance logs
+/opt/coint2/artifacts/live/metrics/*.jsonl
+/opt/coint2/artifacts/live/metrics/*.parquet {
+    # Rotate daily
+    daily
+    
+    # Keep 90 days of metrics
+    rotate 90
+    
+    # Rotate when larger than 25MB
+    size 25M
+    
+    notifempty
+    missingok
+    compress
+    delaycompress
+    
+    create 644 coint2 coint2
+    copytruncate
+    
+    postrotate
+        # Archive old metrics to cold storage
+        /opt/coint2/scripts/archive_old_metrics.sh 2>/dev/null || true
+    endscript
+    
+    sharedscripts
+}
+
+# Alert and error logs (keep longer)
+/opt/coint2/artifacts/live/ALERTS.log
+/opt/coint2/artifacts/live/*ERROR*.log {
+    # Rotate weekly for alerts
+    weekly
+    
+    # Keep 104 weeks (2 years) of alert history
+    rotate 104
+    
+    # Rotate when larger than 10MB
+    size 10M
+    
+    notifempty
+    missingok
+    compress
+    delaycompress
+    
+    create 644 coint2 coint2
+    copytruncate
+    
+    postrotate
+        # Send critical alerts to external monitoring
+        if [ -s /opt/coint2/artifacts/live/ALERTS.log ]; then
+            tail -n 10 /opt/coint2/artifacts/live/ALERTS.log | \
+            /opt/coint2/scripts/send_alert_notification.sh "Log rotation: Recent alerts" || true
+        fi
+    endscript
+    
+    sharedscripts
+}
+
+# System and debug logs
+/opt/coint2/artifacts/live/logs/debug*.log
+/opt/coint2/artifacts/live/logs/system*.log {
+    # Rotate daily
+    daily
+    
+    # Keep only 7 days of debug logs (they can be large)
+    rotate 7
+    
+    # Rotate when larger than 100MB
+    size 100M
+    
+    notifempty
+    missingok
+    compress
+    delaycompress
+    
+    create 644 coint2 coint2
+    copytruncate
+}
+
+# Temporary and cache files cleanup
+/opt/coint2/artifacts/live/temp/*
+/opt/coint2/artifacts/live/cache/* {
+    # Clean daily
+    daily
+    
+    # Keep only 1 day (immediate cleanup)
+    rotate 1
+    
+    # Clean even small files
+    minsize 1
+    
+    missingok
+    nocompress
+    
+    # Don't create new files, just clean up
+    nocreate
+    
+    postrotate
+        # Clean up empty directories
+        /usr/bin/find /opt/coint2/artifacts/live/temp -type d -empty -delete 2>/dev/null || true
+        /usr/bin/find /opt/coint2/artifacts/live/cache -type d -empty -delete 2>/dev/null || true
+        
+        # Clean up old PID and lock files
+        /usr/bin/find /opt/coint2/artifacts/live -name "*.pid" -mtime +1 -delete 2>/dev/null || true
+        /usr/bin/find /opt/coint2/artifacts/live -name "*.lock" -mtime +1 -delete 2>/dev/null || true
+    endscript
+    
+    sharedscripts
+}

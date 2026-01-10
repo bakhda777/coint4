@@ -1,0 +1,81 @@
+# Ультра-агрессивный search space для максимальной генерации сделок
+# Цель: получить Sharpe > 1 любой ценой
+
+signals:
+  zscore_threshold:
+    low: 0.1   # УЛЬТРА-НИЗКИЙ порог входа
+    high: 0.5  # Максимум тоже низкий
+    step: 0.05
+  zscore_exit:
+    low: -0.5  # Широкий диапазон выхода
+    high: 0.5  
+    step: 0.1
+  rolling_window:
+    low: 10    # Очень короткие окна для быстрых сигналов
+    high: 30   
+    step: 5
+    
+portfolio:
+  max_active_positions:
+    low: 20    # Много позиций для диверсификации
+    high: 50   
+    step: 10
+  risk_per_position_pct:
+    low: 0.005  # Маленький риск на позицию
+    high: 0.01  
+    
+costs:
+  commission_pct: 0.0001  # Минимальные комиссии для теста
+  slippage_pct: 0.0001    
+  
+risk_management:
+  stop_loss_multiplier:
+    low: 5.0   # Очень широкие стопы
+    high: 10.0
+    step: 1.0
+  time_stop_multiplier:
+    low: 10.0  
+    high: 20.0
+    step: 2.0
+  cooldown_hours:
+    low: 1    # Минимум 1 час (int required)
+    high: 2   # Максимум 2 часа
+    step: 1
+    
+# Максимально ослабленные фильтры пар
+pair_selection:
+  min_half_life_days:
+    low: 0.01  
+    high: 0.1  
+    step: 0.01
+  max_half_life_days:
+    low: 500   
+    high: 1000 
+    step: 100
+  coint_pvalue_threshold:
+    low: 0.3   # Очень слабый фильтр
+    high: 0.5  
+    step: 0.1
+    
+# Настройки нормализации
+normalization:
+  normalization_method:
+    - rolling_zscore
+  min_history_ratio:
+    low: 0.3   # Минимальные требования к истории
+    high: 0.5
+    
+# Дополнительные агрессивные параметры
+advanced:
+  min_spread_move_sigma:
+    low: 0.01  # Почти любое движение
+    high: 0.05 
+    step: 0.01
+  min_position_hold_minutes:
+    low: 15    # Минимум 1 бар
+    high: 30   # Максимум 2 бара
+    step: 15
+  anti_churn_cooldown_minutes:
+    low: 15    
+    high: 30   
+    step: 15

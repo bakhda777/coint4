@@ -1,0 +1,108 @@
+# Search space configuration for web UI optimization
+# Defines parameter ranges for Optuna optimization
+
+signals:
+  zscore_threshold:
+    type: float
+    low: 0.5
+    high: 3.0
+    step: 0.1
+    description: "Entry threshold for z-score (стандартных отклонений)"
+    
+  zscore_exit:
+    type: float
+    low: -0.5
+    high: 0.5
+    step: 0.05
+    description: "Exit threshold for z-score"
+    
+  rolling_window:
+    type: int
+    low: 10
+    high: 100
+    step: 5
+    description: "Rolling window for z-score calculation (periods)"
+
+risk:
+  stop_loss_multiplier:
+    type: float
+    low: 2.0
+    high: 5.0
+    step: 0.5
+    description: "Stop loss as multiplier of ATR"
+    
+  time_stop_multiplier:
+    type: float
+    low: 1.0
+    high: 5.0
+    step: 0.5
+    description: "Time stop as multiplier of half-life"
+    
+  max_position_size_pct:
+    type: float
+    low: 0.01
+    high: 0.10
+    step: 0.005
+    description: "Maximum position size as % of portfolio"
+
+filters:
+  coint_pvalue_threshold:
+    type: float
+    low: 0.01
+    high: 0.10
+    step: 0.01
+    description: "P-value threshold for cointegration test"
+    
+  max_hurst_exponent:
+    type: float
+    low: 0.4
+    high: 0.6
+    step: 0.05
+    description: "Maximum Hurst exponent (< 0.5 = mean reverting)"
+    
+  min_half_life_days:
+    type: float
+    low: 1.0
+    high: 10.0
+    step: 1.0
+    description: "Minimum half-life in days"
+    
+  max_half_life_days:
+    type: float
+    low: 10.0
+    high: 30.0
+    step: 5.0
+    description: "Maximum half-life in days"
+
+costs:
+  commission_pct:
+    type: float
+    low: 0.0002
+    high: 0.0010
+    step: 0.0001
+    description: "Total commission percentage"
+    
+  slippage_pct:
+    type: float
+    low: 0.0002
+    high: 0.0010
+    step: 0.0001
+    description: "Total slippage percentage"
+
+# Optimization settings
+optimization:
+  n_trials_default: 50
+  n_trials_fast: 10
+  n_trials_deep: 100
+  timeout_per_trial: 60  # seconds
+  n_jobs: 4  # parallel workers
+  
+# Target metrics
+metrics:
+  primary: sharpe_ratio
+  secondary:
+    - total_pnl
+    - win_rate
+    - calmar_ratio
+    - max_drawdown
+EOF < /dev/null

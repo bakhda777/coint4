@@ -1,0 +1,7 @@
+# Ultra-relaxed criteria for experiments
+# Use this to see what pairs are available before filtering
+coint_pvalue_max: 0.20  # top 20% by p-value
+hl_min: 5
+hl_max: 1000            # practically no limit
+min_cross: 3            # minimum crossings
+beta_drift_max: 2.0     # very tolerant

@@ -1,0 +1,108 @@
+metadata:
+  criteria:
+    beta_drift_max: 0.3
+    coint_pvalue_max: 0.2
+    hl_max: 500
+    hl_min: 3
+    hurst_max: 0.7
+    hurst_min: 0.1
+    min_cross: 5
+  generated: '2025-08-24T10:39:44.403665+00:00'
+  period:
+    end: '2024-02-15'
+    start: '2024-01-01'
+  selection:
+    diversify_by_base: true
+    max_per_base: 5
+    top_n: 10
+pairs:
+- metrics:
+    beta_drift: 0.03135607596586654
+    crossings: 337
+    half_life: 70.40364115601922
+    pvalue: 0.00022028636700184012
+  pair: AAVEUSDT/AGLAUSDT
+  score: 2.341016756500649
+  symbol1: AAVEUSDT
+  symbol2: AGLAUSDT
+- metrics:
+    beta_drift: 0.037048803689388184
+    crossings: 191
+    half_life: 81.36650404387316
+    pvalue: 7.076357171193646e-05
+  pair: 5IREUSDT/ARTYUSDT
+  score: 2.31404834583594
+  symbol1: 5IREUSDT
+  symbol2: ARTYUSDT
+- metrics:
+    beta_drift: 0.012163192476970718
+    crossings: 2384
+    half_life: 3.9238457652195797
+    pvalue: 1.2567083882150173e-28
+  pair: APEXUSDC/APEXUSDT
+  score: 1.9391840376151463
+  symbol1: APEXUSDC
+  symbol2: APEXUSDT
+- metrics:
+    beta_drift: 0.11702545398106826
+    crossings: 360
+    half_life: 57.881252000333866
+    pvalue: 1.6513779583078678e-07
+  pair: ACHUSDT/AFCUSDT
+  score: 1.9148710787167005
+  symbol1: ACHUSDT
+  symbol2: AFCUSDT
+- metrics:
+    beta_drift: 0.09756263427248568
+    crossings: 340
+    half_life: 68.56638779303232
+    pvalue: 0.016275236059291046
+  pair: AGLAUSDT/APTUSDT
+  score: 1.8494344680446613
+  symbol1: AGLAUSDT
+  symbol2: APTUSDT
+- metrics:
+    beta_drift: 0.016518887836517646
+    crossings: 151
+    half_life: 155.19775067420662
+    pvalue: 0.007310323985719514
+  pair: 5IREUSDT/ADAUSDC
+  score: 1.8443023209602165
+  symbol1: 5IREUSDT
+  symbol2: ADAUSDC
+- metrics:
+    beta_drift: 0.10572316860179815
+    crossings: 340
+    half_life: 68.53149613413561
+    pvalue: 0.016290121553149392
+  pair: AGLAUSDT/APTUSDC
+  score: 1.8084829414595154
+  symbol1: AGLAUSDT
+  symbol2: APTUSDC
+- metrics:
+    beta_drift: 0.03076509788330412
+    crossings: 147
+    half_life: 154.9760971063571
+    pvalue: 0.007167354403370713
+  pair: 5IREUSDT/ADAUSDT
+  score: 1.7745009665497722
+  symbol1: 5IREUSDT
+  symbol2: ADAUSDT
+- metrics:
+    beta_drift: 0.01799174425682353
+    crossings: 192
+    half_life: 215.31237932704644
+    pvalue: 0.015508395081785392
+  pair: APTUSDC/ARKMUSDT
+  score: 1.7549573278980284
+  symbol1: APTUSDC
+  symbol2: ARKMUSDT
+- metrics:
+    beta_drift: 0.1299656177202182
+    crossings: 326
+    half_life: 68.81258043327539
+    pvalue: 0.016916934622146353
+  pair: AGLAUSDT/AGLDUSDT
+  score: 1.6810025651774456
+  symbol1: AGLAUSDT
+  symbol2: AGLDUSDT

@@ -1,0 +1,29 @@
+error: Command '['/opt/anaconda3/bin/python', 'scripts/universe/select_pairs.py',
+  '--data-root', './data_downloaded', '--timeframe', '15T', '--period-start', '2023-07-01',
+  '--period-end', '2023-12-31', '--criteria-config', 'artifacts/universe/H2_2023_baseline/criteria.yaml',
+  '--out-dir', 'artifacts/universe/H2_2023_baseline', '--top-n', '25', '--limit-pairs',
+  '300', '--diversify-by-base', '--max-per-base', '3']' returned non-zero exit status
+  1.
+executed_at: '2025-08-11T20:39:34.105451+00:00'
+job:
+  criteria:
+    beta_drift_max: 0.15
+    coint_pvalue_max: 0.05
+    hl_max: 200
+    hl_min: 5
+    hurst_max: 0.6
+    hurst_min: 0.2
+    min_cross: 10
+  diversify_by_base: true
+  limit_pairs: 300
+  max_per_base: 3
+  name: H2_2023_baseline
+  period:
+    end: '2023-12-31'
+    start: '2023-07-01'
+  top_n: 25
+status: FAILED
+stderr: "Traceback (most recent call last):\n  File \"/Users/admin/Desktop/coint4/scripts/universe/select_pairs.py\"\
+  , line 301, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/Users/admin/Desktop/coint4/scripts/universe/select_pairs.py\"\
+  , line 207, in main\n    base_config['data']['path'] = args.data_root\n    ~~~~~~~~~~~^^^^^^^^\n\
+  TypeError: 'AppConfig' object is not subscriptable\n"

@@ -1,0 +1,52 @@
+# Оптимизированный search space для достижения Sharpe > 1.0
+# Гарантирует hysteresis между entry и exit
+
+signals:
+  zscore_threshold:
+    low: 0.5   # Минимальный порог входа
+    high: 2.0  # Расширенный диапазон для поиска оптимума
+    step: 0.1
+  
+  zscore_exit:
+    low: -0.5  # Отрицательные значения для симметричных стратегий
+    high: 0.3  # Максимум 0.3, что гарантирует < min(zscore_threshold)
+    step: 0.05
+  
+  rolling_window:
+    low: 15    # Быстрая реакция (3.75 часа на 15-мин барах)
+    high: 100  # Медленная стратегия (25 часов)
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 5
+    high: 20   # До 20 позиций для диверсификации
+    step: 1
+  
+  risk_per_position_pct:
+    low: 0.01  # 1% риска
+    high: 0.05 # До 5% риска на позицию
+    step: 0.005
+
+risk_management:
+  stop_loss_multiplier:
+    low: 2.0   # Минимум 2x от zscore_threshold
+    high: 5.0  # До 5x для широких стопов
+    step: 0.5
+  
+  time_stop_multiplier:
+    low: 3.0   # Минимум 3x для time stop
+    high: 10.0 # До 10x для долгих удержаний
+    step: 1.0
+
+# Дополнительные параметры для точной настройки
+advanced:
+  min_spread_zscore:
+    low: 0.1   # Минимальный спред для входа
+    high: 0.5  # Максимальный требуемый спред
+    step: 0.05
+  
+  position_scaling_factor:
+    low: 0.5   # Коэффициент масштабирования позиции
+    high: 1.5  # До 1.5x от базового размера
+    step: 0.1

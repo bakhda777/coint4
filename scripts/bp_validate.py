@@ -15,7 +15,7 @@ from datetime import datetime
 # Добавляем путь к модулям проекта
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from coint2.pipeline.walk_forward_orchestrator import FastWalkForwardObjective
+from bp_objective import SimpleBPObjective
 
 
 def validate_criteria(result: dict, criteria: dict) -> dict:
@@ -123,12 +123,15 @@ def main():
         if zscore_valid:
             print("✅ Zscore параметры валидны")
         
-        # Загружаем базовый конфиг
-        with open(args.base, 'r', encoding='utf-8') as f:
-            base_config = yaml.safe_load(f)
+        # Загружаем базовый конфиг через AppConfig
+        sys.path.append(str(Path(__file__).parent.parent / "src"))
+        from coint2.utils.config import load_config
+
+        base_config_obj = load_config(args.base)
+        base_config = base_config_obj.model_dump()
         
         # Создаем objective для валидации
-        objective = FastWalkForwardObjective(base_config)
+        objective = SimpleBPObjective(args.base)
         
         # Подготавливаем параметры для валидации
         validation_params = best_params.copy()
@@ -147,7 +150,8 @@ def main():
         
         # Выполняем валидацию
         start_time = datetime.now()
-        validation_result = objective(validation_params)
+        backtest_result = objective._run_fast_backtest(validation_params)
+        validation_result = backtest_result.get('sharpe_ratio_abs', 0) if backtest_result else 0
         end_time = datetime.now()
         duration = end_time - start_time
         

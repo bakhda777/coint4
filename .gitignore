@@ -1,19 +1,76 @@
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.cache/
+.test_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+.cursor/
+.serena/
+.augment/
+.trae/
+.claude/
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Local config
+.env
+.env.*
+.mcp.json
 
 # Личные/временные папки
-data_clean/
-logs/
-.env
-data/
-data_optimized/
+**/data/**
+!data/README.md
+!data/.gitkeep
+**/data_clean/
+**/data_optimized/
+**/data_downloaded/
 temporary useful files/
-data_downloaded/
+postgresql:/
+
+# Outputs/results/logs
+**/outputs/**
+!**/outputs/README.md
+**/results/**
+!**/results/README.md
+**/logs/**
+!**/logs/README.md
+
+# Large artifacts
+*.parquet
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.log
+
+# Generated reports
+*_filter_reasons_*.csv
+enhanced_filter_reasons_*.csv
+wf_results.json
+
+# Nested repo backup
+**/.git.bak/

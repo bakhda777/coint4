@@ -1,0 +1,46 @@
+{
+  "statistics": {
+    "total_fills": 111,
+    "partial_fills": 11,
+    "partial_fill_pct": 9.90990990990991,
+    "avg_latency_ms": 10.384690708898273,
+    "median_latency_ms": 11.112259659919193,
+    "avg_slippage_pct": 0.4483039413335098,
+    "avg_partial_ratio": 0.7000000000000001,
+    "total_commission": 56.256468179892515
+  },
+  "analysis": {
+    "latency": {
+      "mean_ms": 10.384690708898273,
+      "median_ms": 11.112259659919193,
+      "p95_ms": 18.999088202609826,
+      "p99_ms": 21.141474750094815,
+      "max_ms": 24.40700746646533
+    },
+    "slippage": {
+      "mean_pct": 0.4483039413335098,
+      "median_pct": 0.5085392467507435,
+      "p95_pct": 0.5491473221035081,
+      "max_pct": 0.5777050123752535
+    },
+    "partial_fills": {
+      "rate": 9.90990990990991,
+      "avg_ratio": 0.7000000000000001
+    },
+    "costs": {
+      "total_commission": 56.256468179892515,
+      "avg_commission": 0.5068150286476804,
+      "total_slippage_cost": 252.06005540612685
+    },
+    "buy_orders": {
+      "count": 59,
+      "avg_slippage_pct": 0.4344762609102869,
+      "avg_latency_ms": 11.22250303139273
+    },
+    "sell_orders": {
+      "count": 52,
+      "avg_slippage_pct": 0.4639930402752435,
+      "avg_latency_ms": 9.434095958375714
+    }
+  }
+}

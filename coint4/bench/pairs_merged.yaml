@@ -1,0 +1,1901 @@
+metadata:
+  type: merged
+  source_pattern: artifacts/universe/*/pairs_universe.yaml
+  total_pairs: 200
+  filters:
+    top_k: 200
+    min_score: -.inf
+pairs:
+- metrics:
+    beta_drift: 0.0023644392023791662
+    crossings: 615
+    half_life: 24.530362957862984
+    pvalue: 1.3107285480747043e-06
+  pair: ETHUSDC/ETHUSDT
+  score: 2.9881646967026234
+  symbol1: ETHUSDC
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.0009143139161417948
+    crossings: 134
+    half_life: 33.70506141764842
+    pvalue: 0.0016782901912968259
+  pair: TUSDUSDT/WEMIXUSDT
+  score: 2.9786455285063225
+  symbol1: TUSDUSDT
+  symbol2: WEMIXUSDT
+- metrics:
+    beta_drift: 0.005452315969035066
+    crossings: 525
+    half_life: 30.595550274660763
+    hurst: 0.9882467165162481
+    pvalue: 1.3074512562213127e-06
+  pair: CRVUSDT/MVLUSDT
+  score: 2.9727253456422624
+  symbol1: CRVUSDT
+  symbol2: MVLUSDT
+- metrics:
+    beta_drift: 0.005561578187719377
+    crossings: 662
+    half_life: 24.1177984640793
+    pvalue: 9.895477395407461e-07
+  pair: BTCUSDC/BTCUSDT
+  score: 2.9721822135840075
+  symbol1: BTCUSDC
+  symbol2: BTCUSDT
+- metrics:
+    beta_drift: 0.007880006661905165
+    crossings: 125
+    half_life: 45.05679397297368
+    hurst: 0.9856295027757072
+    pvalue: 5.0119671496612206e-05
+  pair: LUNAUSDT/WBTCBTC
+  score: 2.960098769975508
+  symbol1: LUNAUSDT
+  symbol2: WBTCBTC
+- metrics:
+    beta_drift: 0.011344894911631155
+    crossings: 538
+    half_life: 29.326604304746304
+    hurst: 0.9878500176145908
+    pvalue: 5.064840936042478e-07
+  pair: MVLUSDT/XEMUSDT
+  score: 2.943270460600908
+  symbol1: MVLUSDT
+  symbol2: XEMUSDT
+- metrics:
+    beta_drift: 0.011771879101788686
+    crossings: 261
+    half_life: 49.302160445305866
+    pvalue: 5.262257450122231e-08
+  pair: FIDAUSDT/PSGUSDT
+  score: 2.9411400782653114
+  symbol1: FIDAUSDT
+  symbol2: PSGUSDT
+- metrics:
+    beta_drift: 0.011870033449721512
+    crossings: 264
+    half_life: 38.149187749881435
+    hurst: 0.9862237643208556
+    pvalue: 5.1134493985718875e-05
+  pair: BELUSDT/CITYUSDT
+  score: 2.9401384878115353
+  symbol1: BELUSDT
+  symbol2: CITYUSDT
+- metrics:
+    beta_drift: 0.016602551401118798
+    crossings: 277
+    half_life: 49.17052218418094
+    hurst: 0.9930117038137827
+    pvalue: 8.378510639869358e-06
+  pair: ALGOBTC/FIDAUSDT
+  score: 2.916903457888007
+  symbol1: ALGOBTC
+  symbol2: FIDAUSDT
+- metrics:
+    beta_drift: 0.017360923789337568
+    crossings: 246
+    half_life: 47.02101227249478
+    pvalue: 0.0027346676826869483
+  pair: KASTAUSDT/TUSDUSDT
+  score: 2.8858487042264427
+  symbol1: KASTAUSDT
+  symbol2: TUSDUSDT
+- metrics:
+    beta_drift: 0.024098074894491298
+    crossings: 278
+    half_life: 49.08730662699003
+    hurst: 0.9929091782172395
+    pvalue: 7.887657882942014e-08
+  pair: AVAUSDT/SOLEUR
+  score: 2.8795088367617554
+  symbol1: AVAUSDT
+  symbol2: SOLEUR
+- metrics:
+    beta_drift: 0.0115857011365021
+    crossings: 224
+    half_life: 41.75468014207097
+    pvalue: 0.0064929681905394965
+  pair: TUSDUSDT/UNIUSDT
+  score: 2.8771418124120944
+  symbol1: TUSDUSDT
+  symbol2: UNIUSDT
+- metrics:
+    beta_drift: 0.024708180298752137
+    crossings: 238
+    half_life: 25.1550733594004
+    hurst: 0.9864440795960311
+    pvalue: 2.180005529281643e-07
+  pair: COTUSDT/OASUSDT
+  score: 2.8764569185007103
+  symbol1: COTUSDT
+  symbol2: OASUSDT
+- metrics:
+    beta_drift: 0.02554776594856946
+    crossings: 192
+    half_life: 47.449090186503604
+    pvalue: 5.0219875946124745e-05
+  pair: AFCUSDT/FIDAUSDT
+  score: 2.8717589714976914
+  symbol1: AFCUSDT
+  symbol2: FIDAUSDT
+- metrics:
+    beta_drift: 0.026298664227667412
+    crossings: 148
+    half_life: 29.831827499081804
+    pvalue: 0.0001632446353808491
+  pair: LTCBTC/METHETH
+  score: 2.8668742325078544
+  symbol1: LTCBTC
+  symbol2: METHETH
+- metrics:
+    beta_drift: 0.02806009008199414
+    crossings: 418
+    half_life: 21.739381824612238
+    pvalue: 3.1243650258286305e-06
+  pair: USDTBRZ/XLMBTC
+  score: 2.859668305939771
+  symbol1: USDTBRZ
+  symbol2: XLMBTC
+- metrics:
+    beta_drift: 0.02918482986546291
+    crossings: 381
+    half_life: 30.741413135155767
+    pvalue: 1.9060568407002595e-05
+  pair: BATUSDT/CBKUSDT
+  score: 2.853885244988615
+  symbol1: BATUSDT
+  symbol2: CBKUSDT
+- metrics:
+    beta_drift: 0.030534047400995593
+    crossings: 374
+    half_life: 31.710239225090106
+    hurst: 0.9878449248225576
+    pvalue: 7.383424204220056e-07
+  pair: IZIUSDT/RUNEUSDT
+  score: 2.8473223795708176
+  symbol1: IZIUSDT
+  symbol2: RUNEUSDT
+- metrics:
+    beta_drift: 0.029177160388368418
+    crossings: 150
+    half_life: 34.713596230989694
+    hurst: 0.9895744198265266
+    pvalue: 0.0006827570032531343
+  pair: GALFTUSDT/SEIUSDT
+  score: 2.8472866280256266
+  symbol1: GALFTUSDT
+  symbol2: SEIUSDT
+- metrics:
+    beta_drift: 0.031713598175090923
+    crossings: 275
+    half_life: 42.32333817176308
+    pvalue: 3.87490141428083e-09
+  pair: PSTAKEUSDT/TELUSDT
+  score: 2.841431970375531
+  symbol1: PSTAKEUSDT
+  symbol2: TELUSDT
+- metrics:
+    beta_drift: 0.012727681518728187
+    crossings: 125
+    half_life: 45.82218639153591
+    hurst: 0.9920666701474085
+    pvalue: 0.010229988764505964
+  pair: GALFTUSDT/SOLBTC
+  score: 2.8340617047612993
+  symbol1: GALFTUSDT
+  symbol2: SOLBTC
+- metrics:
+    beta_drift: 0.03571110481579348
+    crossings: 247
+    half_life: 49.16679008947273
+    hurst: 0.9930435295504673
+    pvalue: 9.884015447460479e-06
+  pair: JUVUSDT/SUSHIUSDT
+  score: 2.821345635766558
+  symbol1: JUVUSDT
+  symbol2: SUSHIUSDT
+- metrics:
+    beta_drift: 0.039564976116023436
+    crossings: 319
+    half_life: 35.76609759301134
+    hurst: 0.9902384865616503
+    pvalue: 2.5343490621235903e-10
+  pair: SWEATUSDT/XETAUSDT
+  score: 2.802175116885534
+  symbol1: SWEATUSDT
+  symbol2: XETAUSDT
+- metrics:
+    beta_drift: 0.042715067807981864
+    crossings: 241
+    half_life: 36.479837019184394
+    hurst: 0.9906081808419772
+    pvalue: 1.4984954219631177e-06
+  pair: JUVUSDT/LINKUSDC
+  score: 2.7864096760058708
+  symbol1: JUVUSDT
+  symbol2: LINKUSDC
+- metrics:
+    beta_drift: 0.04203902463362382
+    crossings: 237
+    half_life: 29.433992338308354
+    pvalue: 0.0004912728025599991
+  pair: TUSDUSDT/XLMUSDC
+  score: 2.7848921488062808
+  symbol1: TUSDUSDT
+  symbol2: XLMUSDC
+- metrics:
+    beta_drift: 0.04338195977185318
+    crossings: 258
+    half_life: 21.482834429839073
+    hurst: 0.983656775346686
+    pvalue: 3.973724923424771e-09
+  pair: IZIUSDT/SHRAPUSDT
+  score: 2.783090161403485
+  symbol1: IZIUSDT
+  symbol2: SHRAPUSDT
+- metrics:
+    beta_drift: 0.04280847857797448
+    crossings: 263
+    half_life: 29.230708512754727
+    pvalue: 0.00048231228944482763
+  pair: TUSDUSDT/XLMUSDT
+  score: 2.7811344842156793
+  symbol1: TUSDUSDT
+  symbol2: XLMUSDT
+- metrics:
+    beta_drift: 0.043897071160838075
+    crossings: 215
+    half_life: 41.37267300829663
+    pvalue: 1.067454069070579e-07
+  pair: HBARUSDT/PYUSDUSDT
+  score: 2.7805135767417406
+  symbol1: HBARUSDT
+  symbol2: PYUSDUSDT
+- metrics:
+    beta_drift: 0.04468090456525397
+    crossings: 203
+    half_life: 23.87449203608517
+    hurst: 0.9830214478342718
+    pvalue: 2.0743714405736026e-05
+  pair: PSGUSDT/RPKUSDT
+  score: 2.7763880400296728
+  symbol1: PSGUSDT
+  symbol2: RPKUSDT
+- metrics:
+    beta_drift: 0.04535642120009026
+    crossings: 355
+    half_life: 25.542269749763616
+    pvalue: 8.533726888988708e-09
+  pair: AFCUSDT/UNIUSDT
+  score: 2.77321780866228
+  symbol1: AFCUSDT
+  symbol2: UNIUSDT
+- metrics:
+    beta_drift: 0.046853522256873864
+    crossings: 237
+    half_life: 36.48032423091176
+    hurst: 0.9906071193349002
+    pvalue: 1.5433517905997427e-06
+  pair: JUVUSDT/LINKUSDT
+  score: 2.7657169551977248
+  symbol1: JUVUSDT
+  symbol2: LINKUSDT
+- metrics:
+    beta_drift: 0.04826613446487833
+    crossings: 140
+    half_life: 35.26749246414486
+    pvalue: 1.1320446069892166e-18
+  pair: DMAILUSDT/SUNUSDT
+  score: 2.7586693276756082
+  symbol1: DMAILUSDT
+  symbol2: SUNUSDT
+- metrics:
+    beta_drift: 0.04964725877214449
+    crossings: 356
+    half_life: 37.7048476468711
+    pvalue: 4.53876455862233e-06
+  pair: CBKUSDT/OMGUSDT
+  score: 2.7517183184936913
+  symbol1: CBKUSDT
+  symbol2: OMGUSDT
+- metrics:
+    beta_drift: 0.04887133510733689
+    crossings: 291
+    half_life: 49.36399460029229
+    pvalue: 0.0005528820060770627
+  pair: CBKUSDT/MANAUSDC
+  score: 2.750114504402545
+  symbol1: CBKUSDT
+  symbol2: MANAUSDC
+- metrics:
+    beta_drift: 0.05123895331511512
+    crossings: 383
+    half_life: 44.41283406732652
+    pvalue: 3.478794652678389e-09
+  pair: APEUSDT/KUBUSDT
+  score: 2.743805198636478
+  symbol1: APEUSDT
+  symbol2: KUBUSDT
+- metrics:
+    beta_drift: 0.05207200110679126
+    crossings: 421
+    half_life: 42.6019536974579
+    pvalue: 2.901284740380359e-09
+  pair: APEUSDC/KUBUSDT
+  score: 2.739639965453196
+  symbol1: APEUSDC
+  symbol2: KUBUSDT
+- metrics:
+    beta_drift: 0.05229231261181386
+    crossings: 359
+    half_life: 31.304941840333008
+    hurst: 0.9889844947278872
+    pvalue: 6.125920278928052e-07
+  pair: AGLAUSDT/BTCUSDT
+  score: 2.7385323110206516
+  symbol1: AGLAUSDT
+  symbol2: BTCUSDT
+- metrics:
+    beta_drift: 0.052986924669348075
+    crossings: 170
+    half_life: 49.69291054648496
+    pvalue: 4.9598017029884286e-05
+  pair: KASTAUSDT/PYUSDUSDT
+  score: 2.7345693964829607
+  symbol1: KASTAUSDT
+  symbol2: PYUSDUSDT
+- metrics:
+    beta_drift: 0.053551867836254284
+    crossings: 102
+    half_life: 44.32822221469368
+    pvalue: 5.70176591140066e-05
+  pair: DMAILUSDT/THETAUSDT
+  score: 2.7316704842275885
+  symbol1: DMAILUSDT
+  symbol2: THETAUSDT
+- metrics:
+    beta_drift: 0.0528507653359831
+    crossings: 223
+    half_life: 35.81734897846074
+    hurst: 0.9883370997689722
+    pvalue: 0.0005981495841069792
+  pair: GLMRUSDT/PSGUSDT
+  score: 2.7297646774790145
+  symbol1: GLMRUSDT
+  symbol2: PSGUSDT
+- metrics:
+    beta_drift: 0.05444562027305393
+    crossings: 278
+    half_life: 29.18362002890615
+    hurst: 0.9879600388859311
+    pvalue: 2.1693347203859926e-07
+  pair: IZIUSDT/SIDUSUSDT
+  score: 2.72776972930001
+  symbol1: IZIUSDT
+  symbol2: SIDUSUSDT
+- metrics:
+    beta_drift: 0.05521166644475493
+    crossings: 345
+    half_life: 22.180686443517136
+    hurst: 0.9843993194924584
+    pvalue: 2.158977459838064e-08
+  pair: CITYUSDT/NFTUSDT
+  score: 2.7239414518784795
+  symbol1: CITYUSDT
+  symbol2: NFTUSDT
+- metrics:
+    beta_drift: 0.05970842831031453
+    crossings: 121
+    half_life: 47.46942290589099
+    pvalue: 1.1684886484476887e-11
+  pair: DMAILUSDT/DUELUSDT
+  score: 2.7014578583315787
+  symbol1: DMAILUSDT
+  symbol2: DUELUSDT
+- metrics:
+    beta_drift: 0.0598045676457538
+    crossings: 214
+    half_life: 46.48472057479881
+    hurst: 0.9923775493561381
+    pvalue: 7.682793381804123e-05
+  pair: BTCDAI/NEXOUSDT
+  score: 2.7002088824330506
+  symbol1: BTCDAI
+  symbol2: NEXOUSDT
+- metrics:
+    beta_drift: 0.06035324525049503
+    crossings: 228
+    half_life: 34.621570697371276
+    pvalue: 4.6900952502465476e-17
+  pair: DMAILUSDT/PIPUSDT
+  score: 2.6982337737475244
+  symbol1: DMAILUSDT
+  symbol2: PIPUSDT
+- metrics:
+    beta_drift: 0.05189932262284592
+    crossings: 117
+    half_life: 42.70517126813339
+    hurst: 0.9915588925516039
+    pvalue: 0.006394818678852379
+  pair: GALFTUSDT/OASUSDT
+  score: 2.676555200097247
+  symbol1: GALFTUSDT
+  symbol2: OASUSDT
+- metrics:
+    beta_drift: 0.06555142406373377
+    crossings: 452
+    half_life: 20.15064185920544
+    hurst: 0.9831360268795968
+    pvalue: 2.6526903690141597e-11
+  pair: AGLAUSDT/PIPUSDT
+  score: 2.6722428794160624
+  symbol1: AGLAUSDT
+  symbol2: PIPUSDT
+- metrics:
+    beta_drift: 0.06566385076349505
+    crossings: 154
+    half_life: 39.614569619174695
+    pvalue: 1.1519570363062807e-05
+  pair: DMAILUSDT/FLOWUSDT
+  score: 2.671565550478894
+  symbol1: DMAILUSDT
+  symbol2: FLOWUSDT
+- metrics:
+    beta_drift: 0.06995392672166514
+    crossings: 145
+    half_life: 49.13099515097369
+    pvalue: 4.634612264333505e-12
+  pair: SAROSUSDT/UMAUSDT
+  score: 2.650230366345328
+  symbol1: SAROSUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.07010315622288656
+    crossings: 263
+    half_life: 37.725620587472335
+    hurst: 0.9863982172327737
+    pvalue: 0.00013732901042499214
+  pair: AGLAUSDT/MEMEUSDT
+  score: 2.6481109287813176
+  symbol1: AGLAUSDT
+  symbol2: MEMEUSDT
+- metrics:
+    beta_drift: 0.07244823003981077
+    crossings: 303
+    half_life: 38.91006517556655
+    hurst: 0.9898450530194401
+    pvalue: 9.473578614678496e-06
+  pair: AGLAUSDT/MASKUSDT
+  score: 2.6376641140147994
+  symbol1: AGLAUSDT
+  symbol2: MASKUSDT
+- metrics:
+    beta_drift: 0.07081859070978336
+    crossings: 195
+    half_life: 45.807908080408986
+    pvalue: 0.0010115828810042923
+  pair: AKIUSDT/FIREUSDT
+  score: 2.6357912176410405
+  symbol1: AKIUSDT
+  symbol2: FIREUSDT
+- metrics:
+    beta_drift: 0.07643072602149634
+    crossings: 194
+    half_life: 26.87123944236509
+    pvalue: 6.204406386462536e-11
+  pair: PYUSDUSDT/TUSDUSDT
+  score: 2.617846369272078
+  symbol1: PYUSDUSDT
+  symbol2: TUSDUSDT
+- metrics:
+    beta_drift: 0.07882571064344028
+    crossings: 350
+    half_life: 48.70342940391783
+    hurst: 0.9927660329477228
+    pvalue: 2.8036802465207192e-05
+  pair: INTERUSDT/UMAUSDT
+  score: 2.605591078758146
+  symbol1: INTERUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.07943927001400694
+    crossings: 426
+    half_life: 47.33551869428302
+    hurst: 0.9927837291093735
+    pvalue: 1.0518380202823876e-07
+  pair: BATUSDT/ENJUSDT
+  score: 2.602802598091945
+  symbol1: BATUSDT
+  symbol2: ENJUSDT
+- metrics:
+    beta_drift: 0.07857343083740388
+    crossings: 205
+    half_life: 45.57268961126965
+    pvalue: 0.0004570614627561132
+  pair: ETHDAI/KUBUSDT
+  score: 2.6025622311854195
+  symbol1: ETHDAI
+  symbol2: KUBUSDT
+- metrics:
+    beta_drift: 0.07979521211825343
+    crossings: 363
+    half_life: 49.65601010656196
+    pvalue: 6.951817181541438e-07
+  pair: ATOMUSDT/LUNCUSDC
+  score: 2.601016987591551
+  symbol1: ATOMUSDT
+  symbol2: LUNCUSDC
+- metrics:
+    beta_drift: 0.07842360289756067
+    crossings: 111
+    half_life: 39.647346523724515
+    pvalue: 0.0007812414225266059
+  pair: FMBUSDT/METHETH
+  score: 2.6000695712869306
+  symbol1: FMBUSDT
+  symbol2: METHETH
+- metrics:
+    beta_drift: 0.0829754669448538
+    crossings: 259
+    half_life: 32.29157285504117
+    hurst: 0.9887549681425631
+    pvalue: 9.377429157331534e-06
+  pair: GSTUSDT/PYTHUSDT
+  score: 2.585028890984158
+  symbol1: GSTUSDT
+  symbol2: PYTHUSDT
+- metrics:
+    beta_drift: 0.0830361256558234
+    crossings: 422
+    half_life: 30.25655276185693
+    hurst: 0.988292168945406
+    pvalue: 1.362279933855067e-08
+  pair: HFTUSDC/UMAUSDT
+  score: 2.5848192354928896
+  symbol1: HFTUSDC
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.051998989255351236
+    crossings: 399
+    half_life: 24.086497897684346
+    pvalue: 0.016046535932125686
+  pair: ETHEUR/STETHUSDT
+  score: 2.579539694401987
+  symbol1: ETHEUR
+  symbol2: STETHUSDT
+- metrics:
+    beta_drift: 0.0847840598591432
+    crossings: 420
+    half_life: 31.374950196807543
+    hurst: 0.988700054576709
+    pvalue: 1.676431208800368e-08
+  pair: HFTUSDT/UMAUSDT
+  score: 2.576079533061163
+  symbol1: HFTUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.08532891117117478
+    crossings: 411
+    half_life: 32.816593088208506
+    pvalue: 1.0838928112755427e-08
+  pair: BTTUSDT/LUNCUSDC
+  score: 2.573355335754845
+  symbol1: BTTUSDT
+  symbol2: LUNCUSDC
+- metrics:
+    beta_drift: 0.08690251238049954
+    crossings: 223
+    half_life: 44.976120220928635
+    pvalue: 2.2230144454240666e-08
+  pair: PERPUSDT/PYUSDUSDT
+  score: 2.5654872157960575
+  symbol1: PERPUSDT
+  symbol2: PYUSDUSDT
+- metrics:
+    beta_drift: 0.08815764053575498
+    crossings: 253
+    half_life: 34.745232665541906
+    hurst: 0.9899570175428732
+    pvalue: 1.8359771284415223e-05
+  pair: COTUSDT/WWYUSDT
+  score: 2.559028199608381
+  symbol1: COTUSDT
+  symbol2: WWYUSDT
+- metrics:
+    beta_drift: 0.07027748830162074
+    crossings: 164
+    half_life: 48.84228479360612
+    pvalue: 0.009173615746531777
+  pair: MYROUSDT/TUSDUSDT
+  score: 2.5568764010265785
+  symbol1: MYROUSDT
+  symbol2: TUSDUSDT
+- metrics:
+    beta_drift: 0.08960765698883538
+    crossings: 176
+    half_life: 31.536244859230745
+    hurst: 0.9850960726674414
+    pvalue: 0.00012149345930095385
+  pair: ORDIUSDT/PSGUSDT
+  score: 2.5507467804628137
+  symbol1: ORDIUSDT
+  symbol2: PSGUSDT
+- metrics:
+    beta_drift: 0.09086691090557986
+    crossings: 483
+    half_life: 38.57175980123111
+    pvalue: 1.907250460153557e-07
+  pair: USDCUSDT/WOOUSDT
+  score: 2.545663538221641
+  symbol1: USDCUSDT
+  symbol2: WOOUSDT
+- metrics:
+    beta_drift: 0.09104523625359491
+    crossings: 328
+    half_life: 36.35188022331495
+    hurst: 0.990600872802374
+    pvalue: 7.534175296800148e-07
+  pair: JUVUSDT/KASUSDT
+  score: 2.5447662845567285
+  symbol1: JUVUSDT
+  symbol2: KASUSDT
+- metrics:
+    beta_drift: 0.0927215252406299
+    crossings: 283
+    half_life: 47.73072777380689
+    pvalue: 5.29683309349183e-07
+  pair: KASTAUSDT/VICUSDT
+  score: 2.536387076963757
+  symbol1: KASTAUSDT
+  symbol2: VICUSDT
+- metrics:
+    beta_drift: 0.08965056195533065
+    crossings: 396
+    half_life: 43.95531889683392
+    hurst: 0.9916731308135001
+    pvalue: 0.001799659122293104
+  pair: NEXOUSDT/WBTCUSDT
+  score: 2.533750599000416
+  symbol1: NEXOUSDT
+  symbol2: WBTCUSDT
+- metrics:
+    beta_drift: 0.08779803444532906
+    crossings: 289
+    half_life: 47.358601278129804
+    pvalue: 0.0028976136849565865
+  pair: MANABTC/USDDUSDT
+  score: 2.5320336909237886
+  symbol1: MANABTC
+  symbol2: USDDUSDT
+- metrics:
+    beta_drift: 0.09429095614705732
+    crossings: 435
+    half_life: 21.037454693878985
+    hurst: 0.9837357692812412
+    pvalue: 7.376688960191035e-10
+  pair: AGLAUSDT/AVAXUSDT
+  score: 2.5285452118880247
+  symbol1: AGLAUSDT
+  symbol2: AVAXUSDT
+- metrics:
+    beta_drift: 0.09441510003142634
+    crossings: 361
+    half_life: 43.27957388033476
+    hurst: 0.9912724649786273
+    pvalue: 6.066060176363167e-06
+  pair: FLOWUSDT/UMAUSDT
+  score: 2.5278638392411046
+  symbol1: FLOWUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.09470073602902271
+    crossings: 437
+    half_life: 21.03700986876144
+    hurst: 0.9837349952968771
+    pvalue: 7.351330229153201e-10
+  pair: AGLAUSDT/AVAXUSDC
+  score: 2.526496312503556
+  symbol1: AGLAUSDT
+  symbol2: AVAXUSDC
+- metrics:
+    beta_drift: 0.09580351120705898
+    crossings: 293
+    half_life: 30.19631236766708
+    hurst: 0.9884235755707356
+    pvalue: 2.75027287639209e-09
+  pair: ERTHAUSDT/JUVUSDT
+  score: 2.520982416461976
+  symbol1: ERTHAUSDT
+  symbol2: JUVUSDT
+- metrics:
+    beta_drift: 0.00023259123274523217
+    crossings: 347
+    half_life: 68.44671650709914
+    pvalue: 2.154373640364992e-07
+  pair: ATOMUSDT/YFIUSDT
+  score: 2.4988348894626338
+  symbol1: ATOMUSDT
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.10044855663869057
+    crossings: 400
+    half_life: 26.196478049321104
+    hurst: 0.9864342503226707
+    pvalue: 3.055920758607228e-08
+  pair: AGLAUSDT/XETAUSDT
+  score: 2.4977569112144713
+  symbol1: AGLAUSDT
+  symbol2: XETAUSDT
+- metrics:
+    beta_drift: 0.10148918985086716
+    crossings: 486
+    half_life: 25.946938921240605
+    hurst: 0.9868582622414435
+    pvalue: 6.80362010661364e-11
+  pair: JASMYUSDT/UMAUSDT
+  score: 2.4925540500653023
+  symbol1: JASMYUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.001608004604870199
+    crossings: 133
+    half_life: 61.30395188117156
+    pvalue: 3.5756576833754003e-09
+  pair: SAROSUSDT/TAPUSDT
+  score: 2.491959941219072
+  symbol1: SAROSUSDT
+  symbol2: TAPUSDT
+- metrics:
+    beta_drift: 0.0019888022923013286
+    crossings: 284
+    half_life: 72.43629871692089
+    pvalue: 3.588173402180739e-05
+  pair: LUNCUSDC/WOOUSDT
+  score: 2.4896971711982756
+  symbol1: LUNCUSDC
+  symbol2: WOOUSDT
+- metrics:
+    beta_drift: 0.0017789987713715061
+    crossings: 380
+    half_life: 79.06601343258741
+    hurst: 0.9951164298539339
+    pvalue: 0.00014573224268949175
+  pair: BABYDOGEUSDT/SHIBUSDT
+  score: 2.489647683716248
+  symbol1: BABYDOGEUSDT
+  symbol2: SHIBUSDT
+- metrics:
+    beta_drift: 0.0020794639952738826
+    crossings: 248
+    half_life: 15.022807352737704
+    pvalue: 1.4110936366881423e-08
+  pair: CHZUSDT/METHETH
+  score: 2.4896025389142666
+  symbol1: CHZUSDT
+  symbol2: METHETH
+- metrics:
+    beta_drift: 0.0021311427108879014
+    crossings: 326
+    half_life: 76.40751646684129
+    pvalue: 2.9186733184049925e-05
+  pair: KCALUSDT/KDAUSDT
+  score: 2.4890524191137198
+  symbol1: KCALUSDT
+  symbol2: KDAUSDT
+- metrics:
+    beta_drift: 0.002549074394477233
+    crossings: 115
+    half_life: 61.722820771203516
+    pvalue: 1.1164405378304951e-09
+  pair: SAROSUSDT/SCUSDT
+  score: 2.4872546168632086
+  symbol1: SAROSUSDT
+  symbol2: SCUSDT
+- metrics:
+    beta_drift: 0.10212302746984074
+    crossings: 131
+    half_life: 48.23725238704452
+    pvalue: 0.00021811385888012528
+  pair: DMAILUSDT/SOLEUR
+  score: 2.4872037240619953
+  symbol1: DMAILUSDT
+  symbol2: SOLEUR
+- metrics:
+    beta_drift: 0.0026050922999746287
+    crossings: 217
+    half_life: 72.98111646507755
+    hurst: 0.9953307878682698
+    pvalue: 7.656761443086719e-05
+  pair: ONEUSDT/SCRTUSDT
+  score: 2.4862088623558183
+  symbol1: ONEUSDT
+  symbol2: SCRTUSDT
+- metrics:
+    beta_drift: 0.10280251160905224
+    crossings: 285
+    half_life: 38.97890158557203
+    hurst: 0.9909038073761363
+    pvalue: 5.924720071496317e-07
+  pair: ENJUSDT/UMAUSDT
+  score: 2.4859815172346673
+  symbol1: ENJUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.10272349565261105
+    crossings: 390
+    half_life: 45.42568318439333
+    pvalue: 5.191155305941828e-05
+  pair: AXSUSDT/CBKUSDT
+  score: 2.4858634062063505
+  symbol1: AXSUSDT
+  symbol2: CBKUSDT
+- metrics:
+    beta_drift: 0.002358767584391315
+    crossings: 171
+    half_life: 87.69265308546888
+    hurst: 0.9959611784561931
+    pvalue: 0.0003384575864661914
+  pair: ENJUSDT/THETAUSDT
+  score: 2.4848215862133816
+  symbol1: ENJUSDT
+  symbol2: THETAUSDT
+- metrics:
+    beta_drift: 0.001550335039150123
+    crossings: 252
+    half_life: 91.97880621696443
+    pvalue: 0.0008502549580618605
+  pair: VICUSDT/VINUUSDT
+  score: 2.483745775223631
+  symbol1: VICUSDT
+  symbol2: VINUUSDT
+- metrics:
+    beta_drift: 0.00306941055679999
+    crossings: 374
+    half_life: 75.38578485292027
+    hurst: 0.9948896015974817
+    pvalue: 0.0001447341131167594
+  pair: BABYDOGEUSDT/SHIBUSDC
+  score: 2.4832056060848324
+  symbol1: BABYDOGEUSDT
+  symbol2: SHIBUSDC
+- metrics:
+    beta_drift: 0.10344596182262206
+    crossings: 213
+    half_life: 21.417770969713203
+    pvalue: 1.2520023911582672e-06
+  pair: AFCUSDT/JUVUSDT
+  score: 2.482757670862978
+  symbol1: AFCUSDT
+  symbol2: JUVUSDT
+- metrics:
+    beta_drift: 0.0007711971617795899
+    crossings: 345
+    half_life: 60.509011903477806
+    hurst: 0.9943084164146776
+    pvalue: 0.0015019385510531115
+  pair: MVLUSDT/SNXUSDT
+  score: 2.481124628680571
+  symbol1: MVLUSDT
+  symbol2: SNXUSDT
+- metrics:
+    beta_drift: 0.004175910658931427
+    crossings: 598
+    half_life: 11.577067714801883
+    hurst: 0.9691559250159747
+    pvalue: 8.349225271605318e-09
+  pair: BTCBRZ/BTCEUR
+  score: 2.47912036321309
+  symbol1: BTCBRZ
+  symbol2: BTCEUR
+- metrics:
+    beta_drift: 0.004726565891318492
+    crossings: 334
+    half_life: 92.55921368243692
+    hurst: 0.9960058040629833
+    pvalue: 7.859205592912232e-05
+  pair: OMGUSDT/ZILUSDT
+  score: 2.475581249984116
+  symbol1: OMGUSDT
+  symbol2: ZILUSDT
+- metrics:
+    beta_drift: 0.005310040947061938
+    crossings: 348
+    half_life: 83.81308460921343
+    pvalue: 1.8670757971661215e-07
+  pair: SSVUSDT/TONUSDT
+  score: 2.473447928188893
+  symbol1: SSVUSDT
+  symbol2: TONUSDT
+- metrics:
+    beta_drift: 0.10549844539910161
+    crossings: 353
+    half_life: 24.765629882022946
+    hurst: 0.9862050751190927
+    pvalue: 1.4648795155389758e-08
+  pair: AGLAUSDT/BTTUSDT
+  score: 2.47250762651654
+  symbol1: AGLAUSDT
+  symbol2: BTTUSDT
+- metrics:
+    beta_drift: 0.10577284926461546
+    crossings: 179
+    half_life: 45.33704444649191
+    hurst: 0.9921055108436168
+    pvalue: 7.307640225707946e-06
+  pair: BTTUSDT/VPADUSDT
+  score: 2.4710626772746656
+  symbol1: BTTUSDT
+  symbol2: VPADUSDT
+- metrics:
+    beta_drift: 0.1054077427917448
+    crossings: 177
+    half_life: 42.59142260477955
+    hurst: 0.9862360321464743
+    pvalue: 0.00025580563234236153
+  pair: INTERUSDT/WBTCBTC
+  score: 2.4704032297178524
+  symbol1: INTERUSDT
+  symbol2: WBTCBTC
+- metrics:
+    beta_drift: 0.10655011240635866
+    crossings: 200
+    half_life: 32.073553769865384
+    pvalue: 6.195490223914496e-08
+  pair: PYUSDUSDT/SSVUSDT
+  score: 2.4672488184191845
+  symbol1: PYUSDUSDT
+  symbol2: SSVUSDT
+- metrics:
+    beta_drift: 0.0065757226605649656
+    crossings: 347
+    half_life: 95.25342516998774
+    hurst: 0.9957692056759713
+    pvalue: 0.00016700715444986086
+  pair: BATUSDT/KAVAUSDT
+  score: 2.4654513151526762
+  symbol1: BATUSDT
+  symbol2: KAVAUSDT
+- metrics:
+    beta_drift: 0.007041910101892437
+    crossings: 248
+    half_life: 97.76300709856038
+    pvalue: 8.713591777842323e-05
+  pair: ETHUSDT/FORTUSDT
+  score: 2.4639190903127535
+  symbol1: ETHUSDT
+  symbol2: FORTUSDT
+- metrics:
+    beta_drift: 0.007240253502083305
+    crossings: 242
+    half_life: 15.015821388336017
+    pvalue: 4.6853671460139295e-08
+  pair: CHZUSDC/METHETH
+  score: 2.463798263952869
+  symbol1: CHZUSDC
+  symbol2: METHETH
+- metrics:
+    beta_drift: 0.0036105345985796176
+    crossings: 232
+    half_life: 65.83466471172194
+    hurst: 0.9926918264895921
+    pvalue: 0.0018632125846453286
+  pair: USDCEUR/USDTBRZ
+  score: 2.4633152011606487
+  symbol1: USDCEUR
+  symbol2: USDTBRZ
+- metrics:
+    beta_drift: 0.004595233008888623
+    crossings: 277
+    half_life: 96.54477950690908
+    pvalue: 0.0013892016374261436
+  pair: JSTUSDT/MANAUSDC
+  score: 2.4631318185812954
+  symbol1: JSTUSDT
+  symbol2: MANAUSDC
+- metrics:
+    beta_drift: 0.007425033367624759
+    crossings: 244
+    half_life: 98.59076455850284
+    pvalue: 9.3591898075898e-05
+  pair: ETHUSDC/FORTUSDT
+  score: 2.4619389141811174
+  symbol1: ETHUSDC
+  symbol2: FORTUSDT
+- metrics:
+    beta_drift: 0.08698998989473569
+    crossings: 103
+    half_life: 46.33441064548656
+    hurst: 0.9920929002045826
+    pvalue: 0.01055246331012496
+  pair: GALFTUSDT/WOOUSDT
+  score: 2.459525417425072
+  symbol1: GALFTUSDT
+  symbol2: WOOUSDT
+- metrics:
+    beta_drift: 0.0067246323815786735
+    crossings: 289
+    half_life: 96.50813566288056
+    pvalue: 0.0009285431960575809
+  pair: MANABTC/USDTEUR
+  score: 2.4570914061315308
+  symbol1: MANABTC
+  symbol2: USDTEUR
+- metrics:
+    beta_drift: 0.007377896020649927
+    crossings: 226
+    half_life: 96.33743009458996
+    hurst: 0.9964315974712865
+    pvalue: 0.000670155889755716
+  pair: LRCUSDT/SHIBUSDC
+  score: 2.4564089609991933
+  symbol1: LRCUSDT
+  symbol2: SHIBUSDC
+- metrics:
+    beta_drift: 0.006157752221171594
+    crossings: 199
+    half_life: 95.21994609493896
+    hurst: 0.995908611158344
+    pvalue: 0.0012891929997312468
+  pair: GODSUSDT/PPTUSDT
+  score: 2.4563193088968296
+  symbol1: GODSUSDT
+  symbol2: PPTUSDT
+- metrics:
+    beta_drift: 0.008796701200007308
+    crossings: 163
+    half_life: 56.3772205324377
+    pvalue: 9.509763494742555e-09
+  pair: AFGUSDT/FETUSDT
+  score: 2.4560163989023285
+  symbol1: AFGUSDT
+  symbol2: FETUSDT
+- metrics:
+    beta_drift: 0.009016081265223852
+    crossings: 222
+    half_life: 97.40954044438871
+    hurst: 0.9962632868493162
+    pvalue: 5.175531173697714e-06
+  pair: OASUSDT/WWYUSDT
+  score: 2.454867838362144
+  symbol1: OASUSDT
+  symbol2: WWYUSDT
+- metrics:
+    beta_drift: 0.009065258781826721
+    crossings: 245
+    half_life: 61.68512330331691
+    pvalue: 5.9922472442226086e-06
+  pair: ERTHAUSDT/TIMEUSDT
+  score: 2.454613783618424
+  symbol1: ERTHAUSDT
+  symbol2: TIMEUSDT
+- metrics:
+    beta_drift: 0.08109379073361508
+    crossings: 93
+    half_life: 48.517829577818446
+    pvalue: 5.959483396454985e-05
+  pair: AFCUSDT/RACAUSDT
+  score: 2.453935097992279
+  symbol1: AFCUSDT
+  symbol2: RACAUSDT
+- metrics:
+    beta_drift: 0.00915670867609493
+    crossings: 339
+    half_life: 64.46922665769031
+    pvalue: 2.8811033686173814e-05
+  pair: GODSUSDT/YFIUSDT
+  score: 2.4539283462826633
+  symbol1: GODSUSDT
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.009286703777689642
+    crossings: 333
+    half_life: 78.35457061039293
+    pvalue: 2.816348720284042e-05
+  pair: CRVUSDT/KDAUSDT
+  score: 2.4532848462395234
+  symbol1: CRVUSDT
+  symbol2: KDAUSDT
+- metrics:
+    beta_drift: 0.009422797090088683
+    crossings: 216
+    half_life: 78.05082476306697
+    pvalue: 2.699690031201814e-05
+  pair: ACSUSDT/FLOWUSDT
+  score: 2.4526160455464363
+  symbol1: ACSUSDT
+  symbol2: FLOWUSDT
+- metrics:
+    beta_drift: 0.010098012151863726
+    crossings: 255
+    half_life: 50.51092032275253
+    hurst: 0.9927552949561522
+    pvalue: 4.602301160588016e-07
+  pair: PYTHUSDT/ZRXUSDT
+  score: 2.449505336939521
+  symbol1: PYTHUSDT
+  symbol2: ZRXUSDT
+- metrics:
+    beta_drift: 0.00826247430722364
+    crossings: 152
+    half_life: 92.6902755300533
+    hurst: 0.9960660221961232
+    pvalue: 0.0010734524600740805
+  pair: GODSUSDT/PYTHUSDT
+  score: 2.4479531038631412
+  symbol1: GODSUSDT
+  symbol2: PYTHUSDT
+- metrics:
+    beta_drift: 0.11047811245031938
+    crossings: 290
+    half_life: 37.526888085526465
+    pvalue: 2.5653551406758076e-05
+  pair: INTERUSDT/TRXUSDT
+  score: 2.4473529022343357
+  symbol1: INTERUSDT
+  symbol2: TRXUSDT
+- metrics:
+    beta_drift: 0.01154058838686349
+    crossings: 321
+    half_life: 81.56649008551626
+    pvalue: 7.465668759956449e-07
+  pair: MOVRUSDT/SUIUSDT
+  score: 2.4422895923969223
+  symbol1: MOVRUSDT
+  symbol2: SUIUSDT
+- metrics:
+    beta_drift: 0.011432000963773623
+    crossings: 418
+    half_life: 83.11817311484492
+    pvalue: 7.064591700263677e-05
+  pair: ATOMUSDT/SANDUSDC
+  score: 2.442133536011106
+  symbol1: ATOMUSDT
+  symbol2: SANDUSDC
+- metrics:
+    beta_drift: 0.011065092390678589
+    crossings: 154
+    half_life: 87.70273413252967
+    hurst: 0.9952023684036324
+    pvalue: 0.0005330938736975275
+  pair: PPTUSDT/RSS3USDT
+  score: 2.4393435993096317
+  symbol1: PPTUSDT
+  symbol2: RSS3USDT
+- metrics:
+    beta_drift: 0.11171627104253766
+    crossings: 244
+    half_life: 47.08125436320258
+    pvalue: 0.00023103918524155617
+  pair: BTTUSDT/JUVUSDT
+  score: 2.439108252934896
+  symbol1: BTTUSDT
+  symbol2: JUVUSDT
+- metrics:
+    beta_drift: 0.012478166822637688
+    crossings: 287
+    half_life: 71.42410863072564
+    pvalue: 2.0331078716401126e-05
+  pair: BTTUSDT/SANDUSDT
+  score: 2.4374058550996476
+  symbol1: BTTUSDT
+  symbol2: SANDUSDT
+- metrics:
+    beta_drift: 0.11259249769003249
+    crossings: 363
+    half_life: 31.321753187869138
+    hurst: 0.988989816975713
+    pvalue: 6.177935552596604e-07
+  pair: AGLAUSDT/BTCUSDC
+  score: 2.437031333614285
+  symbol1: AGLAUSDT
+  symbol2: BTCUSDC
+- metrics:
+    beta_drift: 0.012704772918995392
+    crossings: 295
+    half_life: 82.99845966423962
+    pvalue: 9.134377681515336e-06
+  pair: CRVUSDT/HFTUSDC
+  score: 2.4363847916282078
+  symbol1: CRVUSDT
+  symbol2: HFTUSDC
+- metrics:
+    beta_drift: 0.013731334633494501
+    crossings: 299
+    half_life: 67.32190019282491
+    pvalue: 6.591077270166659e-06
+  pair: BTTUSDT/SANDUSDC
+  score: 2.431277416059826
+  symbol1: BTTUSDT
+  symbol2: SANDUSDC
+- metrics:
+    beta_drift: 0.013915517973272416
+    crossings: 275
+    half_life: 99.55199197132819
+    pvalue: 6.947863155561286e-06
+  pair: CRVUSDT/HFTUSDT
+  score: 2.430352931502082
+  symbol1: CRVUSDT
+  symbol2: HFTUSDT
+- metrics:
+    beta_drift: 0.11396548714748769
+    crossings: 333
+    half_life: 23.34393629604668
+    hurst: 0.9852869134696973
+    pvalue: 7.320165814624012e-11
+  pair: JUVUSDT/RUNEUSDT
+  score: 2.430172563530545
+  symbol1: JUVUSDT
+  symbol2: RUNEUSDT
+- metrics:
+    beta_drift: 0.013797450628819203
+    crossings: 155
+    half_life: 84.65775817551905
+    pvalue: 0.00017658100238151015
+  pair: BTCDAI/FORTUSDT
+  score: 2.429246936832089
+  symbol1: BTCDAI
+  symbol2: FORTUSDT
+- metrics:
+    beta_drift: 0.014140398723019077
+    crossings: 360
+    half_life: 85.96362653309342
+    pvalue: 4.9142750062361e-05
+  pair: XLMUSDC/YFIUSDT
+  score: 2.4288065788842808
+  symbol1: XLMUSDC
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.014363180642279896
+    crossings: 360
+    half_life: 78.00153736592785
+    hurst: 0.9953408571949727
+    pvalue: 6.798132312232755e-06
+  pair: BATUSDT/MANAUSDC
+  score: 2.4281161154654782
+  symbol1: BATUSDT
+  symbol2: MANAUSDC
+- metrics:
+    beta_drift: 0.014742810011867244
+    crossings: 329
+    half_life: 13.908801804496454
+    hurst: 0.9755889549548575
+    pvalue: 5.736966893193586e-10
+  pair: PSGUSDT/UNIUSDT
+  score: 2.4262859442036966
+  symbol1: PSGUSDT
+  symbol2: UNIUSDT
+- metrics:
+    beta_drift: 0.11476189750376954
+    crossings: 150
+    half_life: 38.2575041144951
+    pvalue: 6.500873552232404e-06
+  pair: AFCUSDT/PEPEUSDT
+  score: 2.42612550374563
+  symbol1: AFCUSDT
+  symbol2: PEPEUSDT
+- metrics:
+    beta_drift: 0.014967813981843594
+    crossings: 297
+    half_life: 82.93408450835011
+    hurst: 0.99570770508752
+    pvalue: 6.841738836680362e-06
+  pair: LRCUSDT/OMGUSDT
+  score: 2.425092512702415
+  symbol1: LRCUSDT
+  symbol2: OMGUSDT
+- metrics:
+    beta_drift: 0.013919607273266677
+    crossings: 134
+    half_life: 99.25748394234148
+    hurst: 0.996339324458674
+    pvalue: 0.0005323933614928568
+  pair: AGLDUSDT/SUNUSDT
+  score: 2.425078030018738
+  symbol1: AGLDUSDT
+  symbol2: SUNUSDT
+- metrics:
+    beta_drift: 0.015420371144659818
+    crossings: 291
+    half_life: 85.96674175762591
+    pvalue: 2.1168909287271354e-05
+  pair: DYDXUSDT/METHUSDT
+  score: 2.422686455183828
+  symbol1: DYDXUSDT
+  symbol2: METHUSDT
+- metrics:
+    beta_drift: 0.11461158421893637
+    crossings: 230
+    half_life: 46.68499132751782
+    pvalue: 0.0005064389813553592
+  pair: GALFTUSDT/SLPUSDT
+  score: 2.4218776890917644
+  symbol1: GALFTUSDT
+  symbol2: SLPUSDT
+- metrics:
+    beta_drift: 0.016110923509510634
+    crossings: 340
+    half_life: 80.57602381124185
+    hurst: 0.9954925664268464
+    pvalue: 8.99408637481261e-06
+  pair: BATUSDT/MANAUSDT
+  score: 2.4193554415886984
+  symbol1: BATUSDT
+  symbol2: MANAUSDT
+- metrics:
+    beta_drift: 0.01624216118209467
+    crossings: 223
+    half_life: 74.45049801739488
+    pvalue: 1.542277213153754e-06
+  pair: CYBERUSDT/MVLUSDT
+  score: 2.418773771317395
+  symbol1: CYBERUSDT
+  symbol2: MVLUSDT
+- metrics:
+    beta_drift: 0.01611586219516893
+    crossings: 246
+    half_life: 95.51986657581799
+    hurst: 0.9963144411285929
+    pvalue: 0.00020841879566351376
+  pair: BABYDOGEUSDT/OMGUSDT
+  score: 2.4173365010675205
+  symbol1: BABYDOGEUSDT
+  symbol2: OMGUSDT
+- metrics:
+    beta_drift: 0.11656211651734312
+    crossings: 300
+    half_life: 37.37678570373155
+    pvalue: 2.378152301640231e-05
+  pair: INTERUSDT/TRXUSDC
+  score: 2.4169516021831203
+  symbol1: INTERUSDT
+  symbol2: TRXUSDC
+- metrics:
+    beta_drift: 0.013284905687106259
+    crossings: 182
+    half_life: 93.5421884947646
+    hurst: 0.9962001373247581
+    pvalue: 0.0017740069496151687
+  pair: LOOKSUSDT/PYTHUSDT
+  score: 2.415835402068317
+  symbol1: LOOKSUSDT
+  symbol2: PYTHUSDT
+- metrics:
+    beta_drift: 0.0519286979156014
+    crossings: 349
+    half_life: 26.22118079645362
+    pvalue: 0.032491848199617805
+  pair: ETHEUR/ETHUSDT
+  score: 2.415438028425815
+  symbol1: ETHEUR
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.01698180075383975
+    crossings: 353
+    half_life: 74.751920645811
+    pvalue: 3.6495266978369213e-07
+  pair: 1INCHUSDT/MBOXUSDT
+  score: 2.4150873467041034
+  symbol1: 1INCHUSDT
+  symbol2: MBOXUSDT
+- metrics:
+    beta_drift: 0.11091123128399083
+    crossings: 202
+    half_life: 37.334447921017755
+    pvalue: 0.0032499656847278344
+  pair: TUSDUSDT/YFIUSDT
+  score: 2.4129441867327674
+  symbol1: TUSDUSDT
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.11673895934786552
+    crossings: 251
+    half_life: 47.51253288841277
+    hurst: 0.9918836454609525
+    pvalue: 0.00036052711550392226
+  pair: COTUSDT/KDAUSDT
+  score: 2.4126999321056335
+  symbol1: COTUSDT
+  symbol2: KDAUSDT
+- metrics:
+    beta_drift: 0.1176835071302514
+    crossings: 301
+    half_life: 36.6600374205772
+    hurst: 0.9879988123689767
+    pvalue: 1.310741498253219e-05
+  pair: AGLAUSDT/PPTUSDT
+  score: 2.4114513901989176
+  symbol1: AGLAUSDT
+  symbol2: PPTUSDT
+- metrics:
+    beta_drift: 0.017749724362521327
+    crossings: 595
+    half_life: 12.109501114292529
+    hurst: 0.9722075939156092
+    pvalue: 1.3501824626055409e-12
+  pair: BTCBRZ/BTCDAI
+  score: 2.4112513781738913
+  symbol1: BTCBRZ
+  symbol2: BTCDAI
+- metrics:
+    beta_drift: 0.01531643753650875
+    crossings: 212
+    half_life: 56.59760934733792
+    hurst: 0.9938234341390906
+    pvalue: 0.0012840645315304222
+  pair: INTERUSDT/WEMIXUSDT
+  score: 2.410577167002152
+  symbol1: INTERUSDT
+  symbol2: WEMIXUSDT
+- metrics:
+    beta_drift: 0.015906576267570992
+    crossings: 211
+    half_life: 92.12521496158078
+    pvalue: 0.001057169715295174
+  pair: IZIUSDT/MEMEUSDT
+  score: 2.4098954215091934
+  symbol1: IZIUSDT
+  symbol2: MEMEUSDT
+- metrics:
+    beta_drift: 0.0180574145540153
+    crossings: 259
+    half_life: 95.53837467472478
+    hurst: 0.996143915170344
+    pvalue: 4.7442144672965425e-05
+  pair: CYBERUSDT/POLUSDT
+  score: 2.4092385057831938
+  symbol1: CYBERUSDT
+  symbol2: POLUSDT
+- metrics:
+    beta_drift: 0.018507042029966152
+    crossings: 253
+    half_life: 90.6745331756599
+    pvalue: 5.597871245006703e-06
+  pair: BTTUSDT/MBOXUSDT
+  score: 2.407408811137719
+  symbol1: BTTUSDT
+  symbol2: MBOXUSDT
+- metrics:
+    beta_drift: 0.01863927034224292
+    crossings: 176
+    half_life: 79.94711670286854
+    hurst: 0.9954618833848925
+    pvalue: 2.2801536520837554e-05
+  pair: AVAUSDT/SOLBTC
+  score: 2.406575632923577
+  symbol1: AVAUSDT
+  symbol2: SOLBTC
+- metrics:
+    beta_drift: 0.014132065586211225
+    crossings: 204
+    half_life: 87.8649888015768
+    hurst: 0.9957808810642617
+    pvalue: 0.002300461577648459
+  pair: AXSUSDT/COTUSDT
+  score: 2.406335056292459
+  symbol1: AXSUSDT
+  symbol2: COTUSDT
+- metrics:
+    beta_drift: 0.018752536364548985
+    crossings: 252
+    half_life: 76.31835344449088
+    pvalue: 0.00010129238614000547
+  pair: ROOTUSDT/VICUSDT
+  score: 2.405224394315855
+  symbol1: ROOTUSDT
+  symbol2: VICUSDT
+- metrics:
+    beta_drift: 0.019230946738204795
+    crossings: 114
+    half_life: 70.10200702722045
+    pvalue: 5.706411216082455e-05
+  pair: FIREUSDT/SHIBUSDT
+  score: 2.403274625187368
+  symbol1: FIREUSDT
+  symbol2: SHIBUSDT
+- metrics:
+    beta_drift: 0.019992849256742194
+    crossings: 305
+    half_life: 52.40711279428557
+    hurst: 0.9921779883037881
+    pvalue: 1.0498808475836452e-05
+  pair: IMXUSDT/UMAUSDT
+  score: 2.399930765631531
+  symbol1: IMXUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.02024188985490865
+    crossings: 317
+    half_life: 81.66104121040723
+    pvalue: 7.599862184053313e-07
+  pair: MOVRUSDT/SUIUSDC
+  score: 2.3987829508632728
+  symbol1: MOVRUSDT
+  symbol2: SUIUSDC
+- metrics:
+    beta_drift: 0.12032028587397149
+    crossings: 325
+    half_life: 36.1584093502646
+    pvalue: 4.174617257180526e-09
+  pair: LUNCUSDC/YFIUSDT
+  score: 2.3983985288839698
+  symbol1: LUNCUSDC
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.01978063670007857
+    crossings: 304
+    half_life: 86.09972881421126
+    pvalue: 0.0005320730888132993
+  pair: BELUSDT/ICXUSDT
+  score: 2.395776085611474
+  symbol1: BELUSDT
+  symbol2: ICXUSDT
+- metrics:
+    beta_drift: 0.020900718513888007
+    crossings: 228
+    half_life: 67.39374305481324
+    pvalue: 5.127820700424077e-07
+  pair: BTTUSDT/YFIUSDT
+  score: 2.3954912796098595
+  symbol1: BTTUSDT
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.12088436000786297
+    crossings: 223
+    half_life: 49.3059023337173
+    pvalue: 2.5250783426219826e-05
+  pair: ADAUSDC/LUNCUSDC
+  score: 2.395325692126423
+  symbol1: ADAUSDC
+  symbol2: LUNCUSDC
+- metrics:
+    beta_drift: 0.020966469609069074
+    crossings: 325
+    half_life: 66.6640188128643
+    pvalue: 7.130014337100026e-06
+  pair: DYDXUSDT/ETHDAI
+  score: 2.3950963518112838
+  symbol1: DYDXUSDT
+  symbol2: ETHDAI
+- metrics:
+    beta_drift: 0.12095496034273982
+    crossings: 235
+    half_life: 49.45168411230215
+    pvalue: 2.529636592835625e-05
+  pair: ADAUSDT/LUNCUSDC
+  score: 2.3949722346270175
+  symbol1: ADAUSDT
+  symbol2: LUNCUSDC
+- metrics:
+    beta_drift: 0.021104749837837847
+    crossings: 403
+    half_life: 54.898372738215414
+    hurst: 0.9937491026581569
+    pvalue: 3.0621277371435295e-08
+  pair: FORTUSDT/GALAUSDT
+  score: 2.394475944598037
+  symbol1: FORTUSDT
+  symbol2: GALAUSDT
+- metrics:
+    beta_drift: 0.12120832481605348
+    crossings: 339
+    half_life: 37.199784399540476
+    pvalue: 2.7742968177604616e-06
+  pair: AFCUSDT/SPELLUSDT
+  score: 2.393930632951555
+  symbol1: AFCUSDT
+  symbol2: SPELLUSDT
+- metrics:
+    beta_drift: 0.020771523713121128
+    crossings: 172
+    half_life: 70.56676991473981
+    hurst: 0.9948153899092815
+    pvalue: 0.0002483814873408792
+  pair: ACHUSDT/JUVUSDT
+  score: 2.3936585665609855
+  symbol1: ACHUSDT
+  symbol2: JUVUSDT
+- metrics:
+    beta_drift: 0.018901363517191256
+    crossings: 270
+    half_life: 87.60018940695778
+    hurst: 0.9949620597964226
+    pvalue: 0.0012836354888937087
+  pair: SCRTUSDT/ZILUSDT
+  score: 2.3926568275251068
+  symbol1: SCRTUSDT
+  symbol2: ZILUSDT
+- metrics:
+    beta_drift: 0.10012049663237721
+    crossings: 103
+    half_life: 46.182017834139884
+    hurst: 0.9921319181698558
+    pvalue: 0.010791735629307611
+  pair: GALFTUSDT/ORDIUSDT
+  score: 2.3914801605450378
+  symbol1: GALFTUSDT
+  symbol2: ORDIUSDT
+- metrics:
+    beta_drift: 0.02136188834385393
+    crossings: 208
+    half_life: 96.70185519107068
+    hurst: 0.9954367332608698
+    pvalue: 0.0002986360747282923
+  pair: GALAUSDT/XEMUSDT
+  score: 2.390204197533447
+  symbol1: GALAUSDT
+  symbol2: XEMUSDT
+- metrics:
+    beta_drift: 0.018508781632337556
+    crossings: 268
+    half_life: 98.69805224540319
+    hurst: 0.996078826800753
+    pvalue: 0.001772227507610642
+  pair: BTCBRZ/COTUSDT
+  score: 2.389733816762206
+  symbol1: BTCBRZ
+  symbol2: COTUSDT
+- metrics:
+    beta_drift: 0.12228177401301253
+    crossings: 190
+    half_life: 38.43332845474478
+    pvalue: 4.500400703014032e-06
+  pair: DMAILUSDT/STGUSDT
+  score: 2.388546125927907
+  symbol1: DMAILUSDT
+  symbol2: STGUSDT
+- metrics:
+    beta_drift: 0.022412449054592887
+    crossings: 169
+    half_life: 80.10376570538932
+    hurst: 0.9956886392119382
+    pvalue: 0.00012956712256729765
+  pair: SHRAPUSDT/SISUSDT
+  score: 2.3866420835013624
+  symbol1: SHRAPUSDT
+  symbol2: SISUSDT
+- metrics:
+    beta_drift: 0.12290989405664868
+    crossings: 290
+    half_life: 20.165523833628406
+    pvalue: 2.1254816902744392e-14
+  pair: PYUSDUSDT/SUSHIUSDT
+  score: 2.385450529716544
+  symbol1: PYUSDUSDT
+  symbol2: SUSHIUSDT
+- metrics:
+    beta_drift: 0.023100194657173168
+    crossings: 127
+    half_life: 61.90744659542813
+    hurst: 0.9918741390815502
+    pvalue: 1.937667151944919e-05
+  pair: PYTHUSDT/YFIUSDT
+  score: 2.3843052599989396
+  symbol1: PYTHUSDT
+  symbol2: YFIUSDT
+- metrics:
+    beta_drift: 0.02344067465084818
+    crossings: 181
+    half_life: 96.17970155819549
+    pvalue: 1.655080978975019e-05
+  pair: MOVRUSDT/USDCUSDT
+  score: 2.3826311186478617
+  symbol1: MOVRUSDT
+  symbol2: USDCUSDT
+- metrics:
+    beta_drift: 0.023494358349932225
+    crossings: 258
+    half_life: 51.02197889860072
+    hurst: 0.9931836451123712
+    pvalue: 1.4490603132853416e-07
+  pair: AVAUSDT/SOLUSDT
+  score: 2.382526759190026
+  symbol1: AVAUSDT
+  symbol2: SOLUSDT
+- metrics:
+    beta_drift: 0.12351800201352056
+    crossings: 248
+    half_life: 35.53111395185059
+    pvalue: 2.1591074335435575e-06
+  pair: AFCUSDT/COQUSDT
+  score: 2.382388398858062
+  symbol1: AFCUSDT
+  symbol2: COQUSDT
+- metrics:
+    beta_drift: 0.022326618520961215
+    crossings: 283
+    half_life: 98.01608705253803
+    pvalue: 0.0007684809717963198
+  pair: ALGOUSDT/KDAUSDT
+  score: 2.380682097677231
+  symbol1: ALGOUSDT
+  symbol2: KDAUSDT
+- metrics:
+    beta_drift: 0.009543272825430698
+    crossings: 144
+    half_life: 53.03244333187519
+    pvalue: 0.0072255166848499185
+  pair: GALFTUSDT/SOLUSDC
+  score: 2.3800284690243476
+  symbol1: GALFTUSDT
+  symbol2: SOLUSDC
+- metrics:
+    beta_drift: 0.024007598132194573
+    crossings: 260
+    half_life: 51.009993099471224
+    hurst: 0.99318439429151
+    pvalue: 1.4824157984764527e-07
+  pair: AVAUSDT/SOLUSDC
+  score: 2.3799605269232287
+  symbol1: AVAUSDT
+  symbol2: SOLUSDC
+- metrics:
+    beta_drift: 0.02408288809713744
+    crossings: 286
+    half_life: 89.78152540527904
+    hurst: 0.9959146227837781
+    pvalue: 7.048349461426141e-06
+  pair: MVUSDT/WAXPUSDT
+  score: 2.3795150760196986
+  symbol1: MVUSDT
+  symbol2: WAXPUSDT
+- metrics:
+    beta_drift: 0.02440709091526864
+    crossings: 191
+    half_life: 77.33622145631249
+    pvalue: 1.359353972029306e-05
+  pair: KCALUSDT/VINUUSDT
+  score: 2.377828610026454
+  symbol1: KCALUSDT
+  symbol2: VINUUSDT
+- metrics:
+    beta_drift: 0.008831474294091054
+    crossings: 224
+    half_life: 82.67848026761294
+    pvalue: 0.007808947203525585
+  pair: CBKUSDT/KUBUSDT
+  score: 2.377753156494289
+  symbol1: CBKUSDT
+  symbol2: KUBUSDT
+- metrics:
+    beta_drift: 0.02444474218397254
+    crossings: 169
+    half_life: 52.77765078416442
+    hurst: 0.9934539193544275
+    pvalue: 6.096486556543914e-05
+  pair: ROOTUSDT/VELOUSDT
+  score: 2.377166640424483
+  symbol1: ROOTUSDT
+  symbol2: VELOUSDT
+- metrics:
+    beta_drift: 0.023978924002610702
+    crossings: 251
+    half_life: 58.97743305705994
+    pvalue: 0.0003141402099211681
+  pair: CBKUSDT/NFTUSDT
+  score: 2.3769639778877347
+  symbol1: CBKUSDT
+  symbol2: NFTUSDT
+- metrics:
+    beta_drift: 0.10232451882201499
+    crossings: 111
+    half_life: 46.18993058070105
+    hurst: 0.9921131107765399
+    pvalue: 0.011144889752085184
+  pair: GALFTUSDT/SOLUSDT
+  score: 2.3769285083690734
+  symbol1: GALFTUSDT
+  symbol2: SOLUSDT
+- metrics:
+    beta_drift: 0.01179234782918007
+    crossings: 215
+    half_life: 84.22367086023986
+    pvalue: 0.006428346693837966
+  pair: AFCUSDT/AVAXUSDT
+  score: 2.37675479391572
+  symbol1: AFCUSDT
+  symbol2: AVAXUSDT
+- metrics:
+    beta_drift: 0.022759559303191318
+    crossings: 159
+    half_life: 76.43149949236778
+    pvalue: 0.0010366655820977916
+  pair: SONUSDT/ZENUSDT
+  score: 2.3758355476630655
+  symbol1: SONUSDT
+  symbol2: ZENUSDT
+- metrics:
+    beta_drift: 0.022506306747514918
+    crossings: 235
+    half_life: 79.01054553442329
+    hurst: 0.9956322833449205
+    pvalue: 0.0013121549808781344
+  pair: DGBUSDT/ONEUSDT
+  score: 2.374346916453644
+  symbol1: DGBUSDT
+  symbol2: ONEUSDT
+- metrics:
+    beta_drift: 0.125043254072043
+    crossings: 139
+    half_life: 39.582592571057326
+    pvalue: 5.85441674951042e-05
+  pair: CGPTUSDT/GALFTUSDT
+  score: 2.374198287964834
+  symbol1: CGPTUSDT
+  symbol2: GALFTUSDT
+- metrics:
+    beta_drift: 0.024770458434141687
+    crossings: 190
+    half_life: 89.74842481035942
+    pvalue: 0.00023447591683811212
+  pair: IZIUSDT/LUNAUSDT
+  score: 2.3738029486609102
+  symbol1: IZIUSDT
+  symbol2: LUNAUSDT
+- metrics:
+    beta_drift: 0.02349268935389056
+    crossings: 217
+    half_life: 80.69625652544357
+    hurst: 0.9956181603999812
+    pvalue: 0.001087837028433249
+  pair: SISUSDT/UMAUSDT
+  score: 2.3716581829462147
+  symbol1: SISUSDT
+  symbol2: UMAUSDT
+- metrics:
+    beta_drift: 0.02596601900002473
+    crossings: 185
+    half_life: 65.21589824358553
+    pvalue: 5.511901623797229e-05
+  pair: THNUSDT/TRVLUSDT
+  score: 2.3696187148374968
+  symbol1: THNUSDT
+  symbol2: TRVLUSDT
+- metrics:
+    beta_drift: 0.02612780457642481
+    crossings: 225
+    half_life: 62.07244928564373
+    hurst: 0.9944496155538701
+    pvalue: 2.3165482386610597e-06
+  pair: MAGICUSDT/PSTAKEUSDT
+  score: 2.3693378116354893
+  symbol1: MAGICUSDT
+  symbol2: PSTAKEUSDT
+- metrics:
+    beta_drift: 0.025942395643530652
+    crossings: 261
+    half_life: 81.45124383952856
+    pvalue: 0.00022565234571803389
+  pair: ATOMUSDT/GODSUSDT
+  score: 2.3680314983251662
+  symbol1: ATOMUSDT
+  symbol2: GODSUSDT
+- metrics:
+    beta_drift: 0.02638978242928035
+    crossings: 310
+    half_life: 82.77036173021928
+    pvalue: 6.343153403911136e-05
+  pair: CRVUSDT/XLMUSDC
+  score: 2.367416772513207
+  symbol1: CRVUSDT
+  symbol2: XLMUSDC

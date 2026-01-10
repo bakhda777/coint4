@@ -1,0 +1,78 @@
+# Быстрая конфигурация для CI/CD тестов
+# Баланс между скоростью и реалистичностью
+
+data_dir: "data_downloaded"
+results_dir: "results"
+
+# Оптимизированная предобработка данных
+data_processing:
+  normalization_method: "minmax"
+  fill_method: "linear"
+  min_history_ratio: 0.7
+  handle_constant: true
+
+# Средние настройки портфеля
+portfolio:
+  initial_capital: 10000.0
+  risk_per_position_pct: 0.015
+  max_active_positions: 5  # Умеренное количество
+  max_margin_usage: 0.5
+  volatility_based_sizing: true
+  volatility_lookback_hours: 12  # Уменьшено
+  min_position_size_pct: 0.005
+  max_position_size_pct: 0.02
+  volatility_adjustment_factor: 1.5
+
+# Умеренный отбор пар
+pair_selection:
+  lookback_days: 45
+  coint_pvalue_threshold: 0.15
+  ssd_top_n: 5000
+  min_half_life_days: 0.5
+  max_half_life_days: 15
+  min_mean_crossings: 1
+  adaptive_quantiles: false
+
+# Стандартные настройки бэктеста
+backtest:
+  zscore_threshold: 2.0
+  zscore_exit: 0.5
+  rolling_window: 30
+  commission_pct: 0.001
+  slippage_pct: 0.001
+  bid_ask_spread_pct: 0.001
+  annualizing_factor: 252
+  capital_at_risk: 1.0
+  stop_loss_multiplier: 2.0
+  cooldown_periods: 0
+  wait_for_candle_close: false
+  max_margin_usage: 0.5
+
+# Умеренные настройки walk-forward
+walk_forward:
+  start_date: "2023-07-15"
+  end_date: "2023-08-15"  # Месяц данных
+  training_period_days: 15
+  testing_period_days: 5
+  max_shards: 2
+
+# Быстрые настройки оптимизации
+optimization:
+  n_trials: 20  # Умеренное количество
+  timeout_seconds: 300  # 5 минут
+  n_jobs: 2
+  sampler: "tpe"
+  pruner: "median"
+  
+  # Стандартные диапазоны параметров
+  param_ranges:
+    zscore_threshold: [1.5, 3.0]
+    zscore_exit: [0.2, 1.0]
+    rolling_window: [20, 50]
+
+# Включаем основные фичи
+advanced_features:
+  market_regime_detection: false  # Отключено для скорости
+  volatility_based_sizing: true
+  adaptive_thresholds: false  # Отключено для скорости
+  enhanced_risk_management: true

@@ -1,0 +1,177 @@
+# CI/CD Gates Configuration
+# Defines sources, thresholds, and behavior for quality gates
+
+# Reproducibility Gates - validate that results can be reproduced within tolerances
+repro_gates:
+  enabled: true
+  manifest: "artifacts/repro/RESULTS_MANIFEST.json"
+  max_rel_delta:
+    sharpe: 0.05      # 5% relative tolerance for Sharpe ratio
+    psr: 0.05         # 5% relative tolerance for PSR
+    pnl: 0.03         # 3% relative tolerance for PnL
+    trades: 0.10      # 10% relative tolerance for trade count
+  verification_steps:
+    - verify_environment
+    - verify_data
+    - run_uncertainty
+  timeout_minutes: 10
+
+performance:
+  source: "wfa"  # wfa | weekly | custom
+  
+  wfa:
+    path: "artifacts/wfa/results_per_fold.csv"
+    sharpe_col: "sharpe"
+    pnl_col: "pnl"
+    trades_col: "trades"
+    min_trades: 10  # Minimum trades to consider valid
+    aggregation: "mean"  # mean | median for multi-fold
+    
+  weekly:
+    path: "artifacts/live/WEEKLY_SUMMARY.md"
+    section: "Metrics"
+    
+  custom:
+    path: "artifacts/custom/metrics.csv"
+
+thresholds:
+  min_sharpe: 0.5  # Minimum acceptable Sharpe ratio
+  min_psr: 0.70  # Minimum Probabilistic Sharpe Ratio
+  max_drawdown_pct: 25.0  # Maximum drawdown percentage
+  min_win_rate: 0.35  # Minimum win rate
+  min_trades: 10  # Minimum number of trades
+
+data_quality:
+  max_missing_data_pct: 5.0  # Maximum % of missing data
+  min_data_days: 30  # Minimum days of data
+  max_drift_score: 2.0  # Maximum drift score
+
+test_coverage:
+  min_coverage_pct: 70.0  # Minimum test coverage %
+  required_markers:
+    - smoke
+    - fast
+
+fallbacks:
+  on_empty_returns: "fail_explicit"  # fail_explicit | skip | use_default
+  on_missing_file: "fail_explicit"  # fail_explicit | skip | create_dummy
+  on_insufficient_trades: "fail_explicit"  # fail_explicit | skip | warn
+  
+  default_metrics:
+    sharpe: 0.0
+    drawdown: 1.0
+    trades: 0
+    win_rate: 0.0
+
+logging:
+  verbose: true
+  save_diagnostics: true
+  diagnostics_path: "artifacts/ci/diagnostics.json"
+
+required_artifacts:
+  - "artifacts/wfa/WFA_REPORT.md"
+  - "artifacts/ARTIFACT_REGISTRY.md"
+  - "artifacts/live/WEEKLY_SUMMARY.md"
+  - "artifacts/wfa/results_per_fold.csv"
+
+anti_leakage:
+  enabled: true
+  max_violations: 0  # Zero tolerance for leakage
+  check_alignment_report: true
+  alignment_report_path: "artifacts/audit/ALIGNMENT_REPORT.md"
+  check_signals: true
+  signals_path: "artifacts/wfa/signals.csv"
+  fail_on_violation: true
+
+# v0.2.0 Cost control thresholds
+cost_control:
+  enabled: true
+  max_cost_signal_ratio: 0.5  # Target: Costs ≤ 50% of signal PnL
+  max_daily_turnover: 0.25  # Max 25% daily turnover
+  min_psr: 0.95  # Minimum Probabilistic Sharpe Ratio
+  
+  # Report paths to check
+  pnl_attribution_path: "artifacts/audit/PNL_ATTRIBUTION.md"
+  rebalance_study_path: "artifacts/cost/REBALANCE_STUDY.md"
+  psr_metrics_path: "artifacts/cost/psr_metrics.json"
+  
+  # Fail CI if thresholds exceeded
+  fail_on_high_costs: true
+
+# v0.2.1 Portfolio validation gates
+portfolio_gates:
+  enabled: true
+  require_pairs_file: "bench/pairs_portfolio.yaml"
+  min_pairs: 6                    # Minimum number of selected pairs
+  max_weight_per_pair: 0.20      # Maximum weight per individual pair
+  max_gross: 1.0                 # Maximum gross exposure
+  min_gross: 0.5                 # Minimum gross exposure (avoid under-investment)
+  turnover_budget_per_day: 0.35  # Daily turnover budget
+  max_adv_pct: 1.0               # Maximum % of ADV per pair
+  
+  # Required files for validation
+  weights_file: "artifacts/portfolio/weights.csv"
+  portfolio_report: "artifacts/portfolio/PORTFOLIO_REPORT.md"
+  
+  # Capacity validation
+  capacity_warnings_threshold: 3  # Max allowed capacity warnings
+  max_adv_utilization_pct: 2.0   # Max 2% of ADV utilization
+  
+  # Fail CI if thresholds exceeded
+  fail_on_violations: true
+
+# v0.2.4 Optuna backtest validation gates
+optuna_backtest:
+  enabled: true
+  trials_csv: "artifacts/optuna/trials.csv"
+  best_params: "artifacts/optuna/best_params.json"
+  min_trials: 15
+  min_psr: 1.0
+  min_success_rate: 0.30  # 30% successful trials minimum
+  require_traces: true
+  
+  # Expected parameter ranges (from optimization)
+  parameter_ranges:
+    zscore_threshold: [1.5, 3.5]
+    zscore_exit: [-0.5, 0.5]
+    rolling_window: [30, 120]
+    max_holding_days: [20, 300]
+  
+  # Performance thresholds
+  portfolio_requirements:
+    min_pairs_tested: 3
+    min_trades_per_fold: 30
+    min_k_folds: 3
+
+# v0.2.2 Uncertainty and drift monitoring gates
+uncertainty_gates:
+  enabled: true
+  confidence_file: "artifacts/uncertainty/confidence.csv"
+  confidence_report: "artifacts/uncertainty/CONFIDENCE_REPORT.md"
+  
+  # Minimum acceptable P05 (5th percentile) bounds
+  psr_p5_min: 0.90               # Portfolio PSR P05 must be > 0.90
+  sharpe_p5_min: 0.60            # Portfolio Sharpe P05 must be > 0.60
+  dsr_p5_min: 0.80               # Portfolio DSR P05 must be > 0.80
+  
+  # Portfolio-level requirements
+  portfolio_only: true           # Only check portfolio, not individual pairs
+  fail_on_missing_data: false    # Don't fail if confidence data missing
+  
+drift_gates:
+  enabled: true
+  dashboard_file: "artifacts/monitoring/DRIFT_DASHBOARD.md"
+  drift_data_file: "artifacts/monitoring/drift_data.csv"
+  actions_log: "artifacts/monitoring/ACTIONS_TAKEN.md"
+  
+  # Performance degradation thresholds
+  max_sharpe_drop: 0.35          # Max 35% Sharpe drop (short vs long)
+  max_psr_drop: 0.20             # Max 0.20 PSR drop
+  
+  # Status requirements
+  allowed_status: ["OK", "WARN"] # FAIL status causes CI failure
+  require_actions_on_fail: true  # Must have ACTIONS_TAKEN.md if status=FAIL
+  max_consecutive_fails: 2       # Max consecutive FAIL status before hard stop
+  
+  # Grace period for new deployments
+  grace_period_days: 1           # Don't enforce drift gates for X days after deployment

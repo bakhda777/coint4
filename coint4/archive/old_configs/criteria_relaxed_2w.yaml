@@ -1,0 +1,7 @@
+# Relaxed criteria for 2-week window
+# Adapted for shorter periods where mean-reversion may be less pronounced
+coint_pvalue_max: 0.15     # was 0.10 - allow slightly higher p-values
+hl_min: 5
+hl_max: 500                 # was 300 - allow longer half-lives for 2-week window
+min_cross: 5                # was 8 - fewer crossings expected in 2 weeks
+beta_drift_max: 1.0         # was 0.20 - much higher tolerance for short periods

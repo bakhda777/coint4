@@ -1,0 +1,9 @@
+metadata:
+  frozen_at: '2025-08-10T21:37:35.545391'
+  source: manual
+  version: 2025_W32_3798d6a6
+signals:
+  max_holding_days: 100
+  rolling_window: 60
+  zscore_exit: 0.0
+  zscore_threshold: 2.0

@@ -1,0 +1,50 @@
+# Быстрое пространство поиска для тестирования
+# Упрощенная версия для unit/integration тестов
+
+signals:
+  zscore_threshold:
+    low: 0.5   # ОПТИМИЗАЦИЯ: снижен до 0.5 как в успешном тесте
+    high: 1.2  # ОПТИМИЗАЦИЯ: максимум 1.2
+    step: 0.1
+  zscore_exit:
+    low: -0.2  # ОПТИМИЗАЦИЯ: отрицательные значения для симметричных стратегий
+    high: 0.2  # ОПТИМИЗАЦИЯ: диапазон выхода около 0
+    step: 0.1
+  rolling_window:
+    low: 20    # ОПТИМИЗАЦИЯ: от 20 периодов
+    high: 50   # ОПТИМИЗАЦИЯ: до 50 периодов
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 5
+    high: 15
+    step: 5
+  risk_per_position_pct:
+    low: 0.01
+    high: 0.03
+
+costs:
+  commission_pct: 0.0001  # ОПТИМИЗАЦИЯ: снижены комиссии как в успешном тесте 0.01%
+  slippage_pct: 0.0001   # ОПТИМИЗАЦИЯ: снижено проскальзывание 0.01%
+
+risk_management:
+  stop_loss_multiplier:
+    low: 2.0
+    high: 4.0
+  time_stop_multiplier:
+    low: 4.0  # ОПТИМИЗАЦИЯ: увеличено с 3.0 для гарантии time_stop >= stop_loss
+    high: 8.0
+
+# Настройки нормализации (production-совместимые)
+normalization:
+  normalization_method:
+    - rolling_zscore
+  min_history_ratio:
+    low: 0.6
+    high: 0.8
+
+# Настройки для тестов
+metrics:
+  anti_churn_penalty: 0.01
+  max_trades_per_day: 10

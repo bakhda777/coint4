@@ -1,0 +1,205 @@
+metadata:
+  criteria:
+    beta_drift_max: 0.2
+    coint_pvalue_max: 0.1
+    hl_max: 300
+    hl_min: 5
+    min_cross: 8
+  generated: '2025-08-17T10:02:31.826351+00:00'
+  period:
+    end: '2024-03-31'
+    start: '2024-01-01'
+  selection:
+    diversify_by_base: true
+    max_per_base: 5
+    top_n: 40
+pairs:
+- metrics:
+    beta_drift: 0.0023644392023791662
+    crossings: 615
+    half_life: 24.530362957862984
+    pvalue: 1.3107285480747043e-06
+  pair: ETHUSDC/ETHUSDT
+  score: 2.9881646967026234
+  symbol1: ETHUSDC
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.005561578187719377
+    crossings: 662
+    half_life: 24.1177984640793
+    pvalue: 9.895477395407461e-07
+  pair: BTCUSDC/BTCUSDT
+  score: 2.9721822135840075
+  symbol1: BTCUSDC
+  symbol2: BTCUSDT
+- metrics:
+    beta_drift: 0.0519286979156014
+    crossings: 349
+    half_life: 26.22118079645362
+    pvalue: 0.032491848199617805
+  pair: ETHEUR/ETHUSDT
+  score: 2.415438028425815
+  symbol1: ETHEUR
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.05398990169423768
+    crossings: 387
+    half_life: 27.345865544306005
+    pvalue: 0.03881786461606194
+  pair: ETHEUR/ETHUSDC
+  score: 2.341871845368192
+  symbol1: ETHEUR
+  symbol2: ETHUSDC
+- metrics:
+    beta_drift: 0.01908033834238759
+    crossings: 749
+    half_life: 13.850777579978468
+    pvalue: 0.013297597920439821
+  pair: SOLEUR/SOLUSDC
+  score: 2.271622329083664
+  symbol1: SOLEUR
+  symbol2: SOLUSDC
+- metrics:
+    beta_drift: 0.024289021400998742
+    crossings: 675
+    half_life: 12.994150838827
+    pvalue: 0.017591341093252437
+  pair: SOLEUR/SOLUSDT
+  score: 2.202641482062482
+  symbol1: SOLEUR
+  symbol2: SOLUSDT
+- metrics:
+    beta_drift: 0.05641106812829751
+    crossings: 513
+    half_life: 24.08369066746943
+    pvalue: 0.05319166207104985
+  pair: BTCEUR/BTCUSDT
+  score: 2.186028038648014
+  symbol1: BTCEUR
+  symbol2: BTCUSDT
+- metrics:
+    beta_drift: 0.05079011373250989
+    crossings: 565
+    half_life: 25.593110037509224
+    pvalue: 0.0652839176334315
+  pair: BTCEUR/BTCUSDC
+  score: 2.0932102550031355
+  symbol1: BTCEUR
+  symbol2: BTCUSDC
+- metrics:
+    beta_drift: 0.016743408533127162
+    crossings: 467
+    half_life: 18.13102279033927
+    pvalue: 0.038117600750337995
+  pair: LTCEUR/LTCUSDT
+  score: 2.0351069498309844
+  symbol1: LTCEUR
+  symbol2: LTCUSDT
+- metrics:
+    beta_drift: 0.015653380652020047
+    crossings: 577
+    half_life: 18.498676828141356
+    pvalue: 0.043055670967905156
+  pair: LTCEUR/LTCUSDC
+  score: 1.991176387060848
+  symbol1: LTCEUR
+  symbol2: LTCUSDC
+- metrics:
+    beta_drift: 9.32656391690905e-05
+    crossings: 709
+    half_life: 7.674062424704703
+    pvalue: 0.006316929526116188
+  pair: ADAEUR/ADAUSDT
+  score: 1.9363643765429928
+  symbol1: ADAEUR
+  symbol2: ADAUSDT
+- metrics:
+    beta_drift: 0.0011817734685574868
+    crossings: 777
+    half_life: 7.82686109941224
+    pvalue: 0.00858885544843506
+  pair: ADAEUR/ADAUSDC
+  score: 1.908202578172862
+  symbol1: ADAEUR
+  symbol2: ADAUSDC
+- metrics:
+    beta_drift: 0.01434783626565219
+    crossings: 157
+    half_life: 172.0467704863506
+    pvalue: 0.0032344968347827662
+  pair: ADAEUR/ETHUSDC
+  score: 1.8959158503239113
+  symbol1: ADAEUR
+  symbol2: ETHUSDC
+- metrics:
+    beta_drift: 0.06776255809356789
+    crossings: 585
+    half_life: 17.24549191399865
+    pvalue: 0.027640333441790572
+  pair: XRPEUR/XRPUSDT
+  score: 1.884783875114255
+  symbol1: XRPEUR
+  symbol2: XRPUSDT
+- metrics:
+    beta_drift: 0.06896164455882554
+    crossings: 633
+    half_life: 17.53255522508097
+    pvalue: 0.02752213676514328
+  pair: XRPEUR/XRPUSDC
+  score: 1.8799704095544394
+  symbol1: XRPEUR
+  symbol2: XRPUSDC
+- metrics:
+    beta_drift: 0.026791263500154015
+    crossings: 165
+    half_life: 173.95259645130375
+    pvalue: 0.0034393269673339815
+  pair: ADAEUR/ETHUSDT
+  score: 1.8316504128258901
+  symbol1: ADAEUR
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.10174853766101491
+    crossings: 187
+    half_life: 229.7387745236251
+    pvalue: 0.00485075152801738
+  pair: ADAUSDT/ETHUSDC
+  score: 1.4427497964147515
+  symbol1: ADAUSDT
+  symbol2: ETHUSDC
+- metrics:
+    beta_drift: 0.10534861789813478
+    crossings: 193
+    half_life: 232.63653040995288
+    pvalue: 0.00530528701161756
+  pair: ADAUSDC/ETHUSDC
+  score: 1.4202040403931504
+  symbol1: ADAUSDC
+  symbol2: ETHUSDC
+- metrics:
+    beta_drift: 0.1160296565954189
+    crossings: 193
+    half_life: 232.69135841429068
+    pvalue: 0.0051452475516942315
+  pair: ADAUSDT/ETHUSDT
+  score: 1.3683992415059631
+  symbol1: ADAUSDT
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.11983794053835047
+    crossings: 199
+    half_life: 235.56014300765486
+    pvalue: 0.005612543687529992
+  pair: ADAUSDC/ETHUSDT
+  score: 1.3446848604329478
+  symbol1: ADAUSDC
+  symbol2: ETHUSDT
+- metrics:
+    beta_drift: 0.1879319820305255
+    crossings: 209
+    half_life: 188.9236649560522
+    pvalue: 0.004301115573112264
+  pair: ADAEUR/ETHEUR
+  score: 1.0173289341162497
+  symbol1: ADAEUR
+  symbol2: ETHEUR

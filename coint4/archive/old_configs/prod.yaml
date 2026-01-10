@@ -1,0 +1,70 @@
+# Production configuration for coint2 live trading
+# Safe defaults with all guardrails enabled
+
+# Data settings
+data:
+  base_path: "data_downloaded"
+  symbols_file: "configs/universe_binance_spot_usdt.yaml"
+  
+# Time settings  
+time:
+  timeframe: "15T"  # M15 bars
+  gap_minutes: 15   # Exactly 1 bar gap between train/test
+
+# Walk-forward settings
+walk_forward:
+  train_days: 90    # 3 months training
+  test_days: 30     # 1 month testing
+  n_steps: 12       # 1 year total
+  
+# Pair selection
+pair_selection:
+  ssd_top_n: 50000  # Large universe for diversity
+  coint_pvalue_threshold: 0.01  # Strict cointegration test
+  min_half_life_days: 2
+  max_half_life_days: 30
+  min_mean_crossings: 10
+  
+# Backtesting settings
+backtesting:
+  normalization_method: "rolling_zscore"  # ONLY production-safe method
+  commission_pct: 0.001   # 0.1% realistic commission
+  slippage_pct: 0.0005    # 0.05% slippage
+  initial_capital: 100000
+  position_size_pct: 0.02  # 2% per position
+  max_positions: 10
+  
+# Trading signals (conservative defaults)
+signals:
+  zscore_threshold: 2.5   # Entry threshold
+  zscore_exit: 0.5        # Exit threshold
+  rolling_window: 60      # 15 hours lookback
+  max_holding_days: 10    # Max 10 days holding
+  
+# Risk management
+risk:
+  max_daily_loss_pct: 0.02      # 2% daily stop loss
+  max_drawdown_pct: 0.05         # 5% max drawdown
+  min_trades_per_day: 1          # Alert if no trades
+  max_correlation: 0.7           # Max correlation between positions
+  
+# Monitoring
+monitoring:
+  heartbeat_seconds: 60          # Check every minute
+  no_data_alert_minutes: 5       # Alert after 5 min no data
+  dashboard_update_seconds: 300  # Update dashboard every 5 min
+  
+# Guards and safety
+guards:
+  enabled: true
+  use_reference_on_error: true   # Fallback to reference engine
+  stop_on_exception: false        # Don't stop, use fallback
+  max_position_value: 10000       # Max $10k per position
+  require_price_validation: true  # Validate price sanity
+  
+# Logging
+logging:
+  level: "INFO"
+  file: "artifacts/live/coint2_live.log"
+  rotate_mb: 100
+  keep_files: 10

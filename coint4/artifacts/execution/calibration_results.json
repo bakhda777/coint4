@@ -1,0 +1,45 @@
+{
+  "calibration_date": "2025-08-10T22:20:32.185475",
+  "window_days": 30,
+  "pairs_analyzed": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT"
+  ],
+  "aggregate_model": {
+    "intercept": 0.0005000000000000035,
+    "atr_coef": -4.385560754291339e-18,
+    "spread_coef": 0.0025000000000000022,
+    "vol_coef": 0.005,
+    "r2_score": 1.0
+  },
+  "piecewise_models": {
+    "low_vol": {
+      "intercept": 0.0005000000000000245,
+      "atr_coef": -2.79405458731355e-17,
+      "spread_coef": 0.0025000000000000144,
+      "vol_coef": 0.005000000000000006,
+      "r2_score": 1.0
+    },
+    "mid_vol": {
+      "intercept": 0.0005000000000000074,
+      "atr_coef": -9.481352157554811e-18,
+      "spread_coef": 0.0025000000000000057,
+      "vol_coef": 0.005000000000000001,
+      "r2_score": 1.0
+    },
+    "high_vol": {
+      "intercept": 0.0004999999999999987,
+      "atr_coef": 1.4139158210940644e-18,
+      "spread_coef": 0.0024999999999999996,
+      "vol_coef": 0.005000000000000008,
+      "r2_score": 1.0
+    }
+  },
+  "market_stats": {
+    "avg_atr_pct": 1.0878684880850449,
+    "avg_spread_proxy": 0.5615571816031921,
+    "avg_volatility": 0.006009466532307058,
+    "samples": 52071
+  }
+}

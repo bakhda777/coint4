@@ -1,0 +1,87 @@
+data_dir: "data_downloaded"
+results_dir: "results"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "minmax"
+  fill_method: "linear"
+  min_history_ratio: 0.8
+  handle_constant: true
+
+portfolio:
+  initial_capital: 10000.0
+  risk_per_position_pct: 0.015
+  max_active_positions: 15
+  max_margin_usage: 0.5
+  volatility_based_sizing: true
+  volatility_lookback_hours: 24
+  min_position_size_pct: 0.005
+  max_position_size_pct: 0.02
+  volatility_adjustment_factor: 2.0
+
+pair_selection:
+  lookback_days: 60
+  coint_pvalue_threshold: 0.2   # Еще больше ослабляем для больше пар
+  ssd_top_n: 500                # Уменьшаем для быстрого теста
+  min_half_life_days: 0.1
+  max_half_life_days: 30
+  min_mean_crossings: 1
+  adaptive_quantiles: false
+  bar_minutes: 15
+  liquidity_usd_daily: 50_000   # Снижаем требования ликвидности
+  max_bid_ask_pct: 1.0          # Очень либеральные настройки
+  max_avg_funding_pct: 0.1
+  save_filter_reasons: true
+  max_hurst_exponent: 0.7       # Ослабляем
+  kpss_pvalue_threshold: 0.001  # Еще больше ослабляем
+  pvalue_top_n: 200
+  save_std_histogram: true
+  enable_pair_tradeability_filter: true
+  min_volume_usd_24h: 50_000    # Снижаем минимальный объем
+  min_days_live: 1              # Снижаем с 7 до 1 дня
+  max_funding_rate_abs: 0.01    # Очень либерально
+  max_tick_size_pct: 0.01       # Очень либерально
+  max_half_life_hours: 2000.0   # Увеличиваем диапазон
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 15            # Еще меньше окно для быстрее сигналов
+  zscore_threshold: 0.8         # Очень агрессивные пороги
+  zscore_entry_threshold: 0.8
+  zscore_exit: 0.0
+  stop_loss_multiplier: 5.0     # Увеличиваем стоп-лосс
+  time_stop_multiplier: 3.0
+  fill_limit_pct: 0.1
+  commission_pct: 0.0004
+  slippage_pct: 0.0005
+  fee_maker: 0.0002
+  fee_taker: 0.0004
+  slippage_bps: 2.0
+  half_spread_bps: 1.5
+  slippage_stress_multiplier: 1.0
+  always_model_slippage: true
+  annualizing_factor: 365
+  cooldown_hours: 1             # Сокращаем cooldown
+  wait_for_candle_close: true
+  min_spread_move_sigma: 0.01   # Очень низкий порог
+  min_position_hold_minutes: 15 # Сокращаем минимальное время
+
+walk_forward:
+  start_date: "2024-01-15"
+  end_date: "2024-01-20"        # Короткий тест 5 дней
+  training_period_days: 10      # Короткий период обучения  
+  testing_period_days: 5
+
+filter_params:
+  min_beta: 0.01               # Очень либеральные фильтры
+  max_beta: 50.0
+  min_half_life_days: 0.01
+  max_half_life_days: 500
+  max_hurst_exponent: 0.8
+  min_mean_crossings: 1
+
+logging:
+  trade_details: true
+  debug_level: "INFO"
+
+max_shards: null

@@ -37,14 +37,16 @@ class OptimizedPairBacktester(BasePairBacktester):
         
         if self.use_global_cache:
             self.cache_manager = get_global_rolling_manager()
+            logger.info(f"📊 Cache manager obtained: initialized={self.cache_manager.initialized if self.cache_manager else 'None'}")
             
         # Extract symbol names from pair_data columns
         if not self.pair_data.empty and len(self.pair_data.columns) >= 2:
             # Assume first two columns are the pair symbols
             cols = list(self.pair_data.columns)
             if 'y' in cols and 'x' in cols:
-                # Standard format: find original symbol names
-                self._extract_symbol_names_from_data()
+                # Standard format: symbol names will be set explicitly later
+                # Don't try to extract them here to avoid disabling cache
+                pass
             else:
                 # Direct symbol names
                 self.symbol1, self.symbol2 = cols[0], cols[1]
@@ -72,11 +74,9 @@ class OptimizedPairBacktester(BasePairBacktester):
                 self.symbol2 = GLOBAL_PRICE.columns[1]
                 logger.warning(f"⚠️ Using fallback symbols: {self.symbol1}, {self.symbol2}")
             else:
-                logger.warning("⚠️ Cannot determine symbol names, global cache disabled")
-                self.use_global_cache = False
+                logger.warning("⚠️ Cannot determine symbol names from fallback")
         else:
-            logger.warning("⚠️ Global price data not available, global cache disabled")
-            self.use_global_cache = False
+            logger.warning("⚠️ Global price data not available for symbol extraction")
             
     def set_symbol_names(self, symbol1: str, symbol2: str):
         """
@@ -112,16 +112,19 @@ class OptimizedPairBacktester(BasePairBacktester):
             
         try:
             if not self.cache_manager.initialized:
-                logger.warning("⚠️ Global cache not initialized")
+                logger.info("⚠️ Global cache not initialized, using standard calculations")
                 return None
-                
+
             stats = self.cache_manager.get_pair_rolling_stats(
                 self.symbol1, self.symbol2, window, start_idx, end_idx
             )
-            
-            logger.debug(f"📊 Retrieved cached rolling stats for {self.symbol1}/{self.symbol2}, window={window}")
+
+            if stats is not None:
+                logger.info(f"✅ Retrieved cached rolling stats for {self.symbol1}/{self.symbol2}, window={window}")
+            else:
+                logger.info(f"❌ No cached stats found for {self.symbol1}/{self.symbol2}, window={window}")
             return stats
-            
+
         except Exception as e:
             logger.warning(f"⚠️ Failed to get cached rolling stats: {e}")
             return None
@@ -210,12 +213,21 @@ class OptimizedPairBacktester(BasePairBacktester):
             )
             return
             
-        # Log cache usage
+        # Log cache usage with detailed diagnostics
         if self.use_global_cache and self.cache_manager and self.cache_manager.initialized:
             cache_info = self.cache_manager.get_cache_info()
             logger.info(f"🚀 Running optimized backtest with global cache: {cache_info['total_memory_mb']:.1f} MB")
+            logger.info(f"📊 Cache symbols: {self.symbol1}, {self.symbol2}")
         else:
             logger.info("📊 Running standard backtest (no global cache)")
+            if not self.use_global_cache:
+                logger.info("   ❌ use_global_cache=False")
+            elif self.cache_manager is None:
+                logger.info("   ❌ cache_manager is None")
+            elif not self.cache_manager.initialized:
+                logger.info("   ❌ cache_manager not initialized")
+            else:
+                logger.info("   ❌ Unknown cache issue")
             
         # Rename columns for convenience
         df = self.pair_data.rename(
@@ -355,10 +367,20 @@ class OptimizedPairBacktester(BasePairBacktester):
         """
         if position == 0:
             return 0.0
-            
-        # Calculate returns
-        y_return = (current_row['y'] - previous_row['y']) / previous_row['y']
-        x_return = (current_row['x'] - previous_row['x']) / previous_row['x']
+
+        # ИСПРАВЛЕНО: Защита от деления на ноль в расчетах доходности
+        y_prev_price = previous_row['y']
+        x_prev_price = previous_row['x']
+
+        # Безопасный расчет доходности с защитой от деления на ноль
+        y_return = (current_row['y'] - y_prev_price) / y_prev_price if y_prev_price != 0 else 0.0
+        x_return = (current_row['x'] - x_prev_price) / x_prev_price if x_prev_price != 0 else 0.0
+
+        # Дополнительная защита: убедимся, что returns конечны
+        if not np.isfinite(y_return):
+            y_return = 0.0
+        if not np.isfinite(x_return):
+            x_return = 0.0
         
         # Position PnL (simplified)
         if position == 1:  # Long spread

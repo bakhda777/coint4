@@ -1,0 +1,111 @@
+# Best practices конфигурация для парной торговли криптовалют
+# Основан на статистически корректных параметрах для 15-минутных баров
+
+data_dir: "data_downloaded"
+results_dir: "outputs"
+year: 2023
+month: 8
+
+# Production-совместимая обработка данных
+data_processing:
+  normalization_method: "rolling_zscore"  # ТОЛЬКО rolling_zscore для production
+  fill_method: "linear"
+  min_history_ratio: 0.8  # 80% данных минимум (не 0.1!)
+  handle_constant: true
+
+portfolio:
+  initial_capital: 100000
+  initial_cash: 100000
+  max_positions: 10
+  max_active_positions: 10
+  risk_per_position_pct: 0.02
+  position_sizing: "equal_weight"
+
+# Best practices параметры отбора пар для крипто
+pair_selection:
+  # Период данных для отбора
+  lookback_days: 30
+  
+  # Статистические пороги (адаптированы для крипто волатильности)
+  coint_pvalue_threshold: 0.10  # Менее строгий для волатильного крипто (было 0.05)
+  min_correlation: 0.5  # НОВЫЙ - минимальная корреляция для крипто пар
+  
+  # Топ пар по SSD
+  ssd_top_n: 200  # Топ-200 по SSD достаточно для качественного отбора
+  pvalue_top_n: 100  # Топ-100 после всех фильтров
+  max_pairs_for_trading: 20  # Максимум пар в торговле одновременно
+  
+  # Half-life параметры (в днях для 15-минутных баров)
+  min_half_life_days: 0.25  # 6 часов минимум (24 бара)
+  max_half_life_days: 5.0   # 5 дней максимум (480 баров)
+  
+  # Beta (hedge ratio) границы
+  min_beta: 0.2  # Минимальный коэффициент хеджирования
+  max_beta: 5.0  # Максимальный коэффициент хеджирования
+  
+  # Mean reversion характеристики
+  min_mean_crossings: 10  # Минимум 10 пересечений среднего за период
+  max_hurst_exponent: 0.65  # Чуть выше 0.5 (random walk) допустимо для крипто
+  
+  # Практически отключенные фильтры (слишком строгие для крипто)
+  kpss_pvalue_threshold: 0.95  # Практически отключен
+  min_history_ratio: 0.5  # 50% данных минимум
+  liquidity_usd_daily: 0  # Отключен
+  max_bid_ask_pct: 100  # Отключен
+  max_avg_funding_pct: 100  # Отключен
+  
+  # Технические параметры
+  norm_method: "rolling_zscore"
+  bar_minutes: 15  # Таймфрейм в минутах
+
+backtest:
+  # Таймфрейм
+  timeframe: "15m"
+  
+  # Z-score параметры (основа стратегии)
+  zscore_threshold: 1.5  # Более консервативный вход
+  zscore_exit: 0.0  # Выход при возврате к среднему
+  rolling_window: 480  # 5 дней для расчета z-score (480 баров по 15 минут)
+  
+  # Риск-менеджмент
+  stop_loss_pct: 0.03  # 3% стоп-лосс
+  take_profit_pct: 0.05  # 5% тейк-профит
+  stop_loss_multiplier: 2.0
+  max_holding_hours: 72  # Максимум 3 дня удержания позиции
+  cooldown_hours: 1  # 1 час между сделками на одной паре
+  
+  # Издержки (реалистичные для Binance)
+  commission_pct: 0.001  # 0.1% комиссия
+  slippage_pct: 0.0005  # 0.05% проскальзывание
+  
+  # Технические параметры
+  annualizing_factor: 252
+  min_volatility: 0.0001
+  min_beta: 0.001
+  max_beta: 1000.0
+  position_size_type: "fixed"
+  position_size_fixed: 0.1
+  adaptive_thresholds: false
+  use_kelly_sizing: false
+  fill_limit_pct: 0.1
+
+# Walk-forward параметры (увеличенные для статистической значимости)
+walk_forward:
+  enabled: true
+  start_date: "2023-06-01"  # Начало с июня
+  end_date: "2023-08-31"    # До конца августа
+  
+  # КРИТИЧНО: Увеличенные периоды для статистической значимости
+  training_period_days: 60  # 60 дней тренировки (5760 баров)
+  testing_period_days: 20   # 20 дней тестирования (1920 баров)
+  step_size_days: 20  # Шаг 20 дней
+  
+  # Минимальные требования
+  min_training_samples: 2880  # Минимум 30 дней данных (2880 баров)
+  max_steps: 5  # До 5 walk-forward шагов
+  refit_frequency: "never"
+  gap_minutes: 15  # Ровно 1 бар между train и test
+
+normalization:
+  method: "rolling_zscore"  # ТОЛЬКО rolling_zscore для production!
+  fit_on_training_only: true

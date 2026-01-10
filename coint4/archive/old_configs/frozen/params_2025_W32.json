@@ -1,0 +1,21 @@
+{
+  "version": "2025_W32_3798d6a6",
+  "week_id": "2025_W32",
+  "frozen_at": "2025-08-10T21:37:35.545391",
+  "valid_from": "2025-08-10",
+  "valid_to": "2025-08-17",
+  "source": "manual",
+  "hash": "3798d6a6",
+  "parameters": {
+    "zscore_threshold": 2.0,
+    "zscore_exit": 0.0,
+    "rolling_window": 60,
+    "max_holding_days": 100
+  },
+  "metadata": {
+    "frozen_by": "freeze_best_params.py",
+    "environment": "production",
+    "approved": false,
+    "deployed": false
+  }
+}

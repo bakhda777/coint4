@@ -1,0 +1,38 @@
+# Risk Management Configuration for coint2 Live Trading
+# These parameters control automated risk management and position sizing
+
+# Daily loss limits
+max_daily_loss_pct: 3.0  # Maximum daily loss as percentage of capital (3%)
+
+# Drawdown limits  
+max_drawdown_pct: 25.0   # Maximum allowed drawdown from peak (25%)
+
+# Data feed monitoring
+max_no_data_minutes: 20  # Alert if no fresh data for this many minutes
+
+# Trading activity monitoring
+min_trade_count_per_day: 3  # Minimum expected trades per day (alert if below)
+
+# Position sizing
+position_size_usd: 100   # Base position size in USD (example)
+
+# Additional risk parameters
+max_position_count: 10   # Maximum number of concurrent positions
+max_correlation: 0.7     # Maximum correlation between positions
+max_leverage: 3.0        # Maximum effective leverage
+
+# Stop loss settings
+use_stop_loss: true      # Enable automatic stop losses
+stop_loss_pct: 15.0      # Stop loss percentage from entry
+
+# Position holding limits
+max_holding_hours: 240   # Force close positions after N hours (10 days)
+max_overnight_positions: 5  # Maximum positions to hold overnight
+
+# Volatility-based adjustments
+volatility_lookback_days: 30     # Days to calculate volatility
+volatility_adjustment_factor: 1.5 # Reduce size when volatility high
+
+# Emergency settings
+emergency_liquidate_drawdown: 35.0  # Force liquidate all at this drawdown
+circuit_breaker_loss_rate: 10.0     # Stop trading if losing >10% in 1 hour

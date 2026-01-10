@@ -103,11 +103,11 @@ def validate_params(params: Dict[str, Any]) -> Dict[str, Any]:
     validated['zscore_threshold'] = z_entry
     validated['zscore_exit'] = z_exit
     
-    # Валидация мультипликаторов стоп-лосса и тайм-стопа
-    sl_mult = validated.get('stop_loss_multiplier', validated.get('sl_mult', 2.0))
-    time_stop_mult = validated.get('time_stop_multiplier', validated.get('time_stop_mult', None))
-    
-    # Handle None values
+    # ИСПРАВЛЕНО: Валидация мультипликаторов стоп-лосса и тайм-стопа
+    sl_mult = validated.get('stop_loss_multiplier', validated.get('sl_mult'))
+    time_stop_mult = validated.get('time_stop_multiplier', validated.get('time_stop_mult'))
+
+    # ИСПРАВЛЕНО: Правильная обработка None значений
     if sl_mult is None:
         sl_mult = 2.0
     
@@ -120,12 +120,12 @@ def validate_params(params: Dict[str, Any]) -> Dict[str, Any]:
     if time_stop_mult is not None:
         validated['time_stop_multiplier'] = time_stop_mult
     
-    # Валидация параметров портфеля
-    max_active_pos = validated.get('max_active_positions', validated.get('max_active_pos', 10))
-    max_pos_size_pct = validated.get('max_position_size_pct', validated.get('max_pos_size', 1.0))
-    risk_per_pos_pct = validated.get('risk_per_position_pct', validated.get('risk_per_pos', 0.01))
-    
-    # Handle None values
+    # ИСПРАВЛЕНО: Валидация параметров портфеля
+    max_active_pos = validated.get('max_active_positions', validated.get('max_active_pos'))
+    max_pos_size_pct = validated.get('max_position_size_pct', validated.get('max_pos_size'))
+    risk_per_pos_pct = validated.get('risk_per_position_pct', validated.get('risk_per_pos'))
+
+    # ИСПРАВЛЕНО: Правильная обработка None значений
     if max_active_pos is None:
         max_active_pos = 10
     if max_pos_size_pct is None:
@@ -179,20 +179,23 @@ def _validate_cross_parameter_constraints(params: Dict[str, Any]) -> None:
         if max_half_life > 365:  # Больше года не имеет смысла
             raise ValueError(f"max_half_life_days не должен превышать 365 дней, получен: {max_half_life}")
 
-    # Валидация zscore параметров
+    # ИСПРАВЛЕНО: Правильная валидация zscore параметров
     zscore_threshold = params.get('zscore_threshold')
     zscore_exit = params.get('zscore_exit')
 
     if zscore_threshold is not None and zscore_exit is not None:
-        # zscore_exit должен быть ближе к 0, чем zscore_threshold
-        if abs(zscore_exit) >= abs(zscore_threshold):
-            raise ValueError(f"abs(zscore_exit) ({abs(zscore_exit)}) должен быть < abs(zscore_threshold) ({abs(zscore_threshold)})")
-
-        # Проверяем разумные диапазоны
+        # Проверяем разумные диапазоны сначала
         if zscore_threshold <= 0:
             raise ValueError(f"zscore_threshold должен быть > 0, получен: {zscore_threshold}")
         if zscore_threshold > 5.0:  # Слишком высокий порог
             raise ValueError(f"zscore_threshold не должен превышать 5.0, получен: {zscore_threshold}")
+
+        # ИСПРАВЛЕНО: zscore_exit должен быть неотрицательным и меньше zscore_threshold
+        # Не используем abs(), так как zscore_exit всегда должен быть >= 0
+        if zscore_exit < 0:
+            raise ValueError(f"zscore_exit должен быть >= 0, получен: {zscore_exit}")
+        if zscore_exit >= zscore_threshold:
+            raise ValueError(f"zscore_exit ({zscore_exit}) должен быть < zscore_threshold ({zscore_threshold})")
 
     # Валидация ssd_top_n
     ssd_top_n = params.get('ssd_top_n')

@@ -1,0 +1,347 @@
+data_dir: "data_downloaded"
+results_dir: "results"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "log_returns"    # minmax, zscore, log_returns
+  fill_method: "linear"             # ffill, linear, none
+  min_history_ratio: 0.8            # Минимальная доля непропущенных значений
+  handle_constant: true             # Обрабатывать ли символы с постоянной ценой
+
+portfolio:
+  initial_capital: 10000.0          # Капитал $10,000
+
+  # Риск-менеджмент (ОПТИМИЗАЦИЯ ДЛЯ SHARPE)
+  risk_per_position_pct: 0.007      # Усиливаем риск до 0.7% для ускорения роста капитала
+  max_active_positions: 16          # Еще сильнее ограничиваем одновременные позиции
+  max_margin_usage: 0.8             # Было 0.3 (позволяем работать капиталу)
+  f_max: 0.25                       # 0.25
+
+  risk_management: {}
+
+  # Динамическое позиционирование (SIMPLIFIED: OFF)
+  volatility_based_sizing: false    # Отключаем для базового теста
+  volatility_lookback_hours: 24
+  min_position_size_pct: 0.005
+  max_position_size_pct: 0.03
+  volatility_adjustment_factor: 1.0
+
+  # Резерв на будущее: можно включить, когда базовая логика будет стабильной
+  rebalance_frequency_days: 7
+  max_single_symbol_exposure_pct: 0.20
+
+# Отбор пар для парного трейдинга
+pair_universe:
+  universe_path: "data/universe.json"
+  max_pairs_per_symbol: 2       # Было 4 -> 2
+  max_total_pairs: 60           # Global limit on number of pairs
+  
+  # Blacklist for toxic/volatile assets
+  volatile_blacklist:
+    - "ORDIUSDT"
+    - "GMXUSDT"
+    - "MOVRUSDT"
+    - "RPLUSDT"
+    - "SSVUSDT"
+    - "TIMEUSDT"
+    - "MKRUSDT"
+    - "EGLDUSDT"
+    - "LUNCUSDT"
+    - "ERTHAUSDT"
+    - "FITFIUSDT"
+    # New additions
+    - "5IREUSDT"
+    - "PRIMEUSDT"
+    - "RDNTUSDT"
+    - "SFUNDUSDT"
+    - "CHZUSDT"
+    - "TAPUSDT"
+    - "CRVUSDT"
+    - "CGPTUSDT"
+    - "FTTUSDT"
+    - "VRAUSDT"
+    - "MANTAUSDT"
+    - "TENETUSDT"
+    - "SALDUSDT"
+    - "USTCUSDT"
+    # New manual blacklist
+    - "MAGICUSDT"
+    - "MEMEUSDT"
+    - "MBOXUSDT"
+    - "FETUSDT"
+    - "DYDXUSDT"
+    - "XCADUSDT"
+    - "ARKMUSDT"
+    - "HFTUSDT"
+    - "SANDUSDT"
+    - "LUNAUSDT"
+    - "CTCUSDT"
+    - "OPUSDT"
+
+pair_selection:
+  lookback_days: 365
+  # REMOVED: Filters moved to filter_params
+  min_half_life_days: 1.0
+  max_half_life_days: 60.0
+  min_mean_crossings: 6
+  coint_pvalue_threshold: 0.05
+  adf_pvalue_threshold: 0.05
+  ssd_top_n: 10000              # Было 20000 -> 10000
+  
+  # Ликвидность / спред / funding
+  liquidity_usd_daily: 3000000       # еще выше ликвидность для снижения слиппажа
+  min_volume_usd_24h: 3000000        # 24h volume baseline
+  min_price: 0.05                   # Было 0.02 -> 0.05
+  min_days_live: 30                 # Было 7 -> 30
+  max_funding_rate_abs: 0.0007      # Было 0.001 -> 0.0007
+
+  max_bid_ask_pct: 0.3
+  max_avg_funding_pct: 0.05
+
+backtest:
+  # Параметры временного окна
+  timeframe: "15min"
+  rolling_window: 96                # Было 20 -> 24 часа (96 * 15m)
+
+  # Правила входа/выхода (СТАЛО КОНСЕРВАТИВНЕЕ)
+  zscore_threshold: 4.0             # Added back for validation
+  zscore_entry_threshold: 4.0       # 3.0
+  min_spread_move_sigma: 2.0        # 2.0
+  z_exit: 0.40                      # даем победителям максимальный ход
+  zscore_stop_loss: 3.0             # 3.0
+
+  # Управление рисками (FIXED RISK PER TRADE)
+  use_kelly_sizing: false           # Отключаем Kelly
+  max_kelly_fraction: 0.25          # Fixed validation (>=0.01)
+  f_max: 0.25                       # Fixed validation (between 0 and 1)
+  risk_per_position_pct: 0.007      # согласовано с портфелем для большего профита
+
+  stop_loss_multiplier: 2.0         # расширяем допуск до 2.2R
+  time_stop_multiplier: 1.4         # еще быстрее выходим из затянувшихся сделок
+  max_position_hold_hours: 72       # Было 96 -> 72
+
+  # Динамический z-score и гистерезис (SIMPLIFY!)
+  enable_dynamic_zscore: false      # Было true (выключаем для базового теста)
+  zscore_recalc_frequency: 96       # 24 часа
+  zscore_window_days: 5             # Окно пересчёта z-score
+  enable_zscore_hysteresis: true    # Включаем гистерезис
+  hysteresis_exit_multiplier: 0.25  # Выход на 25% от порога входа
+
+  # Стоп-лоссы (Unified R-based)
+  enable_stop_loss: true
+  stop_loss_type: "mixed"           # zscore, percentage, atr, mixed
+  pnl_stop_loss_r_multiple: 2.2     # расширяем до 2.2R, согласовано с risk_per_position
+  pair_step_r_limit: -2.2           # лимит -2.2R на шаг
+  pair_stop_loss_usd: 6.0           # NEW: Hard USD stop (Шаг 4)
+  percentage_stop_loss: 0.05        # Legacy/Backup
+  atr_stop_loss_multiplier: 2.0     # Legacy/Backup
+  enable_trailing_stop: false       # SIMPLIFIED: OFF
+
+  # Тайм-стопы
+  enable_time_stop: true
+  max_hold_time_hours: 72           # Было 96 -> 72 (быстрее закрываем)
+
+  # Комиссии и слипаж
+  enable_realistic_costs: true      # FIXED: Enable realistic costs for testing
+  commission_pct: 0.0004            # Added back for validation
+  commission_rate_per_leg: 0.0004
+  slippage_pct: 0.0005              # 0.05% слипажа (Unified Source)
+  always_model_slippage: true       # Всегда моделировать слипаж
+  
+  # Required fields for Pydantic validation
+  fill_limit_pct: 1.0               # 100% fill rate assumption
+  annualizing_factor: 35040         # 365 * 24 * 4 (15-min bars per year)
+
+  # Управление корреляцией между парами (SIMPLIFIED: OFF)
+  correlation_based_sizing: false   # Было true (отключаем для упрощения)
+  max_pair_correlation: 0.6
+  correlation_window: 720           # 5 дней
+
+  # Структурные сдвиги и контроль коинтеграции (SIMPLIFIED: OFF)
+  structural_break_protection: false
+  cointegration_test_frequency: 672   # 7 дней * 24 * 4 (15m)
+  adf_check_frequency: 1344           # 14 дней * 24 * 4
+  exclusion_period_days: 30
+  adf_pvalue_threshold_break: 0.05
+  min_correlation_threshold: 0.6
+  correlation_window: 720             # ~5 дней
+  adf_pvalue_threshold: 0.05
+
+  # Детекция режимов рынка (SIMPLIFIED: OFF)
+  market_regime_detection: false
+  hurst_window_regime: 720
+  hurst_trending_threshold: 0.55      # Было 0.5
+  hurst_mean_reverting_max: 0.45
+
+  variance_ratio_window: 480
+  variance_ratio_trending_min: 1.3    # Было 1.2
+  variance_ratio_mean_reverting_max: 0.75 # Было 0.8
+
+  regime_check_frequency: 96          # Было 192 → раз в день
+
+  # Правила работы с режимами
+  block_entries_in_trend: true        # Не открываем новые сделки в трендовом режиме
+  allow_exits_in_trend: true          # Разрешаем выходы всегда
+  regime_smoothing_window: 3
+
+  # Прочее
+  seed: 42
+  save_trades: true
+  save_equity_curve: true
+  metrics:
+    - "sharpe"
+    - "sortino"
+    - "max_drawdown"
+    - "winrate"
+    - "avg_trade"
+    - "profit_factor"
+
+  # NEW: Улучшенные стоп-лоссы
+  pair_stop_loss_zscore: 3.0  # вместо 4.0
+  portfolio_daily_stop_pct: 0.02
+  
+  # NEW: Временные фильтры
+  enable_funding_time_filter: false # SIMPLIFIED: OFF
+  funding_blackout_minutes: 30
+  funding_reset_hours: [0, 8, 16]
+  enable_macro_event_filter: false # SIMPLIFIED: OFF
+  macro_blackout_minutes: 30
+  
+  # NEW: Карантин "сломанных" пар
+  enable_pair_quarantine: true
+  quarantine_pnl_threshold_sigma: 0.8 # еще жестче к повторным лузерам
+  quarantine_drawdown_threshold_pct: 0.02 # вместо 0.03
+  quarantine_period_days: 12
+  quarantine_rolling_window_days: 30
+  
+  # NEW: Реалистичные издержки (ENABLED for realistic testing)
+  enable_realistic_costs: true
+  commission_rate_per_leg: 0.0004
+  # slippage_half_spread_multiplier removed/ignored - using slippage_pct
+  funding_cost_enabled: true
+  
+  # NEW: Улучшенное позиционирование с пересчетом беты
+  beta_recalc_frequency_hours: 48
+  beta_window_days_min: 60
+  beta_window_days_max: 120
+  use_ols_beta_sizing: true
+  
+  # Performance optimization parameters
+  use_market_regime_cache: true
+  cache_cleanup_frequency: 1000
+  lazy_adf_threshold: 0.1
+  hurst_neutral_band: 0.05
+  vr_neutral_band: 0.2
+  n_jobs: -1
+  use_exponential_weighted_correlation: true
+  ew_correlation_alpha: 0.1
+  
+  # NEW: Enhanced risk management parameters
+  volatility_lookback: 96
+  adaptive_thresholds: false # SIMPLIFIED: OFF
+  var_confidence: 0.05
+  max_var_multiplier: 3.0
+
+walk_forward:
+  enabled: true                 # Включаем walk-forward анализ
+  start_date: "2024-01-15"
+  end_date: "2025-05-01"
+  training_period_days: 20
+  testing_period_days: 5
+  step_size_days: 5
+  max_steps: 2                  # SIMPLIFIED: Run until end of data
+  min_training_samples: 500
+  refit_frequency: "weekly"
+  overlap: false
+
+# Нормализация fit/transform
+normalization:
+  method: "log_returns"         # log_returns, minmax, zscore
+  fit_on_training_only: true    # Fit только на train, transform на train+test
+  prevent_refit_on_test: true   # Запрет повторного fit на test данных
+  log_returns_base: "natural"   # natural, log10, log2
+
+# Онлайновые статистики
+online_statistics:
+  enabled: true                 # Использовать только исторические данные
+  volatility_method: "ewm"      # ewm, rolling для расчета волатильности
+  ewm_alpha: 0.05              # Параметр сглаживания для EWM
+  kelly_lookback_trades: 50     # Количество последних сделок для Kelly
+  adaptive_threshold_lookback: 96  # Окно для адаптивных порогов (24 часа)
+  beta_recalc_online: true      # Пересчет беты только на исторических данных
+
+# Сдвиг сигналов
+signal_shift:
+  enabled: true                 # Включить сдвиг сигналов
+  shift_periods: 1              # Сигналы на баре i, исполнение на i+1
+  skip_last_bar: true           # Не торговать последний бар
+  signal_delay_minutes: 0       # Дополнительная задержка в минутах
+
+max_shards: null
+
+# UNIFIED FILTER CONFIGURATION - single source of truth for Enhanced Screening
+filter_params:
+  # Train-based Edge Filter
+  train_edge_filter:
+    min_train_mean_R: 0.0
+    min_train_sharpe: 0.0
+    min_gross_to_cost_ratio: 2.5
+    min_train_cum_pnl_r: 2.0
+
+  # Cointegration
+  pvalue_threshold: 0.05
+  
+  # Half-life and mean reversion
+  min_half_life_days: 0.1
+  max_half_life_days: 60.0
+  max_half_life_bars: 5760
+  min_mean_crossings: 6         # было 4 -> 6 (улучшение качества)
+
+  # Beta bounds
+  min_beta: 0.0
+  max_beta: 100.0
+  
+  # Volume/liquidity
+  min_daily_volume_usd: 3000000  # Sync with pair_selection
+
+  # Hurst exponent
+  max_hurst_exponent: 0.60      # Было 0.65 -> 0.60
+  
+  # Exotic filters
+  use_kpss_filter: true         # Enabled
+  use_hurst_filter: true        # Enabled
+  
+  # NEW: Minimum Profit Potential Filter
+  min_profit_potential_pct: 0.06  # отсекать сделки с низким потенциалом
+  
+  # NEW: Same-base stablecoin exclusion
+  exclude_same_base_stables: true
+  stablecoins: ["USDT", "USDC", "DAI", "FDUSD", "TUSD", "BUSD", "USDD", "USDE"]
+
+  # Enhanced entry/exit rules
+  zscore_entry_threshold: 3.0       # Sync with backtest.zscore_threshold
+  max_zscore_entry: 100.0
+  zscore_stop_loss: 3.0
+  min_spread_move_sigma: 2.0        # вместо 1.2
+  min_position_hold_minutes: 60
+
+trade_limits:
+  max_round_trips_per_pair_step: 1        # вместо 2 (было 3)
+  max_new_entries_per_pair_day: 1         # вместо 2 (было 3)
+  max_total_round_trips_per_step: 600
+
+risk_limits:
+  pair_step_r_multiple: 2.2               # Max negative R per pair per step
+
+logging:
+  trade_details: true           # Логирование деталей сделок
+  debug_level: "INFO"           # INFO / DEBUG
+  log_dir: "logs"
+  log_trades_csv: true
+  log_signals: true
+
+equity_curve_outputs:
+  format: "csv"                 # csv, parquet
+  include_portfolio_level: true
+  include_pair_level: false     # SIMPLIFIED: OFF for speed
+  include_position_details: false # SIMPLIFIED: OFF

@@ -1,0 +1,38 @@
+{
+  "study_name": "coint2_portfolio_demo",
+  "best_trial_number": 12,
+  "best_value": 1.9644131878316449,
+  "objective": "psr",
+  "parameters": {
+    "zscore_threshold": 1.5098185640304582,
+    "zscore_exit": -0.04032871825679864,
+    "rolling_window": 74,
+    "max_holding_days": 234,
+    "seed": 968081
+  },
+  "user_attributes": {
+    "fold_0_dsr": 1.7677126772758711,
+    "fold_0_psr": 2.0219269406042497,
+    "fold_0_sharpe": 2.374703212986069,
+    "fold_0_trades": 487,
+    "fold_1_dsr": 1.7421281046055697,
+    "fold_1_psr": 1.9428203766046763,
+    "fold_1_sharpe": 2.223181456245104,
+    "fold_1_trades": 497,
+    "fold_2_dsr": 1.7251931862161745,
+    "fold_2_psr": 1.9644131878316449,
+    "fold_2_sharpe": 2.2941843291388713,
+    "fold_2_trades": 494,
+    "oos_dsr": 1.7421281046055697,
+    "oos_psr": 1.9644131878316449,
+    "oos_sharpe": 2.2941843291388713,
+    "seed": 968081,
+    "successful_folds": 3,
+    "traces_dir": "artifacts/traces/optuna"
+  },
+  "datetime_complete": "2025-08-11T20:28:37.393205",
+  "k_folds": 3,
+  "pairs_file": "bench/pairs_portfolio.yaml",
+  "seed": 42,
+  "export_timestamp": "2025-08-11T20:28:37.852396"
+}

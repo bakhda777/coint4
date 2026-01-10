@@ -1,0 +1,210 @@
+# Optuna Hyperparameter Search Space Configuration
+# Defines parameter ranges and distributions for cointegration strategy optimization
+
+# Study configuration
+study:
+  direction: "maximize"  # PSR maximization
+  sampler: "TPESampler"
+  pruner: "MedianPruner"
+  
+  # Sampler parameters
+  sampler_params:
+    n_startup_trials: 20
+    n_ei_candidates: 24
+    seed: 42
+  
+  # Pruner parameters  
+  pruner_params:
+    n_startup_trials: 10
+    n_warmup_steps: 2
+    interval_steps: 1
+
+# Search space definitions
+search_space:
+  
+  # Signal generation parameters
+  signals:
+    zscore_threshold:
+      type: "float"
+      low: 1.5
+      high: 3.5
+      step: 0.1
+      log: false
+      
+    zscore_exit:
+      type: "float"
+      low: -0.5
+      high: 0.5
+      step: 0.05
+      log: false
+      
+    rolling_window:
+      type: "int"
+      low: 30
+      high: 120
+      step: 5
+      
+    max_holding_days:
+      type: "int"
+      low: 20
+      high: 300
+      step: 10
+
+  # Cost parameters (log scale for better exploration)
+  costs:
+    commission_pct:
+      type: "float"
+      low: 0.0001
+      high: 0.001
+      log: true
+      
+    slippage_pct:
+      type: "float"
+      low: 0.0001
+      high: 0.0005
+      log: true
+
+  # Risk management (conditional parameters)
+  risk:
+    position_sizing:
+      type: "categorical"
+      choices: ["fixed", "vol_target", "kelly"]
+      
+    # Conditional on position_sizing == "vol_target"
+    vol_target:
+      type: "float"
+      low: 0.05
+      high: 0.20
+      step: 0.01
+      condition:
+        parameter: "position_sizing"
+        value: "vol_target"
+    
+    # Conditional on position_sizing == "kelly"
+    kelly_fraction:
+      type: "float" 
+      low: 0.1
+      high: 0.5
+      step: 0.05
+      condition:
+        parameter: "position_sizing"
+        value: "kelly"
+
+  # Portfolio rebalancing (conditional)
+  portfolio:
+    rebalance_frequency:
+      type: "categorical"
+      choices: ["daily", "weekly", "monthly", "threshold"]
+      
+    # Conditional on rebalance_frequency == "threshold"
+    rebalance_threshold:
+      type: "float"
+      low: 0.05
+      high: 0.20
+      step: 0.01
+      condition:
+        parameter: "rebalance_frequency"
+        value: "threshold"
+
+# Constraints and validation rules
+constraints:
+  
+  # Hysteresis constraint: zscore_exit must be less than zscore_threshold
+  hysteresis:
+    parameter_1: "zscore_exit"
+    parameter_2: "zscore_threshold"
+    relation: "less_than"
+    
+  # Window constraints: rolling_window must allow sufficient warmup
+  window_warmup:
+    parameter: "rolling_window"
+    min_multiplier: 2  # At least 2x rolling_window for warmup
+    
+  # Holding period reasonableness
+  holding_period:
+    parameter: "max_holding_days"
+    max_fraction_of_window: 5  # Max 5x rolling_window days
+
+# Objective function settings
+objective:
+  
+  # Primary metric to optimize
+  primary_metric: "psr"  # psr, sharpe, or dsr
+  
+  # K-fold validation
+  k_folds: 3
+  aggregation: "median"  # median, mean, or min
+  
+  # Minimum requirements (pruning thresholds)
+  min_trades_per_fold: 30
+  min_successful_folds: 2  # At least 2/3 folds must succeed
+  
+  # Leakage prevention
+  enable_leakage_checks: true
+  enable_alignment_checks: true
+
+# Artifact settings
+artifacts:
+  save_traces: true
+  traces_dir: "artifacts/traces/optuna"
+  
+  # Trial data export
+  export_trials_csv: true
+  trials_csv_path: "artifacts/optuna/trials.csv"
+  export_frequency: 10  # Export every N trials
+  
+  # Best parameters export
+  export_best_params: true
+  best_params_path: "artifacts/optuna/best_params.json"
+  
+  # Study backup
+  backup_study_db: true
+  backup_frequency: 50  # Backup every N trials
+
+# Performance settings
+performance:
+  
+  # Parallel execution
+  n_jobs: 1  # Set to > 1 for parallel trials (use with memory management)
+  
+  # Memory management
+  enable_gc: true
+  gc_frequency: 5  # Garbage collect every N trials
+  
+  # Timeouts
+  trial_timeout_minutes: 30
+  study_timeout_minutes: 1440  # 24 hours max
+  
+  # Progress reporting
+  log_frequency: 1  # Log every N trials
+  progress_bar: true
+
+# Debugging and development
+debug:
+  
+  # Quick mode for development
+  quick_mode: false
+  quick_mode_k_folds: 2
+  quick_mode_max_trials: 20
+  
+  # Verbose logging
+  verbose: true
+  log_level: "INFO"
+  
+  # Trace debugging
+  save_failed_trials: true
+  debug_traces: false  # Save detailed traces for debugging
+
+# Study resumption
+resume:
+  
+  # Resume from existing study
+  auto_resume: true
+  
+  # Study identification
+  study_name_template: "coint2_{dataset}_{timeframe}"
+  storage_url_template: "sqlite:///artifacts/optuna/{study_name}.db"
+  
+  # Resume behavior
+  skip_completed_trials: true
+  validate_study_compatibility: true

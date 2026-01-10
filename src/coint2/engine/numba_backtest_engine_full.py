@@ -5,8 +5,8 @@ import pandas as pd
 from typing import Optional
 from dataclasses import dataclass
 
-from ..core.numba_backtest_full import (
-    rolling_ols, 
+from ..core.numba_kernels import (
+    rolling_ols,
     calculate_positions_and_pnl_full
 )
 from .base_engine import BasePairBacktester
@@ -117,8 +117,16 @@ class FullNumbaPairBacktester(BasePairBacktester):
         # Быстрый rolling OLS
         beta, mu, sigma = rolling_ols(y, x, self.rolling_window)
         
+        # Get pullback settings from config
+        use_pullback_entry = False
+        pullback_hysteresis = 0.2
+        if hasattr(self, 'config') and self.config is not None:
+            if hasattr(self.config, 'backtest'):
+                use_pullback_entry = getattr(self.config.backtest, 'use_pullback_entry', False)
+                pullback_hysteresis = getattr(self.config.backtest, 'pullback_hysteresis', 0.2)
+        
         # Полный расчет позиций и PnL с всеми функциями
-        positions, pnl_series, cumulative_pnl = calculate_positions_and_pnl_full(
+        positions, pnl_series, cumulative_pnl, cost_series = calculate_positions_and_pnl_full(
             y=y,
             x=x,
             rolling_window=self.rolling_window,
@@ -130,7 +138,20 @@ class FullNumbaPairBacktester(BasePairBacktester):
             enable_regime_detection=getattr(self, 'market_regime_detection', True),
             enable_structural_breaks=getattr(self, 'structural_break_protection', True),
             min_volatility=getattr(self, 'min_volatility', 0.001),
-            adaptive_threshold_factor=getattr(self, 'adaptive_threshold_factor', 1.0)
+            adaptive_threshold_factor=getattr(self, 'adaptive_threshold_factor', 1.0),
+            max_zscore_entry=getattr(self, 'max_zscore_entry', 100.0),
+            stop_loss_threshold=getattr(self, 'stop_loss_threshold', 100.0),
+            min_holding_period=getattr(self, 'min_holding_period', 0),
+            cooldown_period=getattr(self, 'cooldown_period', 0),
+            max_loss_per_unit=getattr(self, 'max_loss_per_unit', 1000000.0),
+            pnl_stop_loss_threshold=getattr(self, 'pnl_stop_loss_threshold', 1000000.0),
+            day_indices=None,
+            max_round_trips=getattr(self, 'max_round_trips', 100000),
+            max_entries_per_day=getattr(self, 'max_entries_per_day', 100000),
+            current_R_price_units=getattr(self, 'current_R_price_units', 1.0),
+            max_negative_pair_step_r=getattr(self, 'max_negative_pair_step_r', 3.0),
+            use_pullback_entry=use_pullback_entry,
+            pullback_hysteresis=pullback_hysteresis
         )
         
         # Calculate spread and z_scores for compatibility

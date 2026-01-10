@@ -1,0 +1,13 @@
+{
+  "study_name": "canary_real",
+  "best_value": -1.0,
+  "best_params": {
+    "zscore_threshold": 2.249080237694725,
+    "zscore_exit": 0.45071430640991617,
+    "rolling_window": 118,
+    "max_holding_days": 64
+  },
+  "n_trials": 25,
+  "period": "2024-01-01 to 2024-03-31",
+  "timestamp": "2025-08-11T21:38:07.001309"
+}

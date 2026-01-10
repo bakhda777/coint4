@@ -1,0 +1,1 @@
+"""Source root for coint2 package."""

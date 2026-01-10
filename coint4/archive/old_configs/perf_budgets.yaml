@@ -1,0 +1,43 @@
+# Performance Budget Configuration
+# Defines time and memory limits for various pipeline stages
+
+wfa:
+  fold:
+    max_time_seconds: 60  # Maximum time per fold
+    max_memory_mb: 500    # Maximum memory per fold
+    warn_time_seconds: 30 # Warning threshold
+    warn_memory_mb: 300
+  
+  total:
+    max_time_seconds: 300  # Maximum total WFA time (5 min)
+    max_memory_mb: 1000    # Maximum total memory
+    
+weekly:
+  day:
+    max_time_seconds: 30   # Maximum time per day
+    max_memory_mb: 200     # Maximum memory per day
+  
+  total:
+    max_time_seconds: 210  # Maximum weekly time (7 * 30s)
+    max_memory_mb: 500
+
+optimization:
+  trial:
+    max_time_seconds: 10   # Maximum time per Optuna trial
+    max_memory_mb: 100
+  
+  total:
+    max_time_seconds: 600  # Maximum optimization time (10 min)
+    max_memory_mb: 2000
+
+scale:
+  job:
+    max_time_seconds: 1800  # Maximum time for scale job (30 min)
+    max_memory_mb: 4000     # Maximum memory for scale job
+
+profiling:
+  enabled: true
+  sample_interval: 0.1  # Sample every 100ms
+  track_memory: true
+  track_cpu: true
+  output_format: "md"  # md or csv

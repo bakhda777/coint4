@@ -1,0 +1,300 @@
+data_dir: "data_downloaded"
+results_dir: "outputs/iter_3"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "log_returns"
+  fill_method: "linear"
+  min_history_ratio: 0.8
+  handle_constant: true
+
+portfolio:
+  initial_capital: 10000.0
+
+  # Риск-менеджмент
+  risk_per_position_pct: 0.025      # Увеличил до 2.5%
+  max_active_positions: 12          # Увеличил до 12
+  max_margin_usage: 0.8
+  f_max: 0.25
+
+  risk_management: {}
+
+  volatility_based_sizing: true     # Включил адаптивный сайзинг
+  volatility_lookback_hours: 24
+  min_position_size_pct: 0.01
+  max_position_size_pct: 0.05
+  volatility_adjustment_factor: 1.0
+
+  rebalance_frequency_days: 7
+  max_single_symbol_exposure_pct: 0.20
+
+# Отбор пар
+pair_universe:
+  universe_path: "data/universe.json"
+  max_pairs_per_symbol: 2
+  max_total_pairs: 50           # Увеличил лимит
+  
+  volatile_blacklist:
+    - "ORDIUSDT"
+    - "GMXUSDT"
+    - "MOVRUSDT"
+    - "RPLUSDT"
+    - "SSVUSDT"
+    - "TIMEUSDT"
+    - "MKRUSDT"
+    - "EGLDUSDT"
+    - "LUNCUSDT"
+    - "ERTHAUSDT"
+    - "FITFIUSDT"
+    - "5IREUSDT"
+    - "PRIMEUSDT"
+    - "RDNTUSDT"
+    - "SFUNDUSDT"
+    - "CHZUSDT"
+    - "TAPUSDT"
+    - "CRVUSDT"
+    - "CGPTUSDT"
+    - "FTTUSDT"
+    - "VRAUSDT"
+    - "MANTAUSDT"
+    - "TENETUSDT"
+    - "SALDUSDT"
+    - "USTCUSDT"
+    - "MAGICUSDT"
+    - "MEMEUSDT"
+    - "MBOXUSDT"
+    - "FETUSDT"
+    - "DYDXUSDT"
+    - "XCADUSDT"
+    - "ARKMUSDT"
+    - "HFTUSDT"
+    - "SANDUSDT"
+    - "LUNAUSDT"
+    - "CTCUSDT"
+    - "OPUSDT"
+
+pair_selection:
+  lookback_days: 365
+  min_half_life_days: 1.0
+  max_half_life_days: 60.0
+  min_mean_crossings: 6
+  coint_pvalue_threshold: 0.05 # Вернул 0.05
+  adf_pvalue_threshold: 0.05
+  ssd_top_n: 10000
+  
+  liquidity_usd_daily: 1000000       # Снизил до 1M
+  min_volume_usd_24h: 1000000
+  min_price: 0.05
+  min_days_live: 30
+  max_funding_rate_abs: 0.0007
+
+  max_bid_ask_pct: 0.3
+  max_avg_funding_pct: 0.05
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 96
+
+  zscore_threshold: 2.8             # Снизил до 2.8 для большего числа сделок
+  zscore_entry_threshold: 2.8
+  min_spread_move_sigma: 1.5
+  z_exit: 0.0                       # 0.0
+  zscore_stop_loss: 3.0
+
+  use_kelly_sizing: false
+  max_kelly_fraction: 0.25
+  f_max: 0.25
+  risk_per_position_pct: 0.025
+
+  stop_loss_multiplier: 2.0
+  time_stop_multiplier: 1.4
+  max_position_hold_hours: 72
+
+  enable_dynamic_zscore: false
+  zscore_recalc_frequency: 96
+  zscore_window_days: 5
+  enable_zscore_hysteresis: true
+  hysteresis_exit_multiplier: 0.25
+
+  enable_stop_loss: true
+  stop_loss_type: "mixed"
+  pnl_stop_loss_r_multiple: 2.2
+  pair_step_r_limit: -2.2
+  pair_stop_loss_usd: 20.0          # Увеличил USD стоп пропорционально риску
+  percentage_stop_loss: 0.05
+  atr_stop_loss_multiplier: 2.0
+  enable_trailing_stop: false
+
+  enable_time_stop: true
+  max_hold_time_hours: 72
+
+  enable_realistic_costs: true
+  commission_pct: 0.0004
+  commission_rate_per_leg: 0.0004
+  slippage_pct: 0.0005
+  always_model_slippage: true
+  
+  fill_limit_pct: 1.0
+  annualizing_factor: 35040
+
+  correlation_based_sizing: false
+  max_pair_correlation: 0.6
+  correlation_window: 720
+
+  structural_break_protection: false
+  cointegration_test_frequency: 672
+  adf_check_frequency: 1344
+  exclusion_period_days: 30
+  adf_pvalue_threshold_break: 0.05
+  min_correlation_threshold: 0.6
+  adf_pvalue_threshold: 0.05
+
+  market_regime_detection: false
+  hurst_window_regime: 720
+  hurst_trending_threshold: 0.55
+  hurst_mean_reverting_max: 0.45
+
+  variance_ratio_window: 480
+  variance_ratio_trending_min: 1.3
+  variance_ratio_mean_reverting_max: 0.75
+
+  regime_check_frequency: 96
+
+  block_entries_in_trend: true
+  allow_exits_in_trend: true
+  regime_smoothing_window: 3
+
+  seed: 42
+  save_trades: true
+  save_equity_curve: true
+  metrics:
+    - "sharpe"
+    - "sortino"
+    - "max_drawdown"
+    - "winrate"
+    - "avg_trade"
+    - "profit_factor"
+
+  pair_stop_loss_zscore: 3.0
+  portfolio_daily_stop_pct: 0.05    # Увеличил дневной стоп
+  
+  enable_funding_time_filter: false
+  funding_blackout_minutes: 30
+  funding_reset_hours: [0, 8, 16]
+  enable_macro_event_filter: false
+  macro_blackout_minutes: 30
+  
+  enable_pair_quarantine: true
+  quarantine_pnl_threshold_sigma: 0.8
+  quarantine_drawdown_threshold_pct: 0.02
+  quarantine_period_days: 12
+  quarantine_rolling_window_days: 30
+  
+  beta_recalc_frequency_hours: 48
+  beta_window_days_min: 60
+  beta_window_days_max: 120
+  use_ols_beta_sizing: true
+  
+  use_market_regime_cache: true
+  cache_cleanup_frequency: 1000
+  lazy_adf_threshold: 0.1
+  hurst_neutral_band: 0.05
+  vr_neutral_band: 0.2
+  n_jobs: -1
+  use_exponential_weighted_correlation: true
+  ew_correlation_alpha: 0.1
+  
+  volatility_lookback: 96
+  adaptive_thresholds: false
+  var_confidence: 0.05
+  max_var_multiplier: 3.0
+
+walk_forward:
+  enabled: true
+  start_date: "2024-01-15"
+  end_date: "2025-05-01"
+  training_period_days: 20
+  testing_period_days: 5
+  step_size_days: 5
+  max_steps: 2
+  min_training_samples: 500
+  refit_frequency: "weekly"
+  overlap: false
+
+normalization:
+  method: "log_returns"
+  fit_on_training_only: true
+  prevent_refit_on_test: true
+  log_returns_base: "natural"
+
+online_statistics:
+  enabled: true
+  volatility_method: "ewm"
+  ewm_alpha: 0.05
+  kelly_lookback_trades: 50
+  adaptive_threshold_lookback: 96
+  beta_recalc_online: true
+
+signal_shift:
+  enabled: true
+  shift_periods: 1
+  skip_last_bar: true
+  signal_delay_minutes: 0
+
+max_shards: null
+
+filter_params:
+  train_edge_filter:
+    min_train_mean_R: 0.0
+    min_train_sharpe: 0.0
+    min_gross_to_cost_ratio: 2.5
+    min_train_cum_pnl_r: 2.0
+
+  pvalue_threshold: 0.05 # 0.05
+  
+  min_half_life_days: 0.1
+  max_half_life_days: 60.0
+  max_half_life_bars: 5760
+  min_mean_crossings: 6
+
+  min_beta: 0.0
+  max_beta: 100.0
+  
+  min_daily_volume_usd: 1000000 # 1M
+
+  max_hurst_exponent: 0.60
+  
+  use_kpss_filter: true
+  use_hurst_filter: true
+  
+  min_profit_potential_pct: 0.06
+  
+  exclude_same_base_stables: true
+  stablecoins: ["USDT", "USDC", "DAI", "FDUSD", "TUSD", "BUSD", "USDD", "USDE"]
+
+  zscore_entry_threshold: 2.8 # Sync
+  max_zscore_entry: 100.0
+  zscore_stop_loss: 3.0 # Sync
+  min_spread_move_sigma: 1.5
+  min_position_hold_minutes: 60
+
+trade_limits:
+  max_round_trips_per_pair_step: 1
+  max_new_entries_per_pair_day: 1
+  max_total_round_trips_per_step: 600
+
+risk_limits:
+  pair_step_r_multiple: 2.2
+
+logging:
+  trade_details: true
+  debug_level: "INFO"
+  log_dir: "logs"
+  log_trades_csv: true
+  log_signals: true
+
+equity_curve_outputs:
+  format: "csv"
+  include_portfolio_level: true
+  include_pair_level: false
+  include_position_details: false

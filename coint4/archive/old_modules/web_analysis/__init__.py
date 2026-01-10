@@ -1,0 +1,1 @@
+"""Web analysis module for coint2."""

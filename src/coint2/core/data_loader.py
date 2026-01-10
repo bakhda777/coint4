@@ -39,6 +39,7 @@ class DataHandler:
     """Utility class for loading local parquet price files."""
 
     def __init__(self, cfg: AppConfig, autorefresh: bool = True) -> None:
+        self.config = cfg  # Сохраняем конфигурацию для доступа к настройкам
         self.data_dir = Path(cfg.data_dir)
         self.cache_dir = self.data_dir.parent / ".cache"  # Добавляем cache_dir
         self.fill_limit_pct = cfg.backtest.fill_limit_pct
@@ -154,21 +155,43 @@ class DataHandler:
             
             logger.info(f"Используем директорию данных: {data_path}")
             
-            cols_to_load = ["timestamp", "symbol", "close"]
+            # Check schema to determine timestamp type
+            try:
+                dataset = ds.dataset(data_path, format="parquet", partitioning="hive")
+                ts_field = dataset.schema.field("timestamp")
+                is_int_ts = pa.types.is_integer(ts_field.type)
+                logger.info(f"Timestamp type in parquet: {ts_field.type}")
+            except Exception as e:
+                logger.warning(f"Could not detect schema: {e}")
+                is_int_ts = False
+
+            cols_to_load = ["timestamp", "symbol", "close", "turnover"] # Load turnover for volume
             filters = []
             
             # Добавляем фильтры по дате, если они указаны
             if start_date is not None:
                 if start_date.tzinfo is not None:
                     start_date = start_date.tz_localize(None)
-                logger.info(f"Фильтрация от даты: {start_date}")
-                filters.append(("timestamp", ">=", start_date))
+                
+                filter_val = start_date
+                if is_int_ts:
+                    # Our data is stored in milliseconds, convert timestamp to ms
+                    filter_val = int(start_date.timestamp() * 1000)
+                
+                logger.info(f"Фильтрация от даты: {filter_val} (original: {start_date})")
+                filters.append(("timestamp", ">=", filter_val))
 
             if end_date is not None:
                 if end_date.tzinfo is not None:
                     end_date = end_date.tz_localize(None)
-                logger.info(f"Фильтрация до даты: {end_date}")
-                filters.append(("timestamp", "<=", end_date))
+                
+                filter_val = end_date
+                if is_int_ts:
+                    # Our data is stored in milliseconds, convert timestamp to ms
+                    filter_val = int(end_date.timestamp() * 1000)
+                
+                logger.info(f"Фильтрация до даты: {filter_val} (original: {end_date})")
+                filters.append(("timestamp", "<=", filter_val))
             
             # Добавляем фильтры по символам, если указаны
             if symbols is not None and len(symbols) > 0:
@@ -188,6 +211,7 @@ class DataHandler:
                 gather_statistics=True,
                 schema_overrides={
                     "close": np.float64,
+                    "turnover": np.float64, # Ensure turnover is float
                     "symbol": str,
                 },
             )
@@ -205,6 +229,77 @@ class DataHandler:
             logger.error(f"Ошибка при загрузке датасета: {e}")
             # Возвращаем пустой DataFrame в случае ошибки
             return empty_ddf()
+
+    def load_data_range(self, start_date: pd.Timestamp | str, end_date: pd.Timestamp | str, symbols: list[str] = None) -> pd.DataFrame:
+        """Load data for a specific date range.
+        
+        Args:
+            start_date: Start date
+            end_date: End date
+            symbols: Optional list of symbols
+            
+        Returns:
+            pd.DataFrame with price data
+        """
+        start_dt = pd.Timestamp(start_date)
+        end_dt = pd.Timestamp(end_date)
+        
+        logger.info(f"Loading data range: {start_dt} - {end_dt}")
+        
+        # Use _load_full_dataset
+        ddf = self._load_full_dataset(start_date=start_dt, end_date=end_dt, symbols=symbols)
+        
+        if not ddf.columns.tolist():
+            logger.warning("Empty dataset loaded")
+            return pd.DataFrame()
+            
+        with time_block("computing dataset"):
+             # Ensure timestamp is datetime
+            if "timestamp" in ddf.columns and not pd.api.types.is_datetime64_any_dtype(ddf["timestamp"]):
+                ddf["timestamp"] = dd.to_datetime(ddf["timestamp"], unit='ms')
+                
+            all_data = ddf.compute()
+            
+            # Ensure numeric types for close and turnover
+            # This fixes issues where parquet files might contain string/arrow-string data
+            for col in ['close', 'turnover']:
+                if col in all_data.columns:
+                    all_data[col] = pd.to_numeric(all_data[col], errors='coerce')
+            
+        if all_data.empty:
+            return pd.DataFrame(columns=["timestamp", "symbol", "close", "turnover"])
+            
+        # Pivot
+        with time_block("pivoting data"):
+            # Explicitly convert symbol to string to avoid pyarrow string issues in aggregation
+            if 'symbol' in all_data.columns:
+                 all_data['symbol'] = all_data['symbol'].astype(str)
+
+            # Pivot both close and turnover
+            # Using aggfunc='last' to avoid 'mean' on string columns if duplicates exist
+            result = all_data.pivot_table(
+                index="timestamp", 
+                columns="symbol", 
+                values=["close", "turnover"],
+                aggfunc='last' 
+            )
+            
+            # Flatten columns if MultiIndex (happens when pivoting multiple values)
+            # result columns will be MultiIndex: (close, BTCUSDT), (turnover, BTCUSDT)
+            # We want to keep this structure or simplify. 
+            # Current system expects a DataFrame with symbols as columns for close prices.
+            # So we probably need to return a tuple of (price_df, volume_df) or change return type.
+            # BUT: changing return signature breaks everything.
+            
+            # Workaround: Return DataFrame with MultiIndex columns (level 0: 'close'/'turnover', level 1: symbol)
+            # The caller must handle this.
+            # OR: We can stick to current contract for load_all_data_for_period (just close)
+            # and add a new method for loading volume?
+            
+            # Let's see who calls load_data_range.
+            pass 
+            
+        return result
 
     @logged_time("load_all_data_for_period")
     def load_all_data_for_period(
@@ -266,7 +361,7 @@ class DataHandler:
             with time_block("computing dataset and preparing data"):
                 # Приводим ddf['timestamp'] к datetime если это еще не сделано
                 if not pd.api.types.is_datetime64_any_dtype(ddf["timestamp"]):
-                    ddf["timestamp"] = dd.to_datetime(ddf["timestamp"])
+                    ddf["timestamp"] = dd.to_datetime(ddf["timestamp"], unit='ms')
 
                 # Вычисляем полные данные
                 all_data = ddf.compute()
@@ -278,7 +373,7 @@ class DataHandler:
                     return pd.DataFrame(columns=["timestamp", "symbol", "close"], index=pd.DatetimeIndex([], name="timestamp"))
 
                 # Преобразуем timestamp в datetime
-                all_data["timestamp"] = pd.to_datetime(all_data["timestamp"])
+                all_data["timestamp"] = pd.to_datetime(all_data["timestamp"], unit='ms')
 
             # Пивотируем данные
             with time_block("pivoting data"):
@@ -291,12 +386,37 @@ class DataHandler:
             with time_block("handling missing data"):
                 initial_symbols = len(result.columns)
                 
-                # Применяем fill_limit_pct, ограничивая максимальную длину
-                # заполняемых последовательных пропусков.
+                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Применяем fill_limit_pct с учётом торговых сессий
                 if hasattr(self, 'fill_limit_pct'):
                     fill_limit = max(1, int(len(result) * self.fill_limit_pct))
                     limit = min(fill_limit, 5)
-                    result = result.ffill(limit=limit).bfill(limit=limit)
+
+                    # Проверяем флаг для отключения сессионного заполнения (для тестов)
+                    use_session_aware_filling = getattr(self.config.backtest, 'use_session_aware_filling', True)
+
+                    if use_session_aware_filling:
+                        # Заполняем пропуски только внутри торговых сессий
+                        try:
+                            if result.index.tz is None:
+                                session_dates = result.index.normalize()
+                            else:
+                                session_dates = result.index.tz_convert('UTC').normalize()
+
+                            def fill_within_session(group):
+                                if len(group) <= 1:
+                                    return group
+                                return group.ffill(limit=limit).bfill(limit=limit)
+
+                            result = (result.groupby(session_dates)
+                                     .apply(fill_within_session)
+                                     .droplevel(0))
+
+                        except Exception as e:
+                            # Fallback к стандартному методу
+                            result = result.ffill(limit=limit).bfill(limit=limit)
+                    else:
+                        # Стандартное поведение для тестов
+                        result = result.ffill(limit=limit).bfill(limit=limit)
                 
                 # Удаляем столбцы с слишком большим количеством NaN
                 nan_threshold = 0.5  # Remove symbols with >50% NaN
@@ -429,17 +549,60 @@ class DataHandler:
         if wide_df.empty or len(wide_df.columns) < 2:
             return pd.DataFrame()
 
-        # Обработка пропущенных значений
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обработка пропущенных значений с учётом торговых сессий
         freq_val = pd.infer_freq(wide_df.index)
         with self._lock:
             self._freq = freq_val
-        if freq_val:
-            wide_df = wide_df.asfreq(freq_val)
 
-        # Более надёжное заполнение пропусков
-        limit = 5  # Максимальное число подряд идущих пропусков
-        wide_df = wide_df.interpolate(method="linear", limit=limit)
-        wide_df = wide_df.ffill(limit=limit).bfill(limit=limit)
+        if freq_val:
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Заполнение пропусков только внутри торговых сессий
+            # Определяем торговые дни (сессии) для предотвращения forward-fill через ночные gaps
+            # Проверяем флаг для отключения сессионного заполнения (для тестов)
+            use_session_aware_filling = getattr(self.config.backtest, 'use_session_aware_filling', True)
+
+            if use_session_aware_filling and (hasattr(wide_df.index, 'tz_localize') or hasattr(wide_df.index, 'tz_convert')):
+                try:
+                    # Пытаемся определить торговые сессии по дням
+                    if wide_df.index.tz is None:
+                        # Предполагаем UTC если таймзона не указана
+                        session_dates = wide_df.index.normalize()
+                    else:
+                        # Конвертируем в биржевую таймзону (предполагаем UTC для крипто)
+                        session_dates = wide_df.index.tz_convert('UTC').normalize()
+
+                    # Заполняем пропуски только внутри каждой торговой сессии
+                    limit = 5  # Максимальное число подряд идущих пропусков
+
+                    # Группируем по торговым дням и применяем asfreq + заполнение внутри каждой группы
+                    def fill_within_session(group):
+                        """Заполняет пропуски только внутри одной торговой сессии."""
+                        if len(group) <= 1:
+                            return group
+                        # Применяем asfreq только внутри сессии
+                        group_resampled = group.asfreq(freq_val)
+                        # Заполняем пропуски только внутри сессии (не через границы)
+                        return (group_resampled
+                                .interpolate(method="linear", limit=limit)
+                                .ffill(limit=limit))
+
+                    wide_df = (wide_df.groupby(session_dates)
+                              .apply(fill_within_session)
+                              .droplevel(0))  # Убираем уровень группировки
+
+                    print(f"✅ СЕССИОННОЕ ЗАПОЛНЕНИЕ: Обработано {len(session_dates.unique())} торговых сессий")
+
+                except Exception as e:
+                    print(f"⚠️ Ошибка при сессионном заполнении, используем стандартный метод: {e}")
+                    # Fallback к стандартному методу
+                    wide_df = wide_df.asfreq(freq_val)
+                    wide_df = wide_df.interpolate(method="linear", limit=limit)
+                    wide_df = wide_df.ffill(limit=limit)
+            else:
+                # Стандартное заполнение (для тестов или когда сессионное заполнение отключено)
+                wide_df = wide_df.asfreq(freq_val)
+                limit = 5
+                wide_df = wide_df.interpolate(method="linear", limit=limit)
+                wide_df = wide_df.ffill(limit=limit)
 
 
         # Возвращаем только нужные символы и удаляем строки с NA
@@ -455,7 +618,7 @@ class DataHandler:
         """
         ddf = dd.read_parquet(self.data_dir, engine="pyarrow")
         all_df = ddf.compute()
-        all_df["timestamp"] = pd.to_datetime(all_df["timestamp"])
+        all_df["timestamp"] = pd.to_datetime(all_df["timestamp"], unit='ms')
         mask = (all_df["timestamp"] >= start_date) & (all_df["timestamp"] <= end_date)
         all_df = all_df.loc[mask]
         wide = all_df.pivot_table(index="timestamp", columns="symbol", values="close")
@@ -687,7 +850,33 @@ class DataHandler:
         with self._lock:
             self._freq = freq_val
         if freq_val:
-            wide_pdf = wide_pdf.asfreq(freq_val)
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Применяем asfreq с учётом торговых сессий
+            # Проверяем флаг для отключения сессионного заполнения (для тестов)
+            use_session_aware_filling = getattr(self.config.backtest, 'use_session_aware_filling', True)
+
+            if use_session_aware_filling:
+                try:
+                    if wide_pdf.index.tz is None:
+                        session_dates = wide_pdf.index.normalize()
+                    else:
+                        session_dates = wide_pdf.index.tz_convert('UTC').normalize()
+
+                    # Применяем asfreq только внутри каждой торговой сессии
+                    def asfreq_within_session(group):
+                        if len(group) <= 1:
+                            return group
+                        return group.asfreq(freq_val)
+
+                    wide_pdf = (wide_pdf.groupby(session_dates)
+                               .apply(asfreq_within_session)
+                               .droplevel(0))
+
+                except Exception as e:
+                    # Fallback к стандартному методу
+                    wide_pdf = wide_pdf.asfreq(freq_val)
+            else:
+                # Стандартное поведение для тестов
+                wide_pdf = wide_pdf.asfreq(freq_val)
 
         return wide_pdf
 

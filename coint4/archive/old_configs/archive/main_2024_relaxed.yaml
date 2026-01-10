@@ -1,0 +1,130 @@
+# Расслабленная конфигурация для оптимизации с положительным Sharpe
+# Основана на main_2024_balanced.yaml с более мягкими фильтрами
+
+# Обязательные пути
+data_dir: "data_downloaded"
+results_dir: "results"
+
+walk_forward:
+  start_date: "2023-06-01"         # Дата начала walk-forward
+  end_date: "2023-08-31"           # Дата окончания walk-forward
+  testing_period_days: 30
+  training_period_days: 60
+  gap_minutes: 15
+  # УБИРАЕМ max_steps для автоматического определения
+  # max_steps: 3
+  initial_lookback_days: 60  # Коинтеграцию считать по последним 60 суткам
+
+portfolio:
+  initial_capital: 100000           # Начальный капитал $100K
+  max_active_positions: 10
+  risk_per_position_pct: 0.02
+  max_portfolio_risk_pct: 0.1
+  position_sizing_method: "fixed"
+  max_position_size_pct: 0.02
+  volatility_adjustment_factor: 2.0
+
+pair_selection:
+  lookback_days: 60
+  coint_pvalue_threshold: 0.25     # МЯГЧЕ: более либеральный порог
+  ssd_top_n: 25000                 # МЯГЧЕ: больше пар для разнообразия
+  min_half_life_days: 0.001        # МЯГЧЕ: практически без ограничения (1.4 минуты)
+  max_half_life_days: 100          # МЯГЧЕ: до 100 дней
+  min_mean_crossings: 3             # МЯГЧЕ: минимум 3 пересечения
+  min_beta: 0.01                   # МЯГЧЕ: минимальная бета
+  max_beta: 50.0                   # МЯГЧЕ: максимальная бета
+  
+  # Фильтры качества
+  adaptive_quantiles: false
+  bar_minutes: 15
+  liquidity_usd_daily: 100_000     # МЯГЧЕ: $100K ликвидности
+  max_bid_ask_pct: 0.5             # МЯГЧЕ: спред до 0.5%
+  max_avg_funding_pct: 0.1         # МЯГЧЕ: фандинг до 0.1%
+  save_filter_reasons: true
+  max_hurst_exponent: 0.8          # МЯГЧЕ: Hurst до 0.8
+  kpss_pvalue_threshold: 0.05      # МЯГЧЕ: стандартный KPSS
+  pvalue_top_n: 500                # МЯГЧЕ: топ-500 пар
+  save_std_histogram: true
+  
+  # Фильтр трейдабельности
+  enable_pair_tradeability_filter: false  # ОТКЛЮЧЕН для большего числа пар
+  min_volume_usd_24h: 10_000       # МЯГЧЕ: минимум $10K объем
+  min_days_live: 7                 # МЯГЧЕ: минимум 7 дней
+  max_funding_rate_abs: 0.01       # МЯГЧЕ: фандинг до 1%
+  max_tick_size_pct: 0.01          # МЯГЧЕ: тик до 1%
+  max_half_life_hours: 2400.0      # МЯГЧЕ: до 100 дней
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 30
+  zscore_threshold: 1.0             # МЯГЧЕ: порог входа 1.0
+  zscore_entry_threshold: 1.0
+  zscore_exit: 0.0                  # МЯГЧЕ: выход при 0
+  stop_loss_multiplier: 4.0         # МЯГЧЕ: стоп при 4 std
+  time_stop_multiplier: 3.0         # МЯГЧЕ: временной стоп
+  min_volatility: 0.0005            # МЯГЧЕ: минимальная волатильность
+  fill_limit_pct: 0.2               # МЯГЧЕ: лимит заполнения
+  
+  # Издержки (реалистичные)
+  commission_pct: 0.0004
+  slippage_pct: 0.0005
+  slippage_stress_multiplier: 1.0
+  always_model_slippage: true
+  
+  annualizing_factor: 365
+  cooldown_hours: 1                 # МЯГЧЕ: cooldown 1 час
+  wait_for_candle_close: true
+  
+  # Правила входа/выхода
+  min_spread_move_sigma: 0.2        # МЯГЧЕ: движение 0.2 сигма
+  min_position_hold_minutes: 30     # МЯГЧЕ: минимум 30 минут
+  anti_churn_cooldown_minutes: 30   # МЯГЧЕ: 30 минут между сделками
+  max_position_hold_hours: 168      # МЯГЧЕ: до 7 дней
+  
+  # Риск-менеджмент
+  use_dynamic_sizing: true
+  max_leverage: 3.0
+  target_sharpe: 1.0                # Целевой Sharpe = 1
+  
+  # Режим детекции
+  use_regime_detection: false       # ОТКЛЮЧЕН для простоты
+  trend_filter_multiplier: 2.0
+  volatility_filter_multiplier: 3.0
+  
+  # NEW: Гистерезис для стабильности
+  zscore_exit_hysteresis: 0.5       # Минимальная разница между входом и выходом
+  
+  # NEW: Адаптивные параметры
+  adaptive_zscore_enabled: false     # ОТКЛЮЧЕН для простоты
+  adaptive_window_min: 20
+  adaptive_window_max: 100
+  
+  # NEW: Управление объемом
+  max_volume_participation: 0.1      # Максимум 10% от объема
+  min_order_size_usd: 10             # Минимальный ордер $10
+  max_order_size_usd: 10000          # Максимальный ордер $10K
+
+data_processing:
+  parallel: false                    # Отключаем для стабильности
+  cache_dir: ".cache"
+  save_preselected_pairs: true
+  enable_price_cache: true
+  enable_stats_cache: true
+  normalization_method: "rolling_zscore"  # КРИТИЧНО: только rolling_zscore!
+  min_history_ratio: 0.5            # МЯГЧЕ: минимум 50% истории
+
+# НОВОЕ: Параметры для продакшена
+production:
+  enable_real_time_updates: false
+  enable_monitoring: false
+  enable_alerts: false
+  stateful_normalization: true      # Используем stateful нормализацию
+  update_frequency_minutes: 15
+  
+# НОВОЕ: Параметры логирования
+logging:
+  level: "INFO"
+  save_to_file: true
+  log_dir: "logs"
+  max_file_size_mb: 100
+  backup_count: 5

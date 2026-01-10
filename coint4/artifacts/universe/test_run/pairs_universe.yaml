@@ -1,0 +1,27 @@
+metadata:
+  criteria:
+    beta_drift_max: 0.2
+    coint_pvalue_max: 0.1
+    hl_max: 300
+    hl_min: 5
+    hurst_max: 0.65
+    hurst_min: 0.15
+    min_cross: 8
+  generated: '2025-08-17T19:54:02.829562+00:00'
+  period:
+    end: '2024-01-15'
+    start: '2024-01-01'
+  selection:
+    diversify_by_base: true
+    max_per_base: 2
+    top_n: 5
+pairs:
+- metrics:
+    beta_drift: 0.03399885036768359
+    crossings: 708
+    half_life: 12.714023833086301
+    pvalue: 0.0696591249554731
+  pair: ADAEUR/ADAUSDC
+  score: 1.633414498606851
+  symbol1: ADAEUR
+  symbol2: ADAUSDC

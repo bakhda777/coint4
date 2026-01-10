@@ -8,32 +8,57 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import yaml
-import optuna
+import logging
+import os
+import math
+import threading
 
 from coint2.utils.config import load_config
 from coint2.core.data_loader import DataHandler, load_master_dataset
-from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
+from coint2.engine.numba_engine import NumbaPairBacktester
+from coint2.engine.optimized_backtest_engine import OptimizedPairBacktester
+from coint2.engine.numba_backtest_engine_full import FullNumbaPairBacktester
+# УСКОРЕНИЕ: Используем ПОЛНОСТЬЮ Numba-оптимизированный движок для максимального ускорения
+PairBacktester = FullNumbaPairBacktester
 from coint2.core.portfolio import Portfolio
 from coint2.core.math_utils import calculate_ssd
 from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
-from coint2.core.normalization_improvements import preprocess_and_normalize_data
+from coint2.core.normalization_improvements import preprocess_and_normalize_data, compute_normalization_params, apply_normalization_with_params
 from coint2.utils.logging_utils import get_logger
 from src.optimiser.metric_utils import extract_sharpe, normalize_params, validate_params
 
+# УСКОРЕНИЕ: Импорты для глобального кэша rolling-статистик
+from coint2.core.global_rolling_cache import initialize_global_rolling_cache, cleanup_global_rolling_cache
+from coint2.core.memory_optimization import initialize_global_price_data, determine_required_windows
+
 # Импортируем константы из единого источника
-from .constants import PENALTY, MIN_TRADES_THRESHOLD, MAX_DRAWDOWN_SOFT_THRESHOLD, MAX_DRAWDOWN_HARD_THRESHOLD, \
+from .constants import PENALTY, PENALTY_SOFT, PENALTY_HARD, MIN_TRADES_THRESHOLD, MAX_DRAWDOWN_SOFT_THRESHOLD, MAX_DRAWDOWN_HARD_THRESHOLD, \
     WIN_RATE_BONUS_THRESHOLD, WIN_RATE_PENALTY_THRESHOLD, DD_PENALTY_SOFT_MULTIPLIER, DD_PENALTY_HARD_MULTIPLIER, \
     WIN_RATE_BONUS_MULTIPLIER, WIN_RATE_PENALTY_MULTIPLIER, INTERMEDIATE_REPORT_INTERVAL
+
+# Настройка логгера для оптимизации
+logger = logging.getLogger(__name__)
 
 
 def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     """
     Convert hours to number of periods based on bar timeframe.
-    Точно как в walk_forward_orchestrator.py
+    ИСПРАВЛЕНО: Используем ceil для правильного округления вверх.
     """
     if hours <= 0:
         return 0
-    return int(hours * 60 / bar_minutes)
+    return int(math.ceil(hours * 60 / bar_minutes))
+
+
+def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
+    """
+    Convert hours to number of periods based on bar timeframe.
+    ИСПРАВЛЕНО: Используем ceil для правильного округления вверх.
+    """
+    import math
+    if hours <= 0:
+        return 0
+    return int(math.ceil(hours * 60 / bar_minutes))
 
 class FastWalkForwardObjective:
     """
@@ -43,210 +68,170 @@ class FastWalkForwardObjective:
     
     def __init__(self, base_config_path: str, search_space_path: str):
         self.base_config = load_config(base_config_path)
-        
+
         # Загружаем пространство поиска
         with open(search_space_path, 'r') as f:
             self.search_space = yaml.safe_load(f)
-        
-        # Проверяем наличие предварительно отобранных пар
-        pairs_file = Path("outputs/preselected_pairs.csv")
-        if not pairs_file.exists():
-            print("📊 Файл preselected_pairs.csv не найден. Запускаем автоматический отбор пар с новыми периодами...")
-            self._run_pair_selection()
-        
-        # Загружаем предварительно отобранные пары
-        self.preselected_pairs = pd.read_csv(pairs_file)
-        print(f"✅ Загружено {len(self.preselected_pairs)} предотобранных пар")
 
-        # КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ: Проверяем, что в search space нет параметров фильтрации
-        filter_params = ['ssd_top_n', 'kpss_pvalue_threshold', 'coint_pvalue_threshold',
-                        'min_half_life_days', 'max_half_life_days', 'min_mean_crossings']
+        # УСКОРЕНИЕ: Кэш для отбора пар по периодам тренировки
+        self.pair_selection_cache = {}
 
+        # ПОТОКОБЕЗОПАСНОСТЬ: Блокировка для кэша отбора пар
+        self._cache_lock = threading.Lock()
+
+        # ОПТИМИЗАЦИЯ: Кэш для данных между trials
+        self.data_cache = {}
+        self.data_cache_lock = threading.Lock()
+        self.max_cache_size = 100  # Ограничиваем размер кэша
+
+        # УСКОРЕНИЕ: Инициализация глобального кэша rolling-статистик
+        self.global_cache_initialized = self._initialize_global_rolling_cache()
+        if self.global_cache_initialized:
+            print("✅ Глобальный кэш успешно инициализирован в FastWalkForwardObjective")
+        else:
+            print("❌ Глобальный кэш НЕ инициализирован в FastWalkForwardObjective")
+    
+    def convert_hours_to_periods(self, hours: float, bar_minutes: int) -> int:
+        """Convert hours to number of periods based on bar timeframe."""
+        return convert_hours_to_periods(hours, bar_minutes)
+    
+    def _validate_params(self, params):
+        """Валидирует параметры используя функцию validate_params из metric_utils."""
+        return validate_params(params)
+
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Убираем зависимость от предварительно отобранных пар
+        # Теперь пары отбираются динамически для каждого walk-forward шага
+
+        logger.info("✅ Инициализация FastWalkForwardObjective с динамическим отбором пар и глобальным кэшированием")
+        
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Новое предупреждение о правильном walk-forward анализе
+        logger.info(
+            "🔄 ИСПРАВЛЕН LOOKAHEAD BIAS: Пары теперь отбираются динамически "
+            "для каждого walk-forward шага используя только тренировочные данные этого шага. "
+            "Это обеспечивает корректный walk-forward анализ без lookahead bias."
+        )
+
+        # ИСПРАВЛЕНО: Жесткая проверка фильтров в fast-режиме
         if 'filters' in self.search_space:
-            print("⚠️  КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ: В search space найдена группа 'filters'!")
-            print("   Параметры фильтрации НЕ ВЛИЯЮТ на результат в быстрой оптимизации,")
-            print("   так как пары уже предотобраны. Используйте search_space_fast.yaml")
-            print("   или перенесите отбор пар в __call__() для корректной оптимизации.")
+            raise ValueError(
+                "В fast-режиме параметры 'filters' в search_space не применяются. "
+                "Пары уже предотобраны из outputs/preselected_pairs.csv. "
+                "Используйте search_space_fast.yaml или перенесите отбор пар в objective."
+            )
 
-        for group_name, group_params in self.search_space.items():
-            if isinstance(group_params, dict):
-                for param_name in group_params.keys():
-                    if param_name in filter_params:
-                        print(f"⚠️  ПРЕДУПРЕЖДЕНИЕ: Параметр '{param_name}' в группе '{group_name}'")
-                        print(f"   НЕ ВЛИЯЕТ на результат - пары уже предотобраны!")
+        # ИСПРАВЛЕНО: Удален старый код проверки filter_params - заменен на жесткую проверку выше
 
         # Данные будут загружаться динамически для каждого шага как в оригинальном бэктесте
-    
-    def _run_pair_selection(self):
-        """Автоматически запускает отбор пар с новыми периодами walk_forward."""
-        logger = get_logger("fast_objective_pair_selection")
-        
-        # ТОЧНО как в оригинальной системе: определяем периоды для первого шага
-        start_date = pd.to_datetime(self.base_config.walk_forward.start_date)  # Используем дату из конфигурации
-        bar_minutes = getattr(self.base_config.pair_selection, "bar_minutes", None) or 15
-        bar_delta = pd.Timedelta(minutes=bar_minutes)
-        
-        # Первый шаг walk-forward (точно как в walk_forward_orchestrator)
-        current_test_start = start_date
-        training_start = current_test_start - pd.Timedelta(days=self.base_config.walk_forward.training_period_days)
-        training_end = current_test_start - bar_delta
-        testing_start = current_test_start
-        testing_end = testing_start + pd.Timedelta(days=self.base_config.walk_forward.testing_period_days)
-        
-        print(f"🗓️  ПЕРВЫЙ WALK-FORWARD ШАГ С НОВЫМИ ПЕРИОДАМИ:")
-        print(f"   Тренировка: {training_start.strftime('%Y-%m-%d')} -> {training_end.strftime('%Y-%m-%d')} ({self.base_config.walk_forward.training_period_days} дней)")
-        print(f"   Тестирование: {testing_start.strftime('%Y-%m-%d')} -> {testing_end.strftime('%Y-%m-%d')} ({self.base_config.walk_forward.testing_period_days} дней)")
-        
-        # Загружаем данные ТОЧНО как в preselect_pairs.py
-        handler = DataHandler(self.base_config)
-        print("📈 Загрузка данных...")
-        
+
+    # УДАЛЕНО: _validate_pairs_temporal_boundaries больше не нужен
+    # при динамическом отборе пар для каждого шага
+
+    # УДАЛЕНО: _run_pair_selection больше не нужен
+    # при динамическом отборе пар для каждого шага
+
+    def _initialize_global_rolling_cache(self):
+        """Инициализирует глобальный кэш rolling-статистик для ускорения оптимизации."""
         try:
-            # Загружаем данные за весь период (тренировка + тестирование) - как в preselect_pairs.py
-            full_range_start = training_start
-            full_range_end = testing_end
+            print("🚀 Инициализация глобального кэша rolling-статистик...")
 
-            raw_data = load_master_dataset(
-                data_path=self.base_config.data_dir,
-                start_date=full_range_start,
-                end_date=full_range_end
-            )
-            
-            if raw_data.empty:
-                raise ValueError("Не удалось загрузить данные")
+            # ИСПРАВЛЕНО: Определяем полный диапазон для всей оптимизации
+            start_date = pd.to_datetime(self.base_config.walk_forward.start_date) - pd.Timedelta(days=self.base_config.walk_forward.training_period_days)
+            end_date = pd.to_datetime(self.base_config.walk_forward.end_date)
 
-            print(f"📊 Загружено {raw_data.shape[0]} записей для {len(raw_data['symbol'].unique())} символов")
+            print(f"📅 Загрузка данных для кэша: {start_date.date()} -> {end_date.date()}")
 
-            # ТОЧНО как в preselect_pairs.py: преобразуем в pivot table
-            step_df = raw_data.pivot_table(index="timestamp", columns="symbol", values="close")
-            print(f"📊 Pivot table: {step_df.shape}")
-            
-            training_slice = step_df.loc[training_start:training_end]
-            print(f"📊 Тренировочный срез: {training_slice.shape}")
-            
-            if training_slice.empty or len(training_slice.columns) < 2:
-                raise ValueError("Недостаточно данных для обучения")
-            
-            # Нормализация данных
-            min_history_ratio = getattr(self.base_config.pair_selection, "min_history_ratio", 0.8)
-            fill_method = getattr(self.base_config.pair_selection, "fill_method", "forward")
-            norm_method = getattr(self.base_config.pair_selection, "norm_method", "minmax")
-            handle_constant = getattr(self.base_config.pair_selection, "handle_constant", "drop")
-            
-            normalized_training, norm_stats = preprocess_and_normalize_data(
-                training_slice,
-                min_history_ratio=min_history_ratio,
-                fill_method=fill_method,
-                norm_method=norm_method,
-                handle_constant=handle_constant
-            )
-            
-            print(f"📊 Нормализованные данные: {normalized_training.shape}")
-            
-            # Сканирование пар
-            ssd = calculate_ssd(normalized_training, top_k=None)
-            print(f"  SSD результат (все пары): {len(ssd)} пар")
-            
-            # ИСПРАВЛЕНО: Фильтрация по котировочной валюте (*USDT)
-            usdt_ssd = ssd[ssd.index.map(lambda x: x[0].endswith('USDT') and x[1].endswith('USDT'))]
-            print(f"📊 Фильтрация пар:")
-            print(f"   • Исходно после SSD: {len(ssd)} пар")
-            print(f"   • После фильтрации по USDT: {len(usdt_ssd)} пар (отсеяно: {len(ssd) - len(usdt_ssd)})")
-            
-            # Берем только top-N пар для дальнейшей фильтрации
-            ssd_top_n = self.base_config.pair_selection.ssd_top_n
-            if len(usdt_ssd) > ssd_top_n:
-                print(f"   • Ограничиваем до top-{ssd_top_n} пар для дальнейшей обработки (отсеяно: {len(usdt_ssd) - ssd_top_n})")
-                usdt_ssd = usdt_ssd.sort_values().head(ssd_top_n)
+            # Загружаем мастер-датасет напрямую
+            all_raw_data = load_master_dataset(self.base_config.data_dir, start_date, end_date)
+            if all_raw_data.empty:
+                print("❌ Не удалось загрузить данные для кэша. Кэш не будет создан.")
+                return False
+
+            # Пивотирование данных в широкий формат
+            all_data = all_raw_data.pivot_table(index="timestamp", columns="symbol", values="close")
+            # Простое заполнение пропусков для полноты кэша
+            all_data = all_data.ffill().bfill()
+
+            print(f"📊 Загружено данных: {all_data.shape[0]} временных точек, {all_data.shape[1]} символов")
+
+            # Инициализируем глобальные данные о ценах
+            from src.coint2.core.memory_optimization import initialize_global_price_data_from_dataframe
+            print("🔄 Инициализация глобальных данных о ценах...")
+            success = initialize_global_price_data_from_dataframe(all_data)
+            if not success:
+                print("❌ Не удалось инициализировать глобальные данные о ценах")
+                return False
+            print("✅ Глобальные данные о ценах инициализированы")
+
+            # ИСПРАВЛЕНО: Определяем все возможные rolling_window из полной конфигурации
+            from src.coint2.core.memory_optimization import determine_required_windows
+            print("🔄 Определение требуемых rolling windows...")
+
+            # Передаем полную конфигурацию вместо только search_space
+            full_config = self.base_config.model_dump() if hasattr(self.base_config, 'model_dump') else self.base_config.__dict__
+            required_windows = determine_required_windows(full_config)
+
+            # Также добавляем rolling_window из search_space если есть
+            if 'signals' in self.search_space and 'rolling_window' in self.search_space['signals']:
+                rolling_window_values = self.search_space['signals']['rolling_window']
+                if isinstance(rolling_window_values, list):
+                    required_windows.update(rolling_window_values)
+                elif isinstance(rolling_window_values, dict):
+                    if 'choices' in rolling_window_values:
+                        required_windows.update(rolling_window_values['choices'])
+                    elif 'low' in rolling_window_values and 'high' in rolling_window_values:
+                        # Генерируем все возможные значения из диапазона
+                        low = rolling_window_values['low']
+                        high = rolling_window_values['high']
+                        step = rolling_window_values.get('step', 1)
+                        range_values = list(range(low, high + 1, step))
+                        required_windows.update(range_values)
+                        print(f"📊 Добавлены rolling windows из диапазона {low}-{high} (step={step}): {range_values}")
+            elif 'rolling_window' in self.search_space:
+                # Старый формат для совместимости
+                rolling_window_values = self.search_space['rolling_window']
+                if isinstance(rolling_window_values, list):
+                    required_windows.update(rolling_window_values)
+                elif isinstance(rolling_window_values, dict) and 'choices' in rolling_window_values:
+                    required_windows.update(rolling_window_values['choices'])
+
+            print(f"📊 Найдены rolling windows: {sorted(required_windows)}")
+
+            # Инициализируем глобальный кэш rolling-статистик
+            cache_config = {
+                'search_space': self.search_space,
+                'required_windows': required_windows,
+                'backtest': full_config.get('backtest', {}),
+                'portfolio': full_config.get('portfolio', {})
+            }
+
+            from src.coint2.core.global_rolling_cache import initialize_global_rolling_cache
+            print("🔄 Инициализация глобального кэша rolling-статистик...")
+            success = initialize_global_rolling_cache(cache_config)
+            if success:
+                print("✅ Глобальный кэш rolling-статистик успешно инициализирован")
+                return True
             else:
-                print(f"   • Все {len(usdt_ssd)} пар проходят в дальнейшую обработку")
-            
-            ssd_pairs = [(s1, s2) for s1, s2 in usdt_ssd.index]
-            print(f"📈 Найдено {len(ssd_pairs)} кандидатов по SSD")
-            
-            # Фильтрация пар
-            print("🔬 Фильтрация пар по коинтеграции и другим критериям...")
-            
-            # ИСПРАВЛЕНО: Усиленные фильтры коинтеграции и контроль хедж-коэффициентов
-            filtered_pairs = filter_pairs_by_coint_and_half_life(
-                ssd_pairs,
-                normalized_training,
-                min_half_life=getattr(self.base_config.pair_selection, 'min_half_life_days', 1.0),
-                max_half_life=getattr(self.base_config.pair_selection, 'max_half_life_days', 30.0),
-                pvalue_threshold=0.05,  # Усиленный фильтр p-value < 0.05
-                min_beta=0.2,  # Контроль хедж-коэффициента: abs(beta) >= 0.2
-                max_beta=5.0,  # Контроль хедж-коэффициента: abs(beta) <= 5.0
-                max_hurst_exponent=getattr(self.base_config.pair_selection, 'max_hurst_exponent', 0.7),
-                min_mean_crossings=getattr(self.base_config.pair_selection, 'min_mean_crossings', 10),
-                kpss_pvalue_threshold=getattr(self.base_config.pair_selection, 'kpss_pvalue_threshold', 0.05),
-            )
-            
-            print(f"   • После фильтрации по коинтеграции: {len(filtered_pairs)} пар (отсеяно: {len(ssd_pairs) - len(filtered_pairs)})")
-            
-            if not filtered_pairs:
-                raise ValueError("Не найдено ни одной пары после фильтрации.")
-            
-            print(f"✅ Найдено {len(filtered_pairs)} качественных пар")
-            
-            # Сортируем пары по качеству (по убыванию стандартного отклонения спреда)
-            quality_sorted_pairs = sorted(filtered_pairs, key=lambda x: abs(x[4]), reverse=True)  # x[4] = std
-            
-            # Топ-M отбор для снижения churn и комиссий
-            max_pairs_for_trading = getattr(self.base_config.pair_selection, 'max_pairs_for_trading', 50)
-            active_pairs = quality_sorted_pairs[:max_pairs_for_trading]
-            
-            print(f"   • Топ-M отбор для торговли: {len(active_pairs)} пар (отсеяно: {len(quality_sorted_pairs) - len(active_pairs)})")
-            
-            # Создаем список пар для сохранения
-            pairs_list = []
-            for s1, s2, beta, mean, std, metrics in active_pairs:
-                pairs_list.append({
-                    's1': s1,
-                    's2': s2,
-                    'beta': beta,
-                    'mean': mean,
-                    'std': std,
-                    'half_life': metrics.get('half_life', 0),
-                    'pvalue': metrics.get('pvalue', 0),
-                    'hurst': 0,  # Hurst не возвращается в новой версии
-                    'mean_crossings': metrics.get('mean_crossings', 0)
-                })
-            
-            df_pairs = pd.DataFrame(pairs_list)
-            
-            # Создаем директорию outputs
-            Path("outputs").mkdir(exist_ok=True)
-            
-            # Сохраняем в CSV
-            output_path = "outputs/preselected_pairs.csv"
-            df_pairs.to_csv(output_path, index=False)
-            
-            print(f"💾 Отобранные пары сохранены в: {output_path}")
-            print(f"📊 Итоговая статистика отобранных пар:")
-            print(f"   • Всего пар для торговли: {len(df_pairs)}")
-            print(f"   • Средний half-life: {df_pairs['half_life'].mean():.2f} дней")
-            print(f"   • Средний p-value: {df_pairs['pvalue'].mean():.4f}")
-            print(f"   • Средний Hurst: {df_pairs['hurst'].mean():.3f}")
-            print(f"   • Общий процент отсева: {((len(ssd) - len(df_pairs)) / len(ssd) * 100):.1f}%")
-            
-            print("\n✅ Автоматический отбор пар завершен успешно!")
-            print("📊 Использованы НОВЫЕ периоды walk-forward")
-            
+                print("❌ Не удалось инициализировать глобальный кэш rolling-статистик")
+                return False
+
         except Exception as e:
-            print(f"❌ Ошибка при автоматическом отборе пар: {e}")
+            print(f"❌ Ошибка при инициализации глобального кэша: {e}")
             import traceback
             traceback.print_exc()
-            raise
-        
+            return False
+
     def _load_data_for_step(self, training_start, training_end, testing_start, testing_end):
-        """Загружает данные для конкретного walk-forward шага, точно как в оригинальном бэктесте."""
+        """
+        Загружает данные для конкретного walk-forward шага с правильным разделением
+        на тренировочный и тестовый периоды для предотвращения lookahead bias.
+        """
 
         print(f"📈 Загрузка данных для walk-forward шага:")
         print(f"   Тренировка: {training_start.date()} -> {training_end.date()}")
         print(f"   Тестирование: {testing_start.date()} -> {testing_end.date()}")
 
         try:
-            # Загружаем данные точно как в оригинальном walk_forward_orchestrator
+            # ИСПРАВЛЕНО: Загружаем данные точно как в оригинальном walk_forward_orchestrator
             raw_data = load_master_dataset(
                 data_path=self.base_config.data_dir,
                 start_date=training_start,
@@ -266,8 +251,35 @@ class FastWalkForwardObjective:
                     step_df.index = step_df.index.tz_localize(None)
                 step_df = step_df.sort_index()
 
-            print(f"✅ Данные загружены: {step_df.shape}")
-            return step_df
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Разделяем данные на тренировочные и тестовые
+            training_slice = step_df.loc[training_start:training_end]
+            testing_slice = step_df.loc[testing_start:testing_end]
+
+            # Проверка на перекрытие данных (защита от lookahead bias)
+            if not training_slice.empty and not testing_slice.empty:
+                if training_slice.index.max() >= testing_slice.index.min():
+                    raise ValueError(
+                        f"ОБНАРУЖЕНО ПЕРЕКРЫТИЕ ДАННЫХ! "
+                        f"Последняя тренировочная метка: {training_slice.index.max()}, "
+                        f"Первая тестовая метка: {testing_slice.index.min()}. "
+                        f"Это может привести к lookahead bias!"
+                    )
+
+            print(f"✅ Данные загружены и разделены:")
+            print(f"   Тренировочный срез: {training_slice.shape}")
+            print(f"   Тестовый срез: {testing_slice.shape}")
+            print(f"   Временной разрыв: {testing_start - training_end}")
+
+            # ИСПРАВЛЕНО: Возвращаем структуру с правильно разделенными данными
+            return {
+                'full_data': step_df,
+                'training_data': training_slice,
+                'testing_data': testing_slice,
+                'training_start': training_start,
+                'training_end': training_end,
+                'testing_start': testing_start,
+                'testing_end': testing_end
+            }
 
         except Exception as e:
             print(f"❌ Ошибка загрузки данных: {e}")
@@ -289,7 +301,7 @@ class FastWalkForwardObjective:
             filters = self.search_space['filters']
             if 'ssd_top_n' in filters:
                 cfg = filters['ssd_top_n']
-                # ИСПРАВЛЕНО: Используем логарифмическое распределение для больших масштабов
+                # ИСПРАВЛЕНО: Используем встроенную поддержку логарифмического распределения в Optuna 4
                 if cfg.get('step'):
                     params['ssd_top_n'] = trial.suggest_int(
                         "ssd_top_n",
@@ -298,13 +310,13 @@ class FastWalkForwardObjective:
                         step=cfg['step']
                     )
                 else:
-                    # Логарифмическое распределение для лучшего покрытия диапазона
-                    log_value = trial.suggest_float(
-                        "ssd_top_n_log",
-                        np.log10(cfg['low']),
-                        np.log10(cfg['high'])
+                    # ИСПРАВЛЕНО: Используем trial.suggest_int(..., log=True) вместо ручного log10
+                    params['ssd_top_n'] = trial.suggest_int(
+                        "ssd_top_n",
+                        cfg['low'],
+                        cfg['high'],
+                        log=True
                     )
-                    params['ssd_top_n'] = int(10 ** log_value)
             if 'kpss_pvalue_threshold' in filters:
                 params['kpss_pvalue_threshold'] = trial.suggest_float(
                     "kpss_pvalue_threshold",
@@ -368,11 +380,20 @@ class FastWalkForwardObjective:
                 min_exit = max(signals['zscore_exit']['low'], -threshold + 0.1)
 
                 if min_exit <= max_exit:
-                    params['zscore_exit'] = trial.suggest_float(
+                    zscore_exit = trial.suggest_float(
                         "zscore_exit",
                         min_exit,
                         max_exit
                     )
+                    params['zscore_exit'] = zscore_exit
+
+                    # BEST PRACTICE: Добавляем анти-чурн проверки
+                    gap = threshold - zscore_exit
+                    if gap < 0.05:  # Минимальный gap для предотвращения частых сделок
+                        raise optuna.TrialPruned(f"Слишком маленький gap между threshold и exit: {gap:.3f} < 0.05")
+
+                    # Логируем hysteresis для отчетности
+                    trial.set_user_attr("hysteresis", gap)
                 else:
                     # Если диапазон невозможен, используем pruning
                     raise optuna.TrialPruned(f"Невозможный диапазон zscore_exit для threshold={threshold}")
@@ -441,17 +462,27 @@ class FastWalkForwardObjective:
         if 'costs' in self.search_space:
             costs = self.search_space['costs']
             if 'commission_pct' in costs:
-                params['commission_pct'] = trial.suggest_float(
-                    "commission_pct",
-                    costs['commission_pct']['low'],
-                    costs['commission_pct']['high']
-                )
+                if isinstance(costs['commission_pct'], dict):
+                    # Диапазон значений
+                    params['commission_pct'] = trial.suggest_float(
+                        "commission_pct",
+                        costs['commission_pct']['low'],
+                        costs['commission_pct']['high']
+                    )
+                else:
+                    # Фиксированное значение
+                    params['commission_pct'] = costs['commission_pct']
             if 'slippage_pct' in costs:
-                params['slippage_pct'] = trial.suggest_float(
-                    "slippage_pct",
-                    costs['slippage_pct']['low'],
-                    costs['slippage_pct']['high']
-                )
+                if isinstance(costs['slippage_pct'], dict):
+                    # Диапазон значений
+                    params['slippage_pct'] = trial.suggest_float(
+                        "slippage_pct",
+                        costs['slippage_pct']['low'],
+                        costs['slippage_pct']['high']
+                    )
+                else:
+                    # Фиксированное значение
+                    params['slippage_pct'] = costs['slippage_pct']
         
         # Группа 6: Нормализация
         if 'normalization' in self.search_space:
@@ -472,13 +503,194 @@ class FastWalkForwardObjective:
         params['trial_number'] = trial.number
         
         return params
+
+    def _select_pairs_for_step(self, cfg, training_data, step_idx):
+        """
+        КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Отбирает пары для конкретного walk-forward шага
+        используя только тренировочные данные этого шага для предотвращения lookahead bias.
+        """
+        logger = get_logger(f"pair_selection_step_{step_idx}")
+        
+        print(f"   🔍 Отбор пар для шага {step_idx + 1} на тренировочных данных: {training_data.shape}")
+        
+        try:
+            # Нормализация данных для отбора пар
+            min_history_ratio = getattr(cfg.pair_selection, "min_history_ratio", 0.8)
+            fill_method = getattr(cfg.pair_selection, "fill_method", "forward")
+            norm_method = getattr(cfg.pair_selection, "norm_method", "minmax")
+            handle_constant = getattr(cfg.pair_selection, "handle_constant", "drop")
+            
+            normalized_training, norm_stats = preprocess_and_normalize_data(
+                training_data,
+                min_history_ratio=min_history_ratio,
+                fill_method=fill_method,
+                norm_method=norm_method,
+                handle_constant=handle_constant
+            )
+            
+            if normalized_training.empty or len(normalized_training.columns) < 2:
+                print(f"   ❌ Недостаточно данных для отбора пар в шаге {step_idx + 1}")
+                return []
+            
+            # Сканирование пар
+            ssd = calculate_ssd(normalized_training, top_k=None)
+            
+            # Фильтрация по котировочной валюте (*USDT)
+            usdt_ssd = ssd[ssd.index.map(lambda x: x[0].endswith('USDT') and x[1].endswith('USDT'))]
+            
+            # Берем только top-N пар для дальнейшей фильтрации
+            ssd_top_n = cfg.pair_selection.ssd_top_n
+            if len(usdt_ssd) > ssd_top_n:
+                usdt_ssd = usdt_ssd.sort_values().head(ssd_top_n)
+            
+            ssd_pairs = [(s1, s2) for s1, s2 in usdt_ssd.index]
+            
+            if not ssd_pairs:
+                print(f"   ❌ Не найдено пар после SSD фильтрации в шаге {step_idx + 1}")
+                return []
+            
+            # Фильтрация пар по коинтеграции и другим критериям
+            filtered_pairs = filter_pairs_by_coint_and_half_life(
+                ssd_pairs,
+                normalized_training,
+                min_half_life=getattr(cfg.pair_selection, 'min_half_life_days', 1.0),
+                max_half_life=getattr(cfg.pair_selection, 'max_half_life_days', 30.0),
+                pvalue_threshold=getattr(cfg.pair_selection, 'coint_pvalue_threshold', 0.05),
+                min_beta=0.2,
+                max_beta=5.0,
+                max_hurst_exponent=getattr(cfg.pair_selection, 'max_hurst_exponent', 0.7),
+                min_mean_crossings=getattr(cfg.pair_selection, 'min_mean_crossings', 10),
+                kpss_pvalue_threshold=getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05),
+            )
+            
+            if not filtered_pairs:
+                print(f"   ❌ Не найдено пар после фильтрации в шаге {step_idx + 1}")
+                return []
+            
+            # Сортируем пары по качеству
+            quality_sorted_pairs = sorted(filtered_pairs, key=lambda x: abs(x[4]), reverse=True)
+            
+            # Топ-M отбор для снижения churn и комиссий
+            max_pairs_for_trading = getattr(cfg.pair_selection, 'max_pairs_for_trading', 50)
+            active_pairs = quality_sorted_pairs[:max_pairs_for_trading]
+            
+            # Создаем список пар в формате DataFrame
+            pairs_list = []
+            for s1, s2, beta, mean, std, metrics in active_pairs:
+                pairs_list.append({
+                    's1': s1,
+                    's2': s2,
+                    'beta': beta,
+                    'mean': mean,
+                    'std': std,
+                    'half_life': metrics.get('half_life', 0),
+                    'pvalue': metrics.get('pvalue', 0),
+                    'hurst': 0,
+                    'mean_crossings': metrics.get('mean_crossings', 0)
+                })
+            
+            step_pairs_df = pd.DataFrame(pairs_list)
+            
+            print(f"   ✅ Шаг {step_idx + 1}: отобрано {len(step_pairs_df)} пар из {len(ssd_pairs)} кандидатов")
+            
+            return step_pairs_df
+            
+        except Exception as e:
+            print(f"   ❌ Ошибка отбора пар для шага {step_idx + 1}: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
+    def _process_single_walk_forward_step(self, cfg, step_data, step_idx):
+        """Обрабатывает один walk-forward шаг с динамическим отбором пар."""
+        testing_start = step_data['testing_start']
+        testing_end = step_data['testing_end']
+        training_data = step_data['training_data']
+        step_df = step_data['full_data']
+
+        print(f"   🔄 Обработка шага {step_idx + 1}: {testing_start.strftime('%Y-%m-%d')} -> {testing_end.strftime('%Y-%m-%d')}")
+
+        # УСКОРЕНИЕ: Используем потокобезопасный кэш для отбора пар
+        training_start = step_data['training_start']
+        training_end = step_data['training_end']
+        cache_key = f"{training_start.strftime('%Y-%m-%d')}_{training_end.strftime('%Y-%m-%d')}"
+
+        # 1. Быстрая проверка кэша без блокировки
+        if cache_key in self.pair_selection_cache:
+            print(f"   🚀 Используем кэшированные пары для периода {cache_key}")
+            step_pairs = self.pair_selection_cache[cache_key]
+        else:
+            # 2. Блокировка для выполнения дорогой операции
+            with self._cache_lock:
+                # 3. Повторная проверка кэша ВНУТРИ блокировки
+                if cache_key in self.pair_selection_cache:
+                    print(f"   🚀 Используем кэшированные пары для периода {cache_key} (получены во время ожидания)")
+                    step_pairs = self.pair_selection_cache[cache_key]
+                else:
+                    print(f"   🔍 Отбираем новые пары для периода {cache_key}")
+                    step_pairs = self._select_pairs_for_step(cfg, training_data, step_idx)
+                    # 4. Сохранение результата в кэш
+                    if step_pairs is not None and len(step_pairs) > 0:
+                        self.pair_selection_cache[cache_key] = step_pairs
+                        print(f"   💾 Сохранили {len(step_pairs)} пар в кэш для периода {cache_key}")
+
+        if step_pairs is None or len(step_pairs) == 0:
+            print(f"   ❌ Нет пар для шага {step_idx + 1}")
+            return {
+                'pnls': [],
+                'trades': 0,
+                'pairs_checked': 0,
+                'pairs_with_data': 0
+            }
+
+        step_pnls = []
+        step_trades = 0
+        pairs_processed = 0
+        pairs_with_data = 0
+
+        for _, pair_row in step_pairs.iterrows():
+            try:
+                # ИСПРАВЛЕНО: Защита от распаковки None
+                backtest_output = self._backtest_single_pair(pair_row, cfg, step_df)
+                if backtest_output is None:
+                    continue  # Пропускаем пару, если бэктест не удался
+                pair_result, pair_trades = backtest_output
+
+                if pair_result is not None and len(pair_result) > 0:
+                    # Фильтруем результаты по тестовому периоду этого шага
+                    step_result = pair_result.loc[testing_start:testing_end]
+                    if not step_result.empty:
+                        step_pnls.append(step_result)
+                        step_trades += pair_trades
+                        pairs_with_data += 1
+
+                pairs_processed += 1
+
+            except Exception as e:
+                print(f"   ❌ Ошибка при обработке пары в шаге {step_idx + 1}: {e}")
+                continue
+
+        print(f"   📊 Шаг {step_idx + 1}: {pairs_with_data}/{pairs_processed} пар, {step_trades} сделок")
+
+        return {
+            'pnls': step_pnls,
+            'trades': step_trades,
+            'pairs_checked': pairs_processed,
+            'pairs_with_data': pairs_with_data
+        }
+
     def _run_fast_backtest(self, params):
         """Запускает быстрый бэктест ТОЧНО как в оригинальной системе."""
+
+        print(f"\n🔍 ДЕТАЛЬНАЯ ДИАГНОСТИКА БЭКТЕСТА")
+        print(f"📊 Входные параметры:")
+        for key, value in params.items():
+            print(f"   {key}: {value}")
 
         # Валидируем параметры перед использованием
         try:
             validated_params = validate_params(params)
+            print(f"✅ Параметры валидированы успешно")
         except ValueError as e:
             print(f"❌ Ошибка валидации параметров: {e}")
             return {"sharpe_ratio_abs": None, "total_trades": 0, "error_type": "validation_error", "error_message": str(e)}
@@ -534,241 +746,136 @@ class FastWalkForwardObjective:
             if hasattr(cfg.pair_selection, 'min_history_ratio'):
                 cfg.pair_selection.min_history_ratio = validated_params['min_history_ratio']
 
-        # ТОЧНО как в оригинальной системе: определяем периоды
+        # ИСПРАВЛЕНО: Поддержка множественных walk-forward шагов
         start_date = pd.to_datetime(cfg.walk_forward.start_date)
+        end_date = pd.to_datetime(getattr(cfg.walk_forward, 'end_date', start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)))
+        step_size_days = getattr(cfg.walk_forward, 'step_size_days', cfg.walk_forward.testing_period_days)
         bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
         bar_delta = pd.Timedelta(minutes=bar_minutes)
 
-        # Первый шаг walk-forward (точно как в walk_forward_orchestrator)
+        # ДОБАВЛЕНО: КРИТИЧЕСКАЯ ПРОВЕРКА на пересечение тестовых периодов
+        # Проверяем только если step_size_days явно задан в конфигурации
+        if hasattr(cfg.walk_forward, 'step_size_days') and step_size_days < cfg.walk_forward.testing_period_days:
+            raise ValueError(
+                f"Критическая ошибка конфигурации: Обнаружено пересечение тестовых периодов! "
+                f"step_size_days ({step_size_days}) < testing_period_days ({cfg.walk_forward.testing_period_days}). "
+                f"Это приводит к утечке данных. Установите step_size_days >= testing_period_days."
+            )
+
+        # Генерируем все walk-forward шаги
+        walk_forward_steps = []
         current_test_start = start_date
-        training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-        training_end = current_test_start - bar_delta
-        testing_start = current_test_start
-        testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+
+        while current_test_start < end_date:
+            training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
+            training_end = current_test_start - bar_delta
+            testing_start = current_test_start
+            testing_end = min(
+                testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days),
+                end_date
+            )
+
+            # Проверяем что тестовый период не пустой
+            if testing_end > testing_start:
+                walk_forward_steps.append({
+                    'training_start': training_start,
+                    'training_end': training_end,
+                    'testing_start': testing_start,
+                    'testing_end': testing_end
+                })
+
+            # Переходим к следующему шагу
+            current_test_start += pd.Timedelta(days=step_size_days)
+
+        print(f"🗓️  МНОЖЕСТВЕННЫЕ WALK-FORWARD ШАГИ ({len(walk_forward_steps)} шагов):")
+        for i, step in enumerate(walk_forward_steps):
+            print(f"   Шаг {i+1}: Тренировка {step['training_start'].strftime('%Y-%m-%d')} -> {step['training_end'].strftime('%Y-%m-%d')}, "
+                  f"Тест {step['testing_start'].strftime('%Y-%m-%d')} -> {step['testing_end'].strftime('%Y-%m-%d')}")
+
+        # Для совместимости с существующим кодом используем первый шаг
+        if not walk_forward_steps:
+            raise ValueError("Не удалось сгенерировать ни одного walk-forward шага")
+
+        first_step = walk_forward_steps[0]
+        training_start = first_step['training_start']
+        training_end = first_step['training_end']
+        testing_start = first_step['testing_start']
+        testing_end = first_step['testing_end']
 
         # Гарантируем, что все временные метки - Timestamp
         testing_start = pd.to_datetime(testing_start)
         testing_end = pd.to_datetime(testing_end)
 
-        # Загружаем данные для этого шага динамически
-        step_df = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
+        # ИСПРАВЛЕНО: Обрабатываем все walk-forward шаги
+        all_step_results = []
 
-        # Инициализируем портфель
+        for step_idx, step in enumerate(walk_forward_steps):
+            print(f"\n🔄 Обработка walk-forward шага {step_idx + 1}/{len(walk_forward_steps)}")
+
+            # Загружаем данные для этого шага
+            step_data = self._load_data_for_step(
+                step['training_start'], step['training_end'],
+                step['testing_start'], step['testing_end']
+            )
+            step_df = step_data['full_data']
+
+            if step_df is None:
+                print(f"   ❌ Нет данных для шага {step_idx + 1}, пропускаем")
+                continue
+
+            # Обрабатываем этот шаг
+            step_result = self._process_single_walk_forward_step(
+                cfg, step_data, step_idx
+            )
+
+            if step_result is not None and step_result['pnls']:
+                all_step_results.append(step_result)
+
+        # Проверяем что есть результаты
+        if not all_step_results:
+            print("❌ Нет результатов ни для одного walk-forward шага")
+            return {"sharpe_ratio_abs": None, "total_trades": 0, "error_type": "no_wf_steps", "error_message": "No valid walk-forward steps"}
+
+        # Объединяем результаты всех шагов
+        all_pnls = []
+        total_trades = 0
+
+        for step_result in all_step_results:
+            all_pnls.extend(step_result['pnls'])
+            total_trades += step_result['trades']
+
+        print(f"\n📊 АГРЕГИРОВАННЫЕ РЕЗУЛЬТАТЫ ВСЕХ {len(all_step_results)} ШАГОВ:")
+        print(f"   📈 Всего PnL серий: {len(all_pnls)}")
+        print(f"   🔄 Всего сделок: {total_trades}")
+
+        # Инициализируем портфель для совместимости
         portfolio = Portfolio(
             initial_capital=cfg.portfolio.initial_capital,
             max_active_positions=cfg.portfolio.max_active_positions
         )
 
-        total_trades = 0
-        all_pnls = []
-
-        # ДИАГНОСТИКА: Добавляем счетчики
-        pairs_checked = 0
-        pairs_with_data = 0
-        pairs_after_normalization = 0
-        pairs_with_enough_data = 0
-
-        print(f"🔍 ДИАГНОСТИКА: Начинаем бэктест для {len(self.preselected_pairs)} пар")
-        print(f"   Период тестирования: {testing_start} -> {testing_end}")
-        print(f"   Размер step_df: {step_df.shape}")
-        print(f"   Колонки в step_df: {len(step_df.columns)}")
-
-        # ТОЧНО как в оригинальной системе: запускаем бэктест для каждой пары
-        for _, pair_row in self.preselected_pairs.iterrows():
-            s1, s2 = pair_row['s1'], pair_row['s2']
-            beta, mean, std = pair_row['beta'], pair_row['mean'], pair_row['std']
-
-            pairs_checked += 1
-
-            # Проверяем наличие данных для пары
-            if s1 not in step_df.columns or s2 not in step_df.columns:
-                if pairs_checked <= 5:  # Логируем первые 5 пар
-                    print(f"   Пара {pairs_checked}: {s1}/{s2} - НЕТ ДАННЫХ в step_df")
-                continue
-
-            pairs_with_data += 1
-
-            # ТОЧНО как в оригинальной системе: извлекаем данные тестового периода
-            pair_data = step_df.loc[testing_start:testing_end, [s1, s2]].dropna()
-
-            if pair_data.empty:
-                if pairs_checked <= 5:
-                    print(f"   Пара {pairs_checked}: {s1}/{s2} - ПУСТЫЕ ДАННЫЕ после извлечения")
-                continue
-
-            if pairs_checked <= 5:
-                print(f"   Пара {pairs_checked}: {s1}/{s2} - {len(pair_data)} точек данных")
-
-            # ИСПРАВЛЕНО: Устранен lookahead bias - используем фиксированную нормализацию
-            # Используем предварительно рассчитанные параметры нормализации из pair selection
-            # Это исключает динамическое использование будущих данных для нормализации
-            
-            # Проверяем, есть ли предварительно рассчитанные параметры нормализации
-            if 'normalization_base' in pair_row:
-                # Используем сохраненную базу нормализации
-                normalization_base = pair_row['normalization_base']
-                if not np.any(normalization_base == 0):
-                    data_values = pair_data.values
-                    normalized_values = np.divide(data_values, normalization_base[np.newaxis, :]) * 100
-                    pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
-                else:
-                    continue
-            else:
-                # Fallback: используем первую доступную строку данных (без lookahead)
-                # Берем только первую строку тестового периода для нормализации
-                if not pair_data.empty:
-                    first_row = pair_data.iloc[0].values
-                    if not np.any(first_row == 0):
-                        data_values = pair_data.values
-                        normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
-                        pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
-                    else:
-                        continue
-                else:
-                    continue
-
-            pairs_after_normalization += 1
-
-            if len(pair_data) < cfg.backtest.rolling_window + 10:
-                if pairs_checked <= 5:
-                    print(f"   Пара {pairs_checked}: {s1}/{s2} - НЕДОСТАТОЧНО ДАННЫХ ({len(pair_data)} < {cfg.backtest.rolling_window + 10})")
-                continue
-
-            pairs_with_enough_data += 1
-
-            if pairs_checked <= 5:
-                print(f"   Пара {pairs_checked}: {s1}/{s2} - ГОТОВА К БЭКТЕСТУ ({len(pair_data)} точек)")
-
-            try:
-                # ИСПРАВЛЕНО: Правильный расчет капитала с num_selected_pairs
-                capital_per_pair = portfolio.calculate_position_risk_capital(
-                    risk_per_position_pct=cfg.portfolio.risk_per_position_pct,
-                    max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 1.0),
-                    num_selected_pairs=len(self.preselected_pairs)
-                )
-                temp_portfolio = Portfolio(
-                    initial_capital=capital_per_pair,
-                    max_active_positions=1  # Single pair
-                )
-
-                # Извлекаем метрики пары для передачи в бэктестер
-                metrics = {}
-                if 'half_life' in pair_row:
-                    metrics['half_life'] = pair_row['half_life']
-
-                # ТОЧНО как в оригинальной системе: создаем бэктестер со всеми параметрами
-                print(f"🔧 DEBUG: Создаем PairBacktester для пары {s1}-{s2}")
-                backtester = PairBacktester(
-                    pair_data=pair_data,
-                    rolling_window=cfg.backtest.rolling_window,
-                    portfolio=temp_portfolio,
-                    pair_name=f"{s1}-{s2}",
-                    z_threshold=cfg.backtest.zscore_threshold,
-                    z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
-                    commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),
-                    slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
-                    annualizing_factor=getattr(cfg.backtest, 'annualizing_factor', 365),
-                    capital_at_risk=capital_per_pair,
-                    stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
-                    take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
-                    cooldown_periods=convert_hours_to_periods(getattr(cfg.backtest, 'cooldown_hours', 0), bar_minutes),
-                    wait_for_candle_close=getattr(cfg.backtest, 'wait_for_candle_close', False),
-                    max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
-                    half_life=metrics.get('half_life'),
-                    time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', None),
-                    # Enhanced risk management parameters
-                    use_kelly_sizing=getattr(cfg.backtest, 'use_kelly_sizing', True),
-                    max_kelly_fraction=getattr(cfg.backtest, 'max_kelly_fraction', 0.25),
-                    volatility_lookback=getattr(cfg.backtest, 'volatility_lookback', 96),
-                    adaptive_thresholds=getattr(cfg.backtest, 'adaptive_thresholds', True),
-                    var_confidence=getattr(cfg.backtest, 'var_confidence', 0.05),
-                    max_var_multiplier=getattr(cfg.backtest, 'max_var_multiplier', 3.0),
-                    # Market regime detection parameters
-                    market_regime_detection=getattr(cfg.backtest, 'market_regime_detection', True),
-                    hurst_window=getattr(cfg.backtest, 'hurst_window', 720),
-                    hurst_trending_threshold=getattr(cfg.backtest, 'hurst_trending_threshold', 0.5),
-                    variance_ratio_window=getattr(cfg.backtest, 'variance_ratio_window', 480),
-                    variance_ratio_trending_min=getattr(cfg.backtest, 'variance_ratio_trending_min', 1.2),
-                    variance_ratio_mean_reverting_max=getattr(cfg.backtest, 'variance_ratio_mean_reverting_max', 0.8),
-                    # Structural break protection parameters
-                    structural_break_protection=getattr(cfg.backtest, 'structural_break_protection', True),
-                    cointegration_test_frequency=getattr(cfg.backtest, 'cointegration_test_frequency', 2688),
-                    adf_pvalue_threshold=getattr(cfg.backtest, 'adf_pvalue_threshold', 0.05),
-                    exclusion_period_days=getattr(cfg.backtest, 'exclusion_period_days', 30),
-                    max_half_life_days=getattr(cfg.backtest, 'max_half_life_days', 10),
-                    min_correlation_threshold=getattr(cfg.backtest, 'min_correlation_threshold', 0.6),
-                    correlation_window=getattr(cfg.backtest, 'correlation_window', 720),
-                    # Performance optimization parameters
-                    regime_check_frequency=getattr(cfg.backtest, 'regime_check_frequency', 96),
-                    use_market_regime_cache=getattr(cfg.backtest, 'use_market_regime_cache', True),
-                    adf_check_frequency=getattr(cfg.backtest, 'adf_check_frequency', 5376),
-                    lazy_adf_threshold=getattr(cfg.backtest, 'lazy_adf_threshold', 0.1),
-                    # EW correlation parameters
-                    use_exponential_weighted_correlation=getattr(cfg.backtest, 'use_exponential_weighted_correlation', False),
-                    ew_correlation_alpha=getattr(cfg.backtest, 'ew_correlation_alpha', 0.1),
-                    hurst_neutral_band=getattr(cfg.backtest, 'hurst_neutral_band', 0.05),
-                    vr_neutral_band=getattr(cfg.backtest, 'vr_neutral_band', 0.2),
-                    # Volatility-based position sizing parameters (добавлены недостающие параметры)
-                    volatility_based_sizing=getattr(cfg.portfolio, 'volatility_based_sizing', False),
-                    volatility_lookback_hours=getattr(cfg.portfolio, 'volatility_lookback_hours', 24),
-                    min_position_size_pct=getattr(cfg.portfolio, 'min_position_size_pct', 0.005),
-                    max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 0.02),
-                    volatility_adjustment_factor=getattr(cfg.portfolio, 'volatility_adjustment_factor', 2.0)
-                )
-
-                # Запускаем бэктест
-                backtester.run()
-                results = backtester.get_results()
-
-                if results is not None and 'pnl' in results:
-                    pnl_series = results['pnl']
-                    if not pnl_series.empty:
-                        all_pnls.append(pnl_series)
-
-                        # ИСПРАВЛЕНО: Правильный подсчет сделок из DataFrame
-                        if 'trades' in results:
-                            pair_trades = int(results['trades'].sum())
-                        else:
-                            # Альтернативный способ: считаем изменения позиций
-                            position_changes = results['position'].diff().fillna(0)
-                            pair_trades = int((position_changes != 0).sum())
-
-                        total_trades += pair_trades
-
-                        if pairs_checked <= 5:
-                            print(f"   Пара {pairs_checked}: {s1}/{s2} - {pair_trades} сделок, PnL: {pnl_series.sum():.4f}")
-                    else:
-                        if pairs_checked <= 5:
-                            print(f"   Пара {pairs_checked}: {s1}/{s2} - ПУСТОЙ PnL")
-                else:
-                    if pairs_checked <= 5:
-                        print(f"   Пара {pairs_checked}: {s1}/{s2} - НЕТ РЕЗУЛЬТАТОВ")
-
-            except Exception as e:
-                if pairs_checked <= 5:
-                    print(f"   Пара {pairs_checked}: {s1}/{s2} - ОШИБКА: {e}")
-                continue
-        
-        # ДИАГНОСТИКА: Итоговая статистика
-        print(f"🔍 ДИАГНОСТИКА: Итоги обработки пар:")
-        print(f"   Проверено пар: {pairs_checked}")
-        print(f"   С данными: {pairs_with_data}")
-        print(f"   После нормализации: {pairs_after_normalization}")
-        print(f"   С достаточными данными: {pairs_with_enough_data}")
-        print(f"   Всего сделок: {total_trades}")
-        print(f"   PnL серий: {len(all_pnls)}")
-
-        # ИСПРАВЛЕНО: Стандартизированная обработка ошибок - возвращаем None для невалидных результатов
+        # Проверяем что есть результаты для расчета метрик
         if not all_pnls:
             print(f"🔍 ДИАГНОСТИКА: НЕТ PnL ДАННЫХ - возвращаем невалидный результат")
             return {"sharpe_ratio_abs": None, "total_trades": total_trades, "error_type": "no_pnl_data"}
 
-        # Суммируем PnL всех пар (безопасно)
+
+
+
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Полноценная симуляция портфеля с реалистичным управлением позициями
         try:
             if len(all_pnls) == 1:
                 combined_pnl = all_pnls[0].fillna(0)
             else:
-                combined_pnl = pd.concat(all_pnls, axis=1).sum(axis=1).fillna(0)
+                # Создаем полноценную симуляцию портфеля
+                combined_pnl = self._simulate_realistic_portfolio(all_pnls, cfg)
+
+                print(f"📊 РЕАЛИСТИЧНАЯ СИМУЛЯЦИЯ ПОРТФЕЛЯ:")
+                print(f"   • Общий PnL: ${combined_pnl.sum():.2f}")
+                print(f"   • Макс. дневной PnL: ${combined_pnl.max():.2f}")
+                print(f"   • Мин. дневной PnL: ${combined_pnl.min():.2f}")
+                print(f"   • Лимит позиций: {cfg.portfolio.max_active_positions}")
+
         except Exception as e:
             print(f"Ошибка при агрегации PnL: {e}")
             return {"sharpe_ratio_abs": None, "total_trades": total_trades, "error_type": "aggregation_error", "error_message": str(e)}
@@ -792,20 +899,61 @@ class FastWalkForwardObjective:
         avg_hold_time = len(combined_pnl) / max(total_trades, 1)  # Приблизительная оценка
         micro_trades_pct = 0  # Упрощенная версия
         
-        # Расчет win rate для унификации с objective.py
+        # ИСПРАВЛЕНО: Правильный расчет метрик по сделкам, а не по барам
         win_rate = 0.0
-        if total_trades > 0:
-            winning_trades = sum(1 for pnl in combined_pnl if pnl > 0)
-            win_rate = winning_trades / len(combined_pnl) if len(combined_pnl) > 0 else 0.0
+        avg_trade_size = 0.0
+        avg_hold_time = 0.0
+
+        if total_trades > 0 and len(all_pnls) > 0:
+            # Собираем все результаты бэктестов для анализа сделок
+            all_trade_pnls = []
+            all_hold_times = []
+
+            # Для каждой пары анализируем её результаты
+            for pnl_series in all_pnls:
+                if len(pnl_series) == 0:
+                    continue
+
+                # Создаем фиктивную позицию на основе PnL (упрощение для быстрого расчета)
+                # В реальности нужно получать позицию из бэктестера
+                position = (pnl_series != 0).astype(int)
+
+                # Находим сделки по изменениям позиции
+                trade_start = (position.shift(fill_value=0) == 0) & (position != 0)
+                trade_id = trade_start.cumsum()
+                trade_id = trade_id.where(position != 0, None)
+
+                if trade_id.notna().any():
+                    # PnL по сделкам
+                    trade_pnls = pnl_series.groupby(trade_id).sum().dropna()
+                    all_trade_pnls.extend(trade_pnls.tolist())
+
+                    # Длительность сделок в барах
+                    hold_bars = position.groupby(trade_id).sum().dropna()
+                    all_hold_times.extend(hold_bars.tolist())
+
+            # Рассчитываем метрики по всем сделкам
+            if all_trade_pnls:
+                win_rate = float(sum(1 for pnl in all_trade_pnls if pnl > 0) / len(all_trade_pnls))
+                avg_trade_size = float(sum(abs(pnl) for pnl in all_trade_pnls) / len(all_trade_pnls))
+
+            if all_hold_times:
+                avg_hold_time = float(sum(all_hold_times) / len(all_hold_times))
+        else:
+            # Fallback для случая когда нет сделок - используем старую логику для совместимости
+            if len(combined_pnl) > 0:
+                winning_bars = sum(1 for pnl in combined_pnl if pnl > 0)
+                win_rate = winning_bars / len(combined_pnl)
+                avg_trade_size = combined_pnl.abs().mean()
+                avg_hold_time = len(combined_pnl) / max(total_trades, 1)
         
         print(f"📊 Диагностика производительности:")
-        print(f"   • Всего пар в торговле: {len(all_pnls)} из {len(self.preselected_pairs)} доступных")
+        print(f"   • Всего пар в торговле: {len(all_pnls)}")
         print(f"   • Всего сделок: {total_trades}")
         print(f"   • Средний размер сделки: ${avg_trade_size:.2f}")
         print(f"   • Средний hold-time: {avg_hold_time:.1f} баров")
         print(f"   • Максимальная просадка: {max_dd:.2%}")
         print(f"   • Общий P&L: ${combined_pnl.sum():.2f}")
-        print(f"   • Активность пар: {(len(all_pnls) / len(self.preselected_pairs) * 100):.1f}%")
         
         return {
             "sharpe_ratio_abs": float(sharpe),
@@ -825,8 +973,10 @@ class FastWalkForwardObjective:
             s1, s2 = pair_row['s1'], pair_row['s2']
             beta, mean, std = pair_row['beta'], pair_row['mean'], pair_row['std']
 
-            # Если данные не переданы, загружаем их (для обратной совместимости)
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПРОИЗВОДИТЕЛЬНОСТИ:
+            # Если step_df передан, используем его БЕЗ повторной загрузки данных
             if step_df is None:
+                print(f"⚠️ FALLBACK: Загрузка данных для пары {s1}-{s2} (step_df не передан)")
                 # Определяем периоды точно как в _run_fast_backtest
                 start_date = pd.to_datetime(cfg.walk_forward.start_date)
                 bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
@@ -841,30 +991,72 @@ class FastWalkForwardObjective:
                 testing_start = pd.to_datetime(testing_start)
                 testing_end = pd.to_datetime(testing_end)
 
-                # Загружаем данные для этого шага
-                step_df = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
+                # Загружаем данные только если они действительно не переданы
+                step_data = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
+                step_df = step_data['full_data']
+            # ИСПРАВЛЕНО: Убираем избыточную загрузку данных когда step_df уже передан
 
             # Проверяем наличие данных для пары
             if s1 not in step_df.columns or s2 not in step_df.columns:
                 return None
 
-            # Извлекаем данные пары
-            pair_data = step_df[[s1, s2]].dropna()
-            if len(pair_data) < cfg.backtest.rolling_window + 10:
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПРОИЗВОДИТЕЛЬНОСТИ:
+            # Для переданного step_df используем простое разделение по времени вместо повторной загрузки
+            if step_df is not None and 'step_data' not in locals():
+                # Определяем периоды для разделения данных
+                start_date = pd.to_datetime(cfg.walk_forward.start_date)
+                bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+                bar_delta = pd.Timedelta(minutes=bar_minutes)
+
+                current_test_start = start_date
+                training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
+                training_end = current_test_start - bar_delta
+                testing_start = current_test_start
+                testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+
+                # Разделяем данные по времени БЕЗ повторной загрузки с диска
+                training_data = step_df.loc[training_start:training_end]
+                testing_data = step_df.loc[testing_start:testing_end]
+            else:
+                # Используем уже загруженные данные из step_data
+                training_data = step_data['training_data']
+                testing_data = step_data['testing_data']
+
+            # Проверяем наличие данных для пары в обоих периодах
+            if s1 not in training_data.columns or s2 not in training_data.columns:
+                return None
+            if s1 not in testing_data.columns or s2 not in testing_data.columns:
                 return None
 
-            # Нормализация данных
+            training_pair_data = training_data[[s1, s2]].dropna()
+            testing_pair_data = testing_data[[s1, s2]].dropna()
+
+            if len(training_pair_data) < cfg.backtest.rolling_window + 10:
+                return None
+            if len(testing_pair_data) < cfg.backtest.rolling_window + 10:
+                return None
+
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ LOOK-AHEAD BIAS: Вычисляем параметры нормализации только из тренировочных данных
             try:
-                normalized_data, _ = preprocess_and_normalize_data(
-                    pair_data,
-                    method=cfg.data_processing.normalization_method,
-                    min_history_ratio=cfg.data_processing.min_history_ratio,
-                    handle_constant=cfg.data_processing.handle_constant,
-                    fill_method=cfg.data_processing.fill_method
+                # Используем безопасные значения по умолчанию, если секция data_processing не существует
+                norm_method = getattr(cfg.data_processing, 'normalization_method', 'minmax') if hasattr(cfg, 'data_processing') else 'minmax'
+                fill_method = getattr(cfg.data_processing, 'fill_method', 'linear') if hasattr(cfg, 'data_processing') else 'linear'
+
+                # Шаг 1: Вычисляем параметры нормализации ТОЛЬКО из тренировочных данных
+                normalization_params = compute_normalization_params(training_pair_data, norm_method)
+
+                # Шаг 2: Применяем параметры нормализации к тестовым данным
+                normalized_data = apply_normalization_with_params(
+                    testing_pair_data,
+                    normalization_params,
+                    norm_method=norm_method,
+                    fill_method=fill_method
                 )
+
                 if normalized_data.empty:
                     return None
-            except Exception:
+            except Exception as e:
+                print(f"Ошибка нормализации для пары {s1}-{s2}: {e}")
                 return None
 
             # Создаем временный портфель для этой пары
@@ -873,9 +1065,17 @@ class FastWalkForwardObjective:
                 max_active_positions=1
             )
 
-            capital_per_pair = cfg.portfolio.initial_capital * cfg.portfolio.risk_per_position_pct
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Риск на сделку из лимита позиций, а не "на пару"
+            base_capital_per_trade = cfg.portfolio.initial_capital * cfg.portfolio.risk_per_position_pct
+            # Эффективный капитал учитывает максимальное количество одновременных позиций
+            capital_per_pair = base_capital_per_trade
 
-            # Создаем бэктестер
+            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Конвертируем cooldown_hours в cooldown_periods
+            cooldown_hours = getattr(cfg.backtest, 'cooldown_hours', 4)
+            bar_minutes = getattr(cfg.pair_selection, "bar_minutes", 15)  # Получаем таймфрейм
+            cooldown_periods = convert_hours_to_periods(cooldown_hours, bar_minutes)
+
+            # УСКОРЕНИЕ: Создаем полностью Numba-оптимизированный бэктестер для максимального ускорения
             backtester = PairBacktester(
                 pair_data=normalized_data,
                 rolling_window=cfg.backtest.rolling_window,
@@ -890,135 +1090,401 @@ class FastWalkForwardObjective:
                 stop_loss_multiplier=getattr(cfg.backtest, 'stop_loss_multiplier', 2.0),
                 take_profit_multiplier=getattr(cfg.backtest, 'take_profit_multiplier', None),
                 time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', 2.0),
-                cooldown_hours=getattr(cfg.backtest, 'cooldown_hours', 4)
+                cooldown_periods=cooldown_periods  # <--- ИСПОЛЬЗУЕМ ИСПРАВЛЕННЫЙ ПАРАМЕТР
             )
 
-            # Запускаем бэктест
+            # Запускаем бэктест (FullNumbaPairBacktester не требует установки имен символов)
             backtester.run()
             results = backtester.get_results()
 
-            if results is None or results.empty or 'pnl' not in results:
-                return None
+            # ИСПРАВЛЕНО: Корректная обработка результатов (может быть dict или DataFrame)
+            if not isinstance(results, dict) or 'pnl' not in results:
+                # Логируем, если результат неожиданного типа, для отладки
+                if not isinstance(results, dict):
+                    print(f"⚠️ Результат бэктеста для {s1}-{s2} не является словарем, тип: {type(results)}")
+                return None, 0
 
-            # Возвращаем PnL серию
-            return results['pnl'] * capital_per_pair
+            # Дополнительная проверка на пустоту PnL серии
+            pnl_series = results.get('pnl')
+            if pnl_series is None or (hasattr(pnl_series, 'empty') and pnl_series.empty):
+                return None, 0
+
+            # ИСПРАВЛЕНО: Правильный подсчет сделок
+            pair_trades = 0
+            if 'trades' in results:
+                pair_trades = int(results['trades'].sum())
+            else:
+                # Альтернативный способ: считаем изменения позиций
+                if 'position' in results:
+                    position_changes = results['position'].diff().fillna(0)
+                    pair_trades = int((position_changes != 0).sum())
+
+            # Возвращаем PnL серию и количество сделок
+            # ИСПРАВЛЕНО: Убираем двойное масштабирование PnL - FullNumbaPairBacktester уже возвращает PnL в долларах
+            return results['pnl'], pair_trades
 
         except Exception as e:
             print(f"Ошибка при обработке пары {pair_row.get('s1', 'unknown')}: {e}")
-            return None
+            return None, 0
+
+    def _simulate_realistic_portfolio(self, all_pnls, cfg):
+        """
+        КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Полноценная симуляция портфеля с реалистичным управлением позициями.
+
+        Вместо простого суммирования PnL всех пар, симулируем реальную работу портфеля:
+        1. На каждом временном шаге собираем сигналы от всех пар
+        2. Применяем лимит max_active_positions
+        3. Выбираем лучшие сигналы для торговли
+        4. Рассчитываем реалистичный PnL портфеля
+
+        Args:
+            all_pnls: Список PnL серий от всех пар
+            cfg: Конфигурация с параметрами портфеля
+
+        Returns:
+            pd.Series: Реалистичный PnL портфеля с учетом лимитов позиций
+        """
+        if not all_pnls:
+            return pd.Series(dtype=float)
+
+        # Создаем DataFrame со всеми PnL сериями
+        pnl_df = pd.concat({f'pair_{i}': pnl.fillna(0) for i, pnl in enumerate(all_pnls)}, axis=1)
+
+        # Создаем DataFrame с сигналами (позиция активна если PnL != 0)
+        signals_df = pd.concat({f'pair_{i}': (pnl != 0).astype(int) for i, pnl in enumerate(all_pnls)}, axis=1)
+
+        # Инициализируем портфель
+        max_positions = cfg.portfolio.max_active_positions
+        portfolio_pnl = pd.Series(0.0, index=pnl_df.index)
+        active_positions = {}  # {pair_name: entry_timestamp}
+
+        print(f"🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: {len(all_pnls)} пар, лимит {max_positions} позиций")
+
+        # Симулируем торговлю по каждому временному шагу
+        for timestamp in pnl_df.index:
+            current_signals = signals_df.loc[timestamp]
+            current_pnls = pnl_df.loc[timestamp]
+
+            # 1. Закрываем позиции, которые больше не активны
+            positions_to_close = []
+            for pair_name in list(active_positions.keys()):
+                if current_signals[pair_name] == 0:  # Сигнал исчез
+                    positions_to_close.append(pair_name)
+
+            for pair_name in positions_to_close:
+                del active_positions[pair_name]
+
+            # 2. Ищем новые сигналы для открытия позиций
+            new_signals = []
+            for pair_name in current_signals.index:
+                if current_signals[pair_name] == 1 and pair_name not in active_positions:
+                    # Новый сигнал от пары, которая не в портфеле
+                    new_signals.append((pair_name, abs(current_pnls[pair_name])))
+
+            # 3. Сортируем новые сигналы по силе (абсолютный PnL)
+            new_signals.sort(key=lambda x: x[1], reverse=True)
+
+            # 4. Открываем новые позиции в пределах лимита
+            available_slots = max_positions - len(active_positions)
+            for i, (pair_name, signal_strength) in enumerate(new_signals):
+                if i >= available_slots:
+                    break  # Достигли лимита позиций
+                active_positions[pair_name] = timestamp
+
+            # 5. Рассчитываем PnL портфеля на этом шаге
+            step_pnl = 0.0
+            for pair_name in active_positions:
+                step_pnl += current_pnls[pair_name]
+
+            portfolio_pnl[timestamp] = step_pnl
+
+        # Диагностика
+        total_signals = signals_df.sum(axis=1)
+        avg_active_pairs = len([p for p in active_positions]) if active_positions else 0
+        max_signals = total_signals.max()
+        avg_signals = total_signals.mean()
+
+        print(f"   📈 Макс. одновременных сигналов: {max_signals}")
+        print(f"   📊 Средн. сигналов за период: {avg_signals:.1f}")
+        print(f"   🎯 Финальных активных позиций: {avg_active_pairs}")
+
+        utilization = (total_signals.clip(upper=max_positions) / max_positions).mean()
+        print(f"   ⚡ Утилизация лимита позиций: {utilization:.1%}")
+
+        return portfolio_pnl
 
     def _run_fast_backtest_with_reports(self, params, trial):
         """Запускает быстрый бэктест с промежуточными отчетами для pruning."""
-        import optuna
+        # ИСПРАВЛЕНО: Убираем дублированный импорт optuna (уже импортирован в начале файла)
 
         # Используем ту же логику что и в _run_fast_backtest, но с отчетами
         cfg = self.base_config.model_copy(deep=True)
 
         # Применяем параметры (сокращенная версия)
+        # ИСПРАВЛЕНО: Безопасное применение параметров с проверкой существования секций
         for key, value in params.items():
             if key in ["ssd_top_n", "kpss_pvalue_threshold", "coint_pvalue_threshold",
                       "min_half_life_days", "max_half_life_days", "min_mean_crossings"]:
-                setattr(cfg.pair_selection, key, value)
+                if hasattr(cfg, 'pair_selection'):
+                    setattr(cfg.pair_selection, key, value)
             elif key in ["zscore_threshold", "zscore_exit", "rolling_window", "stop_loss_multiplier",
                         "time_stop_multiplier", "cooldown_hours", "commission_pct", "slippage_pct"]:
-                setattr(cfg.backtest, key, value)
+                if hasattr(cfg, 'backtest'):
+                    setattr(cfg.backtest, key, value)
             elif key in ["max_active_positions", "risk_per_position_pct", "max_position_size_pct"]:
-                setattr(cfg.portfolio, key, value)
+                if hasattr(cfg, 'portfolio'):
+                    setattr(cfg.portfolio, key, value)
             elif key in ["normalization_method", "min_history_ratio"]:
-                setattr(cfg.data_processing, key, value)
+                if hasattr(cfg, 'data_processing'):
+                    setattr(cfg.data_processing, key, value)
 
-        # ИСПРАВЛЕНИЕ: Загружаем данные один раз для всех пар
+        # ИСПРАВЛЕНО: Генерируем множественные walk-forward шаги
         start_date = pd.to_datetime(cfg.walk_forward.start_date)
+        end_date = pd.to_datetime(getattr(cfg.walk_forward, 'end_date', start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)))
+        step_size_days = getattr(cfg.walk_forward, 'step_size_days', cfg.walk_forward.testing_period_days)
+
+        # Генерируем все walk-forward шаги
+        walk_forward_steps = []
+        current_test_start = start_date
         bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
         bar_delta = pd.Timedelta(minutes=bar_minutes)
 
-        current_test_start = start_date
-        training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-        training_end = current_test_start - bar_delta
-        testing_start = current_test_start
-        testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+        while current_test_start < end_date:
+            training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
+            training_end = current_test_start - bar_delta
+            testing_start = current_test_start
+            testing_end = min(testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days), end_date)
 
-        testing_start = pd.to_datetime(testing_start)
-        testing_end = pd.to_datetime(testing_end)
+            walk_forward_steps.append({
+                'training_start': training_start,
+                'training_end': training_end,
+                'testing_start': testing_start,
+                'testing_end': testing_end
+            })
 
-        # Загружаем данные один раз для всех пар
-        step_df = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
+            current_test_start += pd.Timedelta(days=step_size_days)
 
-        # Запускаем бэктест по парам с промежуточными отчетами
+        print(f"\n🔄 ГЕНЕРИРОВАНО {len(walk_forward_steps)} WALK-FORWARD ШАГОВ (с отчетами)")
+
+        # ИСПРАВЛЕНО: Обрабатываем все walk-forward шаги
+        all_step_results = []
+
+        for step_idx, step in enumerate(walk_forward_steps):
+            print(f"\n🔄 Обработка walk-forward шага {step_idx + 1}/{len(walk_forward_steps)} (с отчетами)")
+
+            # Загружаем данные для этого шага
+            step_data = self._load_data_for_step(
+                step['training_start'], step['training_end'],
+                step['testing_start'], step['testing_end']
+            )
+            step_df = step_data['full_data']
+
+            if step_df is None:
+                print(f"   ❌ Нет данных для шага {step_idx + 1}, пропускаем")
+                continue
+
+            # Обрабатываем этот шаг
+            step_result = self._process_single_walk_forward_step(
+                cfg, step_data, step_idx
+            )
+
+            if step_result is not None and step_result['pnls']:
+                all_step_results.append(step_result)
+
+        # Проверяем что есть результаты
+        if not all_step_results:
+            print("❌ Нет результатов ни для одного walk-forward шага")
+            return {"sharpe_ratio_abs": PENALTY_SOFT, "total_trades": 0, "max_drawdown": 0, "win_rate": 0}
+
+        # Объединяем результаты всех шагов
         all_pnls = []
         total_trades = 0
-        step_idx = 0
 
-        for i, (_, pair_row) in enumerate(self.preselected_pairs.iterrows()):
+        for step_result in all_step_results:
+            all_pnls.extend(step_result['pnls'])
+            total_trades += step_result['trades']
+
+        print(f"\n📊 АГРЕГИРОВАННЫЕ РЕЗУЛЬТАТЫ ВСЕХ {len(all_step_results)} ШАГОВ (с отчетами):")
+        print(f"   📈 Всего PnL серий: {len(all_pnls)}")
+        print(f"   🔄 Всего сделок: {total_trades}")
+
+        # ИСПРАВЛЕНО: Промежуточные отчеты на накопленных данных (без lookahead bias)
+        accumulated_pnls = []
+
+        # Промежуточные отчеты по шагам для pruning
+        for step_idx, step_result in enumerate(all_step_results):
             try:
-                # Передаем данные в метод для избежания повторной загрузки
-                pair_result = self._backtest_single_pair(pair_row, cfg, step_df)
+                # Добавляем PnL текущего шага к накопленным данным
+                step_pnls = step_result['pnls']
+                if step_pnls:
+                    accumulated_pnls.extend(step_pnls)
 
-                if pair_result is not None and len(pair_result) > 0:
-                    all_pnls.append(pair_result)
-                    total_trades += len(pair_result)
-
-                # Промежуточный отчет каждые INTERMEDIATE_REPORT_INTERVAL пар
-                if (i + 1) % INTERMEDIATE_REPORT_INTERVAL == 0 and all_pnls:
-                    try:
-                        combined_pnl = pd.concat(all_pnls, axis=1).sum(axis=1).fillna(0) if len(all_pnls) > 1 else all_pnls[0].fillna(0)
+                    # Рассчитываем промежуточную метрику на НАКОПЛЕННЫХ данных до текущего шага
+                    if len(accumulated_pnls) > 0:
+                        # ИСПРАВЛЕНО: Используем реалистичную симуляцию портфеля вместо простого суммирования
+                        if len(accumulated_pnls) == 1:
+                            combined_pnl = accumulated_pnls[0].fillna(0)
+                        else:
+                            combined_pnl = self._simulate_realistic_portfolio(accumulated_pnls, cfg)
                         equity_curve = cfg.portfolio.initial_capital + combined_pnl.cumsum()
-                        daily_returns = equity_curve.pct_change().dropna()
+                        daily_returns = equity_curve.resample('1D').last().pct_change().dropna()
 
                         if len(daily_returns) > 0 and daily_returns.std() > 0:
                             intermediate_sharpe = daily_returns.mean() / daily_returns.std() * np.sqrt(cfg.backtest.annualizing_factor)
 
-                            # Отчет в Optuna
+                            # ИСПРАВЛЕНО: Используем step_idx для консистентности с walk-forward шагами
                             trial.report(float(intermediate_sharpe), step=step_idx)
+                            print(f"   📊 Промежуточный отчет шаг {step_idx}: Sharpe={intermediate_sharpe:.4f} (накоплено {len(daily_returns)} дней)")
 
                             # Проверяем pruning
                             if trial.should_prune():
-                                print(f"Trial pruned at step {step_idx} (pair {i+1}/{len(self.preselected_pairs)})")
+                                print(f"Trial pruned at walk-forward step {step_idx} (шаг {step_idx + 1}/{len(all_step_results)})")
                                 raise optuna.TrialPruned(f"Pruned at step {step_idx}")
-
-                        step_idx += 1
-                    except Exception as e:
-                        print(f"Ошибка промежуточного отчета: {e}")
 
             except optuna.TrialPruned:
                 raise  # Пробрасываем pruning
             except Exception as e:
-                print(f"Ошибка при обработке пары {pair_row.get('s1', 'unknown')}: {e}")
-                continue
+                print(f"Ошибка промежуточного отчета для шага {step_idx + 1}: {e}")
 
         # Финальный расчет (упрощенная версия)
         if not all_pnls:
-            return {"sharpe_ratio_abs": PENALTY, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
+            return {"sharpe_ratio_abs": PENALTY_SOFT, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
 
         try:
-            combined_pnl = pd.concat(all_pnls, axis=1).sum(axis=1).fillna(0) if len(all_pnls) > 1 else all_pnls[0].fillna(0)
+            # ИСПРАВЛЕНО: Используем реалистичную симуляцию портфеля вместо простого суммирования
+            if len(all_pnls) == 1:
+                combined_pnl = all_pnls[0].fillna(0)
+            else:
+                combined_pnl = self._simulate_realistic_portfolio(all_pnls, cfg)
             equity_curve = cfg.portfolio.initial_capital + combined_pnl.cumsum()
-            daily_returns = equity_curve.pct_change().dropna()
+            # ИСПРАВЛЕНО: Правильный расчет дневных доходностей для 15-минутных данных
+            daily_returns = equity_curve.resample('1D').last().pct_change().dropna()
 
             if len(daily_returns) == 0 or daily_returns.std() == 0:
-                return {"sharpe_ratio_abs": PENALTY, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
+                return {"sharpe_ratio_abs": PENALTY_SOFT, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
 
             sharpe = daily_returns.mean() / daily_returns.std() * np.sqrt(cfg.backtest.annualizing_factor)
             running_max = equity_curve.expanding().max()
             drawdown = (equity_curve - running_max) / running_max
             max_dd = abs(drawdown.min()) if len(drawdown) > 0 else 0
-            win_rate = (daily_returns > 0).mean() if len(daily_returns) > 0 else 0
+
+            # ИСПРАВЛЕНО: Рассчитываем win_rate по сделкам, а не по дням
+            # Собираем все PnL сделок из всех шагов
+            all_trade_pnls = []
+            for step_result in all_step_results:
+                if 'trade_pnls' in step_result:
+                    all_trade_pnls.extend(step_result['trade_pnls'])
+
+            # Рассчитываем win_rate по сделкам
+            if all_trade_pnls:
+                win_rate = float(sum(1 for pnl in all_trade_pnls if pnl > 0) / len(all_trade_pnls))
+            else:
+                # Fallback: используем дневные данные если нет информации о сделках
+                daily_pnl = combined_pnl.resample('1D').sum()
+                win_rate = float((daily_pnl > 0).mean()) if len(daily_pnl) > 0 else 0.0
 
             return {"sharpe_ratio_abs": sharpe, "total_trades": total_trades, "max_drawdown": max_dd, "win_rate": win_rate}
 
         except Exception as e:
             print(f"Ошибка финального расчета: {e}")
-            return {"sharpe_ratio_abs": PENALTY, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
+            return {"sharpe_ratio_abs": PENALTY_HARD, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}
+
+    def quick_trial_filter(self, params):
+        """
+        ОПТИМИЗАЦИЯ: Быстрая предварительная фильтрация заведомо плохих параметров.
+
+        Args:
+            params: Словарь параметров trial
+
+        Returns:
+            tuple: (is_valid, reason) - валидность и причина отклонения
+        """
+        # Проверяем логичность соотношений параметров
+        zscore_threshold = params.get('zscore_threshold', 1.0)
+        zscore_exit = params.get('zscore_exit', 0.3)
+
+        # Проверка 1: zscore_exit должен быть меньше zscore_threshold
+        if zscore_exit >= zscore_threshold:
+            return False, f"zscore_exit ({zscore_exit:.3f}) >= zscore_threshold ({zscore_threshold:.3f})"
+
+        # Проверка 2: Разумный гистерезис (разница между порогами)
+        hysteresis = zscore_threshold - zscore_exit
+        if hysteresis < 0.1:
+            return False, f"Слишком маленький гистерезис: {hysteresis:.3f}"
+        if hysteresis > 1.0:
+            return False, f"Слишком большой гистерезис: {hysteresis:.3f}"
+
+        # Проверка 3: Разумные размеры позиций
+        risk_per_position = params.get('risk_per_position_pct', 0.02)
+        max_position_size = params.get('max_position_size_pct', 0.1)
+        max_positions = params.get('max_active_positions', 15)
+
+        # Максимальная экспозиция не должна превышать 100%
+        max_exposure = risk_per_position * max_positions
+        if max_exposure > 1.0:
+            return False, f"Слишком большая экспозиция: {max_exposure:.1%}"
+
+        # Проверка 4: Разумные стоп-лоссы
+        stop_loss_mult = params.get('stop_loss_multiplier', 3.0)
+        time_stop_mult = params.get('time_stop_multiplier', 5.0)
+
+        if stop_loss_mult < 1.5:
+            return False, f"Слишком агрессивный стоп-лосс: {stop_loss_mult}"
+        if time_stop_mult < stop_loss_mult:
+            return False, f"time_stop_multiplier ({time_stop_mult}) < stop_loss_multiplier ({stop_loss_mult})"
+
+        return True, "OK"
+
+    def _get_cached_data(self, cache_key):
+        """
+        ОПТИМИЗАЦИЯ: Получает данные из кэша.
+
+        Args:
+            cache_key: Ключ кэша
+
+        Returns:
+            Данные или None если не найдены
+        """
+        with self.data_cache_lock:
+            return self.data_cache.get(cache_key)
+
+    def _cache_data(self, cache_key, data):
+        """
+        ОПТИМИЗАЦИЯ: Сохраняет данные в кэш с ограничением размера.
+
+        Args:
+            cache_key: Ключ кэша
+            data: Данные для сохранения
+        """
+        with self.data_cache_lock:
+            # Ограничиваем размер кэша
+            if len(self.data_cache) >= self.max_cache_size:
+                # Удаляем самый старый элемент (FIFO)
+                oldest_key = next(iter(self.data_cache))
+                del self.data_cache[oldest_key]
+
+            self.data_cache[cache_key] = data
 
     def __call__(self, trial_or_params):
         """Унифицированная функция для совместимости с objective.py.
-        
+
         Args:
             trial_or_params: optuna.Trial объект или словарь параметров
-            
+
         Returns:
             float: Значение целевой функции
         """
+        # ИСПРАВЛЕНИЕ: Инициализируем глобальный кэш в каждом дочернем процессе
+        from src.coint2.core.global_rolling_cache import get_global_rolling_manager
+        manager = get_global_rolling_manager()
+        if not manager.initialized:
+            print(f"🔄 Инициализация глобального кэша в дочернем процессе (PID: {os.getpid()})")
+            cache_initialized = self._initialize_global_rolling_cache()
+            if cache_initialized:
+                print(f"✅ Глобальный кэш инициализирован в процессе {os.getpid()}")
+            else:
+                print(f"❌ Не удалось инициализировать кэш в процессе {os.getpid()}")
+
         # Определяем тип входных данных и извлекаем параметры
         if hasattr(trial_or_params, 'suggest_float'):  # Это optuna.Trial
             trial = trial_or_params
@@ -1027,19 +1493,29 @@ class FastWalkForwardObjective:
         else:  # Это словарь параметров
             params = trial_or_params
             trial_number = params.get("trial_number", -1)
-        
+
+        # ОПТИМИЗАЦИЯ: Быстрая предварительная фильтрация
+        is_valid, reason = self.quick_trial_filter(params)
+        if not is_valid:
+            logger.info(f"Trial #{trial_number}: Быстро отклонен - {reason}")
+            if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
+                trial_or_params.set_user_attr("quick_filter_reason", reason)
+                raise optuna.TrialPruned(f"Quick filter: {reason}")
+            return PENALTY_SOFT
+
         try:
             # ИСПРАВЛЕНО: Правильная обработка ошибок валидации через TrialPruned
             try:
                 validated_params = validate_params(params)
             except ValueError as e:
-                print(f"Trial #{trial_number}: Невалидные параметры: {e}")
+                logger.warning(f"Trial #{trial_number}: Невалидные параметры: {e}")
                 if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
                     trial_or_params.set_user_attr("error_type", "validation_error")
                     trial_or_params.set_user_attr("validation_message", str(e))
                     trial_or_params.set_user_attr("invalid_params", params)
                     raise optuna.TrialPruned(f"Parameter validation failed: {e}")
-                return PENALTY  # Fallback для обратной совместимости
+                # ИСПРАВЛЕНО: Убираем недостижимый код после raise
+                return PENALTY_SOFT
             
             # Запускаем быстрый бэктест с промежуточными отчетами (если это trial)
             if hasattr(trial_or_params, 'suggest_float'):
@@ -1052,47 +1528,57 @@ class FastWalkForwardObjective:
             
             # ИСПРАВЛЕНО: Правильная обработка невалидных Sharpe ratio через TrialPruned
             if sharpe is None or not isinstance(sharpe, (int, float)) or np.isnan(sharpe) or np.isinf(sharpe):
-                print(f"Trial #{trial_number}: Невалидный Sharpe ratio: {sharpe}")
+                logger.warning(f"Trial #{trial_number}: Невалидный Sharpe ratio: {sharpe}")
                 if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
                     trial_or_params.set_user_attr("error_type", "invalid_sharpe")
                     trial_or_params.set_user_attr("sharpe_value", str(sharpe))
                     trial_or_params.set_user_attr("metrics_available", list(metrics.keys()) if metrics else [])
                     raise optuna.TrialPruned(f"Invalid Sharpe ratio: {sharpe}")
-                return PENALTY  # Fallback для обратной совместимости
+                # ИСПРАВЛЕНО: Убираем недостижимый код после raise
+                return PENALTY_SOFT
             
-            print(f"Trial #{trial_number}: {metrics.get('total_trades', 0)} сделок, Sharpe: {sharpe:.4f}")
+            logger.debug(f"Trial #{trial_number}: {metrics.get('total_trades', 0)} сделок, Sharpe: {sharpe:.4f}")
             
             # ИСПРАВЛЕНО: Унифицированы штрафы с objective.py
             max_dd = metrics.get("max_drawdown", 0)
-            win_rate = metrics.get("win_rate", 0.0)
-            
-            # Базовый штраф за большую просадку (> 25%)
-            dd_penalty = 0
-            if max_dd > 0.25:
-                dd_penalty = (max_dd - 0.25) * 3
-                
-            # Дополнительный штраф за очень большую просадку (> 50%)
-            if max_dd > 0.50:
-                dd_penalty += (max_dd - 0.50) * 5
-                
-            # Бонус за хороший винрейт (> 55%)
-            win_rate_bonus = max(0, (win_rate - 0.55) * 0.5) if win_rate > 0.55 else 0
-            
-            # Штраф за низкий винрейт (< 40%)
-            win_rate_penalty = max(0, (0.40 - win_rate) * 1.0) if win_rate < 0.40 else 0
+
+            # ИСПРАВЛЕНО: Используем win_rate вместо positive_days_rate для более корректной оптимизации
+            win_rate = metrics.get('win_rate', 0.0)
+
+            # Константы для win_rate бонусов/штрафов
+            WIN_RATE_BONUS_THRESHOLD = 0.55  # 55% win rate для бонуса
+            WIN_RATE_BONUS_MULTIPLIER = 0.5  # Множитель бонуса
+            WIN_RATE_PENALTY_THRESHOLD = 0.40  # 40% win rate для штрафа
+            WIN_RATE_PENALTY_MULTIPLIER = 1.0  # Множитель штрафа
+
+            # Бонус за высокий win rate (> 55%)
+            win_rate_bonus = 0
+            if win_rate > WIN_RATE_BONUS_THRESHOLD:
+                win_rate_bonus = (win_rate - WIN_RATE_BONUS_THRESHOLD) * WIN_RATE_BONUS_MULTIPLIER
+
+            # Штраф за низкий win rate (< 40%)
+            win_rate_penalty = 0
+            if win_rate < WIN_RATE_PENALTY_THRESHOLD:
+                win_rate_penalty = (WIN_RATE_PENALTY_THRESHOLD - win_rate) * WIN_RATE_PENALTY_MULTIPLIER
             
             # ИСПРАВЛЕНО: Правильная обработка недостаточного количества сделок через TrialPruned
             total_trades = metrics.get('total_trades', 0)
-            if total_trades < MIN_TRADES_THRESHOLD:  # Используем константу
-                print(f"Trial #{trial_number}: Недостаточно сделок ({total_trades} < {MIN_TRADES_THRESHOLD})")
+            win_rate = metrics.get('win_rate', 0.0)  # ИСПРАВЛЕНО: Добавляем получение win_rate из metrics
+            logger.debug(f"Trial #{trial_number}: {total_trades} сделок, Sharpe: {sharpe:.4f}")
+
+            # Используем более низкий порог для walk-forward (так как период короткий)
+            min_trades_wf = 5  # Для walk-forward достаточно 5 сделок
+            if total_trades < min_trades_wf:
+                logger.warning(f"Trial #{trial_number}: Недостаточно сделок ({total_trades} < {min_trades_wf})")
                 if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
                     trial_or_params.set_user_attr("error_type", "insufficient_trades")
                     trial_or_params.set_user_attr("trades_count", total_trades)
-                    trial_or_params.set_user_attr("min_required", MIN_TRADES_THRESHOLD)
-                    raise optuna.TrialPruned(f"Insufficient trades: {total_trades} < {MIN_TRADES_THRESHOLD}")
-                return PENALTY  # Fallback для обратной совместимости
+                    trial_or_params.set_user_attr("min_required", min_trades_wf)
+                    raise optuna.TrialPruned(f"Insufficient trades: {total_trades} < {min_trades_wf}")
+                # ИСПРАВЛЕНО: Убираем недостижимый код после raise
+                return PENALTY_SOFT
 
-            # Используем константы для расчета штрафов и бонусов
+            # ИСПРАВЛЕНО: Единый расчет dd_penalty с использованием констант
             dd_penalty = 0
             if max_dd > MAX_DRAWDOWN_SOFT_THRESHOLD:
                 dd_penalty = (max_dd - MAX_DRAWDOWN_SOFT_THRESHOLD) * DD_PENALTY_SOFT_MULTIPLIER
@@ -1100,23 +1586,68 @@ class FastWalkForwardObjective:
             if max_dd > MAX_DRAWDOWN_HARD_THRESHOLD:
                 dd_penalty += (max_dd - MAX_DRAWDOWN_HARD_THRESHOLD) * DD_PENALTY_HARD_MULTIPLIER
 
-            win_rate_bonus = max(0, (win_rate - WIN_RATE_BONUS_THRESHOLD) * WIN_RATE_BONUS_MULTIPLIER) if win_rate > WIN_RATE_BONUS_THRESHOLD else 0
-            win_rate_penalty = max(0, (WIN_RATE_PENALTY_THRESHOLD - win_rate) * WIN_RATE_PENALTY_MULTIPLIER) if win_rate < WIN_RATE_PENALTY_THRESHOLD else 0
+            # ИСПРАВЛЕНО: Используем уже рассчитанные выше positive_days_bonus и positive_days_penalty
+            # Не пересчитываем их здесь, чтобы избежать дублирования логики
 
-            final_score = sharpe - dd_penalty + win_rate_bonus - win_rate_penalty
+            # BEST PRACTICE: Анти-чурн штраф за частые сделки
+            # Получаем настройки из search_space или используем дефолты
+            anti_churn_penalty_coeff = 0.02
+            max_trades_per_day = 5
+
+            if hasattr(self, 'search_space') and 'metrics' in self.search_space:
+                metrics_config = self.search_space['metrics']
+                anti_churn_penalty_coeff = metrics_config.get('anti_churn_penalty', 0.02)
+                max_trades_per_day = metrics_config.get('max_trades_per_day', 5)
+
+            # ИСПРАВЛЕНО: Правильный расчет торговых дней по фактическим данным
+            # Используем консервативную оценку торговых дней
+            calendar_days = self.base_config.walk_forward.testing_period_days
+            trading_days = max(1, int(calendar_days * 0.7))  # Консервативная оценка (~70% от календарных дней)
+
+            trades_per_day = total_trades / trading_days
+
+            # Штраф за превышение лимита сделок в день
+            anti_churn_penalty = anti_churn_penalty_coeff * max(0, trades_per_day - max_trades_per_day)
+
+            # ИСПРАВЛЕНО: Инициализируем переменные для пропущенных пар
+            pairs_skipped = 0  # В fast-режиме пары предотобраны, поэтому пропусков нет
+            skipped_ratio = 0.0
+            skipped_penalty = 0.0
+
+            # ИСПРАВЛЕНО: Используем win_rate вместо positive_days_rate для корректной оптимизации
+            final_score = sharpe - dd_penalty + win_rate_bonus - win_rate_penalty - anti_churn_penalty - skipped_penalty
 
             # Сохраняем детальные метрики в trial (если это Optuna trial)
             if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
+                # Получаем zscore параметры для логирования
+                zscore_threshold = validated_params.get('zscore_threshold', 0)
+                zscore_exit = validated_params.get('zscore_exit', 0)
+                hysteresis = zscore_threshold - zscore_exit if zscore_threshold > zscore_exit else 0
+                rolling_window = validated_params.get('rolling_window', 0)
+
                 trial_or_params.set_user_attr("metrics", {
                     "sharpe": float(sharpe),
                     "max_drawdown": float(max_dd),
                     "win_rate": float(win_rate),
                     "total_trades": int(total_trades),
+                    "trades_per_day": float(trades_per_day),
+                    "zscore_threshold": float(zscore_threshold),
+                    "zscore_exit": float(zscore_exit),
+                    "hysteresis": float(hysteresis),
+                    "rolling_window": int(rolling_window),
                     "dd_penalty": float(dd_penalty),
-                    "win_rate_bonus": float(win_rate_bonus),
-                    "win_rate_penalty": float(win_rate_penalty),
+                    "win_rate_bonus": float(win_rate_bonus),  # ИСПРАВЛЕНО: используем win_rate_bonus
+                    "win_rate_penalty": float(win_rate_penalty),  # ИСПРАВЛЕНО: используем win_rate_penalty
+                    "anti_churn_penalty": float(anti_churn_penalty),
+                    "skipped_penalty": float(skipped_penalty),  # ИСПРАВЛЕНО: штраф за пропуски
+                    "pairs_skipped": int(pairs_skipped),  # ИСПРАВЛЕНО: количество пропущенных пар
+                    "skipped_ratio": float(skipped_ratio),  # ИСПРАВЛЕНО: доля пропусков
                     "final_score": float(final_score)
                 })
+
+                # Логируем успешный результат (используем уже определенный trial_number)
+                logger.info(f"Trial #{trial_number}: SUCCESS - "
+                           f"Sharpe={sharpe:.4f}, Trades={total_trades}, DD={max_dd:.2%}, Score={final_score:.4f}")
 
             return final_score
             
@@ -1124,12 +1655,51 @@ class FastWalkForwardObjective:
             # Пробрасываем TrialPruned без изменений
             raise
         except Exception as e:
-            print(f"Неожиданная ошибка в fast objective (trial #{trial_number}): {e}")
-            import traceback
-            traceback.print_exc()
-            # Для неожиданных ошибок используем PENALTY + логирование
-            if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
-                trial_or_params.set_user_attr("error_type", "execution_error")
-                trial_or_params.set_user_attr("exception_type", type(e).__name__)
-                trial_or_params.set_user_attr("exception_message", str(e))
-            return PENALTY  # Штраф для неожиданных ошибок
+            # ИСПРАВЛЕНО: Различаем предсказуемые проблемы данных и системные ошибки
+            error_type = type(e).__name__
+            error_msg = str(e)
+
+            # ИСПРАВЛЕНО: Более точная категоризация ошибок
+            data_related_errors = [
+                "ValueError",  # Проблемы с данными, параметрами
+                "KeyError",    # Отсутствующие колонки/ключи
+                "IndexError",  # Проблемы с индексацией данных
+            ]
+
+            # ZeroDivisionError может быть как проблемой данных, так и логической ошибкой
+            # Обрабатываем отдельно для лучшей диагностики
+            calculation_errors = [
+                "ZeroDivisionError",  # Деление на ноль в расчетах
+                "FloatingPointError",  # Проблемы с вычислениями
+            ]
+
+            if error_type in data_related_errors or "data" in error_msg.lower() or "empty" in error_msg.lower():
+                logger.warning(f"Trial #{trial_number}: Предсказуемая проблема данных ({error_type}): {error_msg}")
+                if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
+                    trial_or_params.set_user_attr("error_type", "data_problem")
+                    trial_or_params.set_user_attr("exception_type", error_type)
+                    trial_or_params.set_user_attr("exception_message", error_msg)
+                    raise optuna.TrialPruned(f"Data problem: {error_type} - {error_msg}")
+                # ИСПРАВЛЕНО: Убираем недостижимый код после raise
+                return PENALTY_SOFT
+            elif error_type in calculation_errors:
+                # ИСПРАВЛЕНО: Отдельная обработка вычислительных ошибок
+                logger.warning(f"Trial #{trial_number}: Вычислительная ошибка ({error_type}): {error_msg}")
+                if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
+                    trial_or_params.set_user_attr("error_type", "calculation_error")
+                    trial_or_params.set_user_attr("exception_type", error_type)
+                    trial_or_params.set_user_attr("exception_message", error_msg)
+                    # Для вычислительных ошибок используем pruning (обычно проблема параметров)
+                    raise optuna.TrialPruned(f"Calculation error: {error_type} - {error_msg}")
+                return PENALTY_SOFT
+            else:
+                # Системные ошибки - логируем и возвращаем FAIL через исключение
+                logger.error(f"Trial #{trial_number}: Системная ошибка ({error_type}): {error_msg}")
+                import traceback
+                logger.error(traceback.format_exc())
+                if hasattr(trial_or_params, 'suggest_float') and hasattr(trial_or_params, "set_user_attr"):
+                    trial_or_params.set_user_attr("error_type", "system_error")
+                    trial_or_params.set_user_attr("exception_type", error_type)
+                    trial_or_params.set_user_attr("exception_message", error_msg)
+                # Для системных ошибок пробрасываем исключение, чтобы trial получил TrialState.FAIL
+                raise

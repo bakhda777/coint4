@@ -1,0 +1,40 @@
+# Portfolio allocation configuration
+
+# Allocation method: equal_weight, vol_target, risk_parity, cap_per_pair
+method: vol_target
+
+# Target volatility for vol_target method
+target_vol: 0.10  # 10% annualized
+
+# Position limits
+max_weight_per_pair: 0.10  # Max 10% per pair
+max_gross: 1.0  # Max 100% gross exposure (sum of abs weights)
+max_net: 0.4  # Max 40% net exposure (sum of weights)
+
+# Risk parity parameters
+risk_parity_lookback: 60  # Days for risk estimation
+
+# Rebalancing
+rebalance_frequency: daily  # daily, weekly, monthly
+min_rebalance_threshold: 0.02  # Don't rebalance if change < 2%
+
+# Advanced rebalancing policies
+rebalance:
+  mode: threshold  # periodic, threshold, hybrid
+  frequency: 2D  # 1D, 2D, 1W
+  drift_threshold: 0.05  # L1 drift threshold for rebalancing
+  hysteresis:
+    enter: 0.3  # Enter band (fraction of sigma)
+    exit: 0.15  # Exit band (fraction of sigma)
+  turnover_cap: 0.20  # Max daily turnover
+  min_hold_bars: 8  # Minimum bars to hold position
+
+# Constraints
+min_positions: 3  # Minimum active positions
+max_positions: 20  # Maximum active positions
+
+# Risk budgets by strategy type
+risk_budgets:
+  cointegration: 0.7  # 70% to coint pairs
+  momentum: 0.2  # 20% to momentum (future)
+  mean_reversion: 0.1  # 10% to MR (future)

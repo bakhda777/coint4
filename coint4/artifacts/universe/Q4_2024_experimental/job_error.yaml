@@ -1,0 +1,28 @@
+error: Command '['/opt/anaconda3/bin/python', 'scripts/universe/select_pairs.py',
+  '--data-root', './data_downloaded', '--timeframe', '15T', '--period-start', '2024-10-01',
+  '--period-end', '2024-12-31', '--criteria-config', 'artifacts/universe/Q4_2024_experimental/criteria.yaml',
+  '--out-dir', 'artifacts/universe/Q4_2024_experimental', '--top-n', '60', '--limit-pairs',
+  '600']' returned non-zero exit status 1.
+executed_at: '2025-08-11T20:39:29.581362+00:00'
+job:
+  criteria:
+    beta_drift_max: 0.25
+    coint_pvalue_max: 0.12
+    hl_max: 400
+    hl_min: 3
+    hurst_max: 0.7
+    hurst_min: 0.1
+    min_cross: 6
+  diversify_by_base: false
+  limit_pairs: 600
+  max_per_base: 10
+  name: Q4_2024_experimental
+  period:
+    end: '2024-12-31'
+    start: '2024-10-01'
+  top_n: 60
+status: FAILED
+stderr: "Traceback (most recent call last):\n  File \"/Users/admin/Desktop/coint4/scripts/universe/select_pairs.py\"\
+  , line 301, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/Users/admin/Desktop/coint4/scripts/universe/select_pairs.py\"\
+  , line 207, in main\n    base_config['data']['path'] = args.data_root\n    ~~~~~~~~~~~^^^^^^^^\n\
+  TypeError: 'AppConfig' object is not subscriptable\n"

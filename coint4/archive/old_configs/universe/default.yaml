@@ -1,0 +1,36 @@
+# Universe Selection Configuration
+# Defines criteria for selecting cointegrated pairs
+
+data:
+  root: "./data_downloaded"
+
+# Period from actual data scan (2021-12-31 to 2025-06-30)
+# Using recent 18 months for optimization
+period:
+  start: "2023-01-01"  # Start of 2023 with good data coverage
+  end: "2024-06-30"    # Mid-2024 for recent patterns
+
+universe:
+  symbols: []  # Empty = use all available from DATA_ROOT
+  timeframe: "15T"
+  train_days: 60
+  valid_days: 30
+
+criteria:
+  coint_pvalue_max: 0.10  # Maximum p-value for cointegration test (relaxed)
+  hl_min: 5               # Minimum half-life (periods)
+  hl_max: 300             # Maximum half-life (periods) (relaxed)
+  hurst_min: 0.15          # Minimum Hurst exponent (mean-reverting) (relaxed)
+  hurst_max: 0.65          # Maximum Hurst exponent (avoid trending) (relaxed)
+  min_cross: 8            # Minimum mean crossings (relaxed)
+  beta_drift_max: 0.20    # Maximum beta drift between periods (relaxed)
+
+selection:
+  top_n: 20               # Select top N pairs by score
+  diversify_by_base: true # Diversify by base asset
+  max_per_base: 5         # Maximum pairs per base asset
+
+output:
+  pairs_file: "bench/pairs_universe.yaml"
+  report_file: "artifacts/universe/UNIVERSE_REPORT.md"
+  metrics_file: "artifacts/universe/universe_metrics.csv"

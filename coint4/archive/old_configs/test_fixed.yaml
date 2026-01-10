@@ -1,0 +1,28 @@
+
+data_dir: data_downloaded
+
+walk_forward:
+  start_date: '2024-01-01'
+  end_date: '2024-03-31'
+  training_period_days: 60
+  testing_period_days: 30
+  step_size_days: 30
+  gap_minutes: 15
+
+pair_selection:
+  ssd_top_n: 25000  # Минимум согласно CLAUDE.md
+  min_correlation: 0.5
+  coint_pvalue_threshold: 0.10
+  min_half_life_days: 1.0
+  max_half_life_days: 7.0
+
+backtest:
+  rolling_window: 30  # Из best_params
+  zscore_threshold: 0.7
+  zscore_exit: 0.0
+  commission_pct: 0.0001
+  slippage_pct: 0.0001
+
+preprocessing:
+  norm_method: rolling_zscore
+  min_history_ratio: 0.8

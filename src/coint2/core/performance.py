@@ -6,6 +6,59 @@ import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 
 
+def safe_sharpe(returns: np.ndarray | pd.Series, risk_free: float = 0.0, annualizing_factor: float = 365) -> tuple[float, bool]:
+    """
+    Safely calculate Sharpe ratio.
+    Returns (sharpe_ratio, is_valid).
+    """
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    
+    if r.size < 2:
+        return 0.0, False
+        
+    excess = r - risk_free
+    vol = np.std(excess, ddof=1)
+    
+    if vol == 0 or not np.isfinite(vol):
+        return 0.0, False
+        
+    s = np.mean(excess) / vol * np.sqrt(annualizing_factor)
+    
+    if not np.isfinite(s):
+        return 0.0, False
+        
+    return float(s), True
+
+def safe_max_dd(equity_curve: np.ndarray | pd.Series) -> tuple[float, bool]:
+    """
+    Safely calculate Max Drawdown (in %).
+    Returns (max_dd_pct, is_valid).
+    max_dd_pct is positive (e.g. 25.0 for 25% drawdown).
+    """
+    eq = np.asarray(equity_curve, dtype=float)
+    eq = eq[np.isfinite(eq)]
+    
+    if eq.size < 1:
+        return 0.0, False
+        
+    running_max = np.maximum.accumulate(eq)
+    # Avoid division by zero
+    valid_max = np.where(running_max > 0, running_max, 1.0)
+    
+    # Drawdown is positive (running_max - equity)
+    dd = (running_max - eq) / valid_max
+    
+    if dd.size == 0:
+        return 0.0, False
+        
+    mdd = np.max(dd) * 100.0
+    
+    if not np.isfinite(mdd):
+        return 0.0, False
+        
+    return float(mdd), True
+
 def sharpe_ratio_on_returns(pnl: pd.Series, capital: float, annualizing_factor: int, risk_free_rate: float = 0.0) -> float:
     """
     Sharpe по доходностям (PnL / capital).
@@ -181,3 +234,70 @@ def kelly_criterion(pnl_series: pd.Series) -> float:
     kelly_pct = (b * p - q) / b
     
     return kelly_pct
+
+
+def calculate_metrics(
+    pnl_series: pd.Series,
+    trades: list = None,
+    capital: float = 10000.0,
+    annualizing_factor: int = 365
+) -> dict:
+    """
+    Calculate a comprehensive set of performance metrics.
+    
+    Parameters
+    ----------
+    pnl_series : pd.Series
+        Series of daily or periodic PnL values.
+    trades : list, optional
+        List of trade objects/dictionaries.
+    capital : float
+        Initial capital used for percentage calculations.
+    annualizing_factor : int
+        Factor to annualize Sharpe ratio (e.g., 365 for daily crypto).
+        
+    Returns
+    -------
+    dict
+        Dictionary containing calculated metrics.
+    """
+    if pnl_series.empty:
+        return {
+            'total_pnl': 0.0,
+            'total_return': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'profit_factor': 0.0,
+            'trade_count': 0
+        }
+        
+    total_pnl = pnl_series.sum()
+    total_return = total_pnl / capital if capital > 0 else 0.0
+    
+    # Equity curve (starting from capital)
+    equity_curve = capital + pnl_series.cumsum()
+    
+    # Calculate basic metrics using helper functions
+    sr = sharpe_ratio_on_returns(pnl_series, capital, annualizing_factor)
+    mdd = max_drawdown_on_equity(equity_curve)
+    wr = win_rate(pnl_series)
+    exp = expectancy(pnl_series)
+    kelly = kelly_criterion(pnl_series)
+    
+    # Calculate Profit Factor
+    gross_profit = pnl_series[pnl_series > 0].sum()
+    gross_loss = abs(pnl_series[pnl_series < 0].sum())
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0.0
+    
+    return {
+        'total_pnl': float(total_pnl),
+        'total_return': float(total_return),
+        'sharpe_ratio': float(sr) if not np.isnan(sr) else 0.0,
+        'max_drawdown': float(mdd) if not np.isnan(mdd) else 0.0,
+        'win_rate': float(wr),
+        'profit_factor': float(profit_factor),
+        'expectancy': float(exp),
+        'kelly_criterion': float(kelly),
+        'trade_count': len(trades) if trades is not None else len(pnl_series[pnl_series != 0])
+    }

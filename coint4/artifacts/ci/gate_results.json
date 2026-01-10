@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-08-11T20:31:35.355081",
+  "gates_passed": [
+    "artifact_existence",
+    "performance_metrics",
+    "data_quality",
+    "test_coverage"
+  ],
+  "gates_failed": [
+    {
+      "gate": "config_validation",
+      "reason": "5 invalid configs",
+      "details": [
+        "universe.yaml: \u274c Validation error: 4 validation errors for MainConfig\nbacktesting\n  Field required [type=missing, input_value={'universe': {'symbols': .../universe_metrics.csv'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nsignals\n  Field required [type=missing, input_value={'universe': {'symbols': .../universe_metrics.csv'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\npair_selection\n  Field required [type=missing, input_value={'universe': {'symbols': .../universe_metrics.csv'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nwalk_forward\n  Field required [type=missing, input_value={'universe': {'symbols': .../universe_metrics.csv'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing",
+        "portfolio.yaml: \u274c Validation error: 4 validation errors for MainConfig\nbacktesting\n  Field required [type=missing, input_value={'method': 'vol_target', ... 'mean_reversion': 0.1}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nsignals\n  Field required [type=missing, input_value={'method': 'vol_target', ... 'mean_reversion': 0.1}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\npair_selection\n  Field required [type=missing, input_value={'method': 'vol_target', ... 'mean_reversion': 0.1}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nwalk_forward\n  Field required [type=missing, input_value={'method': 'vol_target', ... 'mean_reversion': 0.1}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing",
+        "risk_overlays.yaml: \u274c Validation error: 4 validation errors for MainConfig\nbacktesting\n  Field required [type=missing, input_value={'vol_target': 0.15, 'vol..., 'correlation_matrix']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nsignals\n  Field required [type=missing, input_value={'vol_target': 0.15, 'vol..., 'correlation_matrix']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\npair_selection\n  Field required [type=missing, input_value={'vol_target': 0.15, 'vol..., 'correlation_matrix']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nwalk_forward\n  Field required [type=missing, input_value={'vol_target': 0.15, 'vol..., 'correlation_matrix']}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing",
+        "test_fixed_search.yaml: \u274c Validation error: 4 validation errors for MainConfig\nbacktesting\n  Field required [type=missing, input_value={'trading': {'zscore_thre...es': [20, 30, 40, 60]}}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nsignals\n  Field required [type=missing, input_value={'trading': {'zscore_thre...es': [20, 30, 40, 60]}}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\npair_selection\n  Field required [type=missing, input_value={'trading': {'zscore_thre...es': [20, 30, 40, 60]}}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nwalk_forward\n  Field required [type=missing, input_value={'trading': {'zscore_thre...es': [20, 30, 40, 60]}}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing",
+        "perf_budgets.yaml: \u274c Validation error: 4 validation errors for MainConfig\nbacktesting\n  Field required [type=missing, input_value={'wfa': {'fold': {'max_ti... 'output_format': 'md'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nsignals\n  Field required [type=missing, input_value={'wfa': {'fold': {'max_ti... 'output_format': 'md'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\npair_selection\n  Field required [type=missing, input_value={'wfa': {'fold': {'max_ti... 'output_format': 'md'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing\nwalk_forward\n  Field required [type=missing, input_value={'wfa': {'fold': {'max_ti... 'output_format': 'md'}}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.8/v/missing"
+      ]
+    },
+    {
+      "gate": "optuna_backtest",
+      "reason": "1 validation failures"
+    }
+  ],
+  "warnings": [
+    "Tests not run in last 24 hours"
+  ],
+  "metrics": {
+    "sharpe_ratio": 1.6735012419056179,
+    "max_drawdown": 0.014143023135483022,
+    "total_trades": 159,
+    "win_rate": 0.45
+  },
+  "diagnostics": {}
+}

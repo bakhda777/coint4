@@ -1,0 +1,6 @@
+passed_pairs: 0
+reasons:
+  half_life: 6388
+  hurst: 24453
+  pvalue: 25439
+tested_pairs: 56280

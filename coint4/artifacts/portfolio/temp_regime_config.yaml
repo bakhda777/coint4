@@ -1,0 +1,46 @@
+data_sources:
+  adv_source: data/market_data/adv_estimates.csv
+  correlation_source: artifacts/wfa/pair_correlations.csv
+  fee_source: artifacts/cost/fee_scenarios.csv
+  psr_source: artifacts/wfa/results_per_fold.csv
+  slippage_source: artifacts/cost/execution_profiles.csv
+fallback: vol_target
+optimizer:
+  gamma_cost: 1.5
+  lambda_var: 3.0
+  max_adv_pct: 1.0
+  max_gross: 1.0
+  max_position_usd: 100000
+  max_weight_per_pair: 0.12
+  min_position_usd: 1000
+  net_target: 0.0
+  turnover_budget_per_day: 0.35
+regime_profiles:
+  high_vol:
+    diversify_by_base: true
+    gamma_cost: 1.5
+    lambda_var: 3.0
+    max_weight_per_pair: 0.12
+    top_n: 8
+  low_vol:
+    diversify_by_base: true
+    gamma_cost: 0.8
+    lambda_var: 1.5
+    max_weight_per_pair: 0.18
+    top_n: 15
+  mid_vol:
+    diversify_by_base: true
+    gamma_cost: 1.0
+    lambda_var: 2.0
+    max_weight_per_pair: 0.15
+    top_n: 12
+scoring:
+  alpha_fee: 0.5
+  beta_slip: 0.5
+seed: 42
+selection:
+  diversify_by_base: true
+  max_per_base: 4
+  method: score_topN
+  min_pairs: 5
+  top_n: 8

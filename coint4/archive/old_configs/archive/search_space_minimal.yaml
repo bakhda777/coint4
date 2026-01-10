@@ -1,0 +1,43 @@
+# Минимальное пространство поиска для быстрой оптимизации
+# Узкие диапазоны на основе успешных параметров
+
+signals:
+  zscore_threshold:
+    low: 0.5
+    high: 0.9
+    step: 0.1
+  zscore_exit:
+    low: -0.1
+    high: 0.1
+    step: 0.05
+  rolling_window:
+    low: 20
+    high: 40
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 5
+    high: 5  # Фиксировано на 5
+  risk_per_position_pct:
+    low: 0.01
+    high: 0.02
+
+costs:
+  commission_pct: 0.0001  # Фиксировано как в успешном тесте
+  slippage_pct: 0.0001
+
+risk_management:
+  stop_loss_multiplier:
+    low: 2.5
+    high: 3.5
+  time_stop_multiplier:
+    low: 4.0
+    high: 6.0
+
+normalization:
+  normalization_method: 
+    - rolling_zscore  # Фиксировано на production-совместимый метод
+  min_history_ratio:
+    low: 0.5
+    high: 0.5  # Фиксировано

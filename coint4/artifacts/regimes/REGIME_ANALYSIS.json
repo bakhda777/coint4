@@ -1,0 +1,57 @@
+{
+  "timestamp": "2025-08-10T22:21:11.320580",
+  "current_regime": {
+    "id": 1,
+    "name": "normal_volatility",
+    "description": "Standard market conditions",
+    "recommended_parameters": {
+      "zscore_threshold": 2.0,
+      "zscore_exit": 0.0,
+      "rolling_window": 60,
+      "max_holding_days": 100
+    }
+  },
+  "regime_statistics": [
+    {
+      "regime": 0,
+      "name": "low_volatility",
+      "frequency": 0.3327239488117002,
+      "avg_volatility": 0.0745318642630811,
+      "avg_duration": 182.0
+    },
+    {
+      "regime": 1,
+      "name": "normal_volatility",
+      "frequency": 0.4369287020109689,
+      "avg_volatility": 0.17347126832259813,
+      "avg_duration": 47.8
+    },
+    {
+      "regime": 2,
+      "name": "high_volatility",
+      "frequency": 0.2303473491773309,
+      "avg_volatility": 0.3278119154719302,
+      "avg_duration": 31.5
+    }
+  ],
+  "transition_matrix": {
+    "low_volatility": {
+      "low_volatility": 0.9945054945054945,
+      "normal_volatility": 0.005494505494505495,
+      "high_volatility": 0.0
+    },
+    "normal_volatility": {
+      "low_volatility": 0.0,
+      "normal_volatility": 0.9831932773109243,
+      "high_volatility": 0.01680672268907563
+    },
+    "high_volatility": {
+      "low_volatility": 0.0,
+      "normal_volatility": 0.031746031746031744,
+      "high_volatility": 0.9682539682539683
+    }
+  },
+  "recommendations": [
+    "\ud83d\udcca Normal volatility regime - use standard parameters"
+  ]
+}

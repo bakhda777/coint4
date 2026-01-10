@@ -1,0 +1,96 @@
+data_dir: "data_downloaded"
+results_dir: "results"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "rolling_zscore"  # Production-совместимый метод
+  fill_method: "linear"             
+  min_history_ratio: 0.8            
+  handle_constant: true
+
+portfolio:
+  initial_capital: 10000.0
+  risk_per_position_pct: 0.02   # 2% риска на позицию
+  max_active_positions: 10      # До 10 позиций для баланса
+  max_margin_usage: 0.5
+  # Динамическое позиционирование
+  volatility_based_sizing: true
+  volatility_lookback_hours: 24
+  min_position_size_pct: 0.01
+  max_position_size_pct: 0.03
+  volatility_adjustment_factor: 1.5
+
+pair_selection:
+  lookback_days: 60
+  # Оптимизированные фильтры для качественных пар
+  coint_pvalue_threshold: 0.1   # Более строгий порог
+  ssd_top_n: 30000              # Достаточное количество пар
+  min_half_life_days: 0.1       # 2.4 часа минимум
+  max_half_life_days: 10        # 10 дней максимум  
+  min_mean_crossings: 5         # Минимум 5 пересечений среднего
+  min_beta: 0.5                 # Разумная бета
+  max_beta: 2.0                 # Не слишком высокая бета
+  # Параметры фильтрации
+  adaptive_quantiles: false
+  bar_minutes: 15
+  liquidity_usd_daily: 1_000_000    # Минимум $1M ликвидности
+  max_bid_ask_pct: 0.2              # Максимум 0.2% спред
+  max_avg_funding_pct: 0.03         # Максимум 3% funding
+  save_filter_reasons: true
+  max_hurst_exponent: 0.6           # Исключаем трендовые пары
+  kpss_pvalue_threshold: 0.05       # Более строгая стационарность
+  pvalue_top_n: 500                 # Топ-500 пар по p-value
+  save_std_histogram: true
+  
+  # Фильтр допустимости пар
+  enable_pair_tradeability_filter: true
+  min_volume_usd_24h: 100_000       # Минимум $100k объема
+  min_days_live: 30                 # Минимум 30 дней истории
+  max_funding_rate_abs: 0.003       # Максимум 0.3% funding
+  max_tick_size_pct: 0.005          # Максимум 0.5% tick
+
+walk_forward:
+  train_days: 60        # 60 дней обучения
+  test_days: 30         # 30 дней тестирования
+  n_steps: 4            # 4 walk-forward шага
+  gap_minutes: 15       # Минимальный gap (1 бар)
+
+backtest:
+  zscore_entry_threshold: 1.0
+  zscore_exit: 0.0
+  rolling_window: 30
+  stop_loss_multiplier: 3.0
+  time_stop_multiplier: 5.0
+  cooldown_hours: 1.0
+  
+  # Управление позициями
+  allow_partial_position: true
+  allow_simultaneous_long_short: false
+  
+  # Нормализация (критично для production)
+  normalization_method: "rolling_zscore"
+  fill_limit_pct: 0.2
+
+costs:
+  # Реалистичные издержки
+  commission_pct: 0.0004   # 0.04% комиссия
+  slippage_pct: 0.0005     # 0.05% проскальзывание
+  
+  # Дополнительные параметры
+  funding_rate_8h: 0.0001  # 0.01% за 8 часов
+  spread_bps: 5            # 5 базисных пунктов спред
+
+validation:
+  min_trades_per_period: 10     # Минимум 10 сделок
+  min_sharpe_ratio: 0.5          # Минимальный Sharpe для валидности
+  max_correlation_threshold: 0.95 # Максимальная корреляция между парами
+  
+optuna:
+  n_jobs: 1                      # Начнем с 1 процесса
+  timeout_per_trial: 300         # 5 минут на trial
+  gc_after_trial: true           # Очистка памяти
+  
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/optimization.log"

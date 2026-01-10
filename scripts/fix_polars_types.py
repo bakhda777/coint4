@@ -19,13 +19,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_config(config_path: str = "configs/main_2024.yaml") -> dict:
-    """Загружает конфигурацию из YAML файла."""
+def load_config_dict(config_path: str = "configs/main_2024.yaml") -> dict:
+    """Загружает конфигурацию из YAML файла как словарь для обратной совместимости."""
     try:
-        with open(config_path, 'r') as file:
-            config = yaml.safe_load(file)
-            logger.info(f"Конфигурация загружена из {config_path}")
-            return config
+        from src.coint2.utils.config import load_config
+        config_obj = load_config(config_path)
+        # Преобразуем AppConfig в словарь
+        config = config_obj.model_dump()
+        logger.info(f"Конфигурация загружена из {config_path}")
+        return config
     except Exception as e:
         logger.error(f"Ошибка при загрузке конфигурации: {e}")
         return {}

@@ -1,0 +1,6 @@
+# Relaxed criteria for more pairs
+coint_pvalue_max: 0.10
+hl_min: 5
+hl_max: 300
+min_cross: 8
+beta_drift_max: 0.20

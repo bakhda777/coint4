@@ -1,0 +1,39 @@
+# Development only directories
+devtools/
+archive/
+diagnostics/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-*
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Local configs
+*.local
+*.private

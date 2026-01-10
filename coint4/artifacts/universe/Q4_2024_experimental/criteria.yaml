@@ -1,0 +1,7 @@
+beta_drift_max: 0.25
+coint_pvalue_max: 0.12
+hl_max: 400
+hl_min: 3
+hurst_max: 0.7
+hurst_min: 0.1
+min_cross: 6

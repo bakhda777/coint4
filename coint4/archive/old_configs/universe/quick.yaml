@@ -1,0 +1,34 @@
+# Quick Universe Selection Configuration
+# For rapid testing with limited symbols
+
+data:
+  root: "./data_downloaded"
+
+period:
+  start: "2024-03-01"
+  end: "2024-03-31"
+
+universe:
+  symbols: ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "DOGEUSDT"]  # Limited set for quick test
+  timeframe: "15T"
+  train_days: 20
+  valid_days: 10
+
+criteria:
+  coint_pvalue_max: 0.20  # Very relaxed for testing
+  hl_min: 5
+  hl_max: 500
+  hurst_min: 0.1
+  hurst_max: 0.8
+  min_cross: 5
+  beta_drift_max: 0.30
+
+selection:
+  top_n: 10
+  diversify_by_base: false
+  max_per_base: 5
+
+output:
+  pairs_file: "bench/pairs_universe.yaml"
+  report_file: "artifacts/universe/UNIVERSE_REPORT.md"
+  metrics_file: "artifacts/universe/universe_metrics.csv"

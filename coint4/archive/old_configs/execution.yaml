@@ -1,0 +1,50 @@
+# Execution configuration
+
+# Base execution parameters
+base:
+  latency_mean_ms: 10
+  latency_std_ms: 5
+  commission_rate: 0.001  # 0.1% base commission
+  
+# POV (Percentage of Volume) execution
+pov:
+  enabled: true
+  participation: 0.10  # Target 10% of volume
+  min_participation: 0.05
+  max_participation: 0.15
+  
+# TWAP (Time-Weighted Average Price) execution  
+twap:
+  enabled: false
+  slices: 4  # Number of time slices
+  slice_duration_bars: 4  # Duration per slice
+  
+# Size clipping
+clip_sizing:
+  enabled: true
+  max_adv_pct: 1.0  # Max 100% of average daily volume proxy
+  max_single_order: 10000  # Max single order size in base units
+  
+# Slippage model
+slippage:
+  base: 0.0001  # 1 bp base slippage
+  atr_coef: 0.1  # Slippage increases with ATR
+  zscore_coef: 0.0002  # Slippage increases with signal strength
+  max_slippage_pct: 0.01  # Cap at 1%
+  
+# Fee schedules
+fee_schedules:
+  baseline:
+    maker: 0.0002  # 2 bps maker
+    taker: 0.0010  # 10 bps taker
+    maker_ratio: 0.3  # 30% of orders as maker
+    
+  aggressive:
+    maker: 0.0001
+    taker: 0.0008
+    maker_ratio: 0.5
+    
+  vip:
+    maker: 0.0000  # Zero maker fee
+    taker: 0.0005  # 5 bps taker
+    maker_ratio: 0.7

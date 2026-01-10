@@ -1,0 +1,3 @@
+{"timestamp": "2025-08-10T21:57:02.227483", "type": "weekly", "tasks": [["freeze_params", true], ["paper_week", true], ["weekly_summary", true], ["artifact_index", true]], "success": true}
+{"timestamp": "2025-08-10T22:49:08.083685", "type": "daily", "tasks": [["data_quality", true], ["wfa_smoke", true], ["artifact_index", true]], "success": true}
+{"timestamp": "2025-08-10T23:01:24.095591", "type": "daily", "tasks": [["data_quality", true], ["coint_health", false], ["wfa_smoke", true], ["artifact_index", true]], "success": false}

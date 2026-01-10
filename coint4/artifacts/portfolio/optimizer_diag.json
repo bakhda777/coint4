@@ -1,0 +1,10 @@
+{
+  "expected_return": 0.0,
+  "expected_risk": 0.0,
+  "expected_cost": 0.0,
+  "gross_exposure": 1.0,
+  "net_exposure": 1.0,
+  "max_weight": 0.125,
+  "active_pairs": 8,
+  "solver_status": "numpy_fallback"
+}

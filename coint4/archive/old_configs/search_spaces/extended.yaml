@@ -1,0 +1,84 @@
+# Расширенный search space для поиска Sharpe > 1.0
+# Включает дополнительные параметры фильтрации и управления рисками
+
+signals:
+  zscore_threshold:
+    low: 0.3    # Агрессивный вход
+    high: 2.5   # Консервативный вход
+    step: 0.1
+  
+  zscore_exit:
+    low: -0.5   # Отрицательные для реверса
+    high: 0.5   # Положительные для быстрого выхода
+    step: 0.05
+  
+  rolling_window:
+    low: 10     # Быстрая адаптация (2.5 часа)
+    high: 150   # Медленная стратегия (37.5 часов)
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 3      # Концентрированный портфель
+    high: 25    # Максимальная диверсификация
+    step: 1
+  
+  risk_per_position_pct:
+    low: 0.005  # 0.5% минимальный риск
+    high: 0.1   # 10% агрессивный риск
+    step: 0.005
+
+risk_management:
+  stop_loss_multiplier:
+    low: 1.5    # Тайтовый стоп
+    high: 6.0   # Широкий стоп
+    step: 0.25
+  
+  time_stop_multiplier:
+    low: 2.0    # Быстрый выход по времени
+    high: 15.0  # Долгое удержание
+    step: 0.5
+  
+  cooldown_hours:
+    low: 0.0    # Без задержки
+    high: 4.0   # До 4 часов задержки
+    step: 0.5
+
+# Параметры фильтрации пар
+filters:
+  coint_pvalue_threshold:
+    low: 0.01   # Строгий фильтр
+    high: 0.3   # Мягкий фильтр
+    step: 0.05
+  
+  min_half_life_days:
+    low: 0.05   # От 1.2 часа
+    high: 2.0   # До 2 дней
+    step: 0.05
+  
+  max_half_life_days:
+    low: 2.0    # От 2 дней
+    high: 20.0  # До 20 дней
+    step: 1.0
+  
+  min_mean_crossings:
+    low: 0      # Без ограничений
+    high: 20    # Много пересечений
+    step: 1
+
+# Адаптивные параметры
+adaptive:
+  volatility_scaling:
+    low: 0.0    # Отключено
+    high: 2.0   # Удвоение на волатильности
+    step: 0.25
+  
+  regime_detection:
+    low: 0      # Отключено
+    high: 1     # Включено
+    step: 1
+  
+  dynamic_thresholds:
+    low: 0      # Статические пороги
+    high: 1     # Динамические пороги
+    step: 1

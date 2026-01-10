@@ -1,684 +1,731 @@
-/**
- * Главный JavaScript файл для веб-приложения анализа оптимизации
- * Обеспечивает интерактивность и визуализацию данных
- */
+document.addEventListener('DOMContentLoaded', () => {
+    const app = new TaskRunnerApp();
+    app.init();
+    // Expose app instance for inline onclick handlers
+    document.querySelector('.container')._app = app;
+});
 
-class OptimizationDashboard {
+class TaskRunnerApp {
     constructor() {
-        this.analyzer = new OptimizationAnalyzer();
-        this.chartInstance = null;
-        this.init();
+        this.runBtn = document.getElementById('runBtn');
+        this.stopBtn = document.getElementById('stopBtn');
+        this.logsEl = document.getElementById('logs');
+        this.statusBadge = document.getElementById('statusBadge');
+        this.historyList = document.getElementById('historyList');
+        this.summaryBox = document.getElementById('resultSummary');
+        this.modeRadios = document.querySelectorAll('input[name="mode"]');
+        this.refreshHistBtn = document.getElementById('refreshHistory');
+
+        this.baseConfigSelect = document.getElementById('base_config');
+        this.searchSpaceSelect = document.getElementById('search_space');
+
+        this.previewConfigBtn = document.getElementById('previewConfigBtn');
+        this.configPreviewModal = document.getElementById('configPreviewModal');
+        this.closePreviewBtn = document.getElementById('closePreviewBtn');
+        this.saveConfigBtn = document.getElementById('saveConfigBtn');
+        this.previewContent = document.getElementById('previewContent');
+        this.previewTitle = document.getElementById('previewTitle');
+        this.saveStatus = document.getElementById('saveStatus');
+
+        // Analysis Modal Elements
+        this.analysisModal = document.getElementById('analysisModal');
+        this.closeAnalysisBtn = document.getElementById('closeAnalysisBtn');
+        this.analysisTitle = document.getElementById('analysisTitle');
+        this.analysisSummary = document.getElementById('analysisSummary');
+        this.analysisParams = document.getElementById('analysisParams');
+        this.pairsStats = document.getElementById('pairsStats');
+        this.topPairsBody = document.getElementById('topPairsBody');
+        this.bottomPairsBody = document.getElementById('bottomPairsBody');
+        this.equityChartContainer = document.getElementById('equityChartContainer');
+        this.tradesTableBody = document.querySelector('#tradesTable tbody');
+
+        this.currentTaskId = null;
+        this.eventSource = null;
+        this.pollInterval = null;
+
+        // Pagination state
+        this.currentPage = 1;
+        this.itemsPerPage = 10;
+        this.totalItems = 0;
     }
 
-    /**
-     * Инициализация приложения
-     */
     init() {
-        this.loadData();
         this.setupEventListeners();
-        this.createDegradationChart();
-        this.animateCounters();
+        this.updateFormVisibility();
+        this.loadOptions();
+        this.loadHistory();
+
+        setInterval(() => this.loadHistory(true), 5000); // Pass true to indicate background refresh
     }
 
-    /**
-     * Загрузка и отображение данных
-     */
-    loadData() {
-        const report = this.analyzer.generateFullReport();
-        
-        // Обновление карточек результатов
-        this.updateResultCards(report);
-        
-        // Обновление анализа деградации
-        this.updateDegradationAnalysis(report.degradation_analysis);
-        
-        // Обновление диагностики переоптимизации
-        this.updateOverfittingDiagnosis(report.overfitting_diagnosis);
-        
-        // Обновление подобранных параметров
-        this.updateOptimizedParameters();
+    setupEventListeners() {
+        this.runBtn.addEventListener('click', () => this.runTask());
+        this.stopBtn.addEventListener('click', () => this.stopTask());
 
-        // Обновление сравнения параметров
-        this.updateParametersComparison();
+        this.modeRadios.forEach(radio => {
+            radio.addEventListener('change', () => this.updateFormVisibility());
+        });
 
-        // Обновление рекомендаций
-        this.updateRecommendations(report.recommendations);
-        
-        // Обновление метрик робастности
-        this.updateRobustnessMetrics(report.robustness_metrics);
+        this.refreshHistBtn.addEventListener('click', () => this.loadHistory());
+
+        document.getElementById('prevPage').addEventListener('click', () => this.changePage(-1));
+        document.getElementById('nextPage').addEventListener('click', () => this.changePage(1));
+
+        this.previewConfigBtn.addEventListener('click', () => this.showConfigPreview());
+        this.closePreviewBtn.addEventListener('click', () => this.closeConfigPreview());
+        this.saveConfigBtn.addEventListener('click', () => this.saveConfig());
+
+        // Close modal on outside click
+        this.configPreviewModal.addEventListener('click', (e) => {
+            if (e.target === this.configPreviewModal) {
+                this.closeConfigPreview();
+            }
+        });
+
+        this.closeAnalysisBtn.addEventListener('click', () => this.closeAnalysis());
+        this.analysisModal.addEventListener('click', (e) => {
+            if (e.target === this.analysisModal) {
+                this.closeAnalysis();
+            }
+        });
     }
 
-    /**
-     * Обновление карточек результатов
-     */
-    updateResultCards(report) {
-        const optimizationCard = document.querySelector('.optimization-card');
-        const validationCard = document.querySelector('.validation-card');
-        const degradationCard = document.querySelector('.degradation-card');
-
-        // Карточка оптимизации
-        optimizationCard.innerHTML = `
-            <div class="card-header">
-                <div class="card-icon">📈</div>
-                <h3 class="card-title">Результаты оптимизации</h3>
-                <div class="card-subtitle">Лучший Sharpe из Optuna</div>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Sharpe Ratio</span>
-                <span class="metric-value positive">${this.analyzer.optimizationResults.sharpe_ratio}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Количество сделок</span>
-                <span class="metric-value neutral ${typeof this.analyzer.optimizationResults.trades_count === 'string' ? 'no-animate' : ''}">${typeof this.analyzer.optimizationResults.trades_count === 'string' ? this.analyzer.optimizationResults.trades_count : this.analyzer.optimizationResults.trades_count.toLocaleString()}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Торговых пар</span>
-                <span class="metric-value neutral ${typeof this.analyzer.optimizationResults.pairs_count === 'string' ? 'no-animate' : ''}">${this.analyzer.optimizationResults.pairs_count}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Период</span>
-                <span class="metric-value neutral no-animate">${this.analyzer.optimizationResults.period}</span>
-            </div>
-        `;
-
-        // Карточка валидации
-        validationCard.innerHTML = `
-            <div class="card-header">
-                <div class="card-icon">📉</div>
-                <h3 class="card-title">Результаты валидации</h3>
-                <div class="card-subtitle">Walk-forward тестирование</div>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Sharpe Ratio</span>
-                <span class="metric-value ${this.analyzer.validationResults.sharpe_ratio >= 0 ? 'positive' : 'negative'}">${this.analyzer.validationResults.sharpe_ratio}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Количество сделок</span>
-                <span class="metric-value neutral">${this.analyzer.validationResults.trades_count.toLocaleString()}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">PnL (USD)</span>
-                <span class="metric-value ${this.analyzer.validationResults.pnl_usd >= 0 ? 'positive' : 'negative'}">$${this.analyzer.validationResults.pnl_usd}</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Период</span>
-                <span class="metric-value neutral no-animate">${this.analyzer.validationResults.period}</span>
-            </div>
-        `;
-
-        // Карточка деградации
-        const sharpeDegradation = report.degradation_analysis.sharpe_ratio.degradation_pct;
-        degradationCard.innerHTML = `
-            <div class="card-header">
-                <div class="card-icon">⚠️</div>
-                <h3 class="card-title">Анализ деградации</h3>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Деградация Sharpe</span>
-                <span class="metric-value negative">${sharpeDegradation.toFixed(1)}%</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Потеря активности</span>
-                <span class="metric-value negative">100%</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Статус</span>
-                <span class="status-badge status-critical">Критический</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Робастность</span>
-                <span class="metric-value negative">${(report.robustness_metrics.overall_robustness.score * 100).toFixed(1)}%</span>
-            </div>
-        `;
+    closeAnalysis() {
+        this.analysisModal.classList.add('hidden');
     }
 
-    /**
-     * Обновление анализа деградации
-     */
-    updateDegradationAnalysis(degradationData) {
-        const container = document.getElementById('degradationDetails');
-        
-        container.innerHTML = `
-            <div class="degradation-item">
-                <h4>Sharpe Ratio</h4>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${Math.abs(degradationData.sharpe_ratio.degradation_pct)}%"></div>
-                </div>
-                <p>Деградация: ${degradationData.sharpe_ratio.degradation_pct.toFixed(1)}% (${degradationData.sharpe_ratio.severity})</p>
-            </div>
-            <div class="degradation-item">
-                <h4>Торговая активность</h4>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: 100%; background: #e74c3c;"></div>
-                </div>
-                <p>Полная потеря торговой активности (${degradationData.trades_count.severity})</p>
-            </div>
-        `;
+    async showAnalysis(taskId) {
+        this.analysisModal.classList.remove('hidden');
+        this.analysisSummary.innerHTML = 'Loading...';
+        this.analysisParams.innerHTML = 'Loading...';
+        this.pairsStats.innerHTML = 'Loading...';
+        this.topPairsBody.innerHTML = '';
+        this.bottomPairsBody.innerHTML = '';
+        this.equityChartContainer.innerHTML = 'Loading chart...';
+        this.tradesTableBody.innerHTML = '';
+
+        try {
+            // Get task details
+            const resp = await fetch(`/api/status?task_id=${taskId}`);
+            const data = await resp.json();
+            const task = data.task;
+
+            if (!task || !task.result) {
+                this.analysisSummary.innerHTML = 'No results available for this task.';
+                return;
+            }
+
+            const res = task.result;
+
+            // 1. Summary
+            this.analysisSummary.innerHTML = `
+                <strong>Total PnL:</strong> $${res.total_pnl?.toFixed(2) || '0.00'}<br>
+                <strong>Total Trades:</strong> ${res.total_trades || 0}<br>
+                <strong>Sharpe Ratio:</strong> ${res.sharpe_ratio_abs?.toFixed(4) || '0.0000'}<br>
+                <strong>Status:</strong> ${task.exit_code === 0 ? '<span style="color:green">Success</span>' : '<span style="color:red">Failed</span>'}
+            `;
+
+            // 2. Parameters
+            if (res.config) {
+                // Filter and format config for display
+                const relevantConfig = {};
+                if (res.config.backtest) relevantConfig.backtest = res.config.backtest;
+                if (res.config.portfolio) relevantConfig.portfolio = res.config.portfolio;
+                if (res.config.pair_selection) relevantConfig.pair_selection = res.config.pair_selection;
+
+                this.analysisParams.innerHTML = JSON.stringify(relevantConfig, null, 2);
+            } else {
+                this.analysisParams.innerHTML = `
+                    <em>Parameters not stored in task history.</em><br>
+                    Check log file.
+                `;
+            }
+
+            // 3. Pair Statistics
+            if (res.trade_stat && Array.isArray(res.trade_stat)) {
+                const stats = res.trade_stat;
+
+                // Aggregate by pair across periods
+                const pairAgg = {};
+                stats.forEach(s => {
+                    if (!pairAgg[s.pair]) {
+                        pairAgg[s.pair] = {
+                            pair: s.pair,
+                            pnl: 0,
+                            trades: 0,
+                            wins: 0,
+                            losses: 0
+                        };
+                    }
+                    pairAgg[s.pair].pnl += s.total_pnl;
+                    pairAgg[s.pair].trades += s.trade_count;
+                    pairAgg[s.pair].wins += s.win_days || 0; // Approximate wins
+                    pairAgg[s.pair].losses += s.lose_days || 0;
+                });
+
+                const aggregatedPairs = Object.values(pairAgg);
+                const tradedPairs = aggregatedPairs.filter(p => p.trades > 0);
+                const profitablePairs = tradedPairs.filter(p => p.pnl > 0);
+
+                this.pairsStats.innerHTML = `
+                    <div><strong>Total Pairs Scanned:</strong> ${aggregatedPairs.length}</div>
+                    <div><strong>Active Pairs:</strong> ${tradedPairs.length}</div>
+                    <div><strong>Profitable Pairs:</strong> ${profitablePairs.length} (${tradedPairs.length > 0 ? (profitablePairs.length / tradedPairs.length * 100).toFixed(1) : 0}%)</div>
+                    <div><strong>Avg PnL per Active Pair:</strong> $${tradedPairs.length > 0 ? (res.total_pnl / tradedPairs.length).toFixed(2) : '0.00'}</div>
+                `;
+
+                // Sort for Top/Bottom
+                aggregatedPairs.sort((a, b) => b.pnl - a.pnl);
+
+                const top5 = aggregatedPairs.slice(0, 5);
+                const bottom5 = aggregatedPairs.slice(-5).reverse();
+
+                const renderRow = (p) => `
+                    <tr>
+                        <td>${p.pair}</td>
+                        <td style="color:${p.pnl > 0 ? 'green' : 'red'}">${p.pnl.toFixed(2)}</td>
+                        <td>${p.trades}</td>
+                    </tr>
+                `;
+
+                this.topPairsBody.innerHTML = top5.map(renderRow).join('');
+                this.bottomPairsBody.innerHTML = bottom5.map(renderRow).join('');
+
+            } else {
+                this.pairsStats.innerHTML = 'No pair statistics available.';
+            }
+
+            // 4. Equity Curve
+            if (res.pnl_series) {
+                this.renderEquityChart(res.pnl_series);
+            } else {
+                this.equityChartContainer.innerHTML = 'No PnL data available for chart.';
+            }
+
+            // 5. Trades
+            if (res.trades && Array.isArray(res.trades)) {
+                const tradesHtml = res.trades.map(t => {
+                    if (typeof t === 'string') {
+                        return `<tr><td>${t}</td><td colspan="4">Detail unavailable</td></tr>`;
+                    } else {
+                        return `
+                            <tr>
+                                <td>${t.entry_time || '-'}</td>
+                                <td>${t.pair || '-'}</td>
+                                <td>${t.type || '-'}</td>
+                                <td style="color:${t.pnl > 0 ? 'green' : 'red'}">${t.pnl?.toFixed(2) || '0.00'}</td>
+                                <td>${t.duration || '-'}</td>
+                            </tr>
+                        `;
+                    }
+                }).join('');
+                this.tradesTableBody.innerHTML = tradesHtml;
+            } else {
+                this.tradesTableBody.innerHTML = '<tr><td colspan="5">No trades recorded.</td></tr>';
+            }
+
+        } catch (e) {
+            this.analysisSummary.innerHTML = `Error loading analysis: ${e.message}`;
+            console.error(e);
+        }
     }
 
-    /**
-     * Обновление диагностики переоптимизации
-     */
-    updateOverfittingDiagnosis(issues) {
-        const container = document.getElementById('overfittingIssues');
-        
-        container.innerHTML = issues.map(issue => `
-            <div class="cause-item priority-${issue.severity.toLowerCase()}">
-                <div class="cause-title">${this.getIssueTitle(issue.type)}</div>
-                <div class="cause-description">
-                    <p><strong>Проблема:</strong> ${issue.description}</p>
-                    <p><strong>Текущее значение:</strong> ${issue.current_value}</p>
-                    <p><strong>Рекомендуемое:</strong> ${issue.recommended_value}</p>
-                    <p><strong>Решение:</strong> ${issue.recommendation}</p>
-                </div>
-            </div>
-        `).join('');
-    }
+    renderEquityChart(pnlSeries) {
+        // pnlSeries is dict {date: pnl}
+        const dates = Object.keys(pnlSeries).sort();
+        const values = dates.map(d => pnlSeries[d]);
 
-    /**
-     * Получение заголовка для типа проблемы
-     */
-    getIssueTitle(type) {
-        const titles = {
-            'AGGRESSIVE_ENTRY': 'Агрессивные пороги входа',
-            'NEGATIVE_EXIT': 'Негативный порог выхода',
-            'HIGH_RISK': 'Высокий риск на позицию',
-            'LIMITED_POSITIONS': 'Ограниченная диверсификация'
-        };
-        return titles[type] || type;
-    }
+        // Calculate cumulative equity
+        let equity = 0;
+        const equityCurve = values.map(v => {
+            equity += v;
+            return equity;
+        });
 
-    /**
-     * Обновление подобранных параметров оптимизации
-     */
-    updateOptimizedParameters() {
-        const container = document.getElementById('optimizedParameters');
-        const params = this.analyzer.optimizationResults.parameters;
-        const optResults = this.analyzer.optimizationResults;
-
-        // Отладочная информация
-        console.log('Optimization results:', optResults);
-        console.log('Parameters:', params);
-
-        if (!params) {
-            console.error('Parameters not found!');
-            container.innerHTML = '<div class="error">Параметры не загружены</div>';
+        if (equityCurve.length === 0) {
+            this.equityChartContainer.innerHTML = 'Not enough data to chart.';
             return;
         }
 
-        // Функция для рендеринга группы параметров
-        const renderParamGroup = (title, icon, paramObj, descriptions = {}) => {
-            if (!paramObj || Object.keys(paramObj).length === 0) return '';
+        // Simple SVG Chart
+        const width = this.equityChartContainer.clientWidth;
+        const height = this.equityChartContainer.clientHeight;
+        const padding = 40;
 
-            let html = `<div class="param-group">
-                <h4 class="param-group-title">${icon} ${title}</h4>`;
+        const minVal = Math.min(...equityCurve);
+        const maxVal = Math.max(...equityCurve);
+        const range = maxVal - minVal || 1;
 
-            for (const [key, value] of Object.entries(paramObj)) {
-                const description = descriptions[key] || '';
-                html += `
-                    <div class="param-item">
-                        <span class="param-name">${key.replace(/_/g, ' ')}</span>
-                        <span class="param-value highlight">${value}</span>
-                        <span class="param-description">${description}</span>
-                    </div>`;
-            }
+        // Scale functions
+        const xScale = (i) => padding + (i / (equityCurve.length - 1)) * (width - 2 * padding);
+        const yScale = (v) => height - padding - ((v - minVal) / range) * (height - 2 * padding);
 
-            html += '</div>';
-            return html;
-        };
-
-        // Описания параметров
-        const descriptions = {
-            // Отбор пар
-            'coint_pvalue_threshold': 'P-value для коинтеграции',
-            'lookback_days': 'Период анализа истории',
-            'max_hurst_exponent': 'Максимальный Hurst для mean reversion',
-            'min_half_life_days': 'Минимальный half-life',
-            'max_half_life_days': 'Максимальный half-life',
-            'min_mean_crossings': 'Минимум пересечений среднего',
-            'ssd_top_n': 'Количество пар по SSD',
-            'pvalue_top_n': 'Количество пар по p-value',
-
-            // Торговые сигналы
-            'zscore_threshold': 'Порог входа в позицию',
-            'zscore_exit': 'Порог выхода из позиции',
-            'rolling_window': 'Окно для расчета z-score',
-
-            // Портфель
-            'max_active_positions': 'Максимум одновременных позиций',
-            'risk_per_position_pct': 'Риск на позицию (%)',
-            'max_position_size_pct': 'Максимальный размер позиции (%)',
-
-            // Риск-менеджмент
-            'stop_loss_multiplier': 'Множитель стоп-лосса',
-            'time_stop_multiplier': 'Множитель тайм-стопа',
-            'cooldown_hours': 'Кулдаун между сделками (часы)',
-
-            // Исполнение
-            'commission_pct': 'Комиссия (%)',
-            'slippage_pct': 'Проскальзывание (%)',
-
-            // Обработка данных
-            'normalization_method': 'Метод нормализации',
-            'min_history_ratio': 'Минимум истории для анализа',
-
-            // Обратная совместимость
-            'zscore_entry_threshold': 'Порог входа в позицию',
-            'zscore_exit': 'Порог выхода из позиции'
-        };
-
-        let parametersHtml = '<div class="parameters-grid">';
-
-        // Рендерим категории параметров
-        if (params.pair_selection) {
-            parametersHtml += renderParamGroup('Отбор пар', '📊', params.pair_selection, descriptions);
+        // Generate path
+        let d = `M ${xScale(0)} ${yScale(equityCurve[0])}`;
+        for (let i = 1; i < equityCurve.length; i++) {
+            d += ` L ${xScale(i)} ${yScale(equityCurve[i])}`;
         }
 
-        if (params.trading_signals) {
-            parametersHtml += renderParamGroup('Торговые сигналы', '🎯', params.trading_signals, descriptions);
-        }
-
-        if (params.portfolio) {
-            parametersHtml += renderParamGroup('Управление портфелем', '💰', params.portfolio, descriptions);
-        }
-
-        if (params.risk_management) {
-            parametersHtml += renderParamGroup('Риск-менеджмент', '🛡️', params.risk_management, descriptions);
-        }
-
-        if (params.execution) {
-            parametersHtml += renderParamGroup('Исполнение', '⚡', params.execution, descriptions);
-        }
-
-        if (params.data_processing) {
-            parametersHtml += renderParamGroup('Обработка данных', '🔧', params.data_processing, descriptions);
-        }
-
-        // Если нет категорий, показываем основные параметры
-        if (!params.pair_selection && !params.trading_signals) {
-            parametersHtml += `
-                <div class="param-group">
-                    <h4 class="param-group-title">🎯 Основные параметры</h4>
-                    <div class="param-item">
-                        <span class="param-name">Z-score порог входа</span>
-                        <span class="param-value highlight">${params.zscore_entry_threshold || params.zscore_threshold || 'N/A'}</span>
-                        <span class="param-description">Порог для открытия позиций</span>
-                    </div>
-                    <div class="param-item">
-                        <span class="param-name">Z-score выход</span>
-                        <span class="param-value highlight">${params.zscore_exit || 'N/A'}</span>
-                            <span class="param-description">Порог для закрытия позиций</span>
-                        </div>
-                    </div>
-
-                    <div class="param-group">
-                        <h4 class="param-group-title">💼 Управление портфелем</h4>
-                        <div class="param-item">
-                            <span class="param-name">Максимум позиций</span>
-                            <span class="param-value highlight">${params.max_active_positions}</span>
-                            <span class="param-description">Одновременных позиций</span>
-                        </div>
-                        <div class="param-item">
-                            <span class="param-name">Риск на позицию</span>
-                            <span class="param-value highlight">${(params.risk_per_position_pct * 100).toFixed(2)}%</span>
-                            <span class="param-description">От общего капитала</span>
-                        </div>
-                        <div class="param-item">
-                            <span class="param-name">Размер позиции</span>
-                            <span class="param-value highlight">${(params.max_position_size_pct * 100).toFixed(2)}%</span>
-                            <span class="param-description">Максимальный размер</span>
-                        </div>
-                    </div>
-
-                    <div class="param-group">
-                        <h4 class="param-group-title">🛡️ Управление рисками</h4>
-                        <div class="param-item">
-                            <span class="param-name">Стоп-лосс множитель</span>
-                            <span class="param-value highlight">${params.stop_loss_multiplier}</span>
-                            <span class="param-description">Относительно волатильности</span>
-                        </div>
-                        <div class="param-item">
-                            <span class="param-name">Временной стоп</span>
-                            <span class="param-value highlight">${params.time_stop_multiplier}</span>
-                            <span class="param-description">Множитель времени удержания</span>
-                        </div>
-                    </div>
-                </div>`;
-        }
-
-        parametersHtml += '</div>';
-
-        container.innerHTML = `
-            <div class="optimized-parameters">
-                ${parametersHtml}
-
-                <div class="optimization-summary">
-                    <div class="summary-item">
-                        <span class="summary-label">🏆 Достигнутый Sharpe Ratio</span>
-                        <span class="summary-value positive">${optResults.sharpe_ratio}</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">📊 Количество сделок</span>
-                        <span class="summary-value">${typeof optResults.trades_count === 'string' ? optResults.trades_count : optResults.trades_count.toLocaleString()}</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">🔗 Торговых пар</span>
-                        <span class="summary-value">${optResults.pairs_count}</span>
-                    </div>
-                    <div class="summary-item">
-                        <span class="summary-label">⏱️ Период оптимизации</span>
-                        <span class="summary-value">${optResults.period}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Обновление сравнения параметров
-     */
-    updateParametersComparison() {
-        const container = document.getElementById('parametersComparison');
-        const params = this.analyzer.optimizationResults.parameters;
-        const balanced = this.analyzer.balancedConfig;
-        
-        container.innerHTML = `
-            <div class="parameters-comparison">
-                <div class="param-item">
-                    <span class="param-name">Z-score вход</span>
-                    <div>
-                        <span class="param-value" style="color: #e74c3c;">${params.zscore_entry_threshold}</span>
-                        <span style="margin: 0 10px;">→</span>
-                        <span class="param-value" style="color: #27ae60;">${balanced.zscore_entry_threshold}</span>
-                    </div>
-                </div>
-                <div class="param-item">
-                    <span class="param-name">Z-score выход</span>
-                    <div>
-                        <span class="param-value" style="color: #e74c3c;">${params.zscore_exit}</span>
-                        <span style="margin: 0 10px;">→</span>
-                        <span class="param-value" style="color: #27ae60;">${balanced.zscore_exit}</span>
-                    </div>
-                </div>
-                <div class="param-item">
-                    <span class="param-name">Макс. позиций</span>
-                    <div>
-                        <span class="param-value" style="color: #e74c3c;">${params.max_active_positions}</span>
-                        <span style="margin: 0 10px;">→</span>
-                        <span class="param-value" style="color: #27ae60;">${balanced.max_active_positions}</span>
-                    </div>
-                </div>
-                <div class="param-item">
-                    <span class="param-name">Риск на позицию</span>
-                    <div>
-                        <span class="param-value" style="color: #e74c3c;">${(params.risk_per_position_pct * 100).toFixed(1)}%</span>
-                        <span style="margin: 0 10px;">→</span>
-                        <span class="param-value" style="color: #27ae60;">${(balanced.risk_per_position_pct * 100).toFixed(1)}%</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    /**
-     * Обновление рекомендаций
-     */
-    updateRecommendations(recommendations) {
-        const immediateContainer = document.getElementById('immediateActions');
-        const longTermContainer = document.getElementById('longTermImprovements');
-        
-        immediateContainer.innerHTML = recommendations.immediate_actions.map(action => `
-            <div class="recommendation-item priority-${action.priority.toLowerCase()}">
-                <div class="rec-title">${action.action}</div>
-                <div class="rec-description">
-                    <p>${action.description}</p>
-                    <p><strong>Ожидаемый эффект:</strong> ${action.expected_impact}</p>
-                </div>
-            </div>
-        `).join('');
-        
-        longTermContainer.innerHTML = recommendations.long_term_improvements.map(improvement => `
-            <div class="recommendation-item priority-${improvement.priority.toLowerCase()}">
-                <div class="rec-title">${improvement.action}</div>
-                <div class="rec-description">
-                    <p>${improvement.description}</p>
-                    <p><strong>Ожидаемый эффект:</strong> ${improvement.expected_impact}</p>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    /**
-     * Обновление метрик робастности
-     */
-    updateRobustnessMetrics(metrics) {
-        const container = document.getElementById('robustnessMetrics');
-        
-        container.innerHTML = `
-            <div class="metric">
-                <span class="metric-label">Стабильность Sharpe</span>
-                <span class="metric-value ${metrics.sharpe_stability.score > 0.7 ? 'positive' : 'negative'}">
-                    ${(metrics.sharpe_stability.score * 100).toFixed(1)}% (${metrics.sharpe_stability.interpretation})
-                </span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Консистентность торговли</span>
-                <span class="metric-value ${metrics.trading_consistency.score > 0.5 ? 'positive' : 'negative'}">
-                    ${(metrics.trading_consistency.score * 100).toFixed(1)}% (${metrics.trading_consistency.interpretation})
-                </span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Чувствительность параметров</span>
-                <span class="metric-value ${metrics.parameter_sensitivity.score > 0.7 ? 'positive' : 'negative'}">
-                    ${(metrics.parameter_sensitivity.score * 100).toFixed(1)}% (${metrics.parameter_sensitivity.interpretation})
-                </span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Общая робастность</span>
-                <span class="metric-value ${metrics.overall_robustness.score > 0.5 ? 'positive' : 'negative'}">
-                    ${(metrics.overall_robustness.score * 100).toFixed(1)}% (${metrics.overall_robustness.interpretation})
-                </span>
-            </div>
-        `;
-    }
-
-    /**
-     * Создание графика деградации
-     */
-    createDegradationChart() {
-        const ctx = document.getElementById('degradationChart');
-        if (!ctx) return;
-        
-        const degradationData = this.analyzer.analyzeDegradation();
-        
-        // Данные для графика
-        const data = {
-            labels: ['Sharpe Ratio', 'Количество сделок', 'Торговая активность'],
-            datasets: [{
-                label: 'Оптимизация',
-                data: [
-                    degradationData.sharpe_ratio.optimization,
-                    degradationData.trades_count.optimization / 100, // Нормализация
-                    degradationData.trading_activity.optimization / 10 // Нормализация
-                ],
-                backgroundColor: 'rgba(46, 204, 113, 0.8)',
-                borderColor: 'rgba(46, 204, 113, 1)',
-                borderWidth: 2
-            }, {
-                label: 'Валидация',
-                data: [
-                    degradationData.sharpe_ratio.validation,
-                    degradationData.trades_count.validation / 100, // Нормализация
-                    degradationData.trading_activity.validation / 10 // Нормализация
-                ],
-                backgroundColor: 'rgba(231, 76, 60, 0.8)',
-                borderColor: 'rgba(231, 76, 60, 1)',
-                borderWidth: 2
-            }]
-        };
-        
-        const config = {
-            type: 'bar',
-            data: data,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Сравнение показателей: Оптимизация vs Валидация',
-                        font: {
-                            size: 16,
-                            weight: 'bold'
-                        }
-                    },
-                    legend: {
-                        position: 'top'
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Нормализованные значения'
-                        }
-                    }
-                }
-            }
-        };
-        
-        // Создание графика
-        if (typeof Chart !== 'undefined') {
-            this.chartInstance = new Chart(ctx, config);
-        } else {
-            // Fallback если Chart.js не загружен
-            ctx.innerHTML = '<p class="text-center text-muted">График недоступен. Загрузите Chart.js для визуализации.</p>';
-        }
-    }
-
-    /**
-     * Анимация счетчиков
-     */
-    animateCounters() {
-        const counters = document.querySelectorAll('.metric-value:not(.no-animate)');
-
-        counters.forEach(counter => {
-            const target = parseFloat(counter.textContent.replace(/[^0-9.-]/g, ''));
-            if (isNaN(target)) return;
-            
-            let current = 0;
-            const increment = target / 50;
-            const timer = setInterval(() => {
-                current += increment;
-                if (current >= target) {
-                    current = target;
-                    clearInterval(timer);
-                }
+        const svg = `
+            <svg width="${width}" height="${height}" style="overflow: visible;">
+                <!-- Grid lines -->
+                <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#eee" />
+                <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#eee" />
                 
-                // Форматирование в зависимости от типа значения
-                if (counter.textContent.includes('%')) {
-                    counter.textContent = current.toFixed(1) + '%';
-                } else if (counter.textContent.includes('$')) {
-                    counter.textContent = '$' + current.toFixed(2);
-                } else if (target > 100) {
-                    counter.textContent = Math.round(current).toLocaleString();
-                } else {
-                    counter.textContent = current.toFixed(4);
-                }
-            }, 20);
-        });
-    }
-
-    /**
-     * Настройка обработчиков событий
-     */
-    setupEventListeners() {
-        // Обработчик для кнопки обновления данных
-        const refreshButton = document.getElementById('refreshData');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', () => {
-                this.loadData();
-                this.showNotification('Данные обновлены', 'success');
-            });
-        }
-        
-        // Обработчик для экспорта отчета
-        const exportButton = document.getElementById('exportReport');
-        if (exportButton) {
-            exportButton.addEventListener('click', () => {
-                this.exportReport();
-            });
-        }
-        
-        // Обработчики для интерактивных элементов
-        document.querySelectorAll('.result-card').forEach(card => {
-            card.addEventListener('click', () => {
-                card.style.transform = 'scale(1.02)';
-                setTimeout(() => {
-                    card.style.transform = '';
-                }, 200);
-            });
-        });
-    }
-
-    /**
-     * Показ уведомлений
-     */
-    showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 5px;
-            color: white;
-            font-weight: 600;
-            z-index: 1000;
-            animation: slideIn 0.3s ease;
+                <!-- Zero line if visible -->
+                ${(minVal < 0 && maxVal > 0) ? `<line x1="${padding}" y1="${yScale(0)}" x2="${width - padding}" y2="${yScale(0)}" stroke="#ccc" stroke-dasharray="4" />` : ''}
+                
+                <!-- Path -->
+                <path d="${d}" fill="none" stroke="#3498db" stroke-width="2" />
+                
+                <!-- Labels -->
+                <text x="${padding - 10}" y="${yScale(maxVal)}" text-anchor="end" font-size="10" fill="#666">${maxVal.toFixed(0)}</text>
+                <text x="${padding - 10}" y="${yScale(minVal)}" text-anchor="end" font-size="10" fill="#666">${minVal.toFixed(0)}</text>
+                <text x="${padding}" y="${height - 10}" font-size="10" fill="#666">${dates[0].split('T')[0]}</text>
+                <text x="${width - padding}" y="${height - 10}" text-anchor="end" font-size="10" fill="#666">${dates[dates.length - 1].split('T')[0]}</text>
+            </svg>
         `;
-        
-        if (type === 'success') {
-            notification.style.backgroundColor = '#27ae60';
-        } else if (type === 'error') {
-            notification.style.backgroundColor = '#e74c3c';
-        } else {
-            notification.style.backgroundColor = '#3498db';
+
+        this.equityChartContainer.innerHTML = svg;
+    }
+
+    async showConfigPreview() {
+        const configPath = this.baseConfigSelect.value;
+        if (!configPath) return;
+
+        this.previewContent.value = 'Loading...';
+        this.previewContent.disabled = true;
+        this.previewTitle.textContent = `Editor: ${configPath}`;
+        this.configPreviewModal.classList.remove('hidden');
+
+        try {
+            const resp = await fetch(`/api/config?path=${encodeURIComponent(configPath)}`);
+            const data = await resp.json();
+
+            if (data.content) {
+                this.previewContent.value = data.content;
+                this.previewContent.disabled = false;
+            } else {
+                this.previewContent.value = `Error: ${data.error || 'Unknown error'}`;
+            }
+        } catch (e) {
+            this.previewContent.value = `Network Error: ${e.message}`;
         }
-        
-        document.body.appendChild(notification);
-        
+    }
+
+    async saveConfig() {
+        const configPath = this.baseConfigSelect.value;
+        const content = this.previewContent.value;
+        if (!configPath) return;
+
+        this.saveConfigBtn.disabled = true;
+        this.saveConfigBtn.textContent = 'Saving...';
+
+        try {
+            const resp = await fetch('/api/config/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: configPath, content: content })
+            });
+            const data = await resp.json();
+
+            if (data.status === 'ok') {
+                this.showSaveStatus('Saved successfully!');
+            } else {
+                this.showSaveStatus(`Error: ${data.error}`, true);
+            }
+        } catch (e) {
+            this.showSaveStatus(`Network Error: ${e.message}`, true);
+        } finally {
+            this.saveConfigBtn.disabled = false;
+            this.saveConfigBtn.textContent = '💾 Save Changes';
+        }
+    }
+
+    showSaveStatus(msg, isError = false) {
+        this.saveStatus.textContent = msg;
+        this.saveStatus.style.color = isError ? '#e74c3c' : '#27ae60';
+        this.saveStatus.style.opacity = '1';
         setTimeout(() => {
-            notification.remove();
+            this.saveStatus.style.opacity = '0';
         }, 3000);
     }
 
-    /**
-     * Экспорт отчета
-     */
-    exportReport() {
-        const report = this.analyzer.generateFullReport();
-        const dataStr = JSON.stringify(report, null, 2);
-        const dataBlob = new Blob([dataStr], {type: 'application/json'});
-        
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(dataBlob);
-        link.download = `optimization_analysis_${new Date().toISOString().split('T')[0]}.json`;
-        link.click();
-        
-        this.showNotification('Отчет экспортирован', 'success');
+    closeConfigPreview() {
+        this.configPreviewModal.classList.add('hidden');
     }
-}
 
-// Инициализация приложения после загрузки DOM
-document.addEventListener('DOMContentLoaded', () => {
-    new OptimizationDashboard();
-});
+    async loadOptions() {
+        try {
+            const resp = await fetch('/api/options');
+            const data = await resp.json();
 
-// Экспорт для глобального использования
-if (typeof window !== 'undefined') {
-    window.OptimizationDashboard = OptimizationDashboard;
+            if (data.configs && data.configs.length > 0) {
+                this.fillSelect(this.baseConfigSelect, data.configs, 'configs/main_2024.yaml');
+            }
+            if (data.search_spaces && data.search_spaces.length > 0) {
+                this.fillSelect(this.searchSpaceSelect, data.search_spaces, 'configs/search_space_fast.yaml');
+            }
+        } catch (e) {
+            console.error('Options load failed', e);
+        }
+    }
+
+    fillSelect(el, items, defaultVal) {
+        if (!el) return;
+        el.innerHTML = items.map(it => `<option value="${it}">${it}</option>`).join('');
+        // Try to select default if exists, otherwise first item
+        if (defaultVal && items.includes(defaultVal)) {
+            el.value = defaultVal;
+        } else if (items.length > 0) {
+            el.value = items[0];
+        }
+    }
+
+    updateFormVisibility() {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        document.querySelectorAll('.control-group').forEach(group => {
+            const modes = group.dataset.modes.split(' ');
+            if (modes.includes(mode)) {
+                group.classList.remove('hidden');
+            } else {
+                group.classList.add('hidden');
+            }
+        });
+    }
+
+    async runTask() {
+        if (this.currentTaskId) {
+            // Should not happen usually because button is hidden/disabled, but safety check
+            if (!confirm('Task is running. Start new one?')) return;
+            this.stopMonitoring();
+        }
+
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const payload = { mode };
+
+        document.querySelectorAll('.control-group:not(.hidden) input, .control-group:not(.hidden) select').forEach(input => {
+            if (input.type === 'number') {
+                payload[input.id] = parseInt(input.value, 10);
+            } else {
+                payload[input.id] = input.value;
+            }
+        });
+
+        // Process Walk-Forward overrides
+        const wfOverrides = {};
+        if (payload['wf_start_date']) {
+            wfOverrides.start_date = payload['wf_start_date'];
+            delete payload['wf_start_date'];
+        }
+        // Check for num_steps (could be 0 or NaN if empty)
+        if (payload['wf_num_steps'] !== undefined && !isNaN(payload['wf_num_steps'])) {
+            wfOverrides.num_steps = payload['wf_num_steps'];
+            delete payload['wf_num_steps'];
+        }
+
+        if (Object.keys(wfOverrides).length > 0) {
+            payload.wf_overrides = wfOverrides;
+        }
+
+        console.log("RUN_TASK payload:", payload);
+
+        // Handle empty study name for auto-generation
+        if (mode === 'optimization' && !payload['study_name']) {
+            delete payload['study_name']; // Backend will handle generation
+        }
+
+        this.setUIState('running');
+        this.logsEl.textContent = 'Starting task...\n';
+        this.summaryBox.classList.add('hidden');
+
+        try {
+            const resp = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+
+            if (data.task_id) {
+                this.currentTaskId = data.task_id;
+                this.startMonitoring(data.task_id);
+            } else {
+                this.logsEl.textContent += 'Error: No task ID returned.\n';
+                this.setUIState('error');
+            }
+        } catch (e) {
+            this.logsEl.textContent += `Network Error: ${e.message}\n`;
+            this.setUIState('error');
+        }
+    }
+
+    async stopTask() {
+        if (!this.currentTaskId) return;
+
+        if (!confirm('Are you sure you want to stop the current task?')) return;
+
+        this.stopBtn.disabled = true;
+        this.stopBtn.textContent = 'Stopping...';
+
+        try {
+            const resp = await fetch('/api/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: this.currentTaskId })
+            });
+            const data = await resp.json();
+
+            if (data.status && (data.status === 'stopped' || data.status === 'stopped_stale')) {
+                this.logsEl.textContent += '\n=== STOPPED BY USER ===\n';
+                // Monitoring loop will pick up the status change or we force it
+            } else {
+                alert('Failed to stop: ' + (data.error || 'Unknown error'));
+                this.stopBtn.disabled = false;
+                this.stopBtn.textContent = '⏹ Stop Task';
+            }
+        } catch (e) {
+            alert('Network error stopping task: ' + e.message);
+            this.stopBtn.disabled = false;
+            this.stopBtn.textContent = '⏹ Stop Task';
+        }
+    }
+
+    startMonitoring(taskId) {
+        this.eventSource = new EventSource(`/api/stream?task_id=${taskId}`);
+        this.eventSource.onmessage = (e) => {
+            this.logsEl.textContent += e.data + '\n';
+            this.logsEl.scrollTop = this.logsEl.scrollHeight;
+        };
+        this.eventSource.onerror = () => {
+            this.eventSource.close();
+        };
+
+        this.pollInterval = setInterval(async () => {
+            try {
+                const resp = await fetch(`/api/status?task_id=${taskId}`);
+                const data = await resp.json();
+                const task = data.task;
+
+                if (task) {
+                    if (task.status === 'done') {
+                        this.stopMonitoring();
+                        this.setUIState(task.exit_code === 0 ? 'done' : 'error');
+                        this.showSummary(task);
+                        this.loadHistory();
+                    }
+                }
+            } catch (e) {
+                console.error('Poll error', e);
+            }
+        }, 1000);
+    }
+
+    stopMonitoring() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+        this.currentTaskId = null;
+    }
+
+    setUIState(state) {
+        this.statusBadge.className = 'status-badge';
+
+        if (state === 'running') {
+            this.runBtn.classList.add('hidden');
+            this.stopBtn.classList.remove('hidden');
+            this.stopBtn.disabled = false;
+            this.stopBtn.textContent = '⏹ Stop Task';
+
+            this.statusBadge.textContent = 'Running';
+            this.statusBadge.classList.add('status-running');
+        } else {
+            this.runBtn.classList.remove('hidden');
+            this.stopBtn.classList.add('hidden');
+            this.runBtn.disabled = false;
+
+            if (state === 'done') {
+                this.statusBadge.textContent = 'Done';
+                this.statusBadge.classList.add('status-done');
+            } else if (state === 'error') {
+                this.statusBadge.textContent = 'Error';
+                this.statusBadge.classList.add('status-error');
+            } else {
+                this.statusBadge.textContent = 'Ready';
+                this.statusBadge.classList.add('status-ready');
+            }
+        }
+    }
+
+    showSummary(task) {
+        let html = '';
+        if (task.mode === 'backtest' && task.result) {
+            const r = task.result;
+            html = `<strong>Backtest Result:</strong><br>
+                    Trades: ${r.total_trades}<br>
+                    PnL: ${r.total_pnl?.toFixed(2)}<br>
+                    Sharpe: ${r.sharpe_ratio_abs?.toFixed(4)}`;
+        } else if (task.mode === 'tests' && task.junit) {
+            const j = task.junit;
+            html = `<strong>Tests Result:</strong><br>
+                    Total: ${j.tests}, Failed: ${j.failures}, Errors: ${j.errors}, Skipped: ${j.skipped}`;
+            if (j.failed && j.failed.length) {
+                html += '<br><span style="color:#c0392b">Failures:</span><ul>';
+                j.failed.forEach(f => html += `<li>${f.name}: ${f.message}</li>`);
+                html += '</ul>';
+            }
+        } else {
+            html = `<strong>Task Finished</strong> (Exit Code: ${task.exit_code})`;
+        }
+
+        this.summaryBox.innerHTML = html;
+        this.summaryBox.classList.remove('hidden');
+    }
+
+    changePage(delta) {
+        const maxPage = Math.ceil(this.totalItems / this.itemsPerPage) || 1;
+        const newPage = this.currentPage + delta;
+
+        if (newPage >= 1 && newPage <= maxPage) {
+            this.currentPage = newPage;
+            this.loadHistory();
+        }
+    }
+
+    async loadHistory(isBackground = false) {
+        try {
+            // Add timestamp to prevent caching
+            const resp = await fetch('/api/tasks?t=' + Date.now());
+            if (!resp.ok) throw new Error(`HTTP status ${resp.status}`);
+
+            const data = await resp.json();
+            const tasks = data.tasks || [];
+            this.totalItems = tasks.length;
+
+            // Reset to page 1 on manual refresh if items changed significantly? 
+            // Actually, let's keep current page unless out of bounds
+            const maxPage = Math.ceil(this.totalItems / this.itemsPerPage) || 1;
+            if (this.currentPage > maxPage) this.currentPage = maxPage;
+
+            this.updatePaginationControls(maxPage);
+
+            // Check if we have a running task to restore state
+            if (!this.currentTaskId) {
+                const runningTask = tasks.find(t => t.status === 'running');
+                if (runningTask) {
+                    console.log('Restoring running task', runningTask.task_id);
+                    this.currentTaskId = runningTask.task_id;
+                    this.setUIState('running');
+                    this.startMonitoring(runningTask.task_id);
+                } else if (tasks.length > 0 && !isBackground) {
+                    // Only auto-load first log on initial load or manual refresh
+                    if (this.logsEl.textContent.trim() === '' || this.logsEl.textContent.trim() === 'Select a task and click Run...') {
+                        this.viewLog(tasks[0].task_id);
+                    }
+                }
+            }
+
+            if (tasks.length === 0) {
+                this.historyList.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 20px; color: #666;">No tasks found</td></tr>';
+                return;
+            }
+
+            // Slice for pagination
+            const startIdx = (this.currentPage - 1) * this.itemsPerPage;
+            const endIdx = startIdx + this.itemsPerPage;
+            const pageTasks = tasks.slice(startIdx, endIdx);
+
+            this.historyList.innerHTML = pageTasks.map(t => {
+                const date = t.started_at ? new Date(t.started_at * 1000).toLocaleString() : '-';
+                let resultStr = '';
+
+                if (t.exit_code !== null) {
+                    resultStr = t.exit_code === 0 ? '<span style="color:green">Success</span>' : (t.exit_code === -1 || t.exit_code === 255 ? '<span style="color:red">Stopped/Error</span>' : `<span style="color:red">Exit ${t.exit_code}</span>`);
+                } else {
+                    resultStr = '<span style="color:orange">Running...</span>';
+                }
+
+                // Extract start date
+                let startDate = '-';
+                if (t.wf_overrides && t.wf_overrides.start_date) {
+                    startDate = t.wf_overrides.start_date;
+                } else if (t.result && t.result.config && t.result.config.walk_forward) {
+                    // Try to get from result config if available
+                    startDate = t.result.config.walk_forward.start_date;
+                }
+
+                // Extract steps
+                let steps = '-';
+                if (t.result && t.result.wf_steps !== undefined) {
+                    steps = t.result.wf_steps;
+                } else if (t.wf_overrides && t.wf_overrides.num_steps) {
+                    steps = t.wf_overrides.num_steps;
+                } else if (t.result && t.result.config && t.result.config.walk_forward && t.result.config.walk_forward.max_steps) {
+                    steps = t.result.config.walk_forward.max_steps;
+                }
+
+                // Extract metrics
+                let totalPnL = '-';
+                let totalTrades = '-';
+                let sharpeRatio = '-';
+
+                if (t.result) {
+                     if (t.result.total_pnl !== undefined) totalPnL = '$' + t.result.total_pnl.toFixed(2);
+                     if (t.result.total_trades !== undefined) totalTrades = t.result.total_trades;
+                     if (t.result.sharpe_ratio_abs !== undefined) sharpeRatio = t.result.sharpe_ratio_abs.toFixed(4);
+                }
+
+                return `
+                <tr>
+                  <td>${date}</td>
+                  <td>${startDate}</td>
+                  <td>${steps}</td>
+                  <td><strong>${t.mode}</strong></td>
+                  <td>${totalPnL}</td>
+                  <td>${totalTrades}</td>
+                  <td>${sharpeRatio}</td>
+                  <td>${t.status}</td>
+                  <td>${resultStr}</td>
+                  <td>
+                    <div style="display: flex; gap: 5px;">
+                        <button onclick="document.querySelector('.container')._app.viewLog('${t.task_id}')" class="btn" style="padding: 4px 8px; font-size: 12px; background: #3498db;">👁️ View</button>
+                        <a href="/api/logs/download?task_id=${t.task_id}" target="_blank" class="btn" style="padding: 4px 8px; font-size: 12px; background: #95a5a6; text-decoration: none; color: white;">⬇️ Log</a>
+                        ${t.mode === 'backtest' && t.exit_code === 0 ? `<button onclick="document.querySelector('.container')._app.showAnalysis('${t.task_id}')" class="btn" style="padding: 4px 8px; font-size: 12px; background: #9b59b6;">📊 Analysis</button>` : ''}
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('');
+        } catch (e) {
+            console.error('History load failed', e);
+            this.historyList.innerHTML = `<tr><td colspan="10" style="color:red; text-align:center; padding: 20px;">Error loading history: ${e.message}</td></tr>`;
+        }
+    }
+
+    updatePaginationControls(maxPage) {
+        document.getElementById('pageInfo').textContent = `Page ${this.currentPage} of ${maxPage}`;
+        document.getElementById('prevPage').disabled = this.currentPage <= 1;
+        document.getElementById('nextPage').disabled = this.currentPage >= maxPage;
+    }
+
+    async viewLog(taskId) {
+        this.logsEl.textContent = 'Loading log...';
+        try {
+            const resp = await fetch(`/api/logs/download?task_id=${taskId}`);
+            if (resp.ok) {
+                const text = await resp.text();
+                this.logsEl.textContent = text;
+                this.logsEl.scrollTop = this.logsEl.scrollHeight;
+            } else {
+                this.logsEl.textContent = 'Error loading log file.';
+            }
+        } catch (e) {
+            this.logsEl.textContent = 'Network error loading log.';
+        }
+    }
 }

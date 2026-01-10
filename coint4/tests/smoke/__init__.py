@@ -1,0 +1,1 @@
+"""Smoke tests for coint2 package."""

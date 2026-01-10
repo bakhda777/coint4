@@ -1,0 +1,1 @@
+/opt/anaconda3/bin/python scripts/universe/select_pairs.py --data-root ./data_downloaded --timeframe 15T --period-start 2024-01-01 --period-end 2024-01-15 --criteria-config artifacts/universe/ui_20250817_142807/criteria_snapshot.yaml --limit-pairs 400 --out-dir artifacts/universe/ui_20250817_142807 --top-n 40 --log-every 500 --diversify-by-base --max-per-base 5

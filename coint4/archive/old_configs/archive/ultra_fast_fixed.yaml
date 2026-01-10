@@ -1,0 +1,93 @@
+# Ультра-быстрая конфигурация для тестирования (исправленная)
+# Минимальные периоды, 1 walk-forward шаг
+
+data_dir: "data_downloaded"
+results_dir: "outputs"
+year: 2023
+month: 8
+
+# КРИТИЧНО: явно задаем production-совместимую нормализацию
+data_processing:
+  normalization_method: "rolling_zscore"  # ТОЛЬКО rolling_zscore для production
+  fill_method: "linear"
+  min_history_ratio: 0.1
+
+portfolio:
+  initial_capital: 100000
+  initial_cash: 100000
+  max_positions: 10
+  max_active_positions: 10
+  risk_per_position_pct: 0.02
+  position_sizing: "equal_weight"
+
+# Сбалансированные фильтры для достаточного количества пар
+pair_selection:
+  lookback_days: 30  # Короткий период
+  coint_pvalue_threshold: 0.5  # Умеренно - достаточно коинтегрированные пары
+  ssd_top_n: 1000  # Больше пар для отбора
+  min_half_life_days: 0.1  # Минимум 2.4 часа для mean reversion
+  max_half_life_days: 30  # Максимум месяц
+  min_mean_crossings: 2  # Минимум 2 пересечения среднего
+  kpss_pvalue_threshold: 0.99  # Практически отключен
+  pvalue_top_n: 200  # Топ-200 лучших пар
+  min_beta: 0.1  # Широкий диапазон beta
+  max_beta: 10.0  # Широкий диапазон beta
+  max_hurst_exponent: 0.8  # Менее строгий
+  min_history_ratio: 0.1  # Минимум данных
+  liquidity_usd_daily: 0
+  max_bid_ask_pct: 100
+  max_avg_funding_pct: 100
+  norm_method: "rolling_zscore"  # Явно задаем метод нормализации
+  bar_minutes: 15  # КРИТИЧНО: таймфрейм в минутах
+
+backtest:
+  timeframe: "15m"
+  zscore_threshold: 0.5  # Агрессивный вход для большего числа сделок
+  zscore_exit: 0.0  # Выход при возврате к среднему
+  rolling_window: 20  # Короткое окно для быстрой реакции
+  cooldown_hours: 0  # Без ожидания между сделками
+  max_holding_hours: 12  # Короткие позиции
+  stop_loss_pct: 0.02  # Очень тайтовый стоп-лосс
+  take_profit_pct: 0.03  # Небольшой но частый профит
+  stop_loss_multiplier: 2.0
+  annualizing_factor: 252
+  min_volatility: 0.0001
+  min_beta: 0.001
+  max_beta: 1000.0
+  position_size_type: "fixed"
+  position_size_fixed: 0.1
+  commission_pct: 0.0002
+  slippage_pct: 0.0001
+  adaptive_thresholds: false  # Отключено для скорости
+  use_kelly_sizing: false
+  fill_limit_pct: 0.1
+
+# КРИТИЧНО: Только 1 walk-forward шаг для скорости!
+walk_forward:
+  enabled: true
+  start_date: "2023-07-01"  # Короткий период
+  end_date: "2023-08-31"
+  training_period_days: 30  # Минимум для training
+  testing_period_days: 15   # Минимум для testing
+  step_size_days: 60  # Большой шаг = только 1 итерация
+  max_steps: 1  # ТОЛЬКО 1 ШАГ!
+  min_training_samples: 100  # Минимум samples
+  refit_frequency: "never"
+  gap_minutes: 15
+
+normalization:
+  method: "rolling_zscore"  # ТОЛЬКО rolling_zscore!
+  fit_on_training_only: true
+  prevent_refit_on_test: true
+
+online_statistics:
+  enabled: false  # Отключено для скорости
+
+signal_shift:
+  enabled: false  # Отключено для скорости
+
+max_shards: 1
+
+logging:
+  trade_details: false
+  debug_level: "WARNING"

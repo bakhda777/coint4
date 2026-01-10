@@ -1,0 +1,90 @@
+data:
+  root: "./data_downloaded"
+  timeframe: "15T"
+
+jobs:
+  - name: Q1_2024_relaxed
+    period:
+      start: "2024-01-01"
+      end: "2024-03-31"
+    criteria:
+      coint_pvalue_max: 0.10
+      hl_min: 5
+      hl_max: 300
+      hurst_min: 0.15
+      hurst_max: 0.65
+      min_cross: 8
+      beta_drift_max: 0.20
+    top_n: 50
+    diversify_by_base: true
+    max_per_base: 5
+    limit_pairs: 500  # For testing, increase for production
+
+  - name: Q2_2024_strict
+    period:
+      start: "2024-04-01"
+      end: "2024-06-30"
+    criteria:
+      coint_pvalue_max: 0.05
+      hl_min: 5
+      hl_max: 200
+      hurst_min: 0.20
+      hurst_max: 0.60
+      min_cross: 10
+      beta_drift_max: 0.15
+    top_n: 30
+    diversify_by_base: true
+    max_per_base: 5
+    limit_pairs: 500
+
+  - name: Q3_2024_balanced
+    period:
+      start: "2024-07-01"
+      end: "2024-09-30"
+    criteria:
+      coint_pvalue_max: 0.07
+      hl_min: 7
+      hl_max: 250
+      hurst_min: 0.18
+      hurst_max: 0.62
+      min_cross: 9
+      beta_drift_max: 0.17
+    top_n: 40
+    diversify_by_base: true
+    max_per_base: 5
+    limit_pairs: 400
+
+  - name: Q4_2024_experimental
+    period:
+      start: "2024-10-01"
+      end: "2024-12-31"
+    criteria:
+      coint_pvalue_max: 0.12
+      hl_min: 3
+      hl_max: 400
+      hurst_min: 0.10
+      hurst_max: 0.70
+      min_cross: 6
+      beta_drift_max: 0.25
+    top_n: 60
+    diversify_by_base: false  # No diversification for experimental
+    max_per_base: 10
+    limit_pairs: 600
+
+  # Historical periods for backtesting
+  - name: H2_2023_baseline
+    period:
+      start: "2023-07-01"
+      end: "2023-12-31"
+    criteria:
+      coint_pvalue_max: 0.05
+      hl_min: 5
+      hl_max: 200
+      hurst_min: 0.20
+      hurst_max: 0.60
+      min_cross: 10
+      beta_drift_max: 0.15
+    top_n: 25
+    diversify_by_base: true
+    max_per_base: 3
+    limit_pairs: 300

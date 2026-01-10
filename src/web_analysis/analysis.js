@@ -6,19 +6,19 @@
 class OptimizationAnalyzer {
     constructor() {
         this.optimizationResults = {
-            "sharpe_ratio": 1.0434,
+            "sharpe_ratio": 2.2453,
             "trades_count": "N/A",
             "pairs_count": "N/A",
-            "period": "Optuna optimization (200 trials)",
-            "parameters": {
-                "pair_selection": {
-                    "coint_pvalue_threshold": 0.0722,
-                    "lookback_days": 45,
-                    "max_hurst_exponent": 0.5524,
-                    "min_half_life_days": 1.9146,
-                    "max_half_life_days": 13,
-                    "min_mean_crossings": 9
-                },
+            "period": "Optuna optimization (4 trials)",
+                                                            "parameters": {
+                "zscore_entry_threshold": 1.5618,
+                "zscore_exit": 0.7704,
+                "max_active_positions": 5,
+                "risk_per_position_pct": 0.0131,
+                "max_position_size_pct": 0.05,
+                "stop_loss_multiplier": 3.197,
+                "time_stop_multiplier": 3.78
+            },
                 "trading_signals": {
                     "zscore_threshold": 0.8082,
                     "zscore_exit": 0.7882,
@@ -46,11 +46,11 @@ class OptimizationAnalyzer {
 };
 
         this.validationResults = {
-            sharpe_ratio: 0.0028,
-            trades_count: 8410,
-            pnl_usd: -2.69,
+            sharpe_ratio: 0.0,
+            trades_count: 0,
+            pnl_usd: 0.0,
             pairs_count: 2,
-            period: 'Walk-forward validation (90 days)',
+            period: 'No validation data',
             parameters: this.optimizationResults.parameters // Same parameters
         };
 

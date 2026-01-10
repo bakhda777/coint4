@@ -1,0 +1,82 @@
+# Systemd unit file for coint2 trading system
+# 
+# Installation:
+#   sudo cp deploy/coint2.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable coint2
+#   sudo systemctl start coint2
+#
+# Usage:
+#   sudo systemctl status coint2
+#   sudo systemctl restart coint2
+#   sudo systemctl stop coint2
+#   sudo journalctl -u coint2 -f
+
+[Unit]
+Description=Coint2 Cointegration Trading System
+Documentation=https://github.com/your-org/coint2
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/opt/coint2
+
+[Service]
+Type=exec
+User=coint2
+Group=coint2
+WorkingDirectory=/opt/coint2
+
+# Environment
+Environment=PYTHONPATH=/opt/coint2/src
+Environment=COINT2_ENV=production
+Environment=COINT2_LOG_LEVEL=INFO
+EnvironmentFile=-/opt/coint2/.env
+
+# Main service command
+ExecStart=/opt/coint2/.venv/bin/python scripts/run_live.py --mode paper --config configs/prod.yaml
+
+# Pre-flight checks
+ExecStartPre=/opt/coint2/.venv/bin/python scripts/run_preflight.py
+
+# Graceful shutdown
+ExecStop=/bin/kill -SIGTERM $MAINPID
+TimeoutStopSec=30
+KillMode=mixed
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=200%
+TasksMax=100
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/coint2/artifacts /opt/coint2/data_downloaded
+ReadOnlyPaths=/opt/coint2/configs /opt/coint2/src
+
+# Network security
+PrivateNetwork=no
+RestrictAddressFamilies=AF_INET AF_INET6
+
+# Process security
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=coint2
+
+# Health monitoring
+WatchdogSec=300
+
+[Install]
+WantedBy=multi-user.target

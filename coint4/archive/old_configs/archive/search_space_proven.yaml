@@ -1,0 +1,48 @@
+# Проверенное пространство поиска для достижения Sharpe > 1
+# Основано на успешных результатах из test_best_params.py
+
+signals:
+  zscore_threshold:
+    low: 0.5
+    high: 1.0  # Расширено для включения рабочих значений
+    step: 0.1
+  zscore_exit:
+    low: -0.1
+    high: 0.1
+    step: 0.05
+  rolling_window:
+    low: 20
+    high: 40  # Включает оптимальные 30
+    step: 5
+
+portfolio:
+  max_active_positions:
+    low: 5
+    high: 15
+    step: 2
+  risk_per_position_pct:
+    low: 0.01
+    high: 0.03
+    step: 0.005
+
+costs:
+  commission_pct: 0.0001  # Фиксировано на успешном значении
+  slippage_pct: 0.0001   # Фиксировано на успешном значении
+
+risk_management:
+  stop_loss_multiplier:
+    low: 2.0
+    high: 4.0
+    step: 0.5
+  time_stop_multiplier:
+    low: 4.0
+    high: 8.0
+    step: 1.0
+
+normalization:
+  normalization_method: 
+    - rolling_zscore  # Только production-совместимый метод
+  min_history_ratio:
+    low: 0.5
+    high: 0.7
+    step: 0.1

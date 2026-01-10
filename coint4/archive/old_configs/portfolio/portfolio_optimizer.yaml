@@ -1,0 +1,69 @@
+# Portfolio optimization configuration
+
+selection:
+  method: "score_topN"       # score_topN | greedy_diversify
+  top_n: 12                  # Number of pairs to select
+  min_pairs: 5               # Minimum pairs required
+  diversify_by_base: true    # Apply base currency diversification
+  max_per_base: 4           # Max pairs per base currency
+
+scoring:
+  # Scoring formula: score = psr - alpha*fee_turnover - beta*slippage_turnover
+  alpha_fee: 0.5            # Fee penalty coefficient
+  beta_slip: 0.5            # Slippage penalty coefficient
+
+optimizer:
+  # Objective: maximize μᵀw - λ·wᵀΣw - γ·Cost(w, turnover)
+  lambda_var: 2.0           # Risk aversion parameter
+  gamma_cost: 1.0           # Cost aversion parameter
+  
+  # Portfolio constraints
+  max_gross: 1.0            # Maximum gross exposure (sum |w|)
+  net_target: 0.0           # Net exposure target (sum w)
+  max_weight_per_pair: 0.15 # Maximum weight per pair
+  max_adv_pct: 1.0          # Maximum % of ADV per pair
+  turnover_budget_per_day: 0.35  # Daily turnover budget
+  
+  # Position sizing constraints
+  min_position_usd: 1000    # Minimum position size in USD
+  max_position_usd: 100000  # Maximum position size in USD
+
+# Fallback method if optimization fails
+fallback: "vol_target"      # vol_target | equal_weight | risk_parity
+
+# Random seed for reproducibility
+seed: 42
+
+# v0.2.2: Regime-aware portfolio profiles
+regime_profiles:
+  low_vol:
+    # Stable market: more pairs, moderate risk aversion
+    top_n: 15
+    lambda_var: 1.5
+    gamma_cost: 0.8
+    max_weight_per_pair: 0.18
+    diversify_by_base: true
+    
+  mid_vol:
+    # Normal market: balanced approach
+    top_n: 12
+    lambda_var: 2.0
+    gamma_cost: 1.0
+    max_weight_per_pair: 0.15
+    diversify_by_base: true
+    
+  high_vol:
+    # Volatile market: fewer pairs, high risk aversion
+    top_n: 8
+    lambda_var: 3.0
+    gamma_cost: 1.5
+    max_weight_per_pair: 0.12
+    diversify_by_base: true
+
+# Data sources for metrics
+data_sources:
+  psr_source: "artifacts/wfa/results_per_fold.csv"
+  fee_source: "artifacts/cost/fee_scenarios.csv"
+  slippage_source: "artifacts/cost/execution_profiles.csv"
+  correlation_source: "artifacts/wfa/pair_correlations.csv"
+  adv_source: "data/market_data/adv_estimates.csv"

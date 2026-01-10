@@ -1,0 +1,6 @@
+passed_pairs: 49
+reasons:
+  beta_drift: 226
+  half_life: 9
+  pvalue: 94
+tested_pairs: 378

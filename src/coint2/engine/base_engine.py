@@ -250,6 +250,9 @@ class BasePairBacktester:
         # NEW: Walk-forward testing parameters
         walk_forward_enabled: bool = False,
         walk_forward_splitter: WalkForwardSplitter = None,
+        # NEW: Trading period restriction parameters
+        trading_start: pd.Timestamp = None,
+        trading_end: pd.Timestamp = None,
         # NEW: Normalization parameters
         normalization_enabled: bool = False,
         normalizer: DataNormalizer = None,
@@ -319,6 +322,9 @@ class BasePairBacktester:
         # NEW: Portfolio integration for position limits
         self.portfolio = portfolio
         self.pair_name = pair_name
+        # NEW: Trading period restriction
+        self.trading_start = trading_start
+        self.trading_end = trading_end
         # NEW: Enhanced risk management parameters
         self.use_kelly_sizing = use_kelly_sizing
         self.max_kelly_fraction = max_kelly_fraction
@@ -326,6 +332,9 @@ class BasePairBacktester:
         self.adaptive_thresholds = adaptive_thresholds
         self.var_confidence = var_confidence
         self.max_var_multiplier = max_var_multiplier
+        
+        # NEW: Store config object
+        self.config = config
         
         # NEW: Enhanced entry/exit rules
         if config is not None:
@@ -1440,7 +1449,14 @@ class BasePairBacktester:
         logger = logging.getLogger(__name__)
         
         # Логируем начало обработки пары
-        logger.info(f"🔄 Начинаем бэктест пары {self.pair_name or 'Unknown'} с {len(self.pair_data)} периодами данных")
+        pair_name = self.pair_name or 'Unknown'
+        print(f"\n🔄 БЭКТЕСТ ПАРЫ: {pair_name}")
+        print(f"   Данных: {len(self.pair_data)} периодов")
+        print(f"   Колонки: {list(self.pair_data.columns) if not self.pair_data.empty else 'ПУСТО'}")
+        print(f"   Rolling window: {self.rolling_window}")
+        print(f"   Z-score пороги: entry={self.zscore_entry_threshold}, exit={self.z_exit}")
+
+        logger.info(f"🔄 Начинаем бэктест пары {pair_name} с {len(self.pair_data)} периодами данных")
         
         if self.pair_data.empty or len(self.pair_data.columns) < 2:
             logger.warning(f"⚠️ Пустые данные для пары {self.pair_name or 'Unknown'}, пропускаем")
@@ -1545,20 +1561,20 @@ class BasePairBacktester:
         # Initialize state variables
         self._initialize_backtest_state()
         
-        # Buffer for signals (computed on bar i, executed on bar i+1)
+        # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Buffer for signals (computed on bar i, executed on bar i+1)
         signal_buffer = 0
         
-        # Main execution loop with correct order: update_rolling_stats -> compute_signal -> execute_orders -> mark_to_market
+        # Main execution loop with FIXED order: execute_previous_signal -> update_rolling_stats -> compute_new_signal -> mark_to_market
         # Start from rolling_window to match manual_backtest logic
         for i in range(self.rolling_window, len(df)):
-            # (a) update_rolling_stats(i) - calculate stats for current bar using historical data
+            # (a) execute_orders(i, signal_buffer) - execute signal from PREVIOUS bar (1-bar lag)
+            self.execute_orders(df, i, signal_buffer)
+            
+            # (b) update_rolling_stats(i) - calculate stats for current bar using historical data
             self.update_rolling_stats(df, i)
             
-            # (b) compute_signal(i) - generate signal based on current bar stats
-            current_signal = self.compute_signal(df, i)
-            
-            # (c) execute_orders(i) - execute signal immediately (no delay)
-            self.execute_orders(df, i, current_signal)
+            # (c) compute_signal(i) - generate NEW signal based on current bar stats (for next bar)
+            signal_buffer = self.compute_signal(df, i)
             
             # (d) mark_to_market(i) - update PnL and equity
             self.mark_to_market(df, i)
@@ -1590,6 +1606,7 @@ class BasePairBacktester:
         df["position"] = 0.0
         df["trades"] = 0.0
         df["pnl"] = 0.0
+        df["step_pnl"] = 0.0  # Alias for pnl for test compatibility
         df["costs"] = 0.0
         df["realized_pnl"] = 0.0
         df["unrealized_pnl"] = 0.0
@@ -1834,6 +1851,10 @@ class BasePairBacktester:
             
         # Calculate z-score only if std is above threshold
         z_score = (spread - mean) / std
+
+        # Логируем первые несколько z-score для диагностики
+        if i <= self.rolling_window + 5:  # Логируем первые несколько после rolling window
+            print(f"   📊 Бар {i}: spread={spread:.4f}, mean={mean:.4f}, std={std:.4f}, z_score={z_score:.4f}")
         
         # Update DataFrame for current bar i
         df.loc[df.index[i], "beta"] = beta
@@ -1958,6 +1979,7 @@ class BasePairBacktester:
         # Update DataFrame - FIXED: Always set pnl value, even if zero
         df.loc[df.index[i], "unrealized_pnl"] = unrealized_pnl
         df.loc[df.index[i], "pnl"] = total_step_pnl
+        df.loc[df.index[i], "step_pnl"] = total_step_pnl  # Alias for test compatibility
         df.loc[df.index[i], "equity"] = equity
     
     def _calculate_trading_costs_integrated(self, position_change: float, beta: float, 
@@ -2217,6 +2239,7 @@ class BasePairBacktester:
             "trades": self.results["trades"],
             "costs": self.results["costs"],
             "pnl": self.results["pnl"],
+            "step_pnl": self.results["pnl"],  # Alias for compatibility with tests
             "cumulative_pnl": self.results["cumulative_pnl"],
             "trades_log": complete_trades_log,
             # Enhanced cost breakdown
@@ -2485,17 +2508,31 @@ class BasePairBacktester:
                     trade_closed = True
                     result['trade_closed'] = True
                     
-        # Check entry conditions (only if no active trade, not in cooldown, and no stop loss triggered this period)
-        if (self.active_trade is None and 
+        # Check entry conditions (only if no active trade, not in cooldown, no stop loss triggered, and within trading period)
+        trading_allowed = True
+        if self.trading_start is not None and date < self.trading_start:
+            trading_allowed = False
+        if self.trading_end is not None and date > self.trading_end:
+            trading_allowed = False
+
+        if (self.active_trade is None and
             (self.cooldown_end_date is None or date > self.cooldown_end_date) and
-            not result.get('stop_loss_triggered', False)):
-            
+            not result.get('stop_loss_triggered', False) and
+            trading_allowed):
+
             signal = 0
-            if z_score > self.zscore_entry_threshold:
-                signal = -1
-            elif z_score < -self.zscore_entry_threshold:
-                signal = 1
-                
+            # ИСПРАВЛЕНО: Проверяем на NaN перед генерацией сигналов (предотвращение ложных сигналов)
+            if not np.isnan(z_score) and np.isfinite(z_score):
+                if z_score > self.zscore_entry_threshold:
+                    signal = -1
+                    print(f"   📈 СИГНАЛ ПРОДАЖИ: z_score={z_score:.3f} > {self.zscore_entry_threshold}")
+                elif z_score < -self.zscore_entry_threshold:
+                    signal = 1
+                    print(f"   📉 СИГНАЛ ПОКУПКИ: z_score={z_score:.3f} < {-self.zscore_entry_threshold}")
+            else:
+                # z_score is NaN or infinite - skip signal generation
+                pass
+
             if signal != 0:
                 # FIXED: Check capital sufficiency before calculating position size
                 if not self._check_capital_sufficiency(price_s1, price_s2, beta):

@@ -1,0 +1,51 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+venv/
+env/
+
+# Data (keep data_downloaded tracked for reference)
+data_clean/
+data_optimized/
+data/
+
+# Logs
+logs/*.log
+outputs/logs/*.log
+
+# Experiments and temporary files
+experiments/
+archive/old_experiments/
+temporary useful files/
+
+# Artifacts archives
+artifacts/archive/
+outputs/optuna/archive/
+
+# Database files (except important ones)
+*.db-shm
+*.db-wal
+outputs/studies/*.db
+
+# Reports archives  
+outputs/reports/archive/
+
+# Keep data_downloaded for reference
+# data_downloaded/
