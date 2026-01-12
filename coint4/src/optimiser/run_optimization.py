@@ -288,19 +288,52 @@ def run_optimization(n_trials: int = 50,
 
         # Промежуточные отчеты привязаны к walk-forward шагам, а не к парам
         # Это обеспечивает стабильность прюнинга независимо от состава пар
-        # Если max_steps не задан, вычисляем количество шагов из временных границ
-        if hasattr(objective.base_config.walk_forward, 'max_steps'):
-            total_walk_forward_steps = objective.base_config.walk_forward.max_steps
-        else:
-            # Вычисляем количество шагов из конфигурации
-            start_date = pd.to_datetime(objective.base_config.walk_forward.start_date)
-            end_date = pd.to_datetime(getattr(objective.base_config.walk_forward, 'end_date',
-                                            start_date + pd.Timedelta(days=objective.base_config.walk_forward.testing_period_days)))
-            step_size_days = getattr(objective.base_config.walk_forward, 'step_size_days',
-                                   objective.base_config.walk_forward.testing_period_days)
+        start_date = pd.to_datetime(objective.base_config.walk_forward.start_date)
+        end_date = pd.to_datetime(getattr(
+            objective.base_config.walk_forward,
+            'end_date',
+            start_date + pd.Timedelta(days=objective.base_config.walk_forward.testing_period_days)
+        ))
+        step_size_days = getattr(
+            objective.base_config.walk_forward,
+            'step_size_days',
+            None
+        )
 
-            total_days = (end_date - start_date).days
-            total_walk_forward_steps = max(1, total_days // step_size_days)
+        if step_size_days is None or step_size_days <= 0:
+            refit_frequency = getattr(objective.base_config.walk_forward, 'refit_frequency', None)
+            refit_map = {
+                "daily": 1,
+                "weekly": 7,
+                "monthly": 30,
+            }
+            key = str(refit_frequency).lower() if refit_frequency is not None else ""
+            step_size_days = refit_map.get(key, objective.base_config.walk_forward.testing_period_days)
+
+        try:
+            step_size_days = int(step_size_days)
+        except (TypeError, ValueError):
+            step_size_days = int(objective.base_config.walk_forward.testing_period_days)
+
+        if step_size_days < objective.base_config.walk_forward.testing_period_days:
+            step_size_days = objective.base_config.walk_forward.testing_period_days
+
+        max_steps = getattr(objective.base_config.walk_forward, 'max_steps', None)
+        if max_steps is not None:
+            try:
+                max_steps = int(max_steps)
+            except (TypeError, ValueError):
+                max_steps = None
+
+        total_walk_forward_steps = 0
+        current_step_start = start_date
+        while current_step_start < end_date:
+            total_walk_forward_steps += 1
+            if max_steps and total_walk_forward_steps >= max_steps:
+                break
+            current_step_start += pd.Timedelta(days=step_size_days)
+
+        total_walk_forward_steps = max(1, total_walk_forward_steps)
 
         total_reports = max(1, total_walk_forward_steps)
 

@@ -26,6 +26,7 @@ from coint2.core.math_utils import calculate_ssd
 from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
 from coint2.core.normalization_improvements import preprocess_and_normalize_data, compute_normalization_params, apply_normalization_with_params
 from coint2.utils.logging_utils import get_logger
+from coint2.utils.time_utils import ensure_datetime_index
 from .metric_utils import extract_sharpe, normalize_params, validate_params
 from .lookahead_validator import LookaheadValidator, create_temporal_validator
 from .components.universe_manager import UniverseManager
@@ -54,6 +55,61 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     if hours <= 0:
         return 0
     return int(math.ceil(hours * 60 / bar_minutes))
+
+
+def _clean_step_dataframe(step_df: pd.DataFrame, base_config) -> pd.DataFrame:
+    """Normalize step dataframe index/order and apply light missing-data cleanup."""
+    cleaned = ensure_datetime_index(step_df)
+    if cleaned.index.has_duplicates:
+        cleaned = cleaned[~cleaned.index.duplicated(keep="last")]
+
+    fill_limit_pct = getattr(getattr(base_config, "backtest", None), "fill_limit_pct", None)
+    if fill_limit_pct is not None:
+        try:
+            fill_limit = max(1, int(len(cleaned) * float(fill_limit_pct)))
+        except (TypeError, ValueError):
+            fill_limit = 0
+        if fill_limit > 0:
+            limit = min(fill_limit, 5)
+            cleaned = cleaned.ffill(limit=limit).bfill(limit=limit)
+
+    nan_threshold = getattr(getattr(base_config, "data_processing", None), "nan_threshold", None)
+    if nan_threshold is None:
+        nan_threshold = 0.5
+    try:
+        drop_threshold = int(len(cleaned) * (1 - float(nan_threshold)))
+    except (TypeError, ValueError):
+        drop_threshold = 0
+    if drop_threshold > 0:
+        cleaned = cleaned.dropna(axis=1, thresh=drop_threshold)
+
+    return cleaned
+
+
+def _pairs_df_to_tuples(step_pairs: pd.DataFrame) -> list[tuple[str, str]]:
+    """Convert pair dataframe into list of (s1, s2) tuples for universe checks."""
+    if step_pairs is None or step_pairs.empty:
+        return []
+    return list(step_pairs[["s1", "s2"]].itertuples(index=False, name=None))
+
+
+def _resolve_step_size_days(cfg) -> int:
+    """Resolve step size from config, with refit_frequency fallback."""
+    step_size_days = getattr(cfg.walk_forward, "step_size_days", None)
+    if step_size_days is None or step_size_days <= 0:
+        refit_frequency = getattr(cfg.walk_forward, "refit_frequency", None)
+        refit_map = {
+            "daily": 1,
+            "weekly": 7,
+            "monthly": 30,
+        }
+        key = str(refit_frequency).lower() if refit_frequency is not None else ""
+        step_size_days = refit_map.get(key, cfg.walk_forward.testing_period_days)
+    try:
+        step_size_days = int(step_size_days)
+    except (TypeError, ValueError):
+        step_size_days = int(cfg.walk_forward.testing_period_days)
+    return step_size_days
 
 class FastWalkForwardObjective:
     """
@@ -271,6 +327,8 @@ class FastWalkForwardObjective:
                 if getattr(step_df.index, "tz", None) is not None:
                     step_df.index = step_df.index.tz_localize(None)
                 step_df = step_df.sort_index()
+
+            step_df = _clean_step_dataframe(step_df, self.base_config)
 
             # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Разделяем данные на тренировочные и тестовые
             training_slice = step_df.loc[training_start:training_end]
@@ -733,6 +791,13 @@ class FastWalkForwardObjective:
                 # Обратная совместимость со старым форматом кэша
                 step_pairs = cached_data
                 normalization_stats = {}
+
+            pair_tuples = _pairs_df_to_tuples(step_pairs)
+            if pair_tuples and self._universe_fixed:
+                try:
+                    self.universe_manager.validate_pairs(pair_tuples, raise_on_mismatch=False)
+                except ValueError as e:
+                    print(f"   ⚠️ Universe изменился: {e}")
         else:
             # 2. Блокировка для выполнения дорогой операции
             with self._cache_lock:
@@ -748,18 +813,20 @@ class FastWalkForwardObjective:
                 else:
                     print(f"   🔍 Отбираем новые пары для периода {cache_key}")
                     step_pairs, normalization_stats = self._select_pairs_for_step(cfg, training_data, step_idx)
+
+                    pair_tuples = _pairs_df_to_tuples(step_pairs)
                     
                     # ФИКСАЦИЯ UNIVERSE: Фиксируем universe при первом отборе
-                    if step_pairs is not None and len(step_pairs) > 0 and not self._universe_fixed:
+                    if pair_tuples and not self._universe_fixed:
                         study_name = getattr(cfg, 'study_name', 'default_study')
-                        self.universe_manager.fix_universe(step_pairs, study_name)
+                        self.universe_manager.fix_universe(pair_tuples, study_name)
                         self._universe_fixed = True
-                        print(f"   🔒 Universe зафиксирован: {len(step_pairs)} пар")
+                        print(f"   🔒 Universe зафиксирован: {len(pair_tuples)} пар")
                     
                     # Валидация universe для последующих шагов
-                    elif step_pairs is not None and self._universe_fixed:
+                    elif pair_tuples and self._universe_fixed:
                         try:
-                            self.universe_manager.validate_pairs(step_pairs, raise_on_mismatch=False)
+                            self.universe_manager.validate_pairs(pair_tuples, raise_on_mismatch=False)
                         except ValueError as e:
                             print(f"   ⚠️ Universe изменился: {e}")
                     
@@ -789,7 +856,14 @@ class FastWalkForwardObjective:
         for _, pair_row in step_pairs.iterrows():
             try:
 
-                backtest_output = self._backtest_single_pair(pair_row, cfg, step_df, normalization_stats)
+                backtest_output = self._backtest_single_pair(
+                    pair_row,
+                    cfg,
+                    training_data=training_data,
+                    testing_data=step_data.get('testing_data'),
+                    step_df=step_df,
+                    normalization_stats=normalization_stats
+                )
                 if backtest_output is None:
                     continue  # Пропускаем пару, если бэктест не удался
                 pair_result, pair_trades = backtest_output
@@ -899,7 +973,7 @@ class FastWalkForwardObjective:
 
         start_date = pd.to_datetime(cfg.walk_forward.start_date)
         end_date = pd.to_datetime(getattr(cfg.walk_forward, 'end_date', start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)))
-        step_size_days = getattr(cfg.walk_forward, 'step_size_days', cfg.walk_forward.testing_period_days)
+        step_size_days = _resolve_step_size_days(cfg)
         bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
         bar_delta = pd.Timedelta(minutes=bar_minutes)
 
@@ -936,6 +1010,16 @@ class FastWalkForwardObjective:
 
             # Переходим к следующему шагу
             current_test_start += pd.Timedelta(days=step_size_days)
+
+        max_steps = getattr(cfg.walk_forward, 'max_steps', None)
+        if max_steps is not None:
+            try:
+                max_steps = int(max_steps)
+            except (TypeError, ValueError):
+                max_steps = None
+
+        if max_steps and max_steps > 0:
+            walk_forward_steps = walk_forward_steps[:max_steps]
 
         print(f"🗓️  МНОЖЕСТВЕННЫЕ WALK-FORWARD ШАГИ ({len(walk_forward_steps)} шагов):")
         for i, step in enumerate(walk_forward_steps):
@@ -1155,7 +1239,7 @@ class FastWalkForwardObjective:
         
         return trade_count, trade_pnls
 
-    def _backtest_single_pair(self, pair_row, cfg, step_df=None, normalization_stats=None):
+    def _backtest_single_pair(self, pair_row, cfg, step_df=None, normalization_stats=None, training_data=None, testing_data=None):
         """Бэктестирование одной пары - оптимизированная версия с переданными данными и статистиками нормализации."""
         try:
             # Обрабатываем как Series или dict
@@ -1177,54 +1261,50 @@ class FastWalkForwardObjective:
                 print(f"DEBUG: Пропускаем пару {s1}/{s2} - beta={beta}, std={std}")
                 return None, 0
 
-            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПРОИЗВОДИТЕЛЬНОСТИ:
-            # Если step_df передан, используем его БЕЗ повторной загрузки данных
-            if step_df is None:
-                print(f"⚠️ FALLBACK: Загрузка данных для пары {s1}-{s2} (step_df не передан)")
-                # Определяем периоды точно как в _run_fast_backtest
-                start_date = pd.to_datetime(cfg.walk_forward.start_date)
-                bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
-                bar_delta = pd.Timedelta(minutes=bar_minutes)
+            if training_data is None or testing_data is None:
+                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПРОИЗВОДИТЕЛЬНОСТИ:
+                # Если step_df не передан, загружаем данные для первого шага как fallback
+                if step_df is None:
+                    print(f"⚠️ FALLBACK: Загрузка данных для пары {s1}-{s2} (step_df не передан)")
+                    # Определяем периоды точно как в _run_fast_backtest
+                    start_date = pd.to_datetime(cfg.walk_forward.start_date)
+                    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+                    bar_delta = pd.Timedelta(minutes=bar_minutes)
 
-                current_test_start = start_date
-                training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-                training_end = current_test_start - bar_delta
-                testing_start = current_test_start
-                testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+                    current_test_start = start_date
+                    training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
+                    training_end = current_test_start - bar_delta
+                    testing_start = current_test_start
+                    testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
 
-                testing_start = pd.to_datetime(testing_start)
-                testing_end = pd.to_datetime(testing_end)
+                    testing_start = pd.to_datetime(testing_start)
+                    testing_end = pd.to_datetime(testing_end)
 
-                # Загружаем данные только если они действительно не переданы
-                step_data = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
-                step_df = step_data['full_data']
+                    # Загружаем данные только если они действительно не переданы
+                    step_data = self._load_data_for_step(training_start, training_end, testing_start, testing_end)
+                    step_df = step_data['full_data']
+                    training_data = step_data['training_data']
+                    testing_data = step_data['testing_data']
+                else:
+                    # Fallback: разделяем переданный step_df по конфигурации текущего окна
+                    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+                    bar_delta = pd.Timedelta(minutes=bar_minutes)
+
+                    training_start = step_df.index.min()
+                    training_end = training_start + pd.Timedelta(days=cfg.walk_forward.training_period_days) - bar_delta
+                    testing_start = training_end + bar_delta
+                    testing_end = min(
+                        testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days),
+                        step_df.index.max()
+                    )
+
+                    training_data = step_df.loc[training_start:training_end]
+                    testing_data = step_df.loc[testing_start:testing_end]
 
             # Проверяем наличие данных для пары
             if s1 not in step_df.columns or s2 not in step_df.columns:
                 print(f"DEBUG: Нет данных для пары {s1}/{s2} в step_df")
                 return None, 0
-
-            # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ПРОИЗВОДИТЕЛЬНОСТИ:
-            # Для переданного step_df используем простое разделение по времени вместо повторной загрузки
-            if step_df is not None and 'step_data' not in locals():
-                # Определяем периоды для разделения данных
-                start_date = pd.to_datetime(cfg.walk_forward.start_date)
-                bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
-                bar_delta = pd.Timedelta(minutes=bar_minutes)
-
-                current_test_start = start_date
-                training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-                training_end = current_test_start - bar_delta
-                testing_start = current_test_start
-                testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
-
-                # Разделяем данные по времени БЕЗ повторной загрузки с диска
-                training_data = step_df.loc[training_start:training_end]
-                testing_data = step_df.loc[testing_start:testing_end]
-            else:
-                # Используем уже загруженные данные из step_data
-                training_data = step_data['training_data']
-                testing_data = step_data['testing_data']
 
             # Проверяем наличие данных для пары в обоих периодах
             if s1 not in training_data.columns or s2 not in training_data.columns:
@@ -1288,6 +1368,9 @@ class FastWalkForwardObjective:
             pnl_series = results.pnl_series
             if pnl_series is None or len(pnl_series) == 0:
                 return None, 0
+
+            if isinstance(pnl_series, np.ndarray):
+                pnl_series = pd.Series(pnl_series, index=raw_pair_data.index)
 
             pair_trades = 0
             if hasattr(results, 'trades_series'):
@@ -1424,15 +1507,25 @@ class FastWalkForwardObjective:
                 if hasattr(cfg, 'data_processing'):
                     setattr(cfg.data_processing, key, value)
 
+        if hasattr(cfg, 'backtest'):
+            cfg.backtest.zscore_entry_threshold = cfg.backtest.zscore_threshold
+
         start_date = pd.to_datetime(cfg.walk_forward.start_date)
         end_date = pd.to_datetime(getattr(cfg.walk_forward, 'end_date', start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)))
-        step_size_days = getattr(cfg.walk_forward, 'step_size_days', cfg.walk_forward.testing_period_days)
+        step_size_days = _resolve_step_size_days(cfg)
 
         # Генерируем все walk-forward шаги
         walk_forward_steps = []
         current_test_start = start_date
         bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
         bar_delta = pd.Timedelta(minutes=bar_minutes)
+
+        if step_size_days < cfg.walk_forward.testing_period_days:
+            logger.warning(
+                f"⚠️ ВНИМАНИЕ: step_size_days ({step_size_days}) < testing_period_days ({cfg.walk_forward.testing_period_days}). "
+                f"Автоматически корректируем step_size_days = testing_period_days для предотвращения пересечения тестовых периодов."
+            )
+            step_size_days = cfg.walk_forward.testing_period_days
 
         while current_test_start < end_date:
             training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
@@ -1448,6 +1541,16 @@ class FastWalkForwardObjective:
             })
 
             current_test_start += pd.Timedelta(days=step_size_days)
+
+        max_steps = getattr(cfg.walk_forward, 'max_steps', None)
+        if max_steps is not None:
+            try:
+                max_steps = int(max_steps)
+            except (TypeError, ValueError):
+                max_steps = None
+
+        if max_steps and max_steps > 0:
+            walk_forward_steps = walk_forward_steps[:max_steps]
 
         print(f"\n🔄 ГЕНЕРИРОВАНО {len(walk_forward_steps)} WALK-FORWARD ШАГОВ (с отчетами)")
 

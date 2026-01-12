@@ -6,8 +6,8 @@
 import sqlite3
 from typing import Optional, Dict, Any
 import logging
-from sqlalchemy import event, create_engine
-from sqlalchemy.pool import StaticPool, NullPool
+from sqlalchemy import event
+from sqlalchemy.pool import NullPool
 import optuna
 from optuna.storages import RDBStorage
 
@@ -30,12 +30,13 @@ def setup_sqlite_connection(dbapi_conn, connection_record):
     
     # Оптимизация производительности
     cursor.execute("PRAGMA synchronous=NORMAL")  # Быстрее чем FULL, но безопасно
-    cursor.execute("PRAGMA cache_size=10000")     # Увеличенный кэш (10MB)
-    cursor.execute("PRAGMA temp_store=MEMORY")    # Временные данные в памяти
+    cursor.execute("PRAGMA cache_size=-64000")   # 64MB кэш
+    cursor.execute("PRAGMA temp_store=MEMORY")   # Временные данные в памяти
     
     # Таймауты и блокировки
-    cursor.execute("PRAGMA busy_timeout=30000")    # 30 секунд таймаут
+    cursor.execute("PRAGMA busy_timeout=60000")    # 60 секунд таймаут
     cursor.execute("PRAGMA wal_autocheckpoint=1000")  # Авточекпоинт каждые 1000 страниц
+    cursor.execute("PRAGMA mmap_size=268435456")   # 256MB mmap
     
     # Анализ и оптимизация
     cursor.execute("PRAGMA automatic_index=ON")    # Автоматические индексы
@@ -90,9 +91,30 @@ def create_optuna_storage(
     
     # Формируем URL для SQLAlchemy
     db_url = f"sqlite:///{db_path}"
-    
-    # В современной версии Optuna RDBStorage принимает только URL
-    storage = RDBStorage(url=db_url)
+
+    engine_kwargs = {
+        "poolclass": NullPool,
+        "connect_args": {
+            "timeout": 60,
+            "check_same_thread": False,
+        },
+    }
+
+    heartbeat_interval = 60 if enable_heartbeat else None
+    grace_period = 120 if enable_heartbeat else None
+
+    storage = RDBStorage(
+        url=db_url,
+        engine_kwargs=engine_kwargs,
+        heartbeat_interval=heartbeat_interval,
+        grace_period=grace_period,
+    )
+
+    try:
+        if getattr(storage, "engine", None) is not None:
+            event.listen(storage.engine, "connect", setup_sqlite_connection)
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось подключить PRAGMA listener: {e}")
     
     if n_jobs == 1:
         logger.info("📊 Используем однопоточный режим для SQLite")
