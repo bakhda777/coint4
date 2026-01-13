@@ -26,8 +26,6 @@ pair_selection:
   min_half_life_days: 0.001     # ИСПРАВЛЕНО: снижен до 0.001 дня (1.44 минуты) 
   max_half_life_days: 100       # МАКСИМАЛЬНО ОСЛАБЛЕНО: максимальный порог
   min_mean_crossings: 0         # ВРЕМЕННО: отключен фильтр пересечений
-  min_beta: 0.001              # МАКСИМАЛЬНО ОСЛАБЛЕНО: минимальная бета
-  max_beta: 100.0              # МАКСИМАЛЬНО ОСЛАБЛЕНО: максимальная бета
   # Новые параметры фильтрации пар
   adaptive_quantiles: false     # Используем абсолютные пороги std
   bar_minutes: 15               # Размер бара в минутах
@@ -49,7 +47,14 @@ pair_selection:
   max_funding_rate_abs: 0.01        # МАКСИМАЛЬНО ОСЛАБЛЕНО
   max_tick_size_pct: 0.01           # МАКСИМАЛЬНО ОСЛАБЛЕНО
   max_half_life_hours: 2400.0       # Увеличиваем до 100 дней
-  min_profit_potential_pct: 0.02    # Восстановлено значение из успешного прогона
+
+filter_params:
+  min_beta: 0.001              # МАКСИМАЛЬНО ОСЛАБЛЕНО: минимальная бета
+  max_beta: 100.0              # МАКСИМАЛЬНО ОСЛАБЛЕНО: максимальная бета
+  min_half_life_days: 0.001    # Синхронизировано с pair_selection
+  max_half_life_days: 100      # Синхронизировано с pair_selection
+  min_mean_crossings: 0        # Синхронизировано с pair_selection
+  max_hurst_exponent: 0.55     # Синхронизировано с pair_selection
 
 backtest:
   timeframe: "15min"
@@ -80,7 +85,6 @@ backtest:
   min_spread_move_sigma: 0.1        # Временно смягчено для получения сделок
   min_position_hold_minutes: 60     # Временно смягчено для получения сделок
   anti_churn_cooldown_minutes: 60   # Временно смягчено для получения сделок
-  flat_zscore_threshold: 0.5        # Порог "плоского" z-score для отслеживания спреда
   
   # NEW: Улучшенные стоп-лоссы
   pair_stop_loss_usd: 75.0          # Пара-стоп-лосс 75 USD
@@ -161,39 +165,7 @@ walk_forward:
   refit_frequency: "weekly"     # Частота переобучения: daily, weekly, monthly
   gap_minutes: 15               # Минимальный gap 15 минут (1 бар) между train и test
   
-# Нормализация fit/transform
-normalization:
-  method: "log_returns"         # log_returns, minmax, zscore
-  fit_on_training_only: true    # Fit только на train, transform на train+test
-  prevent_refit_on_test: true   # Запрет повторного fit на test данных
-  log_returns_base: "natural"   # natural, log10, log2
-  
-# Онлайновые статистики
-online_statistics:
-  enabled: true                 # Использовать только исторические данные
-  volatility_method: "ewm"      # ewm, rolling для расчета волатильности
-  ewm_alpha: 0.05              # Параметр сглаживания для EWM
-  kelly_lookback_trades: 50     # Количество последних сделок для Kelly
-  adaptive_threshold_lookback: 96  # Окно для адаптивных порогов (24 часа)
-  beta_recalc_online: true      # Пересчет беты только на исторических данных
-  
-# Сдвиг сигналов
-signal_shift:
-  enabled: true                 # Включить сдвиг сигналов
-  shift_periods: 1              # Сигналы на баре i, исполнение на i+1
-  skip_last_bar: true           # Не торговать последний бар
-  signal_delay_minutes: 0       # Дополнительная задержка в минутах
-
 max_shards: null
-
-# Фильтры для оптимизации (дополнительная секция для совместимости)
-filters:
-  ssd_top_n: 100000             # УВЕЛИЧЕНО: Топ-100000 пар по SSD
-  min_pvalue: 0.70              # ОСЛАБЛЕНО: Минимальный p-value для коинтеграции  
-  max_pvalue: 0.99              # ОСЛАБЛЕНО: Максимальный p-value
-  min_half_life: 0.0001         # ИСПРАВЛЕНО: Минимальный half-life 0.0001 дня
-  max_half_life: 10000.0        # Максимальный half-life (дней)
-  kpss_threshold: 0.99          # Порог KPSS (практически отключен)
 
 logging:
   trade_details: true           # Логирование деталей сделок

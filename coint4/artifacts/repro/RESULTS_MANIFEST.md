@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Results Manifest
 Generated: 2025-08-11T20:30:56.434251
 

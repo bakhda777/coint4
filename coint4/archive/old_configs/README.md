@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # ⚙️ Configurations Directory
 
 Структурированная организация конфигурационных файлов.

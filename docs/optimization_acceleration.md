@@ -91,8 +91,8 @@ def _cache_data(self, cache_key, data):
 
 ### 7. Суженное Пространство Поиска
 **Файлы**: 
-- `configs/search_space_fast.yaml` - быстрый режим
-- `configs/search_space_ultra_fast.yaml` - ультра-быстрый режим
+- `configs/search_spaces/fast.yaml` - основной быстрый режим
+- `configs/search_space_fast.yaml` - минимальный режим для тестов (legacy/минимальный набор)
 
 **Ключевые изменения**:
 - Фиксированные `commission_pct` и `slippage_pct`
@@ -104,48 +104,31 @@ def _cache_data(self, cache_key, data):
 
 ## 📊 Режимы Оптимизации
 
-### Ultra Fast Mode
+### Fast Mode
 ```bash
-python scripts/run_accelerated_optimization.py --optimization-mode ultra_fast --trials 50
+PYTHONPATH=src ./.venv/bin/python src/optimiser/run_optimization.py \
+  --n-trials 50 \
+  --study-name fast_optimization \
+  --search-space configs/search_spaces/fast.yaml
 ```
-- Пространство поиска: `search_space_ultra_fast.yaml`
-- Агрессивный pruning: warmup=1, interval=1
-- Фиксированные costs параметры
-- **Ожидаемое ускорение**: 3-5x
+- Пространство поиска: `configs/search_spaces/fast.yaml`
+- Быстрый прогон для проверки гипотез
 
-### Fast Mode  
+### Custom Mode
 ```bash
-python scripts/run_accelerated_optimization.py --optimization-mode fast --trials 100
+PYTHONPATH=src ./.venv/bin/python src/optimiser/run_optimization.py \
+  --n-trials 200 \
+  --study-name custom_optimization \
+  --search-space configs/search_space.yaml
 ```
-- Пространство поиска: `search_space_fast.yaml`
-- Умеренный pruning: warmup=2, interval=3
-- Исключены filters параметры
-- **Ожидаемое ускорение**: 2-3x
-
-### Full Mode
-```bash
-python scripts/run_accelerated_optimization.py --optimization-mode full --trials 200
-```
-- Полное пространство поиска
-- Все оптимизации включены
-- PostgreSQL для параллельности
-- **Ожидаемое ускорение**: 1.5-2x
+- Пространство поиска: `configs/search_space.yaml` (минимальный набор параметров)
+- Для расширения пространства используйте `configs/search_spaces/*.yaml`
 
 ## 🧪 Тестирование
 
 Запуск тестов оптимизации:
 ```bash
-python -m pytest tests/test_optimization_acceleration.py -v
-```
-
-Демонстрация всех режимов:
-```bash
-python scripts/demo_optimization_speed.py --mode demo
-```
-
-Сравнение скорости:
-```bash
-python scripts/demo_optimization_speed.py --mode speed --trials 20
+./.venv/bin/pytest tests/performance/benchmarks/test_optimization_acceleration.py -v
 ```
 
 ## 📈 Ожидаемые Результаты

@@ -7,6 +7,10 @@
 - **Без дубликатов**: удалены повторяющиеся timestamp
 - **Консистентные данные**: все записи отсортированы по времени
 
+По умолчанию приложение читает `data_downloaded/` (и `data_optimized/`, если она существует рядом).
+Чтобы использовать `data_clean/`, укажите `data_dir: "data_clean"` в `configs/main_2024.yaml`
+или сделайте симлинк/переименование `data_clean -> data_optimized`.
+
 ## 📁 Структура папки `data_clean`
 
 ```
@@ -165,7 +169,7 @@ import time
 
 # Загрузка из исходной структуры (с дубликатами)
 start_time = time.time()
-df_original = pd.read_parquet('data/BTCUSDT/year=2024/month=12/day=1/')
+df_original = pd.read_parquet('data_downloaded/BTCUSDT/year=2024/month=12/day=1/')
 df_original = df_original.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
 original_time = time.time() - start_time
 
@@ -208,7 +212,7 @@ def update_day_data(symbol: str, year: int, month: int, day: int):
 4. **Используйте векторизованные операции** pandas
 
 ### Для экономии места:
-- Исходную папку `data` можно архивировать после создания `data_clean`
+- Исходную папку `data` или `data_downloaded` можно архивировать после создания `data_clean`
 - Регулярно проверяйте актуальность данных
 - Используйте сжатие parquet для долгосрочного хранения
 
@@ -217,7 +221,7 @@ def update_day_data(symbol: str, year: int, month: int, day: int):
 ```python
 # Быстрая замена в существующем коде
 # Было:
-# df = pd.read_parquet('data/BTCUSDT/year=2024/month=12/day=1/')
+# df = pd.read_parquet('data_downloaded/BTCUSDT/year=2024/month=12/day=1/')
 # df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
 
 # Стало:

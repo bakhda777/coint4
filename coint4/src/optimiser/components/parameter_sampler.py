@@ -49,7 +49,7 @@ class ParameterSampler:
             params.update(self._suggest_trading_params(trial))
         
         # Группа 3: Риск-менеджмент
-        if 'risk' in self.search_space:
+        if 'risk' in self.search_space or 'risk_management' in self.search_space:
             params.update(self._suggest_risk_params(trial))
         
         # Группа 4: Портфельные параметры
@@ -151,7 +151,7 @@ class ParameterSampler:
     def _suggest_risk_params(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Генерирует параметры риск-менеджмента."""
         params = {}
-        risk = self.search_space.get('risk', {})
+        risk = self.search_space.get('risk', self.search_space.get('risk_management', {}))
         
         if 'stop_loss_multiplier' in risk:
             cfg = risk['stop_loss_multiplier']

@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Pipeline Performance Profile Report
 
 *Generated: 2025-08-10T22:49:43.362787*

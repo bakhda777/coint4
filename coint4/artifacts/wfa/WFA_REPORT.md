@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Walk-Forward Analysis Report with Portfolio Allocation
 
 Generated: 2025-08-10T23:01:21.441339

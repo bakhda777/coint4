@@ -42,22 +42,26 @@ class ValidationRunner:
         # Load base config
         with open(base_config_path, 'r') as f:
             config = yaml.safe_load(f)
+
+        config.setdefault('backtest', {})
+        config.setdefault('portfolio', {})
+        config.setdefault('pair_selection', {})
         
         # Update with best parameters
         for param_name, value in best_params.items():
             # Map parameters to config structure
             if 'zscore_threshold' in param_name:
-                config['signals']['zscore_threshold'] = value
+                config['backtest']['zscore_threshold'] = value
             elif 'zscore_exit' in param_name:
-                config['signals']['zscore_exit'] = value
+                config['backtest']['zscore_exit'] = value
             elif 'rolling_window' in param_name:
-                config['signals']['rolling_window'] = int(value)
+                config['backtest']['rolling_window'] = int(value)
             elif 'stop_loss' in param_name:
-                config['risk']['stop_loss_multiplier'] = value
+                config['backtest']['stop_loss_multiplier'] = value
             elif 'time_stop' in param_name:
-                config['risk']['time_stop_multiplier'] = value
+                config['backtest']['time_stop_multiplier'] = value
             elif 'position_size' in param_name:
-                config['risk']['max_position_size_pct'] = value
+                config['portfolio']['max_position_size_pct'] = value
             elif 'coint_pvalue' in param_name:
                 config['pair_selection']['coint_pvalue_threshold'] = value
             elif 'hurst' in param_name:
@@ -68,9 +72,9 @@ class ValidationRunner:
                 else:
                     config['pair_selection']['max_half_life_days'] = value
             elif 'commission' in param_name:
-                config['backtesting']['commission_pct'] = value
+                config['backtest']['commission_pct'] = value
             elif 'slippage' in param_name:
-                config['backtesting']['slippage_pct'] = value
+                config['backtest']['slippage_pct'] = value
         
         # Save validation config
         validation_config_path = self.output_dir / f"validation_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml"

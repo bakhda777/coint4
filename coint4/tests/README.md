@@ -4,6 +4,7 @@
 
 ```
 tests/
+├── ci/                     # Быстрые проверки для CI
 ├── unit/                   # Быстрые изолированные тесты (<1 сек каждый)
 │   ├── core/              # Unit тесты для core модуля
 │   ├── engine/            # Unit тесты для engine  
@@ -18,11 +19,19 @@ tests/
 │   ├── pipeline/         # Тесты всего pipeline
 │   └── walk_forward/     # Walk-forward тесты
 │
+├── smoke/                 # Smoke/preflight/observability
+├── regression/            # Golden traces
+├── determinism/           # Повторяемость результатов
+├── governance/            # Promotion/rollback пайплайны
+├── monitoring/            # Мониторинг и дрейф
 ├── performance/          # Тесты производительности
 │   ├── caching/         # Тесты кэширования и памяти
 │   ├── parallel/        # Тесты параллельности и потокобезопасности
 │   └── benchmarks/      # Бенчмарки и измерения скорости
 │
+├── validation/            # Проверки утечек/валидации
+├── analytics/             # Аналитические сценарии
+├── test_critical_fixes/   # Критические фиксы
 ├── fixtures/            # Общие фикстуры для всех тестов
 └── conftest.py         # Главный конфигурационный файл pytest
 ```
@@ -48,25 +57,25 @@ tests/
 
 ```bash
 # Только unit тесты (самые быстрые)
-pytest tests/unit -v
+./.venv/bin/pytest tests/unit -v
 
 # Fast тесты для CI/CD
-pytest -m "fast or unit"
+./.venv/bin/pytest -m "fast or unit"
 
 # Все кроме медленных
-pytest -m "not slow"
+./.venv/bin/pytest -m "not slow"
 
 # Только интеграционные
-pytest tests/integration
+./.venv/bin/pytest tests/integration
 
 # Тесты производительности
-pytest tests/performance
+./.venv/bin/pytest tests/performance
 
 # Smoke тесты
-pytest -m smoke
+./.venv/bin/pytest -m smoke
 
 # Полный набор
-pytest
+./.venv/bin/pytest -q
 ```
 
 ## Время выполнения
@@ -75,6 +84,8 @@ pytest
 - **Fast тесты**: < 5 сек каждый, < 2 мин все
 - **Integration тесты**: < 30 сек каждый
 - **Slow тесты**: могут занимать минуты
+
+По умолчанию `pytest.ini` исключает `slow` и `serial` (см. `addopts`).
 
 ## Соглашения
 

@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Отчёт по релизу v0.2.2
 
 **Дата релиза:** 2025-08-10  

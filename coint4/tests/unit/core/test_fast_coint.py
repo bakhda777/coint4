@@ -283,6 +283,19 @@ def test_fast_coint_when_edge_cases_then_handled_correctly(rng):
     assert 0 <= pval_fast <= 1, "p-value должен быть между 0 и 1"
 
 
+@pytest.mark.unit
+def test_fast_coint_numba_final_when_called_then_returns_k_in_bounds(rng):
+    """Проверка базовых инвариантов numba-реализации."""
+    x = rng.normal(0, 1, 200).cumsum()
+    y = x + rng.normal(0, 0.1, 200)
+
+    tau, pval, k = fast_coint_numba_final(x, y, k_max=5)
+
+    assert pval is None
+    assert 0 <= k <= 5
+    assert not np.isnan(tau)
+
+
 if __name__ == "__main__":
     # Запуск тестов при прямом вызове файла
     test_fast_coint_accuracy()

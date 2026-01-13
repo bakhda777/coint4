@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Regime Rotation Log
 Track of automatic portfolio rotations based on market regime detection.
 

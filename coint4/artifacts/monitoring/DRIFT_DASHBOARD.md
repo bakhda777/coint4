@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Drift Monitoring Dashboard
 Generated: 2025-08-11 00:35:59
 

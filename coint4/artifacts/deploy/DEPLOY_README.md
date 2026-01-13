@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Coint2 Deployment Guide v0.1.1
 
 Полный пакет для развертывания системы коинтеграционной торговли в production-окружении.

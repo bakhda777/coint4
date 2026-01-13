@@ -11,9 +11,11 @@ from joblib import Parallel, delayed
 
 from coint2.core import math_utils, performance
 from coint2.utils.config import AppConfig
+from coint2.utils.logging_config import get_trading_logger, setup_logging_from_config
 from coint2.utils.logging_utils import get_logger
 from coint2.utils.timing_utils import ProgressTracker, logged_time, time_block
 from coint2.utils.visualization import calculate_extended_metrics, create_performance_report, format_metrics_summary
+from coint2.monitoring.metrics import TradingMetrics, DashboardGenerator
 
 # Import directly from the file path rather than the module
 from coint2.core.data_loader import DataHandler, load_master_dataset
@@ -27,7 +29,7 @@ from coint2.core.memory_optimization import (
     setup_blas_threading_limits, monitor_memory_usage, verify_no_data_copies,
     cleanup_global_data, GLOBAL_PRICE
 )
-# from src.optimiser.metric_utils import validate_params  # Moved to function level to avoid circular import
+# from optimiser.metric_utils import validate_params  # Moved to function level to avoid circular import
 from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
 from coint2.core.portfolio import Portfolio
 from coint2.utils.vectorized_ops import VectorizedStatsCalculator, vectorized_eval_expression
@@ -135,6 +137,38 @@ def _simulate_realistic_portfolio(all_pnls, cfg):
 
     return portfolio_pnl
 
+
+def _emit_monitoring_metrics(metrics: dict) -> None:
+    logger = get_logger("walk_forward.monitoring")
+    try:
+        trading_logger = get_trading_logger()
+        drawdown_pct = abs(float(metrics.get("max_drawdown_on_equity", 0.0) or 0.0))
+
+        monitoring = TradingMetrics()
+        monitoring.total_pnl = float(metrics.get("total_pnl", 0.0) or 0.0)
+        monitoring.win_rate = float(metrics.get("win_rate_trades", metrics.get("win_rate", 0.0)) or 0.0)
+        monitoring.max_drawdown = drawdown_pct
+        monitoring.current_drawdown = drawdown_pct
+        monitoring.trade_count = int(metrics.get("total_trades", 0) or 0)
+        monitoring.active_positions = int(metrics.get("total_pairs_traded", 0) or 0)
+        monitoring.sharpe_ratio = float(metrics.get("sharpe_ratio_abs", 0.0) or 0.0)
+        monitoring.avg_trade_duration = float(metrics.get("avg_trade_duration", 0.0) or 0.0)
+        monitoring.last_update_time = pd.Timestamp.now().isoformat()
+
+        for key, value in {
+            "total_pnl": monitoring.total_pnl,
+            "sharpe_ratio_abs": monitoring.sharpe_ratio,
+            "max_drawdown_pct": monitoring.max_drawdown,
+            "total_trades": monitoring.trade_count,
+            "total_pairs_traded": monitoring.active_positions,
+            "total_costs": float(metrics.get("total_costs", 0.0) or 0.0),
+        }.items():
+            trading_logger.log_metric(key, float(value))
+
+        DashboardGenerator().generate_dashboard(monitoring)
+    except Exception as exc:
+        logger.warning(f"Не удалось записать метрики мониторинга: {exc}")
+
 def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes, period_label, metrics):
     """
     Helper function to run backtest for a pair with given data.
@@ -180,6 +214,7 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             max_margin_usage=getattr(cfg.portfolio, 'max_margin_usage', 1.0),
             half_life=metrics.get('half_life'),
             time_stop_multiplier=getattr(cfg.backtest, 'time_stop_multiplier', None),
+            min_volatility=getattr(cfg.backtest, 'min_volatility', 0.001),
             # Enhanced risk management parameters
             use_kelly_sizing=getattr(cfg.backtest, 'use_kelly_sizing', True),
             max_kelly_fraction=getattr(cfg.backtest, 'max_kelly_fraction', 0.25),
@@ -206,16 +241,23 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             regime_check_frequency=getattr(cfg.backtest, 'regime_check_frequency', 96),
             use_market_regime_cache=getattr(cfg.backtest, 'use_market_regime_cache', True),
             adf_check_frequency=getattr(cfg.backtest, 'adf_check_frequency', 5376),
+            cache_cleanup_frequency=getattr(cfg.backtest, 'cache_cleanup_frequency', 1000),
             lazy_adf_threshold=getattr(cfg.backtest, 'lazy_adf_threshold', 0.1),
+            hurst_neutral_band=getattr(cfg.backtest, 'hurst_neutral_band', 0.05),
+            vr_neutral_band=getattr(cfg.backtest, 'vr_neutral_band', 0.2),
             # EW correlation parameters
             use_exponential_weighted_correlation=getattr(cfg.backtest, 'use_exponential_weighted_correlation', False),
             ew_correlation_alpha=getattr(cfg.backtest, 'ew_correlation_alpha', 0.1),
+            # Cost modeling parameters
+            slippage_stress_multiplier=getattr(cfg.backtest, 'slippage_stress_multiplier', 1.0),
+            always_model_slippage=getattr(cfg.backtest, 'always_model_slippage', True),
             # Volatility-based position sizing parameters
             volatility_based_sizing=getattr(cfg.portfolio, 'volatility_based_sizing', False),
             volatility_lookback_hours=getattr(cfg.portfolio, 'volatility_lookback_hours', 24),
             min_position_size_pct=getattr(cfg.portfolio, 'min_position_size_pct', 0.005),
             max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 0.02),
             volatility_adjustment_factor=getattr(cfg.portfolio, 'volatility_adjustment_factor', 2.0),
+            config=cfg.backtest,
         )
         
         # Run backtest
@@ -827,6 +869,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         use_memory_map: Whether to use memory-mapped data optimization
     """
     start_time = time.time()
+    setup_logging_from_config(cfg)
     logger = get_logger("walk_forward")
 
     # Setup BLAS threading limits before any parallel processing to prevent oversubscription
@@ -874,7 +917,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             'risk_per_position_pct': cfg.portfolio.risk_per_position_pct
         }
         
-        from src.optimiser.metric_utils import validate_params
+        from optimiser.metric_utils import validate_params
         validated_params = validate_params(params)
         logger.info("✅ Параметры конфигурации валидны")
         
@@ -1606,6 +1649,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         logger.info(f"  🔄 Всего сделок: {all_metrics.get('total_trades', 0)}")
         logger.info(f"  📈 Торгуемых пар: {all_metrics.get('total_pairs_traded', 0)}")
         logger.info(f"  💸 Общие издержки: ${all_metrics.get('total_costs', 0):,.2f}")
+
+        _emit_monitoring_metrics(all_metrics)
     
     # Create reports
     logger.info(f"⇢ Создание отчетов и сохранение результатов...")

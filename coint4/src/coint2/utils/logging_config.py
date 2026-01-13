@@ -3,6 +3,7 @@
 import json
 import logging
 import logging.handlers
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
@@ -50,7 +51,8 @@ def setup_structured_logging(
     log_file: str = "artifacts/live/logs/coint2.jsonl",
     level: str = "INFO",
     max_bytes: int = 10 * 1024 * 1024,
-    backup_count: int = 5
+    backup_count: int = 5,
+    logger_name: str = "coint2",
 ) -> logging.Logger:
     """Setup structured logging configuration.
     
@@ -65,11 +67,12 @@ def setup_structured_logging(
     """
     
     # Create logger
-    logger = logging.getLogger("coint2")
+    logger = logging.getLogger(logger_name)
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     
     # Clear existing handlers
     logger.handlers.clear()
+    logger.propagate = False
     
     # File handler with JSON formatting
     file_handler = RotatingFileHandler(
@@ -112,33 +115,45 @@ def log_structured(logger: logging.Logger, level: str, message: str, **fields):
 class TradingLogger:
     """Specialized logger for trading operations."""
     
-    def __init__(self, log_dir: str = "artifacts/live/logs"):
+    def __init__(
+        self,
+        log_dir: str = "artifacts/live/logs",
+        level: str = "INFO",
+        trade_details: bool = False,
+    ):
         """Initialize trading logger.
         
         Args:
             log_dir: Directory for log files
+            level: Log level for system logs
+            trade_details: Enable detailed trade logging
         """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # Setup different log streams
         self.main_logger = setup_structured_logging(
-            log_file=str(self.log_dir / "main.jsonl")
+            log_file=str(self.log_dir / "main.jsonl"),
+            level=level,
+            logger_name="coint2",
         )
         
         self.trades_logger = setup_structured_logging(
             log_file=str(self.log_dir / "trades.jsonl"),
-            level="INFO"
+            level="INFO" if trade_details else "WARNING",
+            logger_name="coint2.trades",
         )
         
         self.alerts_logger = setup_structured_logging(
             log_file=str(self.log_dir / "alerts.jsonl"),
-            level="WARNING"
+            level="WARNING",
+            logger_name="coint2.alerts",
         )
         
         self.metrics_logger = setup_structured_logging(
             log_file=str(self.log_dir / "metrics.jsonl"),
-            level="INFO"
+            level="INFO",
+            logger_name="coint2.metrics",
         )
     
     def log_trade(self, trade_data: Dict[str, Any]):
@@ -190,4 +205,20 @@ def get_trading_logger() -> TradingLogger:
     global _trading_logger
     if _trading_logger is None:
         _trading_logger = TradingLogger()
+    return _trading_logger
+
+
+def setup_logging_from_config(cfg, log_dir: str | None = None) -> TradingLogger:
+    """Configure logging based on application config."""
+    global _trading_logger
+    if _trading_logger is not None:
+        return _trading_logger
+
+    logging_cfg = getattr(cfg, "logging", None)
+    level = getattr(logging_cfg, "debug_level", "INFO")
+    trade_details = bool(getattr(logging_cfg, "trade_details", False))
+    log_dir = log_dir or "artifacts/live/logs"
+
+    os.environ["LOG_LEVEL"] = level.upper()
+    _trading_logger = TradingLogger(log_dir=log_dir, level=level, trade_details=trade_details)
     return _trading_logger

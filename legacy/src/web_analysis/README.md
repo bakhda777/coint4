@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Веб-анализ результатов оптимизации
 
 Интерактивный веб-интерфейс для анализа результатов оптимизации стратегии парного трейдинга.

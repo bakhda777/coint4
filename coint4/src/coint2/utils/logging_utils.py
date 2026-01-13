@@ -25,6 +25,14 @@ def get_logger(name: str) -> logging.Logger:
     load_dotenv()
 
     logger = logging.getLogger(name)
+    root_logger = logging.getLogger("coint2")
+    if root_logger.handlers:
+        if logger.handlers:
+            logger.handlers.clear()
+        logger.propagate = True
+        logger.setLevel(root_logger.level)
+        return logger
+
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(

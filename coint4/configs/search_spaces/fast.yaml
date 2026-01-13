@@ -19,7 +19,7 @@ signals:
     high: 50
     step: 10
 
-risk:
+risk_management:
   stop_loss_multiplier:
     type: float
     low: 2.5

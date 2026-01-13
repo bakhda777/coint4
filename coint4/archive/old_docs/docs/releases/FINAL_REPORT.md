@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # FINAL REPORT: v0.2.3 Complete Reproducibility Framework
 
 **Generated:** 2025-08-11T00:40:00  

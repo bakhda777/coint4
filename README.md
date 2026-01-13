@@ -8,7 +8,7 @@ This repository contains a cointegration pairs trading framework and related too
 - `legacy/`: archived root-level code/tests/configs/scripts and legacy tooling
 - `docs/`: architecture, data, and testing docs (paths assume `cd coint4`)
 - `data/`: local datasets (ignored)
-- `outputs/`, `results/`, `logs/`: generated artifacts (ignored)
+- `outputs/`, `results/`, `artifacts/` (including `artifacts/live/logs/`): generated artifacts (ignored)
 
 Notes:
 - The active Poetry project lives in `coint4/pyproject.toml`. Legacy Poetry and requirements files are in `legacy/`.

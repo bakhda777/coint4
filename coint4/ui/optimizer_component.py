@@ -35,6 +35,7 @@ class OptimizationRunner:
     def __init__(self, output_dir: str = "outputs/optimization"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        Path("outputs/studies").mkdir(parents=True, exist_ok=True)
         self.current_study = None
         self.optimization_thread = None
         self.progress_queue = queue.Queue()
@@ -112,7 +113,9 @@ class OptimizationRunner:
             try:
                 # Create study
                 study_name = f"web_opt_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                storage = f"sqlite:///outputs/studies/{study_name}.db"
+                studies_dir = Path("outputs/studies")
+                studies_dir.mkdir(parents=True, exist_ok=True)
+                storage = f"sqlite:///{studies_dir / f'{study_name}.db'}"
                 
                 self.current_study = optuna.create_study(
                     study_name=study_name,
@@ -209,10 +212,12 @@ class OptimizationRunner:
         
         for param_name, (min_val, max_val) in param_ranges.items():
             # Determine category
-            if 'zscore' in param_name or 'threshold' in param_name:
+            if 'zscore' in param_name or 'threshold' in param_name or 'rolling' in param_name:
                 category = 'signals'
-            elif 'stop' in param_name or 'risk' in param_name or 'position' in param_name:
-                category = 'risk'
+            elif 'stop' in param_name or 'cooldown' in param_name:
+                category = 'risk_management'
+            elif 'position' in param_name or 'risk_per_position' in param_name:
+                category = 'portfolio'
             elif 'coint' in param_name or 'hurst' in param_name or 'half_life' in param_name:
                 category = 'filters'
             elif 'commission' in param_name or 'slippage' in param_name:

@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Universe Selection Report
 
 *Generated: 2025-08-11T21:34:14.640651*

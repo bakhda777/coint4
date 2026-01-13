@@ -23,7 +23,7 @@ signals:
     step: 5
     description: "Rolling window for z-score calculation (periods)"
 
-risk:
+risk_management:
   stop_loss_multiplier:
     type: float
     low: 2.0
@@ -37,7 +37,8 @@ risk:
     high: 5.0
     step: 0.5
     description: "Time stop as multiplier of half-life"
-    
+
+portfolio:
   max_position_size_pct:
     type: float
     low: 0.01
@@ -105,4 +106,3 @@ metrics:
     - win_rate
     - calmar_ratio
     - max_drawdown
-EOF < /dev/null

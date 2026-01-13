@@ -46,7 +46,8 @@ class StreamlitOptimizationRunner:
         """Convert UI parameter ranges to search space format."""
         search_space = {
             'signals': {},
-            'risk': {},
+            'risk_management': {},
+            'portfolio': {},
             'filters': {},
             'costs': {}
         }
@@ -55,8 +56,10 @@ class StreamlitOptimizationRunner:
             # Categorize parameters
             if 'zscore' in param_name or 'rolling_window' in param_name:
                 category = 'signals'
-            elif 'stop' in param_name or 'position_size' in param_name:
-                category = 'risk'
+            elif 'position_size' in param_name:
+                category = 'portfolio'
+            elif 'stop' in param_name:
+                category = 'risk_management'
             elif 'coint' in param_name or 'hurst' in param_name or 'half_life' in param_name:
                 category = 'filters'
             elif 'commission' in param_name or 'slippage' in param_name:
@@ -88,15 +91,25 @@ class StreamlitOptimizationRunner:
         
         def optimize():
             try:
+                search_space_path = Path("configs/search_spaces/web_ui.yaml")
+                if not search_space_path.exists():
+                    self.progress_queue.put({
+                        'status': 'error',
+                        'error': f"Search space not found: {search_space_path}"
+                    })
+                    return
+
                 # Create WebOptimizer instance
                 self.optimizer = WebOptimizer(
                     base_config_path=config_path,
-                    search_space_path="configs/search_spaces/web_ui.yaml"
+                    search_space_path=str(search_space_path)
                 )
                 
                 # Create study
                 study_name = f"streamlit_opt_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                storage = f"sqlite:///outputs/studies/{study_name}.db"
+                studies_dir = Path("outputs/studies")
+                studies_dir.mkdir(parents=True, exist_ok=True)
+                storage = f"sqlite:///{studies_dir / f'{study_name}.db'}"
                 
                 # Select sampler
                 if sampler == "TPE":

@@ -525,7 +525,14 @@ def filter_pairs_by_coint_and_half_life(
     
     # Если ликвидность <= 0 или другие параметры максимальны, пропускаем фильтр
     if liquidity_usd_daily <= 0 or max_bid_ask_pct >= 1.0:
-        microstructure_passed = kpss_passed
+        for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in kpss_passed:
+            if len(spread) == 0 or spread.isna().all():
+                filter_reasons.append((s1, s2, 'spread_empty_stats'))
+                filter_stats['spread_empty_stats'] = filter_stats.get('spread_empty_stats', 0) + 1
+                continue
+            mean = spread.mean()
+            std = spread.std()
+            microstructure_passed.append((s1, s2, corr, pvalue, beta, hl_days, mean, std, mean_crossings))
         logger.info(f"[ФИЛЬТР] Market microstructure фильтр отключен")
     else:
         for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in kpss_passed:

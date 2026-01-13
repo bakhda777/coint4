@@ -5,24 +5,26 @@ All paths assume you run commands from `coint4/` (start with `cd coint4`).
 
 ## 1. Prepare data
 
-Price data should be stored as partitioned parquet files inside the directory specified by `data_dir` (by default `data_optimized`). Each symbol lives in its own partition:
+Price data should be stored as partitioned parquet files inside the directory specified by `data_dir` (by default `data_downloaded`). Each symbol lives in its own partition:
 
 ```
-data_optimized/
-  symbol=BTCUSDT/
-    year=2021/
+data_downloaded/
+  BTCUSDT/
+    year=2024/
       month=01/
-        data.parquet
+        day=01/
+          data.parquet
 ```
 
-The parquet files must contain the columns `timestamp`, `close` and `symbol`.
+If `data_optimized/` exists next to `data_downloaded/`, the loader will prefer it automatically.
+At minimum the parquet files must contain `timestamp`, `symbol`, and `close` (full OHLCV is supported too).
 
 ## 2. Configure
 
 Edit `configs/main_2024.yaml` to match your dataset location and desired backtest parameters. Important options:
 
 ```yaml
-data_dir: "data_optimized"
+data_dir: "data_downloaded"
 results_dir: "results"
 pair_selection:
   lookback_days: 90
@@ -37,17 +39,25 @@ max_shards: null
 
 ## 3. Run the project
 
-Install dependencies using `poetry install` then execute commands using `poetry run`.
-
 ```bash
-# Find all cointegrated pairs
-poetry run coint2 scan
+# Scan pairs
+./.venv/bin/coint2 scan \
+  --config configs/criteria_relaxed.yaml \
+  --base-config configs/main_2024.yaml \
+  --output-dir bench
 
-# Backtest a specific pair
-poetry run coint2 backtest --pair BTCUSDT,ETHUSDT
+# Backtest scanned universe
+./.venv/bin/coint2 backtest \
+  --config configs/main_2024.yaml \
+  --pairs-file bench/pairs_universe.yaml \
+  --period-start 2023-06-01 \
+  --period-end 2023-08-31 \
+  --out-dir outputs/fixed_run
 
-# Run scanning and backtesting sequentially
-poetry run coint2 run-pipeline
+# Walk-forward analysis
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024.yaml
 ```
 
-Metrics for each backtest are written to the directory defined by `results_dir`.
+You can also run the full sequence with `bash scripts/run_pipeline.sh`.
+Fixed backtest outputs go to `--out-dir`, and walk-forward outputs go to `results_dir`.

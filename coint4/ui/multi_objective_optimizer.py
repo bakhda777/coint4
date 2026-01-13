@@ -179,7 +179,9 @@ class MultiObjectiveOptimizer:
         directions = [obj.direction for obj in self.objectives]
         
         study_name = f"multi_obj_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        storage = f"sqlite:///outputs/studies/{study_name}.db"
+        studies_dir = Path("outputs/studies")
+        studies_dir.mkdir(parents=True, exist_ok=True)
+        storage = f"sqlite:///{studies_dir / f'{study_name}.db'}"
         
         self.study = optuna.create_study(
             study_name=study_name,

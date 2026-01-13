@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Task Completion Summary - v0.2.0 Cost Reduction
 
 ## 🎯 Mission Accomplished

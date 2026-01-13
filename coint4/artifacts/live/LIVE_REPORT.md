@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Live Trading Report - 2025-08-10T20:30:00
 
 ## Configuration

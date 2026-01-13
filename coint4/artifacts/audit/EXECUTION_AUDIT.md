@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Execution Model Audit Report
 
 *Generated: 2025-08-10T23:27:32.116021*

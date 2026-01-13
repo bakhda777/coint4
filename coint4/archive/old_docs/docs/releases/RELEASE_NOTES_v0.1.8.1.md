@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Release Notes - v0.1.8.1
 
 ## Import Issues Fixed & CLI Unified

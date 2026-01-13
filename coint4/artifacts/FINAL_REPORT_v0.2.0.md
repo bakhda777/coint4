@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Final Report - v0.2.0 Release
 
 ## 🎯 Objective Achieved

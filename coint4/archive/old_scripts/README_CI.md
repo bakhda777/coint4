@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # CI Smoke Tests
 
 Система smoke тестов для CI/CD pipeline проекта коинтеграционной торговой стратегии.

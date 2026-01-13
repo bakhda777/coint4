@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Reproduction Run Report
 Generated: 2025-08-11T00:36:04.460925
 Source Manifest: artifacts/repro/RESULTS_MANIFEST.json

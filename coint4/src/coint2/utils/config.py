@@ -131,6 +131,10 @@ class BacktestConfig(BaseModel):
     zscore_exit: float | None = None
     take_profit_multiplier: float | None = None
     cooldown_hours: int = 0
+    wait_for_candle_close: bool = False
+    min_volatility: float = Field(default=0.001, ge=0.0)
+    slippage_stress_multiplier: float = Field(default=1.0, ge=0.0)
+    always_model_slippage: bool = True
     # NEW: Enhanced risk management parameters
     use_kelly_sizing: bool = True
     max_kelly_fraction: float = Field(default=0.25, ge=0.01, le=1.0)
@@ -193,6 +197,18 @@ class BacktestConfig(BaseModel):
     min_correlation_threshold: float = Field(default=0.6, gt=0.0, lt=1.0)
     correlation_window: int = Field(default=720, ge=50)
 
+    # Performance optimization parameters
+    regime_check_frequency: int = Field(default=96, ge=1)
+    use_market_regime_cache: bool = True
+    adf_check_frequency: int = Field(default=2688, ge=1)
+    cache_cleanup_frequency: int = Field(default=1000, ge=1)
+    lazy_adf_threshold: float = Field(default=0.1, gt=0.0)
+    hurst_neutral_band: float = Field(default=0.05, ge=0.0)
+    vr_neutral_band: float = Field(default=0.2, ge=0.0)
+    use_exponential_weighted_correlation: bool = False
+    ew_correlation_alpha: float = Field(default=0.1, gt=0.0, lt=1.0)
+    n_jobs: int = -1
+
     # -------- Validators --------
     @model_validator(mode="after")
     def _validate_backtest_params(self):  # type: ignore
@@ -250,10 +266,16 @@ class BacktestConfig(BaseModel):
 class WalkForwardConfig(BaseModel):
     """Configuration for walk-forward analysis."""
 
+    enabled: bool = True
     start_date: str
     end_date: str
     training_period_days: int
     testing_period_days: int
+    step_size_days: int | None = None
+    max_steps: int | None = None
+    min_training_samples: int | None = None
+    refit_frequency: str | None = None
+    gap_minutes: int = 15
     train_days: int | None = None
     test_days: int | None = None
 
@@ -263,6 +285,8 @@ class WalkForwardConfig(BaseModel):
             self.train_days = self.training_period_days
         if self.test_days is None:
             self.test_days = self.testing_period_days
+        if self.step_size_days is None:
+            self.step_size_days = self.testing_period_days
         return self
 
 
@@ -292,6 +316,13 @@ class GuardsConfig(BaseModel):
     require_price_validation: bool = True
 
 
+class LoggingConfig(BaseModel):
+    """Logging settings."""
+
+    trade_details: bool = False
+    debug_level: str = "INFO"
+
+
 class AppConfig(BaseModel):
     """Top-level application configuration."""
 
@@ -306,6 +337,7 @@ class AppConfig(BaseModel):
     filter_params: FilterParamsConfig = Field(default_factory=FilterParamsConfig)
     backtest: BacktestConfig
     walk_forward: WalkForwardConfig
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     max_shards: int | None = None
 
     @property

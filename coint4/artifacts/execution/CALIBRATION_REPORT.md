@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Execution Cost Calibration Report
 
 *Generated: 2025-08-10T22:20:32.185475*

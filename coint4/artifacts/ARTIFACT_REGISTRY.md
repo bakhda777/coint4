@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Artifact Registry Index
 
 *Generated: 2025-08-10T23:01:24.022013*

@@ -2,12 +2,14 @@
 
 ## Обзор
 
-Проект содержит исторические данные торгов криптовалютных пар с биржи, организованные в формате Apache Parquet с иерархическим партиционированием по дате.
+Проект содержит исторические данные торгов криптовалютных пар с биржи, организованные в формате Apache Parquet
+с иерархическим партиционированием по дате. По умолчанию данные читаются из `data_downloaded/`
+(`data_dir` в `configs/main_2024.yaml`). Если рядом есть `data_optimized/`, загрузчик использует ее автоматически.
 
 ## 📁 Организация файлов
 
 ```
-data/
+data_downloaded/
 ├── ТОРГОВАЯ_ПАРА/                    # Например: BTCUSDT, ETHUSDT, DOGEUSDT
 │   ├── year=YYYY/                    # Год (2022-2025)
 │   │   ├── month=MM/                 # Месяц (1-12)
@@ -22,6 +24,8 @@ data/
 ├── .gitkeep                         # Файл для git
 └── ignore.txt                       # Файл игнорирования
 ```
+
+Примечание: директория `data/` может использоваться как legacy-источник и совместима с этим же форматом.
 
 ### Принципы организации:
 - **Hive-style партиционирование**: `year=YYYY/month=MM/day=DD/`
@@ -102,7 +106,7 @@ timestamp = int(datetime_obj.timestamp() * 1000)
 import pandas as pd
 
 # Загрузка всех данных за день (все parquet файлы)
-df = pd.read_parquet('data/BTCUSDT/year=2024/month=12/day=1/')
+df = pd.read_parquet('data_downloaded/BTCUSDT/year=2024/month=12/day=1/')
 
 # Удаление дубликатов по timestamp
 df = df.drop_duplicates(subset=['timestamp']).sort_values('timestamp')
@@ -119,7 +123,7 @@ def load_symbol_data(symbol, start_date, end_date):
     current = start_date
     
     while current <= end_date:
-        path = f"data/{symbol}/year={current.year}/month={current.month}/day={current.day}/"
+        path = f"data_downloaded/{symbol}/year={current.year}/month={current.month}/day={current.day}/"
         if Path(path).exists():
             df_day = pd.read_parquet(path)
             dfs.append(df_day)

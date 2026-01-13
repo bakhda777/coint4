@@ -16,28 +16,30 @@ Coint2 is a cointegration pairs trading framework for cryptocurrencies. It provi
 ### Testing
 ```bash
 # Quick smoke tests (< 30 seconds)
-./scripts/test.sh
+bash scripts/test.sh
 
-# Full test suite (archived - needs restoration)
-# Located in: archive/old_scripts/test_full.sh
-pytest -n auto -m "not serial" --tb=short --durations=10  # Parallel tests
-pytest -m serial --tb=short                                # Serial tests
+# Full test suite (default skips slow/serial via pytest.ini)
+./.venv/bin/pytest -q
 
 # Run specific test categories
-pytest -m smoke                   # Critical tests
-pytest -m "not slow"              # All except slow tests
-pytest tests/unit -v              # Unit tests only
-pytest tests/integration          # Integration tests
-pytest -n auto -m "not serial"    # Parallel tests
+./.venv/bin/pytest -m smoke               # Critical tests
+./.venv/bin/pytest -m "not slow"          # All except slow tests
+./.venv/bin/pytest tests/unit -v          # Unit tests only
+./.venv/bin/pytest tests/integration      # Integration tests
+./.venv/bin/pytest -n auto -m "not serial" # Parallel tests (if xdist installed)
 
 # Run single test
-pytest tests/unit/core/test_math_utils.py::test_calculate_ssd_when_using_blocks_then_matches_brute_force -xvs
+./.venv/bin/pytest tests/unit/core/test_math_utils.py::test_calculate_ssd_when_using_blocks_then_matches_brute_force -xvs
 ```
 
 ### Optimization & Backtesting
 ```bash
 # Run hyperparameter optimization
-python scripts/core/optimize.py --mode balanced --n-trials 100 --base-config configs/main_2024.yaml
+PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
+  --mode balanced \
+  --n-trials 100 \
+  --config configs/main_2024.yaml \
+  --search-space configs/search_spaces/fast.yaml
 
 # Optimization modes:
 # - fast: Quick optimization with fewer trials (max 50)
@@ -49,7 +51,11 @@ python scripts/core/optimize.py --mode balanced --n-trials 100 --base-config con
 # - large: Large-scale optimization with many trials
 
 # Quick test mode (set QUICK_TEST=true for faster development)
-QUICK_TEST=true python scripts/core/optimize.py --mode fast --n-trials 5
+QUICK_TEST=true PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
+  --mode fast \
+  --n-trials 5 \
+  --config configs/main_2024.yaml \
+  --search-space configs/search_spaces/fast.yaml
 ```
 
 ### Pair Universe Selection
@@ -70,7 +76,7 @@ python scripts/universe/merge_pairs.py
 python scripts/universe/scan_data.py
 ```
 
-### Live Trading (Archived)
+### Live Trading (Legacy)
 ```bash
 # Note: Live trading scripts are archived in archive/old_scripts/live/
 # Run live trading (paper mode by default)
@@ -80,16 +86,16 @@ python archive/old_scripts/live/run.py --config configs/main_2024.yaml --mode pa
 python archive/old_scripts/live/extract_snapshot.py
 ```
 
-### Analysis & Monitoring (Archived)
+### Analysis & Monitoring (Active + Legacy)
 ```bash
-# Note: Analysis/ops scripts are archived in archive/old_scripts/
-# Optuna dashboard
+# Active scripts
+PYTHONPATH=src ./.venv/bin/python scripts/run_preflight.py
+PYTHONPATH=src ./.venv/bin/python scripts/monitor_drift.py
+PYTHONPATH=src ./.venv/bin/python scripts/extract_live_snapshot.py
+
+# Legacy scripts (archived)
 ./archive/old_scripts/ops/dashboard.sh
-
-# Analyze optimization results
 python archive/old_scripts/analysis/optuna_report.py --study-path outputs/studies/latest.db
-
-# Monitor strategy drift
 python archive/old_scripts/ops/monitor_drift.py
 ```
 
@@ -146,10 +152,10 @@ python archive/old_scripts/ops/monitor_drift.py
 
 ## Configuration Management
 
-- **Main Configs**: `configs/main_2024.yaml` (production), `configs/main.yaml` (default)
+- **Main Config**: `configs/main_2024.yaml`
 - **Search Spaces**: Define parameter ranges for optimization in `configs/search_spaces/`
 - **Criteria**: Pair selection criteria in `configs/criteria_*.yaml`
-- **Environment Variables**: Use `.env` file (copy from `.env.example`)
+- **Environment Variables**: `DATA_ROOT`, `COINT_LOG_EVERY`, `QUICK_TEST`
 
 ## Performance Considerations
 
@@ -163,7 +169,7 @@ python archive/old_scripts/ops/monitor_drift.py
 ### Adding a New Filter
 1. Add filter logic to `src/coint2/pipeline/filters.py`
 2. Add configuration to `PairSelectionConfig` in `src/coint2/utils/config.py`
-3. Add tests in `tests/unit/pipeline/test_filters.py`
+3. Add tests in `tests/unit/pipeline/`
 4. Update configs in `configs/`
 
 ### Modifying Backtest Logic
@@ -181,26 +187,27 @@ python archive/old_scripts/ops/monitor_drift.py
 - Set `QUICK_TEST=true` to use smaller datasets
 - Use `--verbose` flag for detailed logging
 - Check `outputs/studies/` for Optuna databases
-- Use `scripts/devtools/debug/` scripts for specific issues
+- Use `scripts/run_preflight.py` and `scripts/perf_audit.py` for sanity checks
+- Use `scripts/ui_preflight.py` for Streamlit dependencies/configs
 - Enable `COINT_LOG_EVERY=100000` for progress logging in large operations
 
 ## Poetry CLI Commands
 
 The project provides several CLI commands via Poetry:
 ```bash
-# Main CLI (archived - needs restoration)
-coint2                       # Main command interface
+# Main CLI (scan/backtest/walk-forward)
+coint2
 
 # Optimization CLI
 coint2-optimize              # Run Optuna optimization
 
-# Live trading CLI (archived)
+# Live trading CLI
 coint2-live                  # Live trading interface
 
-# Health check CLI (archived)
+# Health check CLI
 coint2-check-health          # Check system health
 
-# Universe building CLI (archived)
+# Universe building CLI
 coint2-build-universe        # Build pair universe
 ```
 
@@ -210,7 +217,7 @@ coint2-build-universe        # Build pair universe
 - `src/optimiser/constants.py`: System-wide constants
 - `pytest.ini`: Test configuration and markers
 - `pyproject.toml`: Project dependencies and metadata
-- `archive/old_scripts/test_full.sh`: Complete test suite runner (needs restoration)
+- `scripts/run_pipeline.sh`: End-to-end scan/backtest/walk-forward helper
 
 ## CI/CD Integration
 
@@ -228,7 +235,7 @@ Many components have been archived during refactoring:
 - Test scripts: `archive/old_scripts/`
 
 Active components remain in:
-- Core optimization: `scripts/core/optimize.py`
+- Core optimization: `scripts/core/optimize.py`, `src/optimiser/run_optimization.py`
 - Universe selection: `scripts/universe/`
-- Development tools: `scripts/devtools/`
+- Pipeline helpers: `scripts/run_pipeline.sh`, `scripts/run_preflight.py`, `scripts/perf_audit.py`
 - Main source: `src/coint2/` and `src/optimiser/`

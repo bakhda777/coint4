@@ -15,81 +15,101 @@
 - `coint4/data_downloaded/` — директория держится через `.gitkeep`, реальные данные игнорируются.
 - В тестах использовать `tmp_path`, если не нужен преднамеренно отслеживаемый файл.
 
+## Воспроизводимый прогон (scan → backtest → walk-forward)
+
+Команды запускаются из `coint4/`. После `./.venv/bin/pip install -e .` используйте `./.venv/bin/coint2`.
+
+### Ручной прогон
+```bash
+./.venv/bin/coint2 scan \
+  --config configs/criteria_relaxed.yaml \
+  --base-config configs/main_2024.yaml \
+  --output-dir bench \
+  --symbols ALL
+
+./.venv/bin/coint2 backtest \
+  --config configs/main_2024.yaml \
+  --pairs-file bench/pairs_universe.yaml \
+  --period-start 2023-06-01 \
+  --period-end 2023-08-31 \
+  --out-dir outputs/fixed_run
+
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024.yaml
+```
+
+### Скрипт для типового прогона
+```bash
+bash scripts/run_pipeline.sh
+```
+
+Переменные окружения для скрипта:
+`BASE_CONFIG`, `CRITERIA_CONFIG`, `DATA_ROOT`, `SYMBOLS`, `OUT_DIR`, `PAIRS_FILE`,
+`BACKTEST_OUT`, `START_DATE`, `END_DATE`, `PYTHON_BIN`.
+
+Пример запуска с ограничением на пары и период:
+```bash
+DATA_ROOT=data_downloaded \
+SYMBOLS=BTCUSDT,ETHUSDT \
+START_DATE=2023-06-01 \
+END_DATE=2023-08-31 \
+bash scripts/run_pipeline.sh
+```
+
+Ожидаемые артефакты:
+- `bench/pairs_universe.yaml` и `bench/UNIVERSE_REPORT.md`
+- `outputs/fixed_run/metrics.yaml`, `outputs/fixed_run/trades.csv`, `outputs/fixed_run/equity.csv`
+- `results/strategy_metrics.csv` (walk-forward), а также `results/daily_pnl.csv` и `results/equity_curve.csv`
+
 ## Структура тестов
 
-### Корневая папка `tests/`
+Актуальная структура (см. также `tests/README.md`):
 
-#### Основные интеграционные тесты
-- `test_backtest_integration.py` - интеграционные тесты бэктестинга
-- `test_optimized_backtest_engine.py` - тесты оптимизированного движка
-- `test_walk_forward_integration.py` - интеграционные тесты Walk-Forward анализа
-- `test_global_cache_integration.py` - тесты глобального кэширования
-- `test_memory_optimization.py` - тесты оптимизации памяти
-
-#### Тесты оптимизаций
-- `test_numba_full_optimization.py` - полная Numba оптимизация
-- `test_critical_fixes_comprehensive.py` - комплексные критические исправления
-
-#### Специализированные тесты
-- `test_backtest_correctness_with_blas.py` - корректность с BLAS
-- `test_pnl_calculation_fix.py` - исправления расчета PnL
-- `test_walk_forward_risk_fix.py` - исправления управления рисками
-
-### Подпапки
-
-#### `tests/core/` - Базовая функциональность
-- `test_cache.py` - тесты кэширования
-- `test_data_loader.py` - загрузка данных
-- `test_fast_coint.py` - быстрая коинтеграция
-- `test_file_glob.py` - работа с файлами
-- `test_intraday_frequency.py` - внутридневные частоты
-- `test_math_utils.py` - математические утилиты
-- `test_pair_backtester_integration.py` - интеграция парного бэктестера
-- `test_performance.py` - тесты производительности
-
-#### `tests/engine/` - Движки бэктестинга
-- `test_backtest_engine.py` - основной движок
-- `test_backtest_engine_optimization.py` - оптимизации движка
-- `test_backtest_fixes.py` - исправления движка
-- `test_enhanced_risk_management.py` - улучшенное управление рисками
-- `test_lookahead_bias_fix.py` - исправление look-ahead bias
-- `test_market_regime_detection.py` - определение рыночных режимов
-- `test_market_regime_optimization.py` - оптимизация режимов
-- `test_max_positions_increase.py` - увеличение максимальных позиций
-- `test_portfolio_position_limits.py` - лимиты позиций портфеля
-- `test_volatility_based_sizing.py` - размер позиций на основе волатильности
-
-#### `tests/pipeline/` - Пайплайны обработки
-- `test_filters_beta.py` - бета-фильтры
-- `test_pair_scanner_integration.py` - интеграция сканера пар
-- `test_walk_forward.py` - Walk-Forward анализ
-
-#### `tests/utils/` - Утилиты
-- `test_config_loading.py` - загрузка конфигурации
-- `test_time_utils.py` - временные утилиты
+- `tests/ci/` — быстрые проверки для CI (gates, drawdown).
+- `tests/smoke/` — smoke/preflight/observability, быстрые проверки импорта и Optuna.
+- `tests/unit/` — юнит-тесты по подсистемам: `core/`, `pipeline/`, `stats/`, `optimiser/`, `portfolio/`, `backtest/`, `execution/`, `utils/`, `engine/`.
+- `tests/integration/` — интеграционные сценарии: `backtest/`, `pipeline/`, `walk_forward/`, `optimization/`, `lookahead/`, `wfa/`.
+- `tests/regression/` — regression/golden traces.
+- `tests/determinism/` — повторяемость результатов.
+- `tests/governance/` — promotion/rollback пайплайны.
+- `tests/monitoring/` — мониторинг и дрейф.
+- `tests/performance/` — бенчмарки, кэширование, параллелизм.
+- `tests/analytics/`, `tests/validation/`, `tests/test_critical_fixes/` — аналитика, утечки, критические регрессии.
+- Дополнительно присутствуют `tests/core/`, `tests/engine/`, `tests/stats/`, `tests/pipeline/`, `tests/portfolio/` — историческая группировка, всё еще используется в CI.
 
 ## Запуск тестов
 
 ### Все тесты
 ```bash
-pytest tests/
+./.venv/bin/pytest -q
+```
+
+По умолчанию `pytest.ini` исключает `slow` и `serial` (см. `addopts`).
+Чтобы запустить их, используйте:
+```bash
+./.venv/bin/pytest -m "slow or serial" --override-ini addopts=""
 ```
 
 ### Конкретная категория
 ```bash
-# Тесты движков
-pytest tests/engine/
+# Unit-тесты
+./.venv/bin/pytest tests/unit -q
 
-# Базовые тесты
-pytest tests/core/
+# Интеграционные
+./.venv/bin/pytest tests/integration -q
 
-# Интеграционные тесты
-pytest tests/test_*_integration.py
+# Smoke
+./.venv/bin/pytest tests/smoke -q
+```
+
+### Smoke прогон
+```bash
+bash scripts/test.sh
 ```
 
 ### Конкретный файл
 ```bash
-pytest tests/test_backtest_integration.py
+./.venv/bin/pytest tests/smoke/test_preflight.py -q
 ```
 
 ### С подробным выводом
@@ -115,29 +135,29 @@ pytest tests/ --cov=src/coint2 --cov-report=html
 ## Ключевые тестовые сценарии
 
 ### 1. Корректность бэктестинга
-- **Файл:** `test_backtest_integration.py`
-- **Цель:** Проверка общей корректности пайплайна
-- **Покрывает:** Полный цикл от данных до результатов
+- **Файлы:** `tests/integration/backtest/test_backtest_engine.py`, `tests/integration/backtest/test_pair_backtester_integration.py`
+- **Цель:** Проверка движка и интеграции парного бэктестера
+- **Покрывает:** Базовый торговый цикл и метрики
 
 ### 2. Оптимизации производительности
-- **Файлы:** `test_numba_full_optimization.py`, `test_memory_optimization.py`
-- **Цель:** Проверка ускорений и экономии памяти
-- **Покрывает:** Numba JIT, memory mapping, кэширование
+- **Файлы:** `tests/performance/benchmarks/test_performance.py`, `tests/performance/caching/test_optimized_cache_performance.py`
+- **Цель:** Проверка ускорений и поведения кэша
+- **Покрывает:** Бенчмарки, кэширование, параллелизм
 
 ### 3. Критические исправления
-- **Файл:** `test_critical_fixes_comprehensive.py`
-- **Цель:** Проверка исправления критических ошибок
-- **Покрывает:** Look-ahead bias, расчет PnL, управление позициями
+- **Файлы:** `tests/test_critical_fixes/test_trade_metrics_correctness.py`, `tests/regression/test_golden_traces.py`
+- **Цель:** Защита от регрессий
+- **Покрывает:** PnL/метрики и эталонные трассы
 
 ### 4. Walk-Forward анализ
-- **Файл:** `test_walk_forward_integration.py`
+- **Файлы:** `tests/integration/walk_forward/test_walk_forward_integration.py`, `tests/integration/pipeline/test_walk_forward.py`
 - **Цель:** Проверка временного разделения данных
-- **Покрывает:** Обучение, тестирование, валидация
+- **Покрывает:** Обучение, тестирование, агрегацию метрик
 
-### 5. Глобальное кэширование
-- **Файл:** `test_global_cache_integration.py`
-- **Цель:** Проверка эффективности кэша
-- **Покрывает:** Rolling статистики, memory mapping
+### 5. Smoke/Preflight
+- **Файлы:** `tests/smoke/test_preflight.py`, `tests/smoke/test_observability.py`
+- **Цель:** Быстрая валидация окружения и артефактов
+- **Покрывает:** Импорты, конфиги, утилиты наблюдаемости
 
 ## Конфигурация pytest
 
@@ -146,6 +166,9 @@ pytest tests/ --cov=src/coint2 --cov-report=html
 
 ### Маркеры
 ```python
+# Быстрые smoke-тесты
+@pytest.mark.smoke
+
 # Медленные тесты
 @pytest.mark.slow
 
@@ -154,15 +177,74 @@ pytest tests/ --cov=src/coint2 --cov-report=html
 
 # Тесты производительности
 @pytest.mark.performance
+
+# Юнит-тесты
+@pytest.mark.unit
+
+# Критические фиксы
+@pytest.mark.critical_fixes
 ```
 
 ### Запуск по маркерам
 ```bash
-# Только быстрые тесты
-pytest tests/ -m "not slow"
+# Только smoke
+./.venv/bin/pytest tests/ -m smoke
 
 # Только интеграционные
-pytest tests/ -m integration
+./.venv/bin/pytest tests/ -m integration
+
+# Только производительность
+./.venv/bin/pytest tests/ -m performance
+```
+
+## Performance audit
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/perf_audit.py --config configs/main_2024.yaml
+```
+
+Полезные флаги: `--data-root`, `--lookback-days`, `--end-date`, `--skip-cache`, `--skip-coint`.
+
+## UI/Streamlit preflight
+
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/ui_preflight.py \
+  --config configs/main_2024.yaml \
+  --search-space configs/search_spaces/web_ui.yaml
+```
+
+Если зависимости не установлены, можно получить предупреждения без ошибки:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/ui_preflight.py --allow-missing
+```
+
+Запуск UI:
+```bash
+PYTHONPATH=src ./.venv/bin/streamlit run ui/app.py
+```
+
+## Проверка данных (parquet)
+
+Быстрая проверка структуры и качества выгрузок:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
+  --data-root data_downloaded \
+  --mode raw \
+  --config configs/main_2024.yaml
+```
+
+Для очищенной структуры:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
+  --data-root data_clean \
+  --mode clean \
+  --config configs/main_2024.yaml
+```
+
+Сохранение отчета:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
+  --report outputs/data_quality_report.csv
 ```
 
 ## Лучшие практики

@@ -2,12 +2,26 @@
 Configuration validation using Pydantic for type safety and validation.
 """
 
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
 from pathlib import Path
 from datetime import datetime
 from pydantic import BaseModel, Field, validator, root_validator
 import yaml
 import json
+
+from coint2.utils.config import (
+    AppConfig,
+    BacktestConfig,
+    DataProcessingConfig,
+    FilterParamsConfig,
+    GuardsConfig,
+    LoggingConfig,
+    PairSelectionConfig,
+    PortfolioConfig,
+    RiskConfig,
+    TimeConfig,
+    WalkForwardConfig,
+)
 
 
 class BacktestingConfig(BaseModel):
@@ -281,6 +295,127 @@ class MainConfig(BaseModel):
         return warnings
 
 
+SECTION_MODELS: dict[str, Any] = {
+    "data_processing": DataProcessingConfig,
+    "portfolio": PortfolioConfig,
+    "pair_selection": PairSelectionConfig,
+    "filter_params": FilterParamsConfig,
+    "backtest": BacktestConfig,
+    "walk_forward": WalkForwardConfig,
+    "time": TimeConfig,
+    "risk": RiskConfig,
+    "guards": GuardsConfig,
+    "logging": LoggingConfig,
+}
+
+DEPRECATED_TOP_LEVEL_KEYS = {
+    "filters",
+    "normalization",
+    "online_statistics",
+    "signal_shift",
+}
+
+DEPRECATED_SECTION_KEYS = {
+    "pair_selection": {"min_beta", "max_beta", "min_profit_potential_pct"},
+    "backtest": {"flat_zscore_threshold"},
+}
+
+ALLOWED_SEARCH_SPACE_SECTIONS = {
+    "filters",
+    "signals",
+    "risk_management",
+    "portfolio",
+    "costs",
+    "normalization",
+    "metrics",
+    "optimization",
+}
+
+DEPRECATED_SEARCH_SPACE_SECTIONS = {"risk": "risk_management"}
+
+
+def _collect_extra_keys(raw_cfg: dict) -> List[str]:
+    extras: List[str] = []
+    top_fields = set(AppConfig.model_fields.keys())
+    for key in raw_cfg:
+        if key in DEPRECATED_TOP_LEVEL_KEYS:
+            continue
+        if key not in top_fields:
+            extras.append(key)
+    for section, model in SECTION_MODELS.items():
+        if section not in raw_cfg or not isinstance(raw_cfg[section], dict):
+            continue
+        model_fields = set(model.model_fields.keys())
+        for key in raw_cfg[section]:
+            if key not in model_fields:
+                extras.append(f"{section}.{key}")
+    return extras
+
+
+def _collect_deprecated_keys(raw_cfg: dict) -> List[str]:
+    deprecated: List[str] = []
+    for key in DEPRECATED_TOP_LEVEL_KEYS:
+        if key in raw_cfg:
+            deprecated.append(key)
+    for section, keys in DEPRECATED_SECTION_KEYS.items():
+        section_cfg = raw_cfg.get(section, {})
+        if not isinstance(section_cfg, dict):
+            continue
+        for key in keys:
+            if key in section_cfg:
+                deprecated.append(f"{section}.{key}")
+    return deprecated
+
+
+def validate_for_production_cfg(cfg: AppConfig) -> List[str]:
+    """Validate configuration for production use."""
+    warnings: List[str] = []
+
+    if cfg.data_processing.normalization_method != "rolling_zscore":
+        warnings.append(
+            f"⚠️ Non-production normalization: {cfg.data_processing.normalization_method}"
+        )
+
+    total_costs = cfg.backtest.commission_pct + cfg.backtest.slippage_pct
+    if total_costs < 0.0008:
+        warnings.append(f"⚠️ Unrealistically low costs: {total_costs:.2%}")
+
+    if cfg.pair_selection.ssd_top_n < 25000:
+        warnings.append(f"⚠️ Low pair diversity: {cfg.pair_selection.ssd_top_n}")
+
+    if cfg.walk_forward.gap_minutes != 15:
+        warnings.append(f"⚠️ Non-standard gap: {cfg.walk_forward.gap_minutes} minutes")
+
+    return warnings
+
+
+def validate_search_space_file(config_path: str) -> Tuple[bool, List[str]]:
+    """Validate Optuna search space file for expected sections."""
+    try:
+        raw = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        return False, [f"❌ Validation error: {exc}"]
+
+    if not isinstance(raw, dict):
+        return False, ["Search space must be a mapping"]
+
+    warnings: List[str] = []
+    for key in raw:
+        if key in DEPRECATED_SEARCH_SPACE_SECTIONS:
+            target = DEPRECATED_SEARCH_SPACE_SECTIONS[key]
+            warnings.append(f"⚠️ Deprecated section '{key}'; use '{target}' instead")
+        elif key not in ALLOWED_SEARCH_SPACE_SECTIONS:
+            warnings.append(f"⚠️ Unknown search space section: {key}")
+
+    risk_section = raw.get("risk")
+    if isinstance(risk_section, dict) and "max_position_size_pct" in risk_section:
+        warnings.append("⚠️ Move max_position_size_pct to the 'portfolio' section")
+
+    if warnings:
+        return True, warnings
+    return True, ["✅ Search space looks consistent"]
+
+
 def validate_config_file(config_path: str) -> Tuple[bool, List[str]]:
     """Validate a configuration file.
     
@@ -288,95 +423,71 @@ def validate_config_file(config_path: str) -> Tuple[bool, List[str]]:
         Tuple of (is_valid, list_of_errors_or_warnings)
     """
     try:
-        # Load and validate
-        if config_path.endswith('.yaml'):
-            config = MainConfig.from_yaml(config_path)
-        elif config_path.endswith('.json'):
-            config = MainConfig.from_json(config_path)
+        if config_path.endswith(".yaml"):
+            raw_cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+        elif config_path.endswith(".json"):
+            raw_cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
         else:
             return False, ["Unsupported file format (use .yaml or .json)"]
-        
-        # Check for production warnings
-        warnings = config.validate_for_production()
-        
+
+        cfg = AppConfig(**raw_cfg)
+
+        warnings: List[str] = []
+        deprecated = _collect_deprecated_keys(raw_cfg)
+        if deprecated:
+            warnings.append(f"⚠️ Deprecated keys: {', '.join(sorted(deprecated))}")
+
+        extras = _collect_extra_keys(raw_cfg)
+        if extras:
+            warnings.append(f"⚠️ Unknown keys: {', '.join(sorted(extras))}")
+
+        warnings.extend(validate_for_production_cfg(cfg))
+
         if warnings:
             return True, warnings
-        else:
-            return True, ["✅ Configuration valid for production"]
-            
+        return True, ["✅ Configuration valid for production"]
+
     except Exception as e:
         return False, [f"❌ Validation error: {str(e)}"]
 
 
 def main():
     """Demonstrate config validation."""
-    
-    # Create sample config
-    config = MainConfig(
-        backtesting=BacktestingConfig(
-            normalization_method="rolling_zscore",
-            commission_pct=0.001,
-            slippage_pct=0.0005
-        ),
-        signals=SignalConfig(
-            zscore_threshold=2.0,
-            zscore_exit=0.0,
-            rolling_window=60,
-            max_holding_days=100
-        ),
-        pair_selection=PairSelectionConfig(
-            coint_pvalue_threshold=0.05,
-            ssd_top_n=50000,
-            min_half_life_days=2.0,
-            max_half_life_days=30.0,
-            min_mean_crossings=10
-        ),
-        walk_forward=WalkForwardConfig(
-            train_days=90,
-            test_days=30,
-            gap_minutes=15,
-            n_folds=5
-        ),
-        execution=ExecutionConfig(
-            base_slippage=0.0003,
-            atr_multiplier=0.1,
-            vol_multiplier=0.5,
-            latency_ms=10,
-            partial_fill_prob=0.05
-        )
-    )
-    
+
     print("=" * 60)
     print("CONFIGURATION VALIDATION DEMO")
     print("=" * 60)
-    
-    # Validate
-    warnings = config.validate_for_production()
-    
-    print("\n✅ Configuration Schema:")
-    print(json.dumps(config.dict(), indent=2))
-    
-    print("\n📊 Production Validation:")
-    if warnings:
-        for warning in warnings:
-            print(f"  {warning}")
-    else:
-        print("  ✅ All checks passed!")
-    
-    # Test validation of existing config
+
     test_configs = [
         "configs/main_2024.yaml",
-        "configs/ultra_fast.yaml"
+        "configs/prod.yaml",
     ]
-    
-    print("\n📁 Validating Existing Configs:")
+
+    print("\n📁 Validating Configs:")
     for config_path in test_configs:
-        if Path(config_path).exists():
-            is_valid, messages = validate_config_file(config_path)
-            print(f"\n  {config_path}:")
-            print(f"    Valid: {'✅' if is_valid else '❌'}")
-            for msg in messages[:3]:  # Show first 3 messages
-                print(f"    {msg}")
+        if not Path(config_path).exists():
+            continue
+        is_valid, messages = validate_config_file(config_path)
+        print(f"\n  {config_path}:")
+        print(f"    Valid: {'✅' if is_valid else '❌'}")
+        for msg in messages[:5]:
+            print(f"    {msg}")
+
+    search_spaces = [
+        "configs/search_spaces/fast.yaml",
+        "configs/search_spaces/web_ui.yaml",
+        "configs/search_space_fast.yaml",
+    ]
+
+    print("\n📁 Validating Search Spaces:")
+    for space_path in search_spaces:
+        if not Path(space_path).exists():
+            continue
+        is_valid, messages = validate_search_space_file(space_path)
+        print(f"\n  {space_path}:")
+        print(f"    Valid: {'✅' if is_valid else '❌'}")
+        for msg in messages[:5]:
+            print(f"    {msg}")
 
 
 if __name__ == "__main__":

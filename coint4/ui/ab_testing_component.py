@@ -70,17 +70,17 @@ class ABTestRunner:
         for param_name, value in param_overrides.items():
             # Navigate config structure
             if 'zscore' in param_name or 'rolling' in param_name:
-                if 'signals' not in config:
-                    config['signals'] = {}
-                config['signals'][param_name] = value
+                config.setdefault('backtest', {})
+                config['backtest'][param_name] = value
             elif 'commission' in param_name or 'slippage' in param_name:
-                if 'backtesting' not in config:
-                    config['backtesting'] = {}
-                config['backtesting'][param_name] = value
-            elif 'stop' in param_name or 'position' in param_name:
-                if 'risk' not in config:
-                    config['risk'] = {}
-                config['risk'][param_name] = value
+                config.setdefault('backtest', {})
+                config['backtest'][param_name] = value
+            elif 'stop' in param_name:
+                config.setdefault('backtest', {})
+                config['backtest'][param_name] = value
+            elif 'position' in param_name or 'risk_per_position' in param_name:
+                config.setdefault('portfolio', {})
+                config['portfolio'][param_name] = value
             # Add more mappings as needed
         
         # Save config

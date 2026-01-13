@@ -5,7 +5,10 @@ description = "Cointegration pairs trading framework for cryptocurrencies"
 authors = ["Trading Team <team@coint2.io>"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "coint2", from = "src"}]
+packages = [
+    {include = "coint2", from = "src"},
+    {include = "optimiser", from = "src"},
+]
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -64,4 +67,3 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 120
 select = ["E", "F", "B", "I", "UP"]
-

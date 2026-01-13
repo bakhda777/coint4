@@ -4,6 +4,9 @@
 
 API-загрузчик предназначен для получения исторических данных о криптовалютных парах с Bybit API с последующим сохранением в оптимизированный формат Parquet. Загрузчик использует многопоточность для параллельной обработки данных и двухфазную схему сохранения для предотвращения повреждения файлов при параллельной записи.
 
+Статус: скрипт загрузчика находится в архиве (`coint4/archive/old_data_utils/api_loader_downloaded.py`) и не является частью основного пайплайна.
+При необходимости его можно запускать вручную.
+
 ## Ключевые особенности
 
 1. **Загрузка данных исключительно через API Bybit**
@@ -46,10 +49,8 @@ coint4/
   │       └── month=MM/           # Месяц
   │           └── data_part_MM.parquet  # Данные за месяц
   │
-  ├── temporary useful files/
-  │   ├── api_loader_downloaded.py     # Основной скрипт загрузки
-  │   ├── file_lock_manager.py         # Модуль для блокировки файлов
-  │   └── parquet_duplicates_checker.py # Модуль проверки дубликатов
+  ├── archive/old_data_utils/
+  │   └── api_loader_downloaded.py     # Основной скрипт загрузки (legacy)
   │
   └── temp_files/                  # Временные файлы (создаются автоматически)
       └── [symbol]_[year]_[month].parquet
@@ -58,7 +59,7 @@ coint4/
 ## Параметры командной строки
 
 ```
-python api_loader_downloaded.py [параметры]
+python archive/old_data_utils/api_loader_downloaded.py [параметры]
 ```
 
 Основные параметры:
@@ -74,37 +75,37 @@ python api_loader_downloaded.py [параметры]
 ### Базовое использование:
 
 ```bash
-python api_loader_downloaded.py
+python archive/old_data_utils/api_loader_downloaded.py
 ```
 
 ### Загрузка за определенный период:
 
 ```bash
-python api_loader_downloaded.py --start-date 2023-01-01 --end-date 2023-12-31
+python archive/old_data_utils/api_loader_downloaded.py --start-date 2023-01-01 --end-date 2023-12-31
 ```
 
 ### Загрузка с использованием API-ключей:
 
 ```bash
-python api_loader_downloaded.py --api-key ВАШ_API_КЛЮЧ --api-secret ВАШ_API_СЕКРЕТ
+python archive/old_data_utils/api_loader_downloaded.py --api-key ВАШ_API_КЛЮЧ --api-secret ВАШ_API_СЕКРЕТ
 ```
 
 ### Загрузка ограниченного количества валют (для тестирования):
 
 ```bash
-python api_loader_downloaded.py --symbols-limit 10
+python archive/old_data_utils/api_loader_downloaded.py --symbols-limit 10
 ```
 
 ### Инкрементальная дозагрузка недостающих данных:
 
 ```bash
-python api_loader_downloaded.py --incremental
+python archive/old_data_utils/api_loader_downloaded.py --incremental
 ```
 
 ### Комбинированное использование (дозагрузка с ограничением по времени и количеству валют):
 
 ```bash
-python api_loader_downloaded.py --start-date 2023-01-01 --end-date 2023-01-31 --symbols-limit 20 --incremental
+python archive/old_data_utils/api_loader_downloaded.py --start-date 2023-01-01 --end-date 2023-01-31 --symbols-limit 20 --incremental
 ```
 
 ## Описание работы загрузчика

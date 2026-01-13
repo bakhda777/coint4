@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Optuna Pilot Report
 Generated: 2025-08-11T20:28:37.870804
 

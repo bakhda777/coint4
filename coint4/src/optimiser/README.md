@@ -18,35 +18,33 @@ src/optimiser/
 ### Быстрая оптимизация (рекомендуется)
 ```bash
 # Быстрая оптимизация с ослабленными параметрами
-python src/optimiser/run_optimization.py \
+PYTHONPATH=src ./.venv/bin/python src/optimiser/run_optimization.py \
     --n-trials 50 \
     --study-name quick_optimization \
-    --search-space configs/search_space_relaxed.yaml \
-    --fast
+    --search-space configs/search_spaces/fast.yaml
 
 # Полная оптимизация с основными параметрами
-python src/optimiser/run_optimization.py \
+PYTHONPATH=src ./.venv/bin/python src/optimiser/run_optimization.py \
     --n-trials 200 \
     --study-name full_optimization \
-    --search-space configs/search_space.yaml \
-    --fast
+    --search-space configs/search_space.yaml
 ```
 
 ### Параметры командной строки
 - `--n-trials` - количество trials (по умолчанию: 200)
 - `--study-name` - имя study (по умолчанию: pairs_strategy_v1)
 - `--storage-path` - путь к БД (по умолчанию: outputs/studies/pairs_strategy_v1.db)
-- `--search-space` - файл пространства поиска (по умолчанию: configs/search_space.yaml)
+- `--search-space` - файл пространства поиска (по умолчанию: configs/search_spaces/fast.yaml)
 - `--base-config` - базовая конфигурация (по умолчанию: configs/main_2024.yaml)
-- `--fast` - использовать быструю objective функцию (рекомендуется)
 - `--n-jobs` - количество параллельных процессов (по умолчанию: -1)
 - `--seed` - seed для воспроизводимости (по умолчанию: 42)
 
 ## Конфигурация
 
 ### Пространства поиска
-- **`configs/search_space.yaml`** - Основное пространство поиска (строгие параметры)
-- **`configs/search_space_relaxed.yaml`** - Ослабленное пространство поиска (для генерации сделок)
+- **`configs/search_spaces/fast.yaml`** - Основное пространство поиска (быстрый режим)
+- **`configs/search_space.yaml`** / **`configs/search_space_fast.yaml`** - минимальные пространства для тестов
+- **`configs/search_spaces/web_ui.yaml`** - пространство для Streamlit UI
 
 ### Базовая конфигурация
 - **`configs/main_2024.yaml`** - Базовая конфигурация стратегии

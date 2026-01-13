@@ -90,10 +90,13 @@ Training данные: 14,497 строк × 136 символов
 pair_selection:
   coint_pvalue_threshold: 0.05       # Увеличено с 0.03
   min_correlation: 0.25              # Уменьшено с 0.30
-  max_correlation: 0.97              # Увеличено с 0.95
-  min_spread_std: 0.003              # Уменьшено с 0.005
-  max_spread_std: 10.0               # Увеличено с 5.0
+  max_hurst_exponent: 0.55           # Ослаблено для расширения выбора
+  min_half_life_days: 1.0            # Ослаблено для большего количества пар
+  max_half_life_days: 10.0           # Ослаблено для большего количества пар
 ```
+
+Примечание: параметры вроде `max_correlation` или `min_spread_std` отсутствуют в текущей схеме
+конфигов и потребуют изменений в фильтрах и `coint2/utils/config.py`.
 
 ## Дополнительные модификации кода
 

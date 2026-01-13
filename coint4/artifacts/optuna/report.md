@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Optuna Quick Demo Report
 
 **Date**: 2025-08-10T19:21:06.120588

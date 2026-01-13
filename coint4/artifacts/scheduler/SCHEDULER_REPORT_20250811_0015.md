@@ -1,3 +1,5 @@
+> NOTE: Archived/legacy document. It may describe historical behavior and can be out of date. See `docs/` for current usage.
+
 # Scheduler Execution Report
 Generated: 2025-08-11 00:15:22
 
