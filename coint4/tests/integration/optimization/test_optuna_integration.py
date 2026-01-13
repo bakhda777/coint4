@@ -34,7 +34,7 @@ def optuna_test_config(tmp_path):
     test_config = get_test_config()
     project_root = Path(__file__).resolve().parents[3]
     base_config_source = project_root / "configs" / "main_2024.yaml"
-    search_space_path = project_root.parent / "configs" / "search_space_fast.yaml"
+    search_space_path = project_root / "configs" / "search_space_fast.yaml"
 
     data_dir = tmp_path / "data"
     results_dir = tmp_path / "results"

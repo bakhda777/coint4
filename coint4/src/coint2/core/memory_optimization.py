@@ -148,8 +148,12 @@ def initialize_global_price_data(consolidated_path: str) -> bool:
                 return False
                 
             with time_block("loading memory-mapped data"):
-                # Open dataset with memory mapping
-                dataset = ds.dataset(consolidated_path, format="parquet", memory_map=True)
+                # Open dataset with memory mapping when supported
+                try:
+                    dataset = ds.dataset(consolidated_path, format="parquet", memory_map=True)
+                except TypeError:
+                    logger.warning("⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap")
+                    dataset = ds.dataset(consolidated_path, format="parquet")
                 table = dataset.to_table()
                 
                 # Convert to pandas with memory optimization

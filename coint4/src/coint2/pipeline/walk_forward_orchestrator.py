@@ -25,7 +25,7 @@ from coint2.core.normalization_improvements import (
 from coint2.core.memory_optimization import (
     consolidate_price_data, initialize_global_price_data, get_price_data_view,
     setup_blas_threading_limits, monitor_memory_usage, verify_no_data_copies,
-    cleanup_global_data
+    cleanup_global_data, GLOBAL_PRICE
 )
 # from src.optimiser.metric_utils import validate_params  # Moved to function level to avoid circular import
 from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
@@ -993,18 +993,26 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         
         try:
             # Consolidate all price data into a single memory-mapped file
-            consolidated_file = consolidate_price_data(
-                cfg.data_dir, 
-                data_start, 
+            consolidated_path = Path(cfg.data_dir).parent / ".cache" / "consolidated_prices.parquet"
+            consolidated_ok = consolidate_price_data(
+                str(cfg.data_dir),
+                str(consolidated_path),
+                data_start,
                 data_end,
-                output_file=cfg.data_dir / "consolidated_prices.parquet"
             )
+
+            if not consolidated_ok:
+                raise RuntimeError("consolidate_price_data failed")
             
             # Initialize global memory-mapped data
-            initialize_global_price_data(consolidated_file)
+            initialize_global_price_data(str(consolidated_path))
             
             # Verify memory mapping is working
-            verify_no_data_copies()
+            if GLOBAL_PRICE is not None and not GLOBAL_PRICE.empty:
+                sample_symbols = list(GLOBAL_PRICE.columns[: min(2, len(GLOBAL_PRICE.columns))])
+                if sample_symbols:
+                    data_view = get_price_data_view(sample_symbols)
+                    verify_no_data_copies(data_view, GLOBAL_PRICE)
             
             logger.info("✅ Memory-mapped data initialized successfully")
             
