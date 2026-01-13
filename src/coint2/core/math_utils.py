@@ -216,6 +216,26 @@ def half_life_numba(y: np.ndarray) -> float:
     return -np.log(2.0) / lambda_coef
 
 
+@njit(cache=True)
+def mean_crossings_numba(arr: np.ndarray) -> int:
+    """Numba-optimized mean crossings calculation."""
+    if arr.size < 2:
+        return 0
+
+    m = arr.mean()
+    crosses = 0
+    prev = arr[0] - m
+
+    for v in arr[1:]:
+        cur = v - m
+        if (prev <= 0 < cur) or (prev >= 0 > cur):
+            crosses += 1
+        if cur != 0:
+            prev = cur
+
+    return crosses
+
+
 def safe_div(num: float, denom: float, default: float | None = None) -> float:
     """Safely divide two numbers, handling zero and NaN denominators.
     

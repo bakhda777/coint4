@@ -144,18 +144,21 @@ class BacktestConfig(BaseModel):
 
     timeframe: str
     rolling_window: int
-    # REMOVED: zscore_threshold (deprecated, use zscore_entry_threshold)
+    # Backward-compatible threshold name (deprecated, use zscore_entry_threshold)
+    zscore_threshold: float | None = None
     stop_loss_multiplier: float
     # NEW: Unified Risk Management
     stop_loss_type: str = Field(default="zscore", description="zscore, percentage, atr, mixed")
     pnl_stop_loss_r_multiple: float = Field(default=1.5, gt=0.0)
     
     fill_limit_pct: float = Field(..., ge=0.0, le=1.0)
-    # REMOVED: commission_pct (use commission_rate_per_leg)
+    # Backward-compatible commission name (deprecated, use commission_rate_per_leg)
+    commission_pct: float | None = None
     # REMOVED: slippage_pct (use slippage_pct only)
     slippage_pct: float = Field(default=0.0005, ge=0.0) # 0.05%
     annualizing_factor: int  # Новое поле
     time_stop_multiplier: float | None = None
+    zscore_exit: float | None = None
     z_exit: float = Field(default=0.0) # Unified exit threshold
     take_profit_multiplier: float | None = None
     cooldown_hours: int = 0
@@ -237,6 +240,30 @@ class BacktestConfig(BaseModel):
     @model_validator(mode="after")
     def _validate_backtest_params(self):  # type: ignore
         """Validate backtesting configuration parameters."""
+        fields_set = self.model_fields_set
+
+        if "zscore_threshold" in fields_set and "zscore_entry_threshold" not in fields_set:
+            self.zscore_entry_threshold = self.zscore_threshold
+        if "zscore_entry_threshold" in fields_set and "zscore_threshold" not in fields_set:
+            self.zscore_threshold = self.zscore_entry_threshold
+
+        if "zscore_exit" in fields_set and "z_exit" not in fields_set:
+            self.z_exit = self.zscore_exit
+        if "z_exit" in fields_set and "zscore_exit" not in fields_set:
+            self.zscore_exit = self.z_exit
+
+        if "commission_pct" in fields_set and "commission_rate_per_leg" not in fields_set:
+            self.commission_rate_per_leg = self.commission_pct
+        if "commission_rate_per_leg" in fields_set and "commission_pct" not in fields_set:
+            self.commission_pct = self.commission_rate_per_leg
+
+        if self.commission_pct is None:
+            self.commission_pct = self.commission_rate_per_leg
+        if self.zscore_threshold is None:
+            self.zscore_threshold = self.zscore_entry_threshold
+        if self.zscore_exit is None:
+            self.zscore_exit = self.z_exit
+
         # Check zscore_entry_threshold > z_exit if both are set
         if self.z_exit is not None and self.zscore_entry_threshold <= self.z_exit:
             raise ValueError("`zscore_entry_threshold` must be greater than `z_exit`")

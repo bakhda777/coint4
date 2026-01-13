@@ -160,12 +160,16 @@ class DataHandler:
                 dataset = ds.dataset(data_path, format="parquet", partitioning="hive")
                 ts_field = dataset.schema.field("timestamp")
                 is_int_ts = pa.types.is_integer(ts_field.type)
+                has_turnover = "turnover" in dataset.schema.names
                 logger.info(f"Timestamp type in parquet: {ts_field.type}")
             except Exception as e:
                 logger.warning(f"Could not detect schema: {e}")
                 is_int_ts = False
+                has_turnover = False
 
-            cols_to_load = ["timestamp", "symbol", "close", "turnover"] # Load turnover for volume
+            cols_to_load = ["timestamp", "symbol", "close"]
+            if has_turnover:
+                cols_to_load.append("turnover")
             filters = []
             
             # Добавляем фильтры по дате, если они указаны
@@ -203,17 +207,20 @@ class DataHandler:
             logger.info(f"Загрузка данных с фильтрами: {filters if filters else 'без фильтров'}")
 
             # Используем dd.read_parquet с фильтрами для эффективной загрузки
+            schema_overrides = {
+                "close": np.float64,
+                "symbol": str,
+            }
+            if has_turnover:
+                schema_overrides["turnover"] = np.float64
+
             ddf = dd.read_parquet(
                 data_path,
                 engine="pyarrow",
                 columns=cols_to_load,
                 filters=filters if filters else None,
                 gather_statistics=True,
-                schema_overrides={
-                    "close": np.float64,
-                    "turnover": np.float64, # Ensure turnover is float
-                    "symbol": str,
-                },
+                schema_overrides=schema_overrides,
             )
 
             # Репартиционируем для лучшего параллелизма и кешируем в памяти
@@ -275,13 +282,17 @@ class DataHandler:
             if 'symbol' in all_data.columns:
                  all_data['symbol'] = all_data['symbol'].astype(str)
 
-            # Pivot both close and turnover
+            value_columns = [col for col in ["close", "turnover"] if col in all_data.columns]
+            if not value_columns:
+                return pd.DataFrame(columns=["timestamp", "symbol", "close", "turnover"])
+
+            # Pivot available value columns
             # Using aggfunc='last' to avoid 'mean' on string columns if duplicates exist
             result = all_data.pivot_table(
-                index="timestamp", 
-                columns="symbol", 
-                values=["close", "turnover"],
-                aggfunc='last' 
+                index="timestamp",
+                columns="symbol",
+                values=value_columns,
+                aggfunc='last'
             )
             
             # Flatten columns if MultiIndex (happens when pivoting multiple values)

@@ -232,7 +232,9 @@ class NumbaPairBacktester(BasePairBacktester):
             
             # Read pair_step_r_limit from config (priority to flat config which is backtest section usually)
             if hasattr(self.config, 'pair_step_r_limit'):
-                 max_negative_pair_step_r = abs(float(self.config.pair_step_r_limit))
+                 step_limit = getattr(self.config, 'pair_step_r_limit', None)
+                 if step_limit is not None:
+                      max_negative_pair_step_r = abs(float(step_limit))
             
             # Support for risk_limits section as requested
             if hasattr(self.config, 'risk_limits') and isinstance(self.config.risk_limits, dict):

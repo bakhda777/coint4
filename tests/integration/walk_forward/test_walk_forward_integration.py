@@ -20,7 +20,14 @@ import time
 import os
 
 from src.coint2.pipeline.walk_forward_orchestrator import run_walk_forward
-from src.coint2.utils.config import AppConfig, PortfolioConfig, PairSelectionConfig, BacktestConfig, WalkForwardConfig
+from src.coint2.utils.config import (
+    AppConfig,
+    PortfolioConfig,
+    PairSelectionConfig,
+    BacktestConfig,
+    WalkForwardConfig,
+    FilterParamsConfig,
+)
 
 
 # Unit и Fast тесты перенесены в отдельные файлы:
@@ -33,6 +40,10 @@ from src.coint2.utils.config import AppConfig, PortfolioConfig, PairSelectionCon
 @pytest.mark.integration
 class TestWalkForwardIntegration:
     """Медленные integration тесты для оптимизированного Walk-Forward анализа."""
+
+    @pytest.fixture(autouse=True)
+    def _disable_wf_optimizations(self, monkeypatch):
+        monkeypatch.setenv("COINT_DISABLE_WF_OPTIMIZATIONS", "1")
     
     def _create_app_config(self, data_file: str, results_dir: str, config_dict: dict) -> AppConfig:
         """Создает AppConfig объект с базовыми настройками."""
@@ -78,19 +89,43 @@ class TestWalkForwardIntegration:
             else:
                 base_config[section] = params
         
-        # Создаем data_dir и копируем туда CSV файл
+        # Создаем data_dir и помещаем туда parquet с длинными данными
         data_dir = os.path.join(os.path.dirname(results_dir), 'data')
         os.makedirs(data_dir, exist_ok=True)
-        
-        # Копируем CSV файл в data_dir с именем data.csv
-        target_file = os.path.join(data_dir, 'data.csv')
-        shutil.copy2(data_file, target_file)
+
+        target_file = os.path.join(data_dir, 'data.parquet')
+        long_df = None
+        if str(data_file).endswith(".csv"):
+            wide_df = pd.read_csv(data_file, index_col=0, parse_dates=True)
+            wide_df.index.name = "timestamp"
+            long_df = wide_df.reset_index().melt(
+                id_vars="timestamp",
+                var_name="symbol",
+                value_name="close",
+            )
+            long_df.to_parquet(target_file, index=False)
+        else:
+            shutil.copy2(data_file, target_file)
+
+        if long_df is None:
+            long_df = pd.read_parquet(target_file, columns=["timestamp"])
+
+        min_ts = pd.to_datetime(long_df["timestamp"]).min().normalize()
+        max_ts = pd.to_datetime(long_df["timestamp"]).max().normalize()
+        training_days = base_config["walk_forward"]["training_period_days"]
+        inferred_start = min_ts + pd.Timedelta(days=training_days)
+        if inferred_start > max_ts:
+            inferred_start = min_ts
+
+        base_config["walk_forward"]["start_date"] = inferred_start.strftime("%Y-%m-%d")
+        base_config["walk_forward"]["end_date"] = max_ts.strftime("%Y-%m-%d")
         
         return AppConfig(
             data_dir=data_dir,
             results_dir=results_dir,
             portfolio=PortfolioConfig(**base_config['portfolio']),
             pair_selection=PairSelectionConfig(**base_config['pair_selection']),
+            filter_params=FilterParamsConfig(**base_config.get('filter_params', {})),
             backtest=BacktestConfig(**base_config['backtest']),
             walk_forward=WalkForwardConfig(**base_config['walk_forward'])
         )
@@ -100,17 +135,17 @@ class TestWalkForwardIntegration:
         """Минимальные данные для integration тестов."""
         # ОПТИМИЗАЦИЯ: Уменьшаем данные в QUICK_TEST режиме
         quick_test = os.environ.get('QUICK_TEST', '').lower() == 'true'
-        total_bars = 12 if quick_test else 24  # Меньше баров в QUICK_TEST
+        total_bars = 288 if quick_test else 384  # 3-4 дня по 15 минут
         
-        dates = pd.date_range('2024-01-01', periods=total_bars, freq='1h')
+        dates = pd.date_range('2024-01-01', periods=total_bars, freq='15min')
         
         # Только 2 актива для скорости
-        asset_names = ['ASSET_00', 'ASSET_01']
+        asset_names = ['ASSET_00USDT', 'ASSET_01USDT']
         assets = []  # ИСПРАВЛЕНИЕ: инициализация списка
         
         for i, name in enumerate(asset_names):
-            # Базовая цена
-            base_price = 100 + i * 10
+            # Keep prices high enough to pass the min_daily_volume_usd heuristic.
+            base_price = 2000 + i * 100
             
             # Простая генерация цен
             prices = base_price + np.cumsum(rng.standard_normal(total_bars) * 0.3)
@@ -121,12 +156,12 @@ class TestWalkForwardIntegration:
         data = pd.DataFrame(dict(zip(asset_names, assets)), index=dates)
         
         # Создаем коинтегрированные пары векторизованно для ускорения
-        data['PAIR_A'] = (
-            0.8 * data['ASSET_00'] + 
+        data['PAIR_AUSDT'] = (
+            0.8 * data[asset_names[0]] +
             rng.standard_normal(total_bars) * 0.1 + 20
         )
-        data['PAIR_B'] = (
-            1.2 * data['ASSET_01'] + 
+        data['PAIR_BUSDT'] = (
+            1.2 * data[asset_names[1]] +
             rng.standard_normal(total_bars) * 0.15 - 10
         )
         
@@ -170,8 +205,20 @@ class TestWalkForwardIntegration:
                 'hurst_neutral_band': 0.05,
                 'vr_neutral_band': 0.2
             },
+            'filter_params': {
+                'pvalue_threshold': 1.0,
+                'min_beta': 0.0,
+                'max_beta': 100.0,
+                'min_half_life_days': 0.0,
+                'max_half_life_days': 10000,
+                'min_mean_crossings': 0,
+                'min_daily_volume_usd': 0.0,
+                'use_kpss_filter': False,
+                'use_hurst_filter': False,
+                'min_profit_potential_pct': 0.0,
+            },
             'walk_forward': {
-                'training_period_days': 1,  # Минимум 1 день
+                'training_period_days': 2,
                 'testing_period_days': 1,
                 'step_size_days': 1
             },

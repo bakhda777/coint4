@@ -135,7 +135,7 @@ class TestMultipleWalkForwardSteps:
         config_dict['walk_forward']['end_date'] = "2024-01-31"
         config_dict['walk_forward']['training_period_days'] = 30
         config_dict['walk_forward']['testing_period_days'] = 10
-        config_dict['walk_forward']['step_size_days'] = 5
+        config_dict['walk_forward']['step_size_days'] = 10
 
         from src.coint2.utils.config import convert_paths_to_strings
         config_dict_serializable = convert_paths_to_strings(config_dict)
@@ -171,20 +171,19 @@ class TestMultipleWalkForwardSteps:
             
             # Проверяем количество шагов
             # Реальное количество шагов зависит от step_size
-            # При step_size=3 дня получается 3 шага
-            expected_steps = 3  # ОПТИМИЗАЦИЯ: Исправлено под реальную логику
+            expected_steps = 3  # step_size=5 и testing_period=5 дают 3 шага
             assert len(walk_forward_steps) == expected_steps, f"Ожидалось {expected_steps} шагов, получено {len(walk_forward_steps)}"
             
             # Проверяем первый шаг
             first_step = walk_forward_steps[0]
             assert first_step['testing_start'] == pd.Timestamp("2024-01-01")
-            assert first_step['testing_end'] == pd.Timestamp("2024-01-03")  # ОПТИМИЗАЦИЯ: Исправлено под testing_period=2
-            assert first_step['training_start'] == pd.Timestamp("2023-12-27")  # ОПТИМИЗАЦИЯ: Исправлено под training_period=5
+            assert first_step['testing_end'] == pd.Timestamp("2024-01-06")
+            assert first_step['training_start'] == pd.Timestamp("2023-12-22")
             
             # Проверяем последний шаг
             last_step = walk_forward_steps[-1]
-            assert last_step['testing_start'] == pd.Timestamp("2024-01-07")  # ОПТИМИЗАЦИЯ: Исправлено
-            assert last_step['testing_end'] == pd.Timestamp("2024-01-09")  # ОПТИМИЗАЦИЯ: Исправлено
+            assert last_step['testing_start'] == pd.Timestamp("2024-01-11")
+            assert last_step['testing_end'] == pd.Timestamp("2024-01-15")
 
         finally:
             # Очищаем тестовые файлы
@@ -206,7 +205,7 @@ class TestMultipleWalkForwardSteps:
         config_dict['walk_forward']['end_date'] = "2024-01-31"
         config_dict['walk_forward']['training_period_days'] = 30
         config_dict['walk_forward']['testing_period_days'] = 10
-        config_dict['walk_forward']['step_size_days'] = 5
+        config_dict['walk_forward']['step_size_days'] = 10
 
         import yaml
         from src.coint2.utils.config import convert_paths_to_strings
@@ -273,7 +272,7 @@ class TestMultipleWalkForwardSteps:
         config_dict['walk_forward']['end_date'] = "2024-01-31"
         config_dict['walk_forward']['training_period_days'] = 30
         config_dict['walk_forward']['testing_period_days'] = 10
-        config_dict['walk_forward']['step_size_days'] = 5
+        config_dict['walk_forward']['step_size_days'] = 10
 
         import yaml
         from src.coint2.utils.config import convert_paths_to_strings
@@ -338,7 +337,7 @@ class TestMultipleWalkForwardSteps:
         config_dict['walk_forward']['end_date'] = "2024-01-31"
         config_dict['walk_forward']['training_period_days'] = 30
         config_dict['walk_forward']['testing_period_days'] = 10
-        config_dict['walk_forward']['step_size_days'] = 5
+        config_dict['walk_forward']['step_size_days'] = 10
 
         import yaml
         from src.coint2.utils.config import convert_paths_to_strings
@@ -418,7 +417,7 @@ class TestMultipleWalkForwardSteps:
 
             # Конфигурация 2: длинный период - должен дать больше шагов
             config_dict_2 = load_config('configs/main_2024.yaml').model_dump()
-            config_dict_2['walk_forward']['step_size_days'] = 5
+            config_dict_2['walk_forward']['step_size_days'] = 10
             config_dict_2['walk_forward']['start_date'] = "2024-01-01"
             config_dict_2['walk_forward']['end_date'] = "2024-01-31"  # Длинный период
             config_dict_2['walk_forward']['training_period_days'] = 30

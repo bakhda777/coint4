@@ -2,6 +2,7 @@
 Orchestrator for Walk-Forward Analysis pipeline.
 """
 from pathlib import Path
+import os
 import pandas as pd
 import time
 from typing import Dict, List, Tuple, Optional, Any
@@ -16,6 +17,7 @@ import numpy as np
 from coint2.engine.numba_engine import NumbaPairBacktester
 from coint2.core.performance import calculate_metrics, sharpe_ratio_on_returns, safe_sharpe, safe_max_dd
 from coint2.utils.logger import get_logger
+from coint2.utils import create_performance_report, calculate_extended_metrics
 from coint2.utils.timing_utils import logged_time, time_block
 from coint2.utils.config import AppConfig
 
@@ -98,9 +100,13 @@ class QuarantineManager:
             # Get Step Limit from config (magnitude)
             step_limit_magnitude = 3.0
             if hasattr(self.config, 'backtest') and hasattr(self.config.backtest, 'pair_step_r_limit'):
-                 step_limit_magnitude = float(self.config.backtest.pair_step_r_limit)
+                 step_limit = getattr(self.config.backtest, 'pair_step_r_limit', None)
+                 if step_limit is not None:
+                     step_limit_magnitude = float(step_limit)
             elif hasattr(self.config, 'pair_step_r_limit'):
-                 step_limit_magnitude = float(self.config.pair_step_r_limit)
+                 step_limit = getattr(self.config, 'pair_step_r_limit', None)
+                 if step_limit is not None:
+                     step_limit_magnitude = float(step_limit)
 
             # Ensure threshold is negative
             step_limit_r = -abs(step_limit_magnitude)
@@ -398,6 +404,228 @@ def _run_backtest_for_pair(
         }
 
 
+def process_single_pair_mmap(
+    pair_symbols,
+    testing_start,
+    testing_end,
+    cfg,
+    capital_per_pair,
+    bar_minutes,
+    period_label,
+    pair_stats=None,
+    training_normalization_params=None,
+):
+    """
+    Process a single pair using memory-mapped data.
+    """
+    from coint2.core.memory_optimization import setup_blas_threading_limits
+    setup_blas_threading_limits(num_threads=1, verbose=False)
+
+    s1, s2 = pair_symbols
+    logger = get_logger("pair_processing")
+
+    try:
+        pair_data_view = get_price_data_view([s1, s2], testing_start, testing_end)
+        if pair_data_view is None or pair_data_view.empty:
+            return {
+                'success': False,
+                'error': 'Empty data view',
+                'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0},
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+
+        if s1 not in pair_data_view.columns or s2 not in pair_data_view.columns:
+            return {
+                'success': False,
+                'error': f'Missing data for symbols {s1} or {s2}',
+                'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0},
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+
+        pair_data = pair_data_view[[s1, s2]].dropna()
+        if pair_data.empty:
+            return {
+                'success': False,
+                'error': 'No valid data after filtering',
+                'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0},
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+
+        metrics = {}
+        if pair_stats and len(pair_stats) >= 4:
+            metrics = pair_stats[3] or {}
+
+        return _run_backtest_for_pair(
+            pair_data=pair_data,
+            s1=s1,
+            s2=s2,
+            cfg=cfg,
+            capital_per_pair=capital_per_pair,
+            bar_minutes=bar_minutes,
+            metrics=metrics,
+            period_label=period_label
+        )
+
+    except Exception as e:
+        logger.warning(f"❌ Ошибка обработки пары {s1}-{s2}: {str(e)}")
+        return {
+            'pnl_series': pd.Series(dtype=float),
+            'trades_log': [],
+            'trade_stat': {
+                'pair': f'{s1}-{s2}',
+                'period': period_label,
+                'total_pnl': 0.0,
+                'total_costs': 0.0,
+                'trade_count': 0,
+                'avg_pnl_per_trade': 0.0,
+                'win_days': 0,
+                'lose_days': 0,
+                'total_days': 0,
+                'max_daily_gain': 0.0,
+                'max_daily_loss': 0.0,
+                'error': str(e)
+            },
+            'success': False,
+            'error': str(e)
+        }
+
+
+def process_single_pair(
+    pair_data_tuple,
+    step_df,
+    testing_start,
+    testing_end,
+    cfg,
+    capital_per_pair,
+    bar_minutes,
+    period_label,
+    training_normalization_params=None,
+):
+    """
+    Process a single pair for parallel execution.
+    """
+    from coint2.core.memory_optimization import setup_blas_threading_limits
+    setup_blas_threading_limits(num_threads=1, verbose=False)
+
+    logger = get_logger(__name__)
+
+    try:
+        s1 = pair_data_tuple[0]
+        s2 = pair_data_tuple[1]
+        metrics = pair_data_tuple[5] if len(pair_data_tuple) > 5 else {}
+    except Exception as e:
+        return {
+            'pnl_series': pd.Series(dtype=float),
+            'trades_log': [],
+            'trade_stat': {
+                'pair': 'Unknown',
+                'period': period_label,
+                'total_pnl': 0.0,
+                'error': f'Invalid pair tuple: {e}'
+            },
+            'success': False,
+            'error': f'Invalid pair tuple: {e}'
+        }
+
+    try:
+        pair_data = step_df.loc[testing_start:testing_end, [s1, s2]].dropna()
+        if pair_data.empty:
+            return {
+                'success': False,
+                'error': 'No valid data after filtering',
+                'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0},
+                'pnl_series': pd.Series(dtype=float),
+                'trades_log': []
+            }
+
+        return _run_backtest_for_pair(
+            pair_data=pair_data,
+            s1=s1,
+            s2=s2,
+            cfg=cfg,
+            capital_per_pair=capital_per_pair,
+            bar_minutes=bar_minutes,
+            metrics=metrics,
+            period_label=period_label
+        )
+
+    except Exception as e:
+        logger.warning(f"❌ Ошибка обработки пары {s1}-{s2}: {str(e)}")
+        return {
+            'pnl_series': pd.Series(dtype=float),
+            'trades_log': [],
+            'trade_stat': {
+                'pair': f'{s1}-{s2}',
+                'period': period_label,
+                'total_pnl': 0.0,
+                'total_costs': 0.0,
+                'trade_count': 0,
+                'avg_pnl_per_trade': 0.0,
+                'win_days': 0,
+                'lose_days': 0,
+                'total_days': 0,
+                'max_daily_gain': 0.0,
+                'max_daily_loss': 0.0
+            },
+            'success': False,
+            'error': str(e)
+        }
+
+
+def _simulate_realistic_portfolio(all_pnls, cfg):
+    """
+    Simulate a portfolio with a max_active_positions constraint.
+    """
+    if not all_pnls:
+        return pd.Series(dtype=float)
+
+    pnl_df = pd.concat(
+        {f'pair_{i}': pnl.fillna(0) for i, pnl in enumerate(all_pnls)},
+        axis=1
+    ).fillna(0)
+
+    signals_df = (pnl_df != 0).astype(int)
+
+    max_positions = 1
+    if getattr(cfg, 'portfolio', None) is not None:
+        max_positions = int(getattr(cfg.portfolio, 'max_active_positions', 1))
+    if max_positions <= 0:
+        return pd.Series(0.0, index=pnl_df.index)
+
+    portfolio_pnl = pd.Series(0.0, index=pnl_df.index)
+    active_positions = {}
+
+    for timestamp in pnl_df.index:
+        current_signals = signals_df.loc[timestamp]
+        current_pnls = pnl_df.loc[timestamp]
+
+        for pair_name in list(active_positions.keys()):
+            if current_signals[pair_name] == 0:
+                del active_positions[pair_name]
+
+        new_signals = []
+        for pair_name in current_signals.index:
+            if current_signals[pair_name] == 1 and pair_name not in active_positions:
+                new_signals.append((pair_name, abs(current_pnls[pair_name])))
+
+        new_signals.sort(key=lambda x: x[1], reverse=True)
+        available_slots = max_positions - len(active_positions)
+        if available_slots > 0:
+            for pair_name, _ in new_signals[:available_slots]:
+                active_positions[pair_name] = timestamp
+
+        step_pnl = 0.0
+        for pair_name in active_positions:
+            step_pnl += float(current_pnls[pair_name])
+
+        portfolio_pnl[timestamp] = step_pnl
+
+    return portfolio_pnl
+
+
 def select_pairs(
     price_df: pd.DataFrame,
     cfg: AppConfig,
@@ -642,68 +870,74 @@ def run_walk_forward(cfg: AppConfig, price_df: pd.DataFrame = None, volume_df: p
     
     # --- PROACTIVE CONFIG OPTIMIZATION ---
     # Override parameters to improve performance based on log analysis (High Commissions & Tight Stops)
-    logger.info("⚡ APPLYING OPTIMIZED PARAMETERS to increase Profit & Sharpe")
-    
-    # 1. Стоп-лоссы и риск
-    if hasattr(cfg, 'backtest'):
-        try:
-            # Жесткий лимит на шаг: 1R
-            cfg.backtest.pair_step_r_limit = 1.0
-        except Exception:
-            pass
-        try:
-            # PnL стоп в R 1.0
-            cfg.backtest.pnl_stop_loss_r_multiple = 1.0
-        except Exception:
-            pass
-        try:
-            # Усиливаем карантин: sigma 1.0, DD 2%
-            cfg.backtest.quarantine_pnl_threshold_sigma = 1.0
-            cfg.backtest.quarantine_drawdown_threshold_pct = 0.02
-        except Exception:
-            pass
-             
-        # 2. Вход/выход: раньше, но выход с буфером
-        try:
-            cfg.backtest.zscore_entry_threshold = 2.5
-        except Exception:
-            pass
-        try:
-            cfg.backtest.z_exit = 0.25
-        except Exception:
-            pass
-
-        # 3. Риск на позицию: 0.3% диагностика
-        if hasattr(cfg.backtest, 'risk_per_position_pct'):
-            cfg.backtest.risk_per_position_pct = 0.003
-
-    if hasattr(cfg, 'portfolio') and hasattr(cfg.portfolio, 'risk_per_position_pct'):
-        cfg.portfolio.risk_per_position_pct = 0.003
+    disable_opt = os.environ.get("COINT_DISABLE_WF_OPTIMIZATIONS", "").strip().lower() in {
+        "1", "true", "yes"
+    }
+    if disable_opt:
+        logger.info("Skipping optimized parameter overrides due to COINT_DISABLE_WF_OPTIMIZATIONS.")
+    else:
+        logger.info("⚡ APPLYING OPTIMIZED PARAMETERS to increase Profit & Sharpe")
         
-    # 4. Фильтры качества
-    if hasattr(cfg, 'filter_params'):
-        try:
-            cfg.filter_params.min_profit_potential_pct = 0.025
-        except Exception:
-            pass
-        try:
-            current_vol = getattr(cfg.filter_params, 'min_daily_volume_usd', 0)
-            cfg.filter_params.min_daily_volume_usd = max(1_200_000, current_vol)
-        except Exception:
-            pass
-         
-    # 5. Стабильность сигналов: длиннее окно z-score, если доступно
-    if hasattr(cfg, 'backtest'):
-        try:
-            cfg.backtest.rolling_window = max(getattr(cfg.backtest, 'rolling_window', 30), 30)
-        except Exception:
-            pass
-        try:
-            # Быстрее фиксируем неработающие сделки во времени
-            current_time_stop = getattr(cfg.backtest, 'time_stop_multiplier', 3.0)
-            cfg.backtest.time_stop_multiplier = min(current_time_stop, 2.0)
-        except Exception:
-            pass
+        # 1. Стоп-лоссы и риск
+        if hasattr(cfg, 'backtest'):
+            try:
+                # Жесткий лимит на шаг: 1R
+                cfg.backtest.pair_step_r_limit = 1.0
+            except Exception:
+                pass
+            try:
+                # PnL стоп в R 1.0
+                cfg.backtest.pnl_stop_loss_r_multiple = 1.0
+            except Exception:
+                pass
+            try:
+                # Усиливаем карантин: sigma 1.0, DD 2%
+                cfg.backtest.quarantine_pnl_threshold_sigma = 1.0
+                cfg.backtest.quarantine_drawdown_threshold_pct = 0.02
+            except Exception:
+                pass
+                 
+            # 2. Вход/выход: раньше, но выход с буфером
+            try:
+                cfg.backtest.zscore_entry_threshold = 2.5
+            except Exception:
+                pass
+            try:
+                cfg.backtest.z_exit = 0.25
+            except Exception:
+                pass
+
+            # 3. Риск на позицию: 0.3% диагностика
+            if hasattr(cfg.backtest, 'risk_per_position_pct'):
+                cfg.backtest.risk_per_position_pct = 0.003
+
+        if hasattr(cfg, 'portfolio') and hasattr(cfg.portfolio, 'risk_per_position_pct'):
+            cfg.portfolio.risk_per_position_pct = 0.003
+            
+        # 4. Фильтры качества
+        if hasattr(cfg, 'filter_params'):
+            try:
+                cfg.filter_params.min_profit_potential_pct = 0.025
+            except Exception:
+                pass
+            try:
+                current_vol = getattr(cfg.filter_params, 'min_daily_volume_usd', 0)
+                cfg.filter_params.min_daily_volume_usd = max(1_200_000, current_vol)
+            except Exception:
+                pass
+             
+        # 5. Стабильность сигналов: длиннее окно z-score, если доступно
+        if hasattr(cfg, 'backtest'):
+            try:
+                cfg.backtest.rolling_window = max(getattr(cfg.backtest, 'rolling_window', 30), 30)
+            except Exception:
+                pass
+            try:
+                # Быстрее фиксируем неработающие сделки во времени
+                current_time_stop = getattr(cfg.backtest, 'time_stop_multiplier', 3.0)
+                cfg.backtest.time_stop_multiplier = min(current_time_stop, 2.0)
+            except Exception:
+                pass
     # -------------------------------------
     # Log compact config snapshot after overrides
     try:
@@ -731,12 +965,20 @@ def run_walk_forward(cfg: AppConfig, price_df: pd.DataFrame = None, volume_df: p
         df_result = data_handler.load_data_range(load_start, end_date)
         
         if isinstance(df_result.columns, pd.MultiIndex):
-             try:
-                 price_df = df_result['close']
-                 volume_df = df_result['turnover']
-             except KeyError:
-                 logger.warning("Could not extract close/turnover from MultiIndex. Using all as price.")
+             level_zero = df_result.columns.get_level_values(0)
+             has_close = "close" in level_zero
+             has_turnover = "turnover" in level_zero
+
+             if has_close:
+                 price_df = df_result["close"]
+             else:
+                 logger.warning("Could not extract close from MultiIndex. Using all as price.")
                  price_df = df_result
+
+             if has_turnover:
+                 volume_df = df_result["turnover"]
+             else:
+                 volume_df = None
         else:
              price_df = df_result
     
@@ -1326,6 +1568,57 @@ def run_walk_forward(cfg: AppConfig, price_df: pd.DataFrame = None, volume_df: p
     logger.info(f"WF_RESULT gross={total_gross:.2f} costs={total_costs:.2f} net={total_pnl:.2f} "
                 f"trades={trade_count} steps={step_counter} sharpe={sharpe_ratio:.4f} maxDD={max_dd:.2f} "
                 f"best_pair={best_pair} worst_pair={worst_pair}")
+
+    # Create basic reports for downstream usage/tests
+    results_dir = Path(cfg.results_dir)
+    report_pnl_series = all_results['pnl_series'].fillna(0)
+    if report_pnl_series.empty:
+        report_equity_series = pd.Series([initial_capital], dtype=float)
+    else:
+        report_equity_series = initial_capital + report_pnl_series.cumsum()
+
+    trade_stats = all_results['stats']
+    total_pairs_traded = len({stat.get('pair') for stat in trade_stats if stat.get('pair')})
+    total_trades_report = sum(stat.get('trade_count', 0) for stat in trade_stats)
+    win_trades_report = sum(stat.get('win_trades', 0) for stat in trade_stats)
+    avg_trades_per_pair = safe_div(total_trades_report, total_pairs_traded, 0.0)
+    win_rate_trades = safe_div(win_trades_report, total_trades_report, 0.0)
+    total_costs_report = sum(stat.get('total_costs', 0.0) for stat in trade_stats)
+
+    best_pair_pnl = max((stat.get('total_pnl', 0.0) for stat in trade_stats), default=0.0)
+    worst_pair_pnl = min((stat.get('total_pnl', 0.0) for stat in trade_stats), default=0.0)
+
+    metrics = {
+        "total_pnl": float(total_pnl),
+        "sharpe_ratio_abs": float(sharpe_ratio),
+        "max_drawdown_abs": float(max_dd),
+        "sharpe_ratio": float(sharpe_ratio),
+        "max_drawdown": float(max_dd),
+        "total_trades": int(total_trades_report),
+        "total_pairs_traded": int(total_pairs_traded),
+        "avg_trades_per_pair": float(avg_trades_per_pair),
+        "win_rate_trades": float(win_rate_trades),
+        "total_costs": float(total_costs_report),
+        "best_pair_pnl": float(best_pair_pnl),
+        "worst_pair_pnl": float(worst_pair_pnl),
+    }
+    metrics.update(calculate_extended_metrics(report_pnl_series, report_equity_series))
+
+    pair_counts = [(1, total_pairs_traded)] if total_pairs_traded else []
+    create_performance_report(
+        equity_curve=report_equity_series,
+        pnl_series=report_pnl_series,
+        metrics=metrics,
+        pair_counts=pair_counts,
+        results_dir=results_dir,
+        strategy_name="CointegrationStrategy"
+    )
+
+    metrics_df = pd.DataFrame([metrics])
+    metrics_df.to_csv(results_dir / "strategy_metrics.csv", index=False)
+    report_equity_series.to_csv(results_dir / "equity_curve.csv", header=['Equity'])
+    if not report_pnl_series.empty:
+        report_pnl_series.to_csv(results_dir / "daily_pnl.csv", header=['PnL'])
     
     # Prepare serializable results
     # 1. Convert pnl_series to dict with string keys and float values
@@ -1390,6 +1683,7 @@ def run_walk_forward(cfg: AppConfig, price_df: pd.DataFrame = None, volume_df: p
         'trade_count': trade_count,
         'total_trades': trade_count,  # Alias for frontend
         'sharpe_ratio_abs': float(sharpe_ratio),
+        'max_drawdown_abs': float(max_dd),
         'trades': serializable_trades,
         'pnl_series': pnl_dict,
         'trade_stat': all_results['stats'],

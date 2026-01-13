@@ -57,7 +57,16 @@ class TestWalkForwardEnhancements:
         assert engine.online_stats_enabled
         
         # Быстрая проверка без полного запуска
-        with patch.object(engine, '_run_single_backtest_internal', return_value={'pnl': [1, 2, 3]}):
+        mock_results = pd.DataFrame(
+            {
+                'spread': [0.0, 0.1, 0.2],
+                'z_score': [0.0, 0.5, -0.2],
+                'position': [0, 1, 0],
+                'pnl': [1.0, 2.0, 3.0],
+            },
+            index=tiny_data.index[:3],
+        )
+        with patch.object(engine, '_run_single_backtest_internal', return_value=mock_results):
             engine.run()
             results = engine.get_results()
         
@@ -130,8 +139,17 @@ class TestWalkForwardEnhancements:
         )
         
         # Мокируем для быстрой проверки
+        mock_results = pd.DataFrame(
+            {
+                'spread': [0.0, 0.1, 0.1, 0.0],
+                'z_score': [0.0, 1.2, 1.1, 0.0],
+                'position': [0, 1, 1, 0],
+                'pnl': [0.0, 0.1, -0.05, 0.0],
+            },
+            index=tiny_data.index[:4],
+        )
         with patch.object(engine, '_run_single_backtest_internal') as mock_run:
-            mock_run.return_value = {'position': pd.Series([0, 1, 1, 0], index=tiny_data.index[:4])}
+            mock_run.return_value = mock_results
             engine.run()
             results = engine.get_results()
         
