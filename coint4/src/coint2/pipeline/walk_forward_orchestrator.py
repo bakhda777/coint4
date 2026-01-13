@@ -1538,7 +1538,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 num_selected_pairs=1  # For final metrics calculation, use 1 as default
             )
             # Calculate Sharpe ratio using portfolio percentage returns
-            daily_returns = equity_series.pct_change().dropna()
+            daily_returns = equity_series.ffill().pct_change(fill_method=None).dropna()
             sharpe_abs = performance.sharpe_ratio(
                 daily_returns, cfg.backtest.annualizing_factor
             )
@@ -1654,7 +1654,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
 
     # Calculate and display Sharpe ratio on portfolio returns for verification
     equity_curve = portfolio.equity_curve
-    daily_returns = equity_curve.pct_change().dropna()
+    daily_returns = equity_curve.ffill().pct_change(fill_method=None).dropna()
     sharpe = performance.sharpe_ratio(daily_returns, cfg.backtest.annualizing_factor)
     print(f"Correct Sharpe Ratio: {sharpe}")
 

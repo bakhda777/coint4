@@ -542,7 +542,7 @@ class TestBacktestRobustness:
             assert not np.isinf(equity).any(), "Кривая капитала не должна содержать Inf"
             
             # Проверяем разумность изменений (не более 50% за один бар)
-            equity_changes = equity.pct_change().dropna()
+            equity_changes = equity.ffill().pct_change(fill_method=None).dropna()
             max_change = abs(equity_changes).max()
             assert max_change < 0.5, \
                 f"Слишком большое изменение капитала за один бар: {max_change:.2%}"

@@ -1140,8 +1140,8 @@ class BasePairBacktester:
             recent_data = self.pair_data.iloc[start_idx:end_idx]
         
         # Calculate returns for both assets
-        returns_y = recent_data.iloc[:, 0].pct_change().dropna()
-        returns_x = recent_data.iloc[:, 1].pct_change().dropna()
+        returns_y = recent_data.iloc[:, 0].ffill().pct_change(fill_method=None).dropna()
+        returns_x = recent_data.iloc[:, 1].ffill().pct_change(fill_method=None).dropna()
         
         if len(returns_y) < 10 or len(returns_x) < 10:
             return 1.0
@@ -1154,8 +1154,8 @@ class BasePairBacktester:
         # Calculate historical average volatility for comparison
         if len(self.pair_data) > lookback_periods * 2:
             historical_data = self.pair_data.iloc[:-lookback_periods]
-            hist_returns_y = historical_data.iloc[:, 0].pct_change().dropna()
-            hist_returns_x = historical_data.iloc[:, 1].pct_change().dropna()
+            hist_returns_y = historical_data.iloc[:, 0].ffill().pct_change(fill_method=None).dropna()
+            hist_returns_x = historical_data.iloc[:, 1].ffill().pct_change(fill_method=None).dropna()
             
             if len(hist_returns_y) > 10 and len(hist_returns_x) > 10:
                 hist_vol_y = hist_returns_y.std() * np.sqrt(365 * 24 * 4)

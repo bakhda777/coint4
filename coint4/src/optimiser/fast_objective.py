@@ -1197,7 +1197,7 @@ class FastWalkForwardObjective:
         
         # Рассчитываем equity curve
         equity_curve = cfg.portfolio.initial_capital + combined_pnl.cumsum()
-        daily_returns = equity_curve.pct_change().dropna()
+        daily_returns = equity_curve.ffill().pct_change(fill_method=None).dropna()
         
         if len(daily_returns) == 0 or daily_returns.std() == 0:
             return {"sharpe_ratio_abs": None, "total_trades": total_trades, "error_type": "insufficient_data_for_sharpe"}
@@ -1706,7 +1706,7 @@ class FastWalkForwardObjective:
                         else:
                             combined_pnl = self._simulate_realistic_portfolio(accumulated_pnls, cfg)
                         equity_curve = cfg.portfolio.initial_capital + combined_pnl.cumsum()
-                        daily_returns = equity_curve.resample('1D').last().pct_change().dropna()
+                        daily_returns = equity_curve.resample('1D').last().ffill().pct_change(fill_method=None).dropna()
 
                         if len(daily_returns) > 0 and daily_returns.std() > 0:
                             # Используем единый annualization factor для крипто
@@ -1765,7 +1765,7 @@ class FastWalkForwardObjective:
                 combined_pnl = self._simulate_realistic_portfolio(all_pnls, cfg)
             equity_curve = cfg.portfolio.initial_capital + combined_pnl.cumsum()
 
-            daily_returns = equity_curve.resample('1D').last().pct_change().dropna()
+            daily_returns = equity_curve.resample('1D').last().ffill().pct_change(fill_method=None).dropna()
 
             if len(daily_returns) == 0 or daily_returns.std() == 0:
                 return {"sharpe_ratio_abs": PENALTY_SOFT, "total_trades": total_trades, "max_drawdown": 0, "win_rate": 0}

@@ -260,7 +260,7 @@ class TestFullWalkForwardAggregation:
                     # Рассчитываем ожидаемый Sharpe ratio на объединенных данных
                     equity_curve = test_config['portfolio']['initial_capital'] + combined_pnl.cumsum()
                     daily_equity = equity_curve.resample('1D').last()
-                    daily_returns = daily_equity.pct_change().dropna()
+                    daily_returns = daily_equity.ffill().pct_change(fill_method=None).dropna()
                     
                     expected_sharpe = (daily_returns.mean() / daily_returns.std() * 
                                      np.sqrt(test_config['backtest']['annualizing_factor']))

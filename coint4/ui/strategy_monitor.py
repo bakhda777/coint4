@@ -331,7 +331,7 @@ class RollingPerformanceAnalyzer:
             rolling['trades_sum'] = df['n_trades'].rolling(window).sum()
             
             # Calculate rolling Sharpe
-            returns = df['total_pnl'].pct_change()
+            returns = df['total_pnl'].ffill().pct_change(fill_method=None)
             rolling['rolling_sharpe'] = (
                 returns.rolling(window).mean() / returns.rolling(window).std()
             ) * np.sqrt(252)  # Annualized

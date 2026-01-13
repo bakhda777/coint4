@@ -197,8 +197,8 @@ def enhanced_pair_screening(
                     
                     # Placeholder volume check - in practice, you'd get this from market data
                     # For now, we'll use a simplified heuristic based on price volatility
-                    volatility_s1 = recent_y.pct_change().std() * np.sqrt(bars_per_day)
-                    volatility_s2 = recent_x.pct_change().std() * np.sqrt(bars_per_day)
+                    volatility_s1 = recent_y.ffill().pct_change(fill_method=None).std() * np.sqrt(bars_per_day)
+                    volatility_s2 = recent_x.ffill().pct_change(fill_method=None).std() * np.sqrt(bars_per_day)
                     
                     # Estimate volume based on volatility (higher vol usually means higher volume)
                     # This is a rough approximation - replace with actual volume data

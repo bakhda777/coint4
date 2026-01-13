@@ -20,7 +20,7 @@ def calculate_market_features(df: pd.DataFrame) -> pd.DataFrame:
     oc_range = (close - open_).abs()
     atr = hl_range.rolling(window=14, min_periods=1).mean()
     atr_pct = (atr / close.abs()).fillna(0.0)
-    volatility = close.pct_change().rolling(window=20, min_periods=1).std().fillna(0.0)
+    volatility = close.ffill().pct_change(fill_method=None).rolling(window=20, min_periods=1).std().fillna(0.0)
     spread_proxy = (hl_range / close.abs()).fillna(0.0)
 
     return pd.DataFrame(
