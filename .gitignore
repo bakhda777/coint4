@@ -44,6 +44,8 @@ Thumbs.db
 **/data_clean/
 **/data_optimized/
 **/data_downloaded/
+!coint4/data_downloaded/
+!coint4/data_downloaded/.gitkeep
 temporary useful files/
 postgresql:/
 
