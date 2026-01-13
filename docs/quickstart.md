@@ -1,6 +1,7 @@
 # Quickstart
 
 This guide walks you through preparing data, configuring the project and running the pipeline.
+All paths assume you run commands from `coint4/` (start with `cd coint4`).
 
 ## 1. Prepare data
 
@@ -18,7 +19,7 @@ The parquet files must contain the columns `timestamp`, `close` and `symbol`.
 
 ## 2. Configure
 
-Edit `configs/main.yaml` to match your dataset location and desired backtest parameters. Important options:
+Edit `configs/main_2024.yaml` to match your dataset location and desired backtest parameters. Important options:
 
 ```yaml
 data_dir: "data_optimized"
