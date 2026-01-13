@@ -21,7 +21,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 # Конфигурационные профили для тестов
 TEST_CONFIG_PROFILES = {
     'minimal': {
-        'periods': 10,
+        'periods': 60,
         'n_trials': 2,
         'n_symbols': 2,
         'rolling_window': 5,
@@ -69,11 +69,29 @@ def get_test_config():
     fast_test = os.environ.get('FAST_TEST', '').lower() == 'true'
     
     if quick_test:
-        return TEST_CONFIG_PROFILES['minimal']
+        config = TEST_CONFIG_PROFILES['minimal'].copy()
+        config.setdefault('is_quick_test', True)
+        config.setdefault('is_fast_test', False)
+        config.setdefault('small_data_size', 50)
+        config.setdefault('data_size', 100)
+        config.setdefault('large_data_size', 200)
+        return config
     elif fast_test:
-        return TEST_CONFIG_PROFILES['fast']
+        config = TEST_CONFIG_PROFILES['fast'].copy()
+        config.setdefault('is_quick_test', False)
+        config.setdefault('is_fast_test', True)
+        config.setdefault('small_data_size', 100)
+        config.setdefault('data_size', 200)
+        config.setdefault('large_data_size', 500)
+        return config
     else:
-        return TEST_CONFIG_PROFILES['normal']
+        config = TEST_CONFIG_PROFILES['normal'].copy()
+        config.setdefault('is_quick_test', False)
+        config.setdefault('is_fast_test', False)
+        config.setdefault('small_data_size', 100)
+        config.setdefault('data_size', 500)
+        config.setdefault('large_data_size', 1000)
+        return config
 
 
 @pytest.fixture(autouse=True)
@@ -168,7 +186,6 @@ def mock_config():
 
 
 @pytest.fixture
-@pytest.mark.serial
 def fast_study(tmp_path):
     """Быстрая Optuna study для тестов."""
     try:

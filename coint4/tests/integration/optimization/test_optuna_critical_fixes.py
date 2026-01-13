@@ -201,7 +201,8 @@ class TestParameterValidation:
         # Некорректные параметры (exit >= threshold)
         bad_params = {
             'zscore_threshold': 1.5,
-            'zscore_exit': 2.0
+            'zscore_exit': 2.0,
+            'strict_zscore_validation': True
         }
         
         with pytest.raises(ValueError, match="zscore_exit.*должен быть < zscore_threshold|гистерезис"):
@@ -276,7 +277,8 @@ class TestThreadSafety:
             # Проверяем, что Manager может быть создан
             try:
                 import multiprocessing
-                manager = multiprocessing.Manager()
+                ctx = multiprocessing.get_context("spawn")
+                manager = ctx.Manager()
                 test_dict = manager.dict()
                 test_lock = manager.Lock()
                 

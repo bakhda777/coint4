@@ -49,6 +49,30 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
         return 0
     return int(math.ceil(hours * 60 / bar_minutes))
 
+def _coerce_float(value, default: float) -> float:
+    """Safely coerce config values to float for test/mocked configs."""
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    return default
+
+def _coerce_int(value, default: int) -> int:
+    """Safely coerce config values to int for test/mocked configs."""
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return default
+
+def _coerce_bool(value, default: bool) -> bool:
+    """Safely coerce config values to bool for test/mocked configs."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    return default
+
+def _coerce_str(value, default: str) -> str:
+    """Safely coerce config values to str for test/mocked configs."""
+    return value if isinstance(value, str) else default
+
 
 def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     """

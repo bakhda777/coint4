@@ -178,7 +178,7 @@ class BacktestConfig(BaseModel):
     
     # Market regime detection parameters
     market_regime_detection: bool = True
-    hurst_window: int = Field(default=720, ge=100)  # Минимум 100 периодов для Hurst
+    hurst_window: int = Field(default=720, ge=1)  # Минимум зависит от режима, проверяется валидатором
     hurst_trending_threshold: float = Field(default=0.5, gt=0.0, lt=1.0)
     variance_ratio_window: int = Field(default=480, ge=50)
     variance_ratio_trending_min: float = Field(default=1.2, gt=1.0)
@@ -186,7 +186,7 @@ class BacktestConfig(BaseModel):
     
     # Structural break protection parameters
     structural_break_protection: bool = True
-    cointegration_test_frequency: int = Field(default=2688, ge=100)  # Минимум 100 периодов
+    cointegration_test_frequency: int = Field(default=2688, ge=1)  # Минимум зависит от режима, проверяется валидатором
     adf_pvalue_threshold: float = Field(default=0.05, gt=0.0, lt=1.0)
     exclusion_period_days: int = Field(default=30, ge=1)
     max_half_life_days: int = Field(default=10, ge=1)
@@ -225,7 +225,7 @@ class BacktestConfig(BaseModel):
             raise ValueError("`max_var_multiplier` must be greater than 1.0")
         
         # Validate market regime detection parameters
-        if self.hurst_window < 100:
+        if self.market_regime_detection and self.hurst_window < 100:
             raise ValueError("`hurst_window` must be at least 100 periods")
         
         if self.variance_ratio_window < 50:
@@ -238,7 +238,7 @@ class BacktestConfig(BaseModel):
             raise ValueError("`variance_ratio_mean_reverting_max` must be less than 1.0")
         
         # Validate structural break protection parameters
-        if self.cointegration_test_frequency < 100:
+        if self.structural_break_protection and self.cointegration_test_frequency < 100:
             raise ValueError("`cointegration_test_frequency` must be at least 100 periods")
         
         if self.correlation_window < 50:
@@ -254,6 +254,42 @@ class WalkForwardConfig(BaseModel):
     end_date: str
     training_period_days: int
     testing_period_days: int
+    train_days: int | None = None
+    test_days: int | None = None
+
+    @model_validator(mode="after")
+    def fill_legacy_fields(self):
+        if self.train_days is None:
+            self.train_days = self.training_period_days
+        if self.test_days is None:
+            self.test_days = self.testing_period_days
+        return self
+
+
+class TimeConfig(BaseModel):
+    """Time-related settings."""
+
+    timeframe: str = "15min"
+    gap_minutes: int = 15
+
+
+class RiskConfig(BaseModel):
+    """Risk guard settings."""
+
+    max_daily_loss_pct: float = 0.02
+    max_drawdown_pct: float = 0.05
+    max_no_data_minutes: int = 10
+    min_trade_count_per_day: int = 1
+    position_size_usd: float = 1000.0
+
+
+class GuardsConfig(BaseModel):
+    """Safety guard flags."""
+
+    enabled: bool = True
+    use_reference_on_error: bool = True
+    max_position_value: float = 10000.0
+    require_price_validation: bool = True
 
 
 class AppConfig(BaseModel):
@@ -262,12 +298,26 @@ class AppConfig(BaseModel):
     data_dir: DirectoryPath
     results_dir: Path
     data_processing: DataProcessingConfig = Field(default_factory=DataProcessingConfig)
+    time: TimeConfig = Field(default_factory=TimeConfig)
+    risk: RiskConfig = Field(default_factory=RiskConfig)
+    guards: GuardsConfig = Field(default_factory=GuardsConfig)
     portfolio: PortfolioConfig
     pair_selection: PairSelectionConfig
     filter_params: FilterParamsConfig = Field(default_factory=FilterParamsConfig)
     backtest: BacktestConfig
     walk_forward: WalkForwardConfig
     max_shards: int | None = None
+
+    @property
+    def backtesting(self):
+        """Compatibility view for backtesting settings."""
+        class BacktestingView:
+            def __init__(self, data_processing_cfg: DataProcessingConfig, backtest_cfg: BacktestConfig):
+                self.normalization_method = data_processing_cfg.normalization_method
+                self.commission_pct = backtest_cfg.commission_pct
+                self.slippage_pct = backtest_cfg.slippage_pct
+
+        return BacktestingView(self.data_processing, self.backtest)
 
 
 def convert_paths_to_strings(data):

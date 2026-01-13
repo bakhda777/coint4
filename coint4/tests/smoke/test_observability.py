@@ -7,6 +7,7 @@ import tempfile
 import os
 from pathlib import Path
 from datetime import datetime
+import sys
 
 
 @pytest.mark.smoke
@@ -144,7 +145,7 @@ def test_snapshot_extractor_help():
     """Test that snapshot extractor shows help."""
     try:
         result = subprocess.run(
-            ["python", "scripts/extract_live_snapshot.py", "--help"],
+            [sys.executable, "scripts/extract_live_snapshot.py", "--help"],
             capture_output=True,
             text=True,
             timeout=10
@@ -179,7 +180,7 @@ def test_snapshot_extractor_dry_run():
     try:
         result = subprocess.run(
             [
-                "python", "scripts/extract_live_snapshot.py",
+                sys.executable, "scripts/extract_live_snapshot.py",
                 "--logs", "5",
                 "--trades", "3",
                 "--logs-dir", str(test_logs_dir),

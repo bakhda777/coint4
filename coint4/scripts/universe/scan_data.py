@@ -28,7 +28,7 @@ def extract_symbols_fast(parquet_path: str, max_rows: int = 100_000) -> list:
         return []
 
 
-def scan_data_inventory(data_root: str, timeframe: str = "15T", use_cache: bool = True):
+def scan_data_inventory(data_root: str, timeframe: str = "15min", use_cache: bool = True):
     """Scan data directory for available symbols and date ranges.
     
     Args:
@@ -136,7 +136,7 @@ def main():
     parser = argparse.ArgumentParser(description='Scan data inventory')
     parser.add_argument('--data-root', default='./data_downloaded',
                        help='Root directory with data')
-    parser.add_argument('--timeframe', default='15T',
+    parser.add_argument('--timeframe', default='15min',
                        help='Expected timeframe')
     
     args = parser.parse_args()

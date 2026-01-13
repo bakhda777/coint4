@@ -1,0 +1,22 @@
+walk_forward:
+  enabled: true
+  start_date: "2024-01-01"
+  end_date: "2024-06-30"
+  training_period_days: 60
+  testing_period_days: 30
+  step_size_days: 30
+  gap_minutes: 15
+  max_steps: 5
+
+optuna:
+  n_trials: 5
+  study_name: "wfa_smoke"
+
+success_criteria:
+  min_sharpe_ratio: 0.5
+  min_trade_count: 5
+  max_drawdown_pct: 50.0
+
+traces:
+  enabled: true
+  save_path: "artifacts/wfa/traces"

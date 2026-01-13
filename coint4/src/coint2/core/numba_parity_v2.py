@@ -23,68 +23,77 @@ def compute_rolling_stats_v2(y: np.ndarray, x: np.ndarray, window: int) -> Tuple
     if window < 2:
         return beta, alpha, mu, sigma
     
-    for i in range(window, n):
-        y_win = y[i-window:i]
-        x_win = x[i-window:i]
-        
-        # Проверка на NaN
+    for i in range(window - 1, n):
+        start_idx = i - window + 1
+
+        # Проверка на NaN и расчет средних
         has_nan = False
-        for j in range(window):
-            if np.isnan(y_win[j]) or np.isnan(x_win[j]):
+        x_sum = 0.0
+        y_sum = 0.0
+        for j in range(start_idx, i + 1):
+            if np.isnan(y[j]) or np.isnan(x[j]):
                 has_nan = True
                 break
-        
+            x_sum += x[j]
+            y_sum += y[j]
+
         if has_nan:
             continue
-            
-        # Средние
-        x_mean = 0.0
-        y_mean = 0.0
-        for j in range(window):
-            x_mean += x_win[j]
-            y_mean += y_win[j]
-        x_mean /= window
-        y_mean /= window
-        
+
+        x_mean = x_sum / window
+        y_mean = y_sum / window
+
         # Вычисляем beta = Cov(x,y) / Var(x)
         cov_xy = 0.0
         var_x = 0.0
-        for j in range(window):
-            dx = x_win[j] - x_mean
-            dy = y_win[j] - y_mean
+        for j in range(start_idx, i + 1):
+            dx = x[j] - x_mean
+            dy = y[j] - y_mean
             cov_xy += dx * dy
             var_x += dx * dx
-        
-        # Нормализация
+
         cov_xy = cov_xy / (window - 1.0)
         var_x = var_x / (window - 1.0)
-        
+
         if abs(var_x) < 1e-10:
             continue
-            
+
         beta_val = cov_xy / var_x
         alpha_val = y_mean - beta_val * x_mean
-        
-        # Вычисляем spread = y - (alpha + beta * x)
+
+        beta[i] = beta_val
+        alpha[i] = alpha_val
+
+    # Считаем spread с текущими alpha/beta как в reference engine
+    spread = np.full(n, np.nan)
+    for i in range(n):
+        if not np.isnan(alpha[i]) and not np.isnan(beta[i]):
+            spread[i] = y[i] - (alpha[i] + beta[i] * x[i])
+
+    # Rolling mean/std по spread (как в pandas rolling)
+    for i in range(window - 1, n):
+        start_idx = i - window + 1
+        has_nan = False
         spread_sum = 0.0
-        for j in range(window):
-            spread_val = y_win[j] - (alpha_val + beta_val * x_win[j])
-            spread_sum += spread_val
-        
+
+        for j in range(start_idx, i + 1):
+            val = spread[j]
+            if np.isnan(val):
+                has_nan = True
+                break
+            spread_sum += val
+
+        if has_nan:
+            continue
+
         mu_val = spread_sum / window
-        
-        # Вычисляем стандартное отклонение
         spread_sq_sum = 0.0
-        for j in range(window):
-            spread_val = y_win[j] - (alpha_val + beta_val * x_win[j])
-            diff = spread_val - mu_val
+        for j in range(start_idx, i + 1):
+            diff = spread[j] - mu_val
             spread_sq_sum += diff * diff
-        
-        sigma_val = np.sqrt(spread_sq_sum / window)
-        
+
+        sigma_val = np.sqrt(spread_sq_sum / (window - 1.0))
         if sigma_val > 1e-8:
-            beta[i] = beta_val
-            alpha[i] = alpha_val
             mu[i] = mu_val
             sigma[i] = sigma_val
     

@@ -12,7 +12,11 @@ import yaml
 # Add src to path  
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from coint2.optuna.demo_objective import DemoOptunaObjective
+demo_objective = pytest.importorskip(
+    "coint2.optuna.demo_objective",
+    reason="Legacy Optuna demo objective not available."
+)
+DemoOptunaObjective = demo_objective.DemoOptunaObjective
 import optuna
 
 

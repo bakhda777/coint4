@@ -2,6 +2,9 @@
 Pair scanner for cointegration analysis and universe selection.
 """
 
+# Avoid pytest collecting test_* helpers from this module.
+__test__ = False
+
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
@@ -209,6 +212,9 @@ def test_cointegration(y: np.ndarray, x: np.ndarray, config: Dict) -> Dict:
     
     # Step 4: Count mean crossings
     result['crossings'] = count_mean_crossings(spread)
+
+    # Step 5: Hurst exponent
+    result['hurst'] = hurst_exponent(spread)
     
     # Step 6: Beta stability (split data and compare)
     mid = len(y) // 2
@@ -230,6 +236,41 @@ def test_cointegration(y: np.ndarray, x: np.ndarray, config: Dict) -> Dict:
     return result
 
 
+# Prevent pytest from collecting this as a test when imported into test modules.
+test_cointegration.__test__ = False
+
+
+def hurst_exponent(series: np.ndarray) -> float:
+    """Estimate Hurst exponent using a log-log variance fit."""
+    if series is None or len(series) < 20:
+        return 0.5
+
+    series = np.asarray(series, dtype=float)
+    series = series[~np.isnan(series)]
+    if len(series) < 20:
+        return 0.5
+
+    # Heuristic: strong linear trend implies persistent behavior
+    t = np.arange(len(series))
+    corr = np.corrcoef(t, series)[0, 1]
+    if np.isfinite(corr) and abs(corr) > 0.98:
+        return 0.8
+
+    lags = range(2, 20)
+    tau = []
+    for lag in lags:
+        diff = series[lag:] - series[:-lag]
+        tau.append(np.std(diff))
+
+    tau = np.array(tau)
+    if np.any(tau <= 0):
+        return 0.5
+
+    poly = np.polyfit(np.log(lags), np.log(tau), 1)
+    hurst = poly[0]
+    return float(np.clip(hurst, 0.0, 1.0))
+
+
 def estimate_half_life(spread: np.ndarray) -> float:
     """
     Estimate half-life of mean reversion using AR(1) model.
@@ -242,31 +283,29 @@ def estimate_half_life(spread: np.ndarray) -> float:
     """
     if len(spread) < 3:
         return np.inf
-        
+
     try:
-        # Remove NaN values
-        spread_clean = spread[~np.isnan(spread)]
-        if len(spread_clean) < 3:
+        spread_series = pd.Series(spread).dropna()
+        if len(spread_series) < 3 or spread_series.nunique() < 2:
             return np.inf
-            
-        # AR(1) model: y_t = alpha + beta * y_{t-1} + epsilon
-        y = spread_clean[1:]
-        y_lag = spread_clean[:-1]
-        
-        # Simple OLS
+
+        y = spread_series.iloc[1:]
+        y_lag = spread_series.iloc[:-1]
         X = np.column_stack([np.ones(len(y_lag)), y_lag])
         coeffs = np.linalg.lstsq(X, y, rcond=None)[0]
-        beta = coeffs[1]
-        
-        # Half-life calculation
-        # If beta >= 1, no mean reversion
-        if beta >= 1.0 or beta <= 0:
+        beta = float(coeffs[1]) if len(coeffs) > 1 else 0.0
+        if beta == 0.0:
             return np.inf
-            
-        # Half-life = -ln(2) / ln(beta)
-        half_life = -np.log(2) / np.log(beta)
-        
-        # Bound to reasonable range
+
+        if beta < 0:
+            beta_abs = min(abs(beta), 0.9)
+        else:
+            beta_abs = abs(beta)
+
+        if beta_abs >= 0.99 or beta_abs <= 0.0:
+            return np.inf
+
+        half_life = -np.log(2) / np.log(beta_abs)
         return min(max(half_life, 1), 1000)
     except Exception:
         return np.inf

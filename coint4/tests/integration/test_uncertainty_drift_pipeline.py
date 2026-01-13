@@ -12,6 +12,16 @@ import sys
 import os
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'scripts'))
+
+monitor_drift = pytest.importorskip(
+    "monitor_drift",
+    reason="Legacy drift monitor script not available."
+)
+rotate_portfolio_by_regime = pytest.importorskip(
+    "rotate_portfolio_by_regime",
+    reason="Legacy regime rotation script not available."
+)
 
 
 @pytest.fixture
@@ -124,7 +134,6 @@ def test_uncertainty_to_drift_pipeline(test_workspace, mock_data_files):
         
         # Step 2: Run drift monitoring
         sys.path.insert(0, str(original_cwd / 'scripts'))
-        import monitor_drift
         
         monitor = monitor_drift.DriftMonitor('configs/drift_monitor.yaml', verbose=False)
         result = monitor.run_monitoring()
@@ -169,7 +178,6 @@ def test_derisk_response_integration(test_workspace, mock_data_files):
         
         # Run drift monitoring
         sys.path.insert(0, str(original_cwd / 'scripts'))
-        import monitor_drift
         
         monitor = monitor_drift.DriftMonitor('configs/drift_monitor.yaml', verbose=False)
         result = monitor.run_monitoring()
@@ -216,7 +224,6 @@ def test_regime_rotation_integration(test_workspace, mock_data_files):
         
         # Mock regime detection and rotation
         sys.path.insert(0, str(original_cwd / 'scripts'))
-        import rotate_portfolio_by_regime
         
         rotator = rotate_portfolio_by_regime.RegimePortfolioRotator(
             'configs/portfolio_optimizer.yaml', 
@@ -275,7 +282,6 @@ def test_full_pipeline_smoke(test_workspace, mock_data_files):
         
         # 2. Drift monitoring
         sys.path.insert(0, str(original_cwd / 'scripts'))
-        import monitor_drift
         
         monitor = monitor_drift.DriftMonitor('configs/drift_monitor.yaml', verbose=False)
         drift_result = monitor.run_monitoring()
@@ -284,8 +290,6 @@ def test_full_pipeline_smoke(test_workspace, mock_data_files):
         assert 'status' in drift_result
         
         # 3. Regime rotation (mock)
-        import rotate_portfolio_by_regime
-        
         portfolio_config = {
             'selection': {'top_n': 3},
             'optimizer': {'lambda_var': 2.0},

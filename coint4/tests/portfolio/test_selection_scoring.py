@@ -137,7 +137,7 @@ def test_min_pairs_requirement():
     assert 'fallback' in result.method_used
 
 
-def test_greedy_diversify_method():
+def test_greedy_diversify_method(diverse_metrics):
     """Test greedy diversification method."""
     
     config = PortfolioConfig(

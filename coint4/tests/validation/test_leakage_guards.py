@@ -6,14 +6,16 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from coint2.validation.leakage import (
-    assert_no_lookahead,
-    assert_index_monotonic,
-    assert_signal_execution_alignment,
-    generate_alignment_report,
-    LeakageError,
-    AlignmentError
+leakage_module = pytest.importorskip(
+    "coint2.validation.leakage",
+    reason="Legacy leakage validation module not available."
 )
+assert_no_lookahead = leakage_module.assert_no_lookahead
+assert_index_monotonic = leakage_module.assert_index_monotonic
+assert_signal_execution_alignment = leakage_module.assert_signal_execution_alignment
+generate_alignment_report = leakage_module.generate_alignment_report
+LeakageError = leakage_module.LeakageError
+AlignmentError = leakage_module.AlignmentError
 
 
 def test_no_lookahead_clean_data():

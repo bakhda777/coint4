@@ -1,0 +1,74 @@
+data_dir: "data_downloaded"
+results_dir: "artifacts/live"
+
+data_processing:
+  normalization_method: "rolling_zscore"
+  fill_method: "linear"
+  min_history_ratio: 0.8
+  handle_constant: true
+
+time:
+  timeframe: "15min"
+  gap_minutes: 15
+
+risk:
+  max_daily_loss_pct: 0.02
+  max_drawdown_pct: 0.05
+  max_no_data_minutes: 5
+  min_trade_count_per_day: 1
+  position_size_usd: 1000.0
+
+guards:
+  enabled: true
+  use_reference_on_error: true
+  max_position_value: 10000.0
+  require_price_validation: true
+
+portfolio:
+  initial_capital: 100000.0
+  risk_per_position_pct: 0.02
+  max_active_positions: 10
+  max_margin_usage: 0.5
+
+pair_selection:
+  lookback_days: 60
+  coint_pvalue_threshold: 0.05
+  ssd_top_n: 25000
+  min_half_life_days: 2
+  max_half_life_days: 30
+  min_mean_crossings: 10
+  min_beta: 0.1
+  max_beta: 10.0
+  adaptive_quantiles: false
+  bar_minutes: 15
+  liquidity_usd_daily: 500000
+  max_bid_ask_pct: 0.2
+  max_avg_funding_pct: 0.03
+  save_filter_reasons: false
+  max_hurst_exponent: 0.6
+  kpss_pvalue_threshold: 0.05
+  pvalue_top_n: 1000
+  save_std_histogram: false
+  enable_pair_tradeability_filter: true
+  min_volume_usd_24h: 200000
+  min_days_live: 7
+  max_funding_rate_abs: 0.005
+  max_tick_size_pct: 0.002
+  max_half_life_hours: 720.0
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 60
+  zscore_threshold: 2.5
+  stop_loss_multiplier: 3.0
+  fill_limit_pct: 0.1
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+  annualizing_factor: 365
+  zscore_exit: 0.5
+
+walk_forward:
+  start_date: "2024-01-01"
+  end_date: "2024-06-30"
+  training_period_days: 90
+  testing_period_days: 30

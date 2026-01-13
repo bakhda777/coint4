@@ -101,12 +101,18 @@ def test_module_execution_mode():
     """Test modules can be executed with python -m."""
     import subprocess
     import sys
+    import os
+    from pathlib import Path
+    
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).parents[2] / "src")
     
     # Test check_coint_health help
     result = subprocess.run(
         [sys.executable, '-m', 'coint2.cli.check_coint_health', '--help'],
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
     assert result.returncode == 0
     assert 'Check cointegration health' in result.stdout
@@ -115,7 +121,8 @@ def test_module_execution_mode():
     result = subprocess.run(
         [sys.executable, '-m', 'coint2.cli.build_universe', '--help'],
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
     assert result.returncode == 0
     assert 'Build universe of cointegrated pairs' in result.stdout

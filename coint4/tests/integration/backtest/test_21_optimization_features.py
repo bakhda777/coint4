@@ -23,7 +23,7 @@ DEFAULT_Z_EXIT = 0.5
 DEFAULT_REGIME_CHECK_FREQUENCY = 5
 DEFAULT_ADF_CHECK_FREQUENCY = 10
 TEST_PERIODS = test_config['periods']  # 10 в minimal, 50 в fast, 100 в normal
-FREQUENCY = '15T'
+FREQUENCY = '15min'
 START_DATE = '2023-01-01'
 
 # Константы для оптимизации

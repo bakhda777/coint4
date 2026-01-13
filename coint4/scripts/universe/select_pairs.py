@@ -185,7 +185,7 @@ Generated: {datetime.now(timezone.utc).isoformat()}
 def main():
     parser = argparse.ArgumentParser(description='Multi-stage pair selection pipeline')
     parser.add_argument('--data-root', default='./data_downloaded', help='Data root directory')
-    parser.add_argument('--timeframe', default='15T', help='Data timeframe')
+    parser.add_argument('--timeframe', default='15min', help='Data timeframe')
     parser.add_argument('--period-start', required=True, help='Period start (YYYY-MM-DD)')
     parser.add_argument('--period-end', required=True, help='Period end (YYYY-MM-DD)')
     parser.add_argument('--criteria-config', help='YAML file with selection criteria')

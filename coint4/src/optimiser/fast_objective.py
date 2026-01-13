@@ -56,32 +56,64 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
         return 0
     return int(math.ceil(hours * 60 / bar_minutes))
 
+def _coerce_float(value, default: float) -> float:
+    """Safely coerce config values to float for test/mocked configs."""
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    return default
 
-def _clean_step_dataframe(step_df: pd.DataFrame, base_config) -> pd.DataFrame:
+def _coerce_int(value, default: int) -> int:
+    """Safely coerce config values to int for test/mocked configs."""
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return default
+
+def _coerce_bool(value, default: bool) -> bool:
+    """Safely coerce config values to bool for test/mocked configs."""
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    return default
+
+def _coerce_str(value, default: str) -> str:
+    """Safely coerce config values to str for test/mocked configs."""
+    return value if isinstance(value, str) else default
+
+
+def _clean_step_dataframe(
+    step_df: pd.DataFrame,
+    base_config,
+    *,
+    drop_columns: bool = True,
+    fill_missing: bool = True,
+) -> pd.DataFrame:
     """Normalize step dataframe index/order and apply light missing-data cleanup."""
     cleaned = ensure_datetime_index(step_df)
     if cleaned.index.has_duplicates:
         cleaned = cleaned[~cleaned.index.duplicated(keep="last")]
 
-    fill_limit_pct = getattr(getattr(base_config, "backtest", None), "fill_limit_pct", None)
-    if fill_limit_pct is not None:
-        try:
-            fill_limit = max(1, int(len(cleaned) * float(fill_limit_pct)))
-        except (TypeError, ValueError):
-            fill_limit = 0
-        if fill_limit > 0:
-            limit = min(fill_limit, 5)
-            cleaned = cleaned.ffill(limit=limit).bfill(limit=limit)
+    if fill_missing:
+        fill_limit_pct = getattr(getattr(base_config, "backtest", None), "fill_limit_pct", None)
+        if fill_limit_pct is not None:
+            try:
+                fill_limit = max(1, int(len(cleaned) * float(fill_limit_pct)))
+            except (TypeError, ValueError):
+                fill_limit = 0
+            if fill_limit > 0:
+                limit = min(fill_limit, 5)
+                cleaned = cleaned.ffill(limit=limit)
 
-    nan_threshold = getattr(getattr(base_config, "data_processing", None), "nan_threshold", None)
-    if nan_threshold is None:
-        nan_threshold = 0.5
-    try:
-        drop_threshold = int(len(cleaned) * (1 - float(nan_threshold)))
-    except (TypeError, ValueError):
-        drop_threshold = 0
-    if drop_threshold > 0:
-        cleaned = cleaned.dropna(axis=1, thresh=drop_threshold)
+    if drop_columns:
+        nan_threshold = getattr(getattr(base_config, "data_processing", None), "nan_threshold", None)
+        if nan_threshold is None:
+            nan_threshold = 0.5
+        try:
+            drop_threshold = int(len(cleaned) * (1 - float(nan_threshold)))
+        except (TypeError, ValueError):
+            drop_threshold = 0
+        if drop_threshold > 0:
+            cleaned = cleaned.dropna(axis=1, thresh=drop_threshold)
 
     return cleaned
 
@@ -131,7 +163,17 @@ class FastWalkForwardObjective:
         # Файловый кэш автоматически обеспечивает межпроцессную синхронизацию
         
         # Определяем режим работы
-        n_jobs = getattr(self.base_config, 'optuna', {}).get('n_jobs', 1) if hasattr(self.base_config, 'optuna') else 1
+        optuna_cfg = getattr(self.base_config, "optuna", None)
+        if isinstance(optuna_cfg, dict):
+            n_jobs = optuna_cfg.get("n_jobs", 1)
+        elif optuna_cfg is not None:
+            n_jobs = getattr(optuna_cfg, "n_jobs", 1)
+        else:
+            n_jobs = 1
+        try:
+            n_jobs = int(n_jobs)
+        except (TypeError, ValueError):
+            n_jobs = 1
         
         if n_jobs > 1:
             # Многопроцессный режим - используем файловый кэш
@@ -225,7 +267,7 @@ class FastWalkForwardObjective:
                 return False
 
             # Пивотирование данных в широкий формат
-            all_data = all_raw_data.pivot_table(index="timestamp", columns="symbol", values="close")
+            all_data = all_raw_data.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
             # Простое заполнение пропусков для полноты кэша
             all_data = all_data.ffill().bfill()
 
@@ -319,7 +361,7 @@ class FastWalkForwardObjective:
                 raise ValueError("Не удалось загрузить данные")
 
             # Преобразуем в формат для бэктестинга точно как в оригинале
-            step_df = raw_data.pivot_table(index="timestamp", columns="symbol", values="close")
+            step_df = raw_data.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
 
             # Гарантируем DatetimeIndex
             if not isinstance(step_df.index, pd.DatetimeIndex):
@@ -328,7 +370,12 @@ class FastWalkForwardObjective:
                     step_df.index = step_df.index.tz_localize(None)
                 step_df = step_df.sort_index()
 
-            step_df = _clean_step_dataframe(step_df, self.base_config)
+            step_df = _clean_step_dataframe(
+                step_df,
+                self.base_config,
+                drop_columns=False,
+                fill_missing=False,
+            )
 
             # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Разделяем данные на тренировочные и тестовые
             training_slice = step_df.loc[training_start:training_end]
@@ -371,6 +418,24 @@ class FastWalkForwardObjective:
                     print(f"⚠️ Ошибка валидации lookahead: {e}")
                     message = f"Валидация пропущена: {e}"
             
+            # Очищаем training и применяем те же колонки к тесту, без утечек из будущего
+            training_slice = _clean_step_dataframe(
+                training_slice,
+                self.base_config,
+                drop_columns=True,
+                fill_missing=True,
+            )
+            if not training_slice.empty:
+                testing_slice = testing_slice.loc[:, training_slice.columns.intersection(testing_slice.columns)]
+            else:
+                testing_slice = testing_slice.iloc[0:0]
+            testing_slice = _clean_step_dataframe(
+                testing_slice,
+                self.base_config,
+                drop_columns=False,
+                fill_missing=True,
+            )
+
             print(f"✅ Данные загружены и разделены:")
             print(f"   Тренировочный срез: {training_slice.shape}")
             print(f"   Тестовый срез: {testing_slice.shape}")
@@ -642,13 +707,19 @@ class FastWalkForwardObjective:
         
         try:
             # Нормализация данных для отбора пар
-            # Используем правильные секции конфигурации
-            min_history_ratio = getattr(cfg.data_processing, "min_history_ratio", 0.8) if hasattr(cfg, 'data_processing') else 0.8
-            fill_method = getattr(cfg.data_processing, "fill_method", "ffill") if hasattr(cfg, 'data_processing') else "ffill"  # ffill вместо forward
+            # Используем безопасные извлечения значений (учитываем mock-конфиги)
+            data_processing = getattr(cfg, "data_processing", None)
+            pair_selection = getattr(cfg, "pair_selection", None)
+            backtest_cfg = getattr(cfg, "backtest", None)
 
-            norm_method = getattr(cfg.data_processing, "normalization_method", "rolling_zscore") if hasattr(cfg, 'data_processing') else "rolling_zscore"
-            handle_constant = getattr(cfg.data_processing, "handle_constant", True) if hasattr(cfg, 'data_processing') else True  # boolean вместо строки
-            rolling_window = getattr(cfg.backtest, "rolling_window", 25)
+            min_history_ratio = _coerce_float(
+                getattr(data_processing, "min_history_ratio", None),
+                _coerce_float(getattr(pair_selection, "min_history_ratio", None), 0.8),
+            )
+            fill_method = _coerce_str(getattr(data_processing, "fill_method", None), "ffill")
+            norm_method = _coerce_str(getattr(data_processing, "normalization_method", None), "rolling_zscore")
+            handle_constant = _coerce_bool(getattr(data_processing, "handle_constant", None), True)
+            rolling_window = _coerce_int(getattr(backtest_cfg, "rolling_window", None), 25)
             
             # ВАЖНО: Запрашиваем возврат статистик для использования в тестировании
             normalized_training, norm_stats = preprocess_and_normalize_data(
@@ -663,7 +734,7 @@ class FastWalkForwardObjective:
             
             if normalized_training.empty or len(normalized_training.columns) < 2:
                 print(f"   ❌ Недостаточно данных для отбора пар в шаге {step_idx + 1}")
-                return [], {}
+                return pd.DataFrame(), norm_stats.get('normalization_stats', {})
             
             # Сканирование пар
             ssd = calculate_ssd(normalized_training, top_k=None)
@@ -680,12 +751,12 @@ class FastWalkForwardObjective:
             
             if not ssd_pairs:
                 print(f"   ❌ Не найдено пар после SSD фильтрации в шаге {step_idx + 1}")
-                return [], norm_stats.get('normalization_stats', {})
+                return pd.DataFrame(), norm_stats.get('normalization_stats', {})
             
             # Фильтрация пар по коинтеграции и другим критериям
             filtered_pairs = filter_pairs_by_coint_and_half_life(
                 ssd_pairs,
-                normalized_training,
+                training_data,
                 min_half_life=getattr(cfg.pair_selection, 'min_half_life_days', 1.0),
                 max_half_life=getattr(cfg.pair_selection, 'max_half_life_days', 30.0),
                 pvalue_threshold=getattr(cfg.pair_selection, 'coint_pvalue_threshold', 0.05),
@@ -699,7 +770,7 @@ class FastWalkForwardObjective:
             
             if not filtered_pairs:
                 print(f"   ❌ Не найдено пар после фильтрации в шаге {step_idx + 1}")
-                return [], norm_stats.get('normalization_stats', {})
+                return pd.DataFrame(), norm_stats.get('normalization_stats', {})
             
             # Сортируем пары по качеству
             quality_sorted_pairs = sorted(filtered_pairs, key=lambda x: abs(x[4]), reverse=True)
@@ -735,7 +806,7 @@ class FastWalkForwardObjective:
             print(f"   ❌ Ошибка отбора пар для шага {step_idx + 1}: {e}")
             import traceback
             traceback.print_exc()
-            return [], {}
+            return pd.DataFrame(), {}
     
     def _process_single_walk_forward_step(self, cfg, step_data, step_idx):
         """Обрабатывает один walk-forward шаг с динамическим отбором пар."""
@@ -773,11 +844,25 @@ class FastWalkForwardObjective:
             training_end = step_data['training_end']
 
         # чтобы избежать использования неправильных пар при изменении параметров
+        data_processing = getattr(cfg, "data_processing", None)
+        pair_selection = getattr(cfg, "pair_selection", None)
+        backtest_cfg = getattr(cfg, "backtest", None)
+
+        norm_method = _coerce_str(getattr(data_processing, "normalization_method", None), "rolling_zscore")
+        min_history_ratio = _coerce_float(
+            getattr(data_processing, "min_history_ratio", None),
+            _coerce_float(getattr(pair_selection, "min_history_ratio", None), 0.8),
+        )
+        fill_method = _coerce_str(getattr(data_processing, "fill_method", None), "ffill")
+        handle_constant = _coerce_bool(getattr(data_processing, "handle_constant", None), True)
+        rolling_window = _coerce_int(getattr(backtest_cfg, "rolling_window", None), 25)
         filter_params = (
             f"ssd{getattr(cfg.pair_selection, 'ssd_top_n', 10000)}_"
             f"pval{getattr(cfg.pair_selection, 'coint_pvalue_threshold', 0.05)}_"
             f"hl{getattr(cfg.pair_selection, 'min_half_life_days', 1)}-{getattr(cfg.pair_selection, 'max_half_life_days', 30)}_"
-            f"kpss{getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05)}"
+            f"kpss{getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05)}_"
+            f"norm{norm_method}_hist{min_history_ratio:.4f}_fill{fill_method}_"
+            f"roll{rolling_window}_const{int(bool(handle_constant))}"
         )
         cache_key = f"{training_start.strftime('%Y-%m-%d')}_{training_end.strftime('%Y-%m-%d')}_{filter_params}"
 
@@ -965,11 +1050,11 @@ class FastWalkForwardObjective:
         
         # Группа 6: Нормализация
         if 'normalization_method' in validated_params:
-            if hasattr(cfg.pair_selection, 'norm_method'):
-                cfg.pair_selection.norm_method = validated_params['normalization_method']
+            if hasattr(cfg, 'data_processing'):
+                cfg.data_processing.normalization_method = validated_params['normalization_method']
         if 'min_history_ratio' in validated_params:
-            if hasattr(cfg.pair_selection, 'min_history_ratio'):
-                cfg.pair_selection.min_history_ratio = validated_params['min_history_ratio']
+            if hasattr(cfg, 'data_processing'):
+                cfg.data_processing.min_history_ratio = validated_params['min_history_ratio']
 
         start_date = pd.to_datetime(cfg.walk_forward.start_date)
         end_date = pd.to_datetime(getattr(cfg.walk_forward, 'end_date', start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)))
@@ -1337,6 +1422,13 @@ class FastWalkForwardObjective:
                 max_active_positions=1
             )
 
+            # Конвертация cooldown_hours -> cooldown_periods для бэктестера
+            bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+            cooldown_periods = getattr(cfg.backtest, "cooldown_periods", 0) or 0
+            cooldown_hours = getattr(cfg.backtest, "cooldown_hours", None)
+            if cooldown_hours is not None:
+                cooldown_periods = self.convert_hours_to_periods(cooldown_hours, bar_minutes)
+
             # УСКОРЕНИЕ: Создаем полностью Numba-оптимизированный бэктестер для максимального ускорения
             # FullNumbaPairBacktester не использует portfolio, capital_per_pair и cooldown_periods
             # ВАЖНО: Передаем СЫРЫЕ цены, бэктестер сам вычислит z-scores
@@ -1348,7 +1440,8 @@ class FastWalkForwardObjective:
                 z_threshold=cfg.backtest.zscore_threshold,
                 z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
                 commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),
-                slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0)
+                slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
+                cooldown_periods=cooldown_periods
             )
 
             # Запускаем бэктест (FullNumbaPairBacktester не требует установки имен символов)

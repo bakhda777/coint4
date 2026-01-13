@@ -155,14 +155,14 @@ class TestWalkForwardIntegration:
                 'transaction_cost': 0.001,
                 'market_regime_detection': False,  # Отключено для ускорения
                 'hurst_window': test_config['hurst_window'],  # ОПТИМИЗАЦИЯ: используем test_config
-                'variance_ratio_window': min(test_config['rolling_window'] * 2, 50),  # ОПТИМИЗАЦИЯ: используем test_config
+                'variance_ratio_window': max(test_config['rolling_window'] * 2, 50),  # ОПТИМИЗАЦИЯ: используем test_config
                 'structural_break_protection': False,  # Отключено
                 'cointegration_test_frequency': test_config['hurst_window'],  # ОПТИМИЗАЦИЯ: используем test_config
                 'adf_pvalue_threshold': 0.05,
                 'exclusion_period_days': 1,  # Уменьшено
                 'max_half_life_days': 5,  # Уменьшено
                 'min_correlation_threshold': 0.3,
-                'correlation_window': test_config['rolling_window'] * 2,  # ОПТИМИЗАЦИЯ: используем test_config
+                'correlation_window': max(test_config['rolling_window'] * 2, 50),  # ОПТИМИЗАЦИЯ: используем test_config
                 # Параметры оптимизации - упрощены
                 'regime_check_frequency': 10,
                 'use_market_regime_cache': True,
@@ -392,7 +392,7 @@ class TestWalkForwardIntegration:
         """
         # ОПТИМИЗАЦИЯ: Быстрая проверка без полного walk-forward
         test_config = get_test_config()
-        if test_config == get_test_config.__defaults__[0] if hasattr(get_test_config, '__defaults__') else test_config['periods'] <= 20:
+        if test_config['periods'] <= 20:
             pytest.skip("Пропускаем тяжелый тест памяти в режиме minimal test config")
         import psutil
         import gc

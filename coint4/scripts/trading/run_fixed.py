@@ -164,7 +164,7 @@ def deep_merge_configs(base, delta):
 def main():
     parser = argparse.ArgumentParser(description='Fixed parameter OOS backtest runner')
     parser.add_argument('--data-root', default='./data_downloaded', help='Data root directory')
-    parser.add_argument('--timeframe', default='15T', help='Data timeframe')
+    parser.add_argument('--timeframe', default='15min', help='Data timeframe')
     parser.add_argument('--period-start', required=True, help='Period start (YYYY-MM-DD)')
     parser.add_argument('--period-end', required=True, help='Period end (YYYY-MM-DD)')
     parser.add_argument('--pairs-file', required=True, help='Pairs universe YAML file')

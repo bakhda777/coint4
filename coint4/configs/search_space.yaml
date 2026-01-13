@@ -1,0 +1,40 @@
+# Быстрое пространство поиска для тестирования
+# Упрощенная версия для unit/integration тестов
+
+signals:
+  zscore_threshold:
+    low: 1.0
+    high: 2.5
+  zscore_exit:
+    low: 0.2
+    high: 0.8
+  rolling_window:
+    low: 20
+    high: 50
+    step: 10
+
+portfolio:
+  max_active_positions:
+    low: 5
+    high: 15
+    step: 5
+  risk_per_position_pct:
+    low: 0.01
+    high: 0.03
+
+costs:
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+
+risk_management:
+  stop_loss_multiplier:
+    low: 2.0
+    high: 4.0
+  time_stop_multiplier:
+    low: 3.0
+    high: 8.0
+
+# Настройки для тестов
+metrics:
+  anti_churn_penalty: 0.01
+  max_trades_per_day: 10

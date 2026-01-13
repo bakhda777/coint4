@@ -16,7 +16,7 @@ DEFAULT_VOLATILITY_ADJUSTMENT_FACTOR = 2.0
 
 # Константы для генерации данных
 TEST_PERIODS = 200
-FREQUENCY = '15T'
+FREQUENCY = '15min'
 START_DATE = '2024-01-01'
 BASE_PRICE = 100
 LOW_VOL_PERIODS = 100
@@ -157,7 +157,7 @@ class TestVolatilityBasedSizing:
         Проверяет, что множитель остается в заданных границах.
         """
         # Детерминизм обеспечен глобально
-        dates = pd.date_range('2024-01-01', periods=100, freq='15T')
+        dates = pd.date_range('2024-01-01', periods=100, freq='15min')
         
         # Создаем данные с экстремальной волатильностью
         extreme_vol_data = np.random.normal(100, 10.0, 100)  # Очень высокая волатильность
@@ -192,7 +192,7 @@ class TestVolatilityBasedSizing:
         Проверяет, что метод корректно обрабатывает случаи с малым количеством данных.
         """
         # Создаем очень мало данных
-        dates = pd.date_range('2024-01-01', periods=10, freq='15T')
+        dates = pd.date_range('2024-01-01', periods=10, freq='15min')
         data = pd.DataFrame({
             'asset1': np.random.randn(10) + 100,
             'asset2': np.random.randn(10) + 50
@@ -216,7 +216,7 @@ class TestVolatilityBasedSizing:
         
         Проверяет, что метод корректно обрабатывает константные данные.
         """
-        dates = pd.date_range('2024-01-01', periods=100, freq='15T')
+        dates = pd.date_range('2024-01-01', periods=100, freq='15min')
         
         # Создаем константные данные (нулевая волатильность)
         data = pd.DataFrame({
@@ -242,7 +242,7 @@ class TestVolatilityBasedSizing:
         
         Проверяет, что параметры динамического позиционирования корректно передаются и используются.
         """
-        dates = pd.date_range('2024-01-01', periods=100, freq='15T')
+        dates = pd.date_range('2024-01-01', periods=100, freq='15min')
         data = pd.DataFrame({
             'asset1': np.random.randn(100) + 100,
             'asset2': np.random.randn(100) + 50

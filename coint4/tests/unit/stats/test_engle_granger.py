@@ -94,8 +94,8 @@ class TestEngleGranger:
     
     def test_mean_crossings_no_cross(self):
         """Test mean crossings with no crossings."""
-        # Always above mean
-        spread = np.array([2, 3, 4, 5, 6, 7, 8, 9])
+        # Constant series should have no crossings
+        spread = np.ones(8)
         
         crossings = count_mean_crossings(spread)
         

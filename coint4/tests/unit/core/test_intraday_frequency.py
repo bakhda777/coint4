@@ -15,7 +15,7 @@ from coint2.utils.config import (
 # Константы для тестирования
 TEST_SYMBOLS = ["AAA", "BBB"]
 TEST_SYMBOL_SHIFTS = [0, 1]
-INTRADAY_FREQUENCY = "15T"
+INTRADAY_FREQUENCY = "15min"
 TRADING_START_TIME = "09:30"
 TRADING_END_TIME = "16:00"
 TEST_START_DATE = "2021-01-01"

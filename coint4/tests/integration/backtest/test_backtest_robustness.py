@@ -33,7 +33,7 @@ EXTREME_FEE = 0.1
 
 # Константы для тестовых данных с поддержкой QUICK_TEST
 TEST_PERIODS = test_config['periods']  # 10 в minimal, 50 в fast, 100 в normal
-FREQUENCY = '15T'
+FREQUENCY = '15min'
 START_DATE = '2023-01-01'
 SMALL_ROLLING_WINDOW = 5
 MEDIUM_ROLLING_WINDOW = 20

@@ -463,7 +463,7 @@ class TestSyntheticScenariosFast:
         mock_backtester.return_value = mock_instance
         
         # Минимальные синтетические данные
-        dates = pd.date_range('2024-01-01', periods=5, freq='1H')
+        dates = pd.date_range('2024-01-01', periods=5, freq='1h')
         synthetic_data = pd.DataFrame({
             'S1': [100, 101, 100.5, 99.8, 100.2],
             'S2': [50, 50.5, 50.25, 49.9, 50.1]

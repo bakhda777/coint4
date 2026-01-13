@@ -11,6 +11,7 @@ statsmodels
 dask[dataframe]
 dask-expr
 python-dotenv
+filelock
 matplotlib
 seaborn
 plotly

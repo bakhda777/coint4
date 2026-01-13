@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'scripts'))
 
-import monitor_drift
+monitor_drift = pytest.importorskip("monitor_drift", reason="Legacy drift monitor script not available.")
 
 
 @pytest.fixture

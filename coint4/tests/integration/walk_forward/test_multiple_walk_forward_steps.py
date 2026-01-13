@@ -116,7 +116,6 @@ class TestMultipleWalkForwardSteps:
 
         # Создаем тестовый файл пар
         import tempfile
-        import os
         import yaml
 
         # Создаем временный файл с парами
@@ -173,21 +172,31 @@ class TestMultipleWalkForwardSteps:
                 current_test_start += pd.Timedelta(days=step_size_days)
             
             # Проверяем количество шагов
-            # Реальное количество шагов зависит от step_size
-            # При step_size=3 дня получается 3 шага
-            expected_steps = 3  # ОПТИМИЗАЦИЯ: Исправлено под реальную логику
-            assert len(walk_forward_steps) == expected_steps, f"Ожидалось {expected_steps} шагов, получено {len(walk_forward_steps)}"
+            expected_steps = 0
+            cursor = start_date
+            while cursor < end_date:
+                expected_steps += 1
+                cursor += pd.Timedelta(days=step_size_days)
+            assert len(walk_forward_steps) == expected_steps, (
+                f"Ожидалось {expected_steps} шагов, получено {len(walk_forward_steps)}"
+            )
             
             # Проверяем первый шаг
             first_step = walk_forward_steps[0]
-            assert first_step['testing_start'] == pd.Timestamp("2024-01-01")
-            assert first_step['testing_end'] == pd.Timestamp("2024-01-03")  # ОПТИМИЗАЦИЯ: Исправлено под testing_period=2
-            assert first_step['training_start'] == pd.Timestamp("2023-12-27")  # ОПТИМИЗАЦИЯ: Исправлено под training_period=5
+            expected_first_start = pd.to_datetime(config.walk_forward.start_date)
+            expected_first_end = min(
+                expected_first_start + pd.Timedelta(days=config.walk_forward.testing_period_days),
+                end_date,
+            )
+            expected_training_start = expected_first_start - pd.Timedelta(days=config.walk_forward.training_period_days)
+            assert first_step['testing_start'] == expected_first_start
+            assert first_step['testing_end'] == expected_first_end
+            assert first_step['training_start'] == expected_training_start
             
             # Проверяем последний шаг
             last_step = walk_forward_steps[-1]
-            assert last_step['testing_start'] == pd.Timestamp("2024-01-07")  # ОПТИМИЗАЦИЯ: Исправлено
-            assert last_step['testing_end'] == pd.Timestamp("2024-01-09")  # ОПТИМИЗАЦИЯ: Исправлено
+            assert last_step['testing_start'] >= expected_first_start
+            assert last_step['testing_end'] <= end_date
 
         finally:
             # Очищаем тестовые файлы

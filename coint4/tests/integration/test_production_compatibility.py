@@ -4,6 +4,7 @@
 """
 
 import pytest
+import warnings
 import numpy as np
 import pandas as pd
 from unittest.mock import patch, MagicMock
@@ -22,7 +23,7 @@ from src.optimiser.metric_utils import validate_params
 @pytest.fixture
 def sample_price_data():
     """Создает тестовые данные о ценах."""
-    dates = pd.date_range('2023-01-01', periods=100, freq='15T')
+    dates = pd.date_range('2023-01-01', periods=100, freq='15min')
     np.random.seed(42)
     
     # Создаем коррелированные цены
@@ -112,7 +113,8 @@ class TestNormalizationConsistency:
     def test_production_incompatible_methods_warning(self, sample_price_data):
         """Проверяет предупреждения для несовместимых с production методов."""
         # minmax не должен использоваться в production
-        with pytest.warns(None) as warning_list:
+        with warnings.catch_warnings(record=True) as warning_list:
+            warnings.simplefilter("always")
             normalized_data, stats = preprocess_and_normalize_data(
                 sample_price_data.iloc[:60],
                 norm_method='minmax',

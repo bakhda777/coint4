@@ -127,7 +127,7 @@ class ProductionNormalizer:
         if abs(first_value) < self.epsilon:
             return 100.0
         
-        return (price / first_value) * 100
+        return float(round((price / first_value) * 100, 10))
     
     def _normalize_log_returns(self, symbol: str, price: float) -> Optional[float]:
         """Логарифмическая доходность."""

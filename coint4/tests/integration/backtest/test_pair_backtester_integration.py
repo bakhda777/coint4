@@ -21,7 +21,7 @@ DEFAULT_CAPITAL_INCREMENT = 100
 TEST_PERIODS_SHORT = 20
 TEST_PERIODS_MEDIUM = 30
 TEST_PERIODS_LONG = 50
-FREQUENCY = '15T'
+FREQUENCY = '15min'
 BASE_PRICE_ASSET1 = 100
 BASE_PRICE_ASSET2 = 50
 COINTEGRATION_COEFFICIENT = 2.0
@@ -236,7 +236,7 @@ class TestPairBacktesterIntegration:
         the integration works correctly in practice.
         """
         # Create realistic market data
-        dates = pd.date_range('2023-01-01', periods=50, freq='15T')
+        dates = pd.date_range('2023-01-01', periods=50, freq='15min')
         
         # Create pair with realistic price movements (детерминизм обеспечен глобально)
         base_1, base_2 = 150.0, 75.0
@@ -345,7 +345,7 @@ class TestPairBacktesterIntegration:
         edge cases gracefully without breaking.
         """
         # Test with minimal data
-        dates = pd.date_range('2023-01-01', periods=10, freq='15T')
+        dates = pd.date_range('2023-01-01', periods=10, freq='15min')
         data = pd.DataFrame({
             'asset1': [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
             'asset2': [50, 50.5, 51, 51.5, 52, 52.5, 53, 53.5, 54, 54.5]
@@ -391,7 +391,7 @@ class TestPairBacktesterIntegration:
         continue to work after the inheritance change.
         """
         # Create test data
-        dates = pd.date_range('2023-01-01', periods=25, freq='15T')
+        dates = pd.date_range('2023-01-01', periods=25, freq='15min')
         data = pd.DataFrame({
             'asset1': np.random.randn(25) + 100,
             'asset2': np.random.randn(25) + 50

@@ -12,6 +12,20 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
+scripts_dir = Path(__file__).parent.parent.parent / 'scripts'
+required_scripts = {
+    'build_portfolio.py': scripts_dir / 'build_portfolio.py',
+    'run_walk_forward.py': scripts_dir / 'run_walk_forward.py',
+    'run_paper_week.py': scripts_dir / 'run_paper_week.py',
+    'ci_gates.py': scripts_dir / 'ci_gates.py',
+}
+missing_scripts = [name for name, path in required_scripts.items() if not path.exists()]
+if missing_scripts:
+    pytest.skip(
+        f"Legacy scripts missing: {', '.join(missing_scripts)}",
+        allow_module_level=True
+    )
+
 from coint2.portfolio.optimizer import PortfolioConfig
 
 

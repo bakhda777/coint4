@@ -136,7 +136,7 @@ def test_load_all_data_when_period_specified_then_data_loaded(tmp_path: Path) ->
     pdf = pdf.sort_values("timestamp")
     start_date = END_DATE - pd.Timedelta(days=LOOKBACK_DAYS)
     filtered = pdf[(pdf["timestamp"] >= start_date) & (pdf["timestamp"] <= END_DATE)]
-    expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close")
+    expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
     expected = expected.sort_index()
 
     # Приводим типы и сравниваем
@@ -165,7 +165,7 @@ def test_load_pair_data_when_requested_then_pair_loaded(tmp_path: Path) -> None:
     pdf = pd.read_parquet(tmp_path, engine="pyarrow")
     pdf = pdf[pdf["symbol"].isin([SYMBOL_A, SYMBOL_B])]
     pdf["timestamp"] = pd.to_datetime(pdf["timestamp"])
-    expected = pdf.pivot_table(index="timestamp", columns="symbol", values="close")
+    expected = pdf.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
 
     # Применяем обработку данных как в реальном коде
     freq_val = pd.infer_freq(expected.index)
@@ -213,7 +213,7 @@ def test_load_and_normalize_data_when_requested_then_normalized(tmp_path: Path) 
     pdf["timestamp"] = pd.to_datetime(pdf["timestamp"])
     mask = (pdf["timestamp"] >= START_DATE) & (pdf["timestamp"] <= END_DATE)
     pdf = pdf.loc[mask]
-    expected = pdf.pivot_table(index="timestamp", columns="symbol", values="close")
+    expected = pdf.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
     expected = expected.sort_index()
 
     # Применяем частотную обработку
@@ -287,7 +287,7 @@ def test_clear_cache_when_called_then_cache_cleared(tmp_path: Path) -> None:
     end_date_actual = pdf["timestamp"].max()
     start_date = end_date_actual - pd.Timedelta(days=EXTENDED_LOOKBACK_DAYS)
     filtered = pdf[(pdf["timestamp"] >= start_date) & (pdf["timestamp"] <= end_date_actual)]
-    expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close")
+    expected = filtered.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
     expected = expected.sort_index()
 
     # Применяем частотную обработку

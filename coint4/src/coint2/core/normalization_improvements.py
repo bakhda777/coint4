@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict, Optional, Any
 import logging
+import warnings
 
 logger = logging.getLogger("normalization")
 
@@ -96,6 +97,13 @@ def preprocess_and_normalize_data(
         "nan_after_norm": 0,
         "final_symbols": 0
     }
+
+    try:
+        min_history_ratio = float(min_history_ratio)
+    except (TypeError, ValueError):
+        logger.warning("Некорректный min_history_ratio, используем 0.8")
+        min_history_ratio = 0.8
+    min_history_ratio = max(0.0, min(1.0, min_history_ratio))
     
     # Проверка на пустые данные
     if price_df.empty or price_df.shape[0] == 0 or price_df.shape[1] == 0:
@@ -203,7 +211,12 @@ def preprocess_and_normalize_data(
     
     elif norm_method == "minmax":
         # Min-max нормализация (НЕ для production!)
-        logger.warning("ВНИМАНИЕ: minmax нормализация НЕ совместима с production! Используйте rolling_zscore или percent.")
+        message = (
+            "ВНИМАНИЕ: minmax нормализация НЕ совместима с production! "
+            "Используйте rolling_zscore или percent."
+        )
+        logger.warning(message)
+        warnings.warn(message)
         
         data_min = filled_df.min()
         data_max = filled_df.max()

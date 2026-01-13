@@ -27,7 +27,7 @@ def max_drawdown_on_equity(equity_curve: pd.Series) -> float:
         return float('nan')
     running_max = equity_curve.cummax()
     drawdown = (equity_curve - running_max) / running_max
-    return drawdown.min()
+    return float(drawdown.min())
 
 def sharpe_ratio(returns: pd.Series, annualizing_factor: float) -> float:
     """Calculates the annualized Sharpe ratio from a series of returns.
@@ -68,7 +68,7 @@ def max_drawdown(cumulative_pnl: pd.Series) -> float:
     """
     running_max = cumulative_pnl.cummax()
     drawdown = cumulative_pnl - running_max
-    return drawdown.min()
+    return float(drawdown.min())
 
 
 def win_rate(pnl_series: pd.Series) -> float:

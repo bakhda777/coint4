@@ -7,6 +7,11 @@ import numpy as np
 import os
 from typing import Optional
 
+try:
+    import optuna  # Optional dependency for deterministic sampler
+except ImportError:  # pragma: no cover - optional at runtime
+    optuna = None
+
 
 def set_global_seed(seed: int = 42):
     """Set seeds for all random number generators.
@@ -38,11 +43,9 @@ def get_optuna_sampler(seed: int = 42):
     Returns:
         TPESampler with fixed seed
     """
-    try:
-        import optuna
-        return optuna.samplers.TPESampler(seed=seed)
-    except ImportError:
+    if optuna is None:
         return None
+    return optuna.samplers.TPESampler(seed=seed)
 
 
 def log_seed_to_artifact(seed: int, artifact_path: str):

@@ -68,7 +68,7 @@ class TestPortfolioPositionLimits:
         """
         # Create test data with clear trading signals
         TEST_PERIODS = 50
-        FREQUENCY = '15T'
+        FREQUENCY = '15min'
         SINGLE_POSITION_LIMIT = 1
         CAPITAL_AT_RISK = 5000
         TEST_PAIR_NAME = "TEST_PAIR"

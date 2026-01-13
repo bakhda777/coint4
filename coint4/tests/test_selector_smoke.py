@@ -13,7 +13,7 @@ def test_selector_pipeline_smoke():
     """Test that selector can process mock data and produce outputs."""
     
     # Create mock price data
-    dates = pd.date_range('2024-01-01', periods=100, freq='15T')
+    dates = pd.date_range('2024-01-01', periods=100, freq='15min')
     symbols = ['BTC', 'ETH', 'SOL', 'AVAX']
     
     # Generate cointegrated-like series
@@ -60,7 +60,7 @@ def test_selector_pipeline_smoke():
     assert 'beta_drift' in result
     
     # Test evaluation
-    verdict = evaluate_pair(result, config)
+    verdict, _ = evaluate_pair(result, config)
     assert verdict in ['PASS', 'FAIL']
     
     # Test scoring

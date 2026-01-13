@@ -5,6 +5,11 @@ import pytest
 import pandas as pd
 import numpy as np
 
+pytest.importorskip(
+    "coint2.analytics.pnl_attribution",
+    reason="coint2.analytics is not available in this codebase",
+)
+
 from coint2.analytics.pnl_attribution import (
     calculate_pnl_attribution,
     generate_pnl_attribution_report,

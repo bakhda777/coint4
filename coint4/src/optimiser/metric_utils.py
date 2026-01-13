@@ -92,6 +92,9 @@ def validate_params(params: Dict[str, Any]) -> Dict[str, Any]:
     # Валидация z_entry и z_exit
     z_entry = validated.get('zscore_threshold', validated.get('z_entry', 2.0))
     z_exit = validated.get('zscore_exit', validated.get('z_exit', 0.0))
+
+    # Строгий режим — только по явному запросу
+    strict_zscore = bool(validated.get("strict_zscore_validation", False))
     
     # Handle None values
     if z_entry is None:
@@ -103,11 +106,16 @@ def validate_params(params: Dict[str, Any]) -> Dict[str, Any]:
     if z_entry <= 0:
         raise ValueError(f"z_entry должен быть положительным, получен: {z_entry}")
 
-    # Проверяем только что |z_exit| < |z_entry| для корректного hysteresis
+    # Проверяем что |z_exit| < |z_entry| для корректного hysteresis
     if abs(z_exit) >= abs(z_entry):
+        if strict_zscore:
+            raise ValueError("zscore_exit должен быть < zscore_threshold (нарушен гистерезис)")
         # Корректируем z_exit чтобы оставить минимальный hysteresis
+        min_hysteresis = 0.1
+        if abs(z_entry) <= min_hysteresis:
+            raise ValueError("Слишком маленький гистерезис для заданного zscore_threshold")
         sign = 1 if z_exit >= 0 else -1
-        z_exit = sign * max(0, abs(z_entry) - eps)
+        z_exit = sign * max(0, abs(z_entry) - min_hysteresis)
     
     validated['zscore_threshold'] = z_entry
     validated['zscore_exit'] = z_exit
@@ -156,7 +164,7 @@ def validate_params(params: Dict[str, Any]) -> Dict[str, Any]:
     _validate_parameter_relationships(validated)
     
     # Дополнительная валидация cross-parameter ограничений
-    _validate_cross_parameter_constraints(validated)
+    _validate_cross_parameter_constraints(validated, strict=False)
 
     _validate_cost_parameters(validated)
 
@@ -202,7 +210,7 @@ def _validate_parameter_relationships(params: Dict[str, Any]) -> None:
         # ДОПОЛНИТЕЛЬНО: Проверяем разумный гистерезис
         # Для симметричных стратегий гистерезис = |zscore_threshold| - |zscore_exit|
         hysteresis = abs(zscore_threshold) - abs(zscore_exit)
-        if hysteresis < 0.05:
+        if hysteresis <= 0.05 + 1e-9:
             raise ValueError(f"Слишком маленький гистерезис {hysteresis:.3f} между |zscore_threshold| и |zscore_exit|")
         if hysteresis > 2.5:
             raise ValueError(f"Слишком большой гистерезис {hysteresis:.3f} между |zscore_threshold| и |zscore_exit|")
@@ -223,7 +231,7 @@ def _validate_parameter_relationships(params: Dict[str, Any]) -> None:
         if rolling_window > 200:  # Слишком большое окно
             raise ValueError(f"rolling_window не должен превышать 200 для адаптивности, получен: {rolling_window}")
 
-def _validate_cross_parameter_constraints(params: Dict[str, Any]) -> None:
+def _validate_cross_parameter_constraints(params: Dict[str, Any], *, strict: bool = True) -> None:
     """Проверяет сложные межпараметрические ограничения.
     
     Args:
@@ -238,9 +246,10 @@ def _validate_cross_parameter_constraints(params: Dict[str, Any]) -> None:
     
     if stop_loss_mult is not None and time_stop_mult is not None:
         if time_stop_mult < stop_loss_mult:
-            raise ValueError(
-                f"time_stop_multiplier ({time_stop_mult}) должен быть >= stop_loss_multiplier ({stop_loss_mult})"
-            )
+            if strict:
+                raise ValueError(
+                    f"time_stop_multiplier ({time_stop_mult}) должен быть >= stop_loss_multiplier ({stop_loss_mult})"
+                )
     
     # Проверяем риски и экспозицию
     risk_per_position = params.get('risk_per_position_pct')

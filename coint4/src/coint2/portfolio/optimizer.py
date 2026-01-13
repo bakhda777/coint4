@@ -373,32 +373,64 @@ class PortfolioOptimizer:
         
         pairs = metrics_df.index.tolist()
         n = len(pairs)
-        
-        # Simple equal weight with constraints
-        base_weight = self.config.max_gross / n
-        weights_array = np.full(n, base_weight)
-        
-        # Apply individual caps
-        max_individual = min(self.config.max_weight_per_pair, 
-                           self.config.max_gross / self.config.min_pairs)
-        weights_array = np.clip(weights_array, 0, max_individual)
-        
-        # Renormalize to target gross exposure
-        current_gross = np.sum(np.abs(weights_array))
-        if current_gross > 0:
-            weights_array = weights_array * (self.config.max_gross / current_gross)
-        
-        weights = pd.Series(weights_array, index=pairs)
+
+        if n == 0:
+            return OptimizationResult(
+                weights=pd.Series(dtype=float),
+                selected_pairs=[],
+                diagnostics={"solver_status": "numpy_fallback_empty"},
+                method_used="numpy_fallback",
+                success=False,
+                message="No pairs to optimize",
+            )
+
+        max_gross = float(self.config.max_gross)
+        net_target = float(self.config.net_target)
+        max_weight = float(self.config.max_weight_per_pair)
+
+        if n == 1:
+            weight = float(np.clip(net_target, -max_weight, max_weight))
+            if abs(weight) > max_gross:
+                weight = np.sign(weight) * max_gross
+            weights = pd.Series([weight], index=pairs)
+        else:
+            if "exp_return" in metrics_df.columns:
+                scores = metrics_df["exp_return"].fillna(0.0)
+            elif "psr" in metrics_df.columns:
+                scores = metrics_df["psr"].fillna(0.0)
+            else:
+                scores = pd.Series(0.0, index=pairs)
+
+            ordered = scores.sort_values(ascending=False).index.tolist()
+            n_long = max(1, int(np.ceil(n / 2)))
+            n_short = n - n_long
+
+            long_budget = max(0.0, (max_gross + net_target) / 2)
+            short_budget = max(0.0, (max_gross - net_target) / 2)
+
+            long_weight = long_budget / n_long if n_long > 0 else 0.0
+            short_weight = short_budget / n_short if n_short > 0 else 0.0
+
+            weights = pd.Series(0.0, index=pairs)
+            weights.loc[ordered[:n_long]] = long_weight
+            if n_short > 0:
+                weights.loc[ordered[-n_short:]] = -short_weight
+
+            weights = weights.clip(-max_weight, max_weight)
+
+            current_gross = float(np.sum(np.abs(weights.values)))
+            if current_gross > 0 and current_gross > max_gross:
+                weights *= max_gross / current_gross
         
         # Simple diagnostics
         diagnostics = {
             'expected_return': 0.0,  # Not computed in fallback
             'expected_risk': 0.0,
             'expected_cost': 0.0,
-            'gross_exposure': float(np.sum(np.abs(weights_array))),
-            'net_exposure': float(np.sum(weights_array)),
-            'max_weight': float(np.max(np.abs(weights_array))),
-            'active_pairs': int(np.sum(np.abs(weights_array) > 1e-4)),
+            'gross_exposure': float(np.sum(np.abs(weights.values))),
+            'net_exposure': float(np.sum(weights.values)),
+            'max_weight': float(np.max(np.abs(weights.values))) if not weights.empty else 0.0,
+            'active_pairs': int(np.sum(np.abs(weights.values) > 1e-4)),
             'solver_status': 'numpy_fallback'
         }
         
@@ -422,44 +454,54 @@ class PortfolioOptimizer:
         
         # Import existing allocator
         from .allocator import create_allocator
-        
-        allocator = create_allocator(self.config.fallback, {
-            'target_vol': 0.10,
-            'max_weight': self.config.max_weight_per_pair
-        })
-        
-        # Simple signals (use PSR as proxy)
-        signals = []
-        for pair in metrics_df.index:
-            from .allocator import Signal
-            signal = Signal(
-                pair=pair,
-                timestamp=pd.Timestamp.now(),
-                value=metrics_df.loc[pair].get('psr', 0.5),
-                strength=1.0
-            )
-            signals.append(signal)
-        
-        # Get allocation
-        allocation = allocator.allocate(signals)
-        
-        weights = pd.Series(allocation.weights, index=allocation.pairs)
-        
-        diagnostics = {
-            'fallback_reason': reason,
-            'fallback_method': self.config.fallback,
-            'gross_exposure': float(np.sum(np.abs(weights.values))),
-            'net_exposure': float(np.sum(weights.values)),
-            'active_pairs': len(allocation.pairs)
+
+        allocator_config = {
+            "method": self.config.fallback,
+            "target_vol": 0.10,
+            "max_weight_per_pair": self.config.max_weight_per_pair,
+            "max_gross": self.config.max_gross,
+            "max_net": getattr(self.config, "max_net", 0.4),
         }
-        
+        allocator = create_allocator(allocator_config)
+
+        # Simple signals based on PSR and volatility
+        from .allocator import Signal
+
+        signals = []
+        for pair, row in metrics_df.iterrows():
+            psr = float(row.get("psr", 0.0) or 0.0)
+            vol = float(row.get("vol", 0.1) or 0.1)
+            position = 1.0 if psr >= 0 else -1.0
+            signals.append(
+                Signal(
+                    pair=pair,
+                    position=position,
+                    confidence=min(1.0, abs(psr)),
+                    volatility=max(1e-6, vol),
+                    sharpe=psr,
+                )
+            )
+
+        allocation = allocator.allocate(signals)
+        weights = pd.Series(allocation.weights, dtype=float)
+        selected_pairs = list(weights.index)
+
+        diagnostics = {
+            "fallback_reason": reason,
+            "fallback_method": self.config.fallback,
+            "gross_exposure": float(np.sum(np.abs(weights.values))),
+            "net_exposure": float(np.sum(weights.values)),
+            "max_weight": float(np.max(np.abs(weights.values))) if not weights.empty else 0.0,
+            "active_pairs": int(np.sum(np.abs(weights.values) > 1e-6)),
+        }
+
         return OptimizationResult(
             weights=weights,
-            selected_pairs=allocation.pairs,
+            selected_pairs=selected_pairs,
             diagnostics=diagnostics,
             method_used=f"fallback_{self.config.fallback}",
             success=True,
-            message=f"Fallback to {self.config.fallback}: {reason}"
+            message=f"Fallback to {self.config.fallback}: {reason}",
         )
 
 

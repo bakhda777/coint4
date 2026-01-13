@@ -7,7 +7,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / 'src'))
 
-from coint2.pipeline.pair_scanner import hurst_exponent
+pair_scanner = pytest.importorskip(
+    "coint2.pipeline.pair_scanner",
+    reason="Pair scanner module not available."
+)
+if not hasattr(pair_scanner, "hurst_exponent"):
+    pytest.skip("hurst_exponent not available in pair_scanner.", allow_module_level=True)
+hurst_exponent = pair_scanner.hurst_exponent
 
 
 class TestHurstExponent:

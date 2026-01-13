@@ -3,6 +3,7 @@
 import pytest
 import subprocess
 from pathlib import Path
+import sys
 
 
 @pytest.mark.smoke
@@ -18,7 +19,7 @@ def test_preflight_returns_exit_code():
     """Test that preflight script returns proper exit code."""
     try:
         result = subprocess.run(
-            ["python", "scripts/run_preflight.py"],
+            [sys.executable, "scripts/run_preflight.py"],
             capture_output=True,
             text=True,
             timeout=30
@@ -44,7 +45,7 @@ def test_preflight_creates_log_file():
     # Run preflight
     try:
         subprocess.run(
-            ["python", "scripts/run_preflight.py"],
+            [sys.executable, "scripts/run_preflight.py"],
             capture_output=True,
             timeout=30
         )
@@ -68,7 +69,7 @@ def test_preflight_creates_report():
     # Run preflight
     try:
         subprocess.run(
-            ["python", "scripts/run_preflight.py"],
+            [sys.executable, "scripts/run_preflight.py"],
             capture_output=True,
             timeout=30
         )

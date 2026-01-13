@@ -25,6 +25,7 @@ import numpy as np
 import sys
 sys.path.append(str(Path(__file__).parents[3] / "src"))
 
+pytest.importorskip("scripts.run_walk_forward", reason="Legacy WFA runner not available.")
 from scripts.run_walk_forward import WalkForwardAnalyzer
 from coint2.utils.config import AppConfig
 

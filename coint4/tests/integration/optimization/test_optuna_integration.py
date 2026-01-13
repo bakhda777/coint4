@@ -6,7 +6,9 @@
 import pytest
 import optuna
 import os
+from pathlib import Path
 from unittest.mock import Mock, patch
+import yaml
 
 from src.optimiser.fast_objective import FastWalkForwardObjective
 from src.optimiser.constants import MIN_TRADES_THRESHOLD
@@ -27,12 +29,28 @@ TEST_FLOAT_MIN = 0.1
 TEST_FLOAT_MAX = 1.0
 
 @pytest.fixture
-def optuna_test_config():
+def optuna_test_config(tmp_path):
     """Фикстура для настройки тестового окружения Optuna."""
     test_config = get_test_config()
+    project_root = Path(__file__).resolve().parents[3]
+    base_config_source = project_root / "configs" / "main_2024.yaml"
+    search_space_path = project_root.parent / "configs" / "search_space_fast.yaml"
+
+    data_dir = tmp_path / "data"
+    results_dir = tmp_path / "results"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    base_config = yaml.safe_load(base_config_source.read_text(encoding="utf-8"))
+    base_config["data_dir"] = str(data_dir)
+    base_config["results_dir"] = str(results_dir)
+
+    base_config_path = tmp_path / "main_2024_test.yaml"
+    base_config_path.write_text(yaml.safe_dump(base_config), encoding="utf-8")
+
     return {
-        'base_config_path': "configs/main_2024.yaml",
-        'search_space_path': "configs/search_space_fast.yaml",
+        'base_config_path': str(base_config_path),
+        'search_space_path': str(search_space_path),
         'min_trials': test_config['n_trials'],
         'max_trials': test_config['n_trials']
     }
@@ -122,9 +140,9 @@ class TestConsolidatedOptuna:
         if integration_scenario == "parameter_types_consistency":
             self._test_parameter_types_consistency(fast_study)
         elif integration_scenario == "normalization_config_section":
-            self._test_normalization_config_section(fast_study)
+            self._test_normalization_config_section(fast_study, optuna_test_config)
         elif integration_scenario == "all_fixes_integration":
-            self._test_all_fixes_integration(fast_study)
+            self._test_all_fixes_integration(fast_study, optuna_test_config)
     
     def _test_parameter_types_consistency(self, study):
         """Тест консистентности типов параметров."""
@@ -139,11 +157,11 @@ class TestConsolidatedOptuna:
         assert isinstance(float_param, float)
         assert categorical_param in ['a', 'b', 'c']
     
-    def _test_normalization_config_section(self, study):
+    def _test_normalization_config_section(self, study, config):
         """Тест секции конфигурации нормализации."""
         # Используем стандартную конфигурацию, которая уже содержит нормализацию
-        base_config_path = "configs/main_2024.yaml"
-        search_space_path = "configs/search_space_fast.yaml"
+        base_config_path = config['base_config_path']
+        search_space_path = config['search_space_path']
         objective = FastWalkForwardObjective(base_config_path, search_space_path)
 
         # Проверяем, что objective может быть создан без ошибок
@@ -159,10 +177,10 @@ class TestConsolidatedOptuna:
         assert 'filters' not in objective.search_space, \
             "В fast-режиме 'filters' не должны присутствовать в search_space"
     
-    def _test_all_fixes_integration(self, study):
+    def _test_all_fixes_integration(self, study, config):
         """Тест интеграции всех исправлений."""
-        base_config_path = "configs/main_2024.yaml"
-        search_space_path = "configs/search_space_fast.yaml"
+        base_config_path = config['base_config_path']
+        search_space_path = config['search_space_path']
         objective = FastWalkForwardObjective(base_config_path, search_space_path)
         trial = study.ask()
 
@@ -182,10 +200,10 @@ class TestConsolidatedOptuna:
     
     @pytest.mark.slow
     @pytest.mark.serial
-    def test_critical_fixes_when_validated_comprehensively_then_work_correctly(self, fast_study):
+    def test_critical_fixes_when_validated_comprehensively_then_work_correctly(self, fast_study, optuna_test_config):
         """Комплексный тест критических исправлений."""
-        base_config_path = "configs/main_2024.yaml"
-        search_space_path = "configs/search_space_fast.yaml"
+        base_config_path = optuna_test_config['base_config_path']
+        search_space_path = optuna_test_config['search_space_path']
         objective = FastWalkForwardObjective(base_config_path, search_space_path)
 
         # Проверяем, что objective создается без ошибок

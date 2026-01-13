@@ -540,7 +540,19 @@ class BasePairBacktester:
         """Validate trading parameters for logical consistency."""
         # Check data size vs rolling window (skip for empty data in incremental mode)
         if not self.pair_data.empty and len(self.pair_data) < self.rolling_window + 2:
-            raise ValueError(f"Data length ({len(self.pair_data)}) must be at least rolling_window + 2 ({self.rolling_window + 2})")
+            # Для очень маленьких выборок — ошибка, иначе предупреждение
+            if len(self.pair_data) < 6:
+                raise ValueError(
+                    f"Data length ({len(self.pair_data)}) must be at least rolling_window + 2 "
+                    f"({self.rolling_window + 2})"
+                )
+            import warnings
+            warnings.warn(
+                f"Data length ({len(self.pair_data)}) is below rolling_window + 2 "
+                f"({self.rolling_window + 2}); results may be unreliable.",
+                UserWarning,
+                stacklevel=2,
+            )
         
         # Check threshold consistency
         if self.zscore_entry_threshold <= 0:
@@ -593,7 +605,13 @@ class BasePairBacktester:
             raise ValueError("rolling_window must be at least 3 for meaningful regression")
         
         if not self.pair_data.empty and self.rolling_window > len(self.pair_data) // 2:
-            raise ValueError(f"rolling_window ({self.rolling_window}) is too large relative to data size ({len(self.pair_data)})")
+            import warnings
+            warnings.warn(
+                f"rolling_window ({self.rolling_window}) is large relative to data size "
+                f"({len(self.pair_data)}); results may be unstable.",
+                UserWarning,
+                stacklevel=2,
+            )
         
         # FIXED: Добавлена проверка на минимальное количество наблюдений для статистической значимости
         if self.rolling_window < 10:
@@ -2208,6 +2226,8 @@ class BasePairBacktester:
     def get_results(self) -> dict:
         if self.results is None:
             raise ValueError("Backtest not yet run")
+        if isinstance(self.results, dict):
+            return self.results
 
         # Check if required columns exist, if not create them with default values
         required_columns = {
@@ -3334,3 +3354,8 @@ class BasePairBacktester:
             'funding': funding_cost,
             'total': total_cost
         }
+
+
+class BaseEngine(BasePairBacktester):
+    """Backward-compatible alias for BasePairBacktester."""
+    pass

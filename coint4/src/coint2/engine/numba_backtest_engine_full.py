@@ -77,8 +77,14 @@ class FullNumbaPairBacktester(BasePairBacktester):
             beta: Фиксированный коэффициент beta из коинтеграционного теста.
                   Если None, используется rolling OLS для вычисления beta.
         """
+        adaptive_threshold_factor = kwargs.pop("adaptive_threshold_factor", 0.0)
+        min_volatility = kwargs.pop("min_volatility", 0.001)
+        kwargs.setdefault("market_regime_detection", False)
+        kwargs.setdefault("structural_break_protection", False)
         super().__init__(*args, **kwargs)
         self.fixed_beta = beta  # Сохраняем фиксированную beta если передана
+        self.adaptive_threshold_factor = adaptive_threshold_factor
+        self.min_volatility = min_volatility
         
     def run_numba_full(self) -> FullNumbaBacktestResult:
         """Запуск полного Numba бэктеста с всеми функциями оригинала.

@@ -86,7 +86,7 @@ class DailyLossGuard(SafetyGuard):
         # Calculate daily loss
         daily_loss = (self.daily_start_balance - current_balance) / self.daily_start_balance
         
-        if daily_loss > self.max_loss_pct:
+        if daily_loss >= self.max_loss_pct:
             alerts.append(Alert(
                 level=AlertLevel.CRITICAL,
                 message=f"Daily loss limit exceeded: {daily_loss:.1%} > {self.max_loss_pct:.1%}",
@@ -94,7 +94,7 @@ class DailyLossGuard(SafetyGuard):
                 source=self.name,
                 data={"daily_loss": daily_loss, "limit": self.max_loss_pct}
             ))
-        elif daily_loss > self.max_loss_pct * 0.8:
+        elif daily_loss >= self.max_loss_pct * 0.75:
             alerts.append(Alert(
                 level=AlertLevel.WARNING,
                 message=f"Approaching daily loss limit: {daily_loss:.1%}",

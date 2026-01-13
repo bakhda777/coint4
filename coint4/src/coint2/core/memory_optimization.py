@@ -53,7 +53,7 @@ def consolidate_price_data(data_dir: str, output_path: str, start_date: pd.Times
             
         # Pivot to wide format: index=datetime, columns=symbols
         with time_block("pivoting data to wide format"):
-            df_price = df_long.pivot_table(index="timestamp", columns="symbol", values="close")
+            df_price = df_long.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
             
         # Sort index for consistent ordering
         df_price = df_price.sort_index()

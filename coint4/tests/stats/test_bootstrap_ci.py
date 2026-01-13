@@ -9,7 +9,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
-from coint2.stats.bootstrap import MetricsBootstrap
+bootstrap_module = pytest.importorskip(
+    "coint2.stats.bootstrap",
+    reason="Legacy bootstrap module not available."
+)
+MetricsBootstrap = bootstrap_module.MetricsBootstrap
 
 
 @pytest.fixture

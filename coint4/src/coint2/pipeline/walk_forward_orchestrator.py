@@ -17,7 +17,11 @@ from coint2.utils.visualization import calculate_extended_metrics, create_perfor
 
 # Import directly from the file path rather than the module
 from coint2.core.data_loader import DataHandler, load_master_dataset
-from coint2.core.normalization_improvements import preprocess_and_normalize_data
+from coint2.core.normalization_improvements import (
+    preprocess_and_normalize_data,
+    apply_production_normalization,
+    apply_normalization_with_params,
+)
 from coint2.core.memory_optimization import (
     consolidate_price_data, initialize_global_price_data, get_price_data_view,
     setup_blas_threading_limits, monitor_memory_usage, verify_no_data_copies,
@@ -405,17 +409,39 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
         
         # Проверяем если training_normalization_params содержит полные статистики (новый формат)
         if training_normalization_params and isinstance(training_normalization_params, dict):
-            if 'method' in training_normalization_params:
+            method = training_normalization_params.get('method')
+            if method in ("rolling_zscore", "percent", "log_returns"):
                 # Новый формат со статистиками нормализации
-                from coint2.core.normalization_improvements import apply_production_normalization
                 try:
                     pair_data = apply_production_normalization(
                         pair_data,
                         training_normalization_params
                     )
-                    logger.debug(f"Применена {training_normalization_params['method']} нормализация для {s1}-{s2}")
+                    logger.debug(f"Применена {method} нормализация для {s1}-{s2}")
                 except Exception as e:
                     logger.error(f"Ошибка применения статистик нормализации: {e}")
+                    return {
+                        'success': False,
+                        'error': f'Normalization error: {e}',
+                        'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                        'pnl_series': pd.Series(dtype=float),
+                        'trades_log': []
+                    }
+            elif method in ("minmax", "zscore"):
+                try:
+                    params = training_normalization_params.get('params', {})
+                    fill_method = training_normalization_params.get('fill_method', 'ffill')
+                    pair_data = apply_normalization_with_params(
+                        pair_data,
+                        params,
+                        norm_method=method,
+                        fill_method=fill_method
+                    )
+                    if s1 not in pair_data.columns or s2 not in pair_data.columns:
+                        raise ValueError("Missing symbols after normalization")
+                    logger.debug(f"Применена {method} нормализация для {s1}-{s2}")
+                except Exception as e:
+                    logger.error(f"Ошибка применения параметров нормализации: {e}")
                     return {
                         'success': False,
                         'error': f'Normalization error: {e}',
@@ -434,12 +460,21 @@ def process_single_pair_mmap(pair_symbols, testing_start, testing_end, cfg,
                     logger.debug(f"Используем простую нормализацию для {s1}-{s2}: {first_row}")
                     normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
                     pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+                else:
+                    logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                    return {
+                        'success': False,
+                        'error': f'Zero normalization parameter for {s1} or {s2}',
+                        'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                        'pnl_series': pd.Series(dtype=float),
+                        'trades_log': []
+                    }
             else:
-                # Логируем ошибку и пропускаем пару, так как нормализация невозможна
-                logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                # Логируем ошибку и пропускаем пару, если нет параметров
+                logger.error(f"Нет параметров нормализации для {s1}-{s2}. Пропуск.")
                 return {
                     'success': False,
-                    'error': f'Zero normalization parameter for {s1} or {s2}',
+                    'error': f'Missing normalization parameters for {s1} or {s2}',
                     'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
                     'pnl_series': pd.Series(dtype=float),
                     'trades_log': []
@@ -529,25 +564,75 @@ def process_single_pair(pair_data_tuple, step_df, testing_start, testing_end, cf
         if not pair_data.empty:
             import numpy as np
             data_values = pair_data.values
-            
-            if training_normalization_params and s1 in training_normalization_params and s2 in training_normalization_params:
-                norm_s1 = training_normalization_params[s1]
-                norm_s2 = training_normalization_params[s2]
-                
-                if norm_s1 != 0 and norm_s2 != 0:
-                    # Применяем нормализацию к столбцам DataFrame
-                    first_row = np.array([norm_s1, norm_s2])
-                    logger.debug(f"Используем нормализацию из тренировочного периода для {s1}-{s2}: {first_row}")
-                    
-                    # Vectorized division and multiplication
-                    normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
-                    pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+
+            if training_normalization_params and isinstance(training_normalization_params, dict):
+                method = training_normalization_params.get('method')
+                if method in ("rolling_zscore", "percent", "log_returns"):
+                    try:
+                        pair_data = apply_production_normalization(
+                            pair_data,
+                            training_normalization_params
+                        )
+                        logger.debug(f"Применена {method} нормализация для {s1}-{s2}")
+                    except Exception as e:
+                        logger.error(f"Ошибка применения статистик нормализации: {e}")
+                        return {
+                            'success': False,
+                            'error': f'Normalization error: {e}',
+                            'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                            'pnl_series': pd.Series(dtype=float),
+                            'trades_log': []
+                        }
+                elif method in ("minmax", "zscore"):
+                    try:
+                        params = training_normalization_params.get('params', {})
+                        fill_method = training_normalization_params.get('fill_method', 'ffill')
+                        pair_data = apply_normalization_with_params(
+                            pair_data,
+                            params,
+                            norm_method=method,
+                            fill_method=fill_method
+                        )
+                        if s1 not in pair_data.columns or s2 not in pair_data.columns:
+                            raise ValueError("Missing symbols after normalization")
+                        logger.debug(f"Применена {method} нормализация для {s1}-{s2}")
+                    except Exception as e:
+                        logger.error(f"Ошибка применения параметров нормализации: {e}")
+                        return {
+                            'success': False,
+                            'error': f'Normalization error: {e}',
+                            'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                            'pnl_series': pd.Series(dtype=float),
+                            'trades_log': []
+                        }
+                elif s1 in training_normalization_params and s2 in training_normalization_params:
+                    norm_s1 = training_normalization_params[s1]
+                    norm_s2 = training_normalization_params[s2]
+
+                    if norm_s1 != 0 and norm_s2 != 0:
+                        # Применяем нормализацию к столбцам DataFrame
+                        first_row = np.array([norm_s1, norm_s2])
+                        logger.debug(f"Используем нормализацию из тренировочного периода для {s1}-{s2}: {first_row}")
+
+                        # Vectorized division and multiplication
+                        normalized_values = np.divide(data_values, first_row[np.newaxis, :]) * 100
+                        pair_data = pd.DataFrame(normalized_values, index=pair_data.index, columns=pair_data.columns)
+                    else:
+                        # Логируем ошибку и пропускаем пару, так как нормализация невозможна
+                        logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                        return {
+                            'success': False,
+                            'error': f'Zero normalization parameter for {s1} or {s2}',
+                            'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
+                            'pnl_series': pd.Series(dtype=float),
+                            'trades_log': []
+                        }
                 else:
-                    # Логируем ошибку и пропускаем пару, так как нормализация невозможна
-                    logger.warning(f"Нулевой параметр нормализации для {s1} или {s2}. Пропуск.")
+                    # Логируем ошибку и пропускаем пару, если нет параметров
+                    logger.error(f"Нет параметров нормализации для {s1}-{s2}. Пропуск.")
                     return {
                         'success': False,
-                        'error': f'Zero normalization parameter for {s1} or {s2}',
+                        'error': f'Missing normalization parameters for {s1} or {s2}',
                         'trade_stat': {'pair': f'{s1}-{s2}', 'period': period_label, 'total_pnl': 0.0, 'trade_count': 0},
                         'pnl_series': pd.Series(dtype=float),
                         'trades_log': []
@@ -964,7 +1049,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 logger.warning(f"  Нет данных для шага {step_idx}, пропуск.")
                 continue
 
-            step_df = step_df_long.pivot_table(index="timestamp", columns="symbol", values="close")
+            step_df = step_df_long.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
             
             # ДОПОЛНИТЕЛЬНАЯ ВАЛИДАЦИЯ: Проверка наличия данных для временных окон
             is_data_valid, data_error = validate_walk_forward_data(
@@ -991,17 +1076,18 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 logger.error("   Это может привести к look-ahead bias! Пропуск шага.")
                 continue
                 
+            training_normalization_params = {}
             if training_slice.empty or len(training_slice.columns) < 2:
                 logger.warning(f"  Недостаточно данных для обучения в шаге {step_idx}")
                 pairs = []
             else:
-                # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Собираем параметры нормализации из ТРЕНИРОВОЧНОГО периода ПЕРЕД нормализацией
-                training_normalization_params = {}
+                # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: готовим параметры нормализации на тренировочных данных
+                fallback_first_values = {}
                 if not training_slice.empty:
                     for col in training_slice.columns:
                         first_valid_idx = training_slice[col].first_valid_index()
                         if first_valid_idx is not None:
-                            training_normalization_params[col] = training_slice.loc[first_valid_idx, col]
+                            fallback_first_values[col] = training_slice.loc[first_valid_idx, col]
                 
                 # Normalize training data
                 with time_block("normalizing training data"):
@@ -1031,12 +1117,15 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                     handle_constant = getattr(cfg.data_processing, 'handle_constant', True)
                     
                     logger.info(f"  Применяем метод нормализации: {norm_method}")
+                    rolling_window = getattr(cfg.backtest, 'rolling_window', None)
                     normalized_training, norm_stats = preprocess_and_normalize_data(
                         training_slice,
                         min_history_ratio=min_history_ratio,
                         fill_method=fill_method,
                         norm_method=norm_method,
-                        handle_constant=handle_constant
+                        handle_constant=handle_constant,
+                        rolling_window=rolling_window,
+                        return_stats=True
                     )
                     
                     # Выводим статистику нормализации
@@ -1056,6 +1145,35 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                     elif dropped_symbols:
                         logger.info(f"  Отброшено много символов: {len(dropped_symbols)} из {len(symbols_before)}")
                     
+                normalization_stats = norm_stats.get('normalization_stats', {})
+                training_normalization_params = {}
+                if normalization_stats:
+                    method = normalization_stats.get('method', norm_method)
+                    if method in ("minmax", "zscore"):
+                        params = {}
+                        if method == "minmax":
+                            mins = normalization_stats.get('min', {})
+                            maxs = normalization_stats.get('max', {})
+                            for symbol in normalized_training.columns:
+                                if symbol in mins and symbol in maxs:
+                                    params[symbol] = {'min': mins[symbol], 'max': maxs[symbol]}
+                        else:
+                            means = normalization_stats.get('mean', {})
+                            stds = normalization_stats.get('std', {})
+                            for symbol in normalized_training.columns:
+                                if symbol in means and symbol in stds:
+                                    params[symbol] = {'mean': means[symbol], 'std': stds[symbol]}
+                        training_normalization_params = {
+                            'method': method,
+                            'params': params,
+                            'fill_method': fill_method,
+                        }
+                    else:
+                        training_normalization_params = dict(normalization_stats)
+                        training_normalization_params['fill_method'] = fill_method
+                elif fallback_first_values:
+                    training_normalization_params = fallback_first_values
+
                 if len(normalized_training.columns) < 2:
                     logger.warning("  После нормализации осталось менее 2 символов")
                     pairs = []
@@ -1541,3 +1659,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     print(f"Correct Sharpe Ratio: {sharpe}")
 
     return base_metrics
+
+
+class WalkForwardOrchestrator:
+    """Compatibility wrapper for running walk-forward analysis."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def run(self):
+        """Run walk-forward analysis."""
+        return run_walk_forward(self.cfg)

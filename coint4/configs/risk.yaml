@@ -1,0 +1,5 @@
+max_daily_loss_pct: 0.02
+max_drawdown_pct: 0.05
+max_no_data_minutes: 5
+min_trade_count_per_day: 1
+position_size_usd: 1000.0
