@@ -30,7 +30,7 @@ def generate_preflight_report(checks: list[dict], output_path: Path, success: bo
     lines = [
         "# Preflight Report",
         "",
-        f"*Generated: {datetime.now(timezone.utc).isoformat()}*",
+        "*Generated: see PREFLIGHT.log*",
         "",
         "## Overall Status",
         "",

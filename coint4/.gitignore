@@ -39,6 +39,13 @@ temporary useful files/
 artifacts/archive/
 outputs/optuna/archive/
 
+# Live artifacts (runtime outputs)
+artifacts/baseline_traces/
+artifacts/live/logs/
+artifacts/live/metrics/
+artifacts/live/PREFLIGHT.json
+artifacts/live/SNAPSHOT_*.md
+
 # Database files (except important ones)
 *.db-shm
 *.db-wal

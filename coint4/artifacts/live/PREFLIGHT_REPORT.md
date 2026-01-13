@@ -1,6 +1,6 @@
 # Preflight Report
 
-*Generated: 2026-01-13T05:26:42.130577+00:00*
+*Generated: see PREFLIGHT.log*
 
 ## Overall Status
 
