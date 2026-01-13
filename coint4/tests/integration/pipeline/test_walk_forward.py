@@ -64,18 +64,25 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
 
     overall = pd.Series(dtype=float)
     equity = cfg.portfolio.initial_capital
-    current = pd.Timestamp(cfg.walk_forward.start_date)
+    current_test_start = pd.Timestamp(cfg.walk_forward.start_date)
     end = pd.Timestamp(cfg.walk_forward.end_date)
-    min_training_days = getattr(cfg.pair_selection, "bar_minutes", None) or 15
-    while current < end:
-        train_end = current + pd.Timedelta(days=cfg.walk_forward.training_period_days)
-        test_start = train_end
-        test_end = test_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
-        if test_end > end:
+    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
+    min_required_bars = int(10 * 24 * 60 / bar_minutes)
+    while current_test_start < end:
+        training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
+        training_end = current_test_start - bar_delta
+        testing_start = current_test_start
+        testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+        if testing_start >= end:
             break
-        training_days = (train_end - current).days
-        if training_days < min_training_days:
-            current = test_end
+        training_days = (training_end - training_start + bar_delta) / pd.Timedelta(days=1)
+        if training_days < cfg.walk_forward.training_period_days:
+            current_test_start = testing_end
+            continue
+        training_data = master.loc[training_start:training_end, ["A", "B"]].dropna()
+        if len(training_data) < min_required_bars:
+            current_test_start = testing_end
             continue
         pairs = [(SYMBOL_A, SYMBOL_B)]
         active_pairs = pairs[: cfg.portfolio.max_active_positions]
@@ -90,9 +97,8 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
             capital_per_pair = 0.0
 
         for _s1, _s2 in active_pairs:
-            data = master.loc[test_start:test_end, ["A", "B"]].dropna()
-            # ОПТИМИЗАЦИЯ: Используем минимальный rolling_window если данных мало
-            rolling_window = min(cfg.backtest.rolling_window, max(1, len(data) - 2))
+            data = master.loc[testing_start:testing_end, ["A", "B"]].dropna()
+            rolling_window = cfg.backtest.rolling_window
             if len(data) < rolling_window + 2:
                 continue
             bt = PairBacktester(
@@ -110,7 +116,7 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
 
         overall = pd.concat([overall, step_pnl])
         equity += total_step_pnl
-        current = test_end
+        current_test_start = testing_end
 
     overall = overall.dropna()
     if overall.empty:

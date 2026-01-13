@@ -8,16 +8,11 @@
 import pytest
 import pandas as pd
 import numpy as np
+import time
 from unittest.mock import patch, MagicMock
 
-# Импорты для тестирования (будут мокаться в демонстрационных тестах)
-try:
-    from src.coint2.engine.optimized_pair_backtester import OptimizedPairBacktester
-    from src.coint2.core.memory_optimization import initialize_global_rolling_cache
-except ImportError:
-    # Для демонстрационных целей создаем заглушки
-    OptimizedPairBacktester = None
-    initialize_global_rolling_cache = None
+from src.coint2.engine.optimized_backtest_engine import OptimizedPairBacktester
+from src.coint2.core.global_rolling_cache import initialize_global_rolling_cache
 
 
 @pytest.mark.slow
@@ -63,13 +58,13 @@ class TestOptimizedCachePerformance:
         """Конфигурация системы для тестов."""
         return {
             'rolling_window': 30,
+            'required_windows': [30],
             'cache_size': 1000,
             'memory_limit_mb': 100
         }
     
     @pytest.mark.slow
     @pytest.mark.integration
-    @pytest.mark.skipif(OptimizedPairBacktester is None, reason="Требуется реальная реализация")
     def test_cache_logic_correctness_fast(self, small_test_data, system_config):
         """
         ОПТИМИЗАЦИЯ 2: Отдельный тест для проверки корректности логики кэширования.
@@ -140,7 +135,6 @@ class TestOptimizedCachePerformance:
     @pytest.mark.slow
     @pytest.mark.integration
     @pytest.mark.performance
-    @pytest.mark.skipif(OptimizedPairBacktester is None, reason="Требуется реальная реализация")
     def test_cache_performance_measurement_optimized(self, small_test_data, system_config):
         """
         ОПТИМИЗАЦИЯ 3: Упрощенный тест производительности.
@@ -226,7 +220,6 @@ class TestOptimizedCachePerformance:
         assert cached_time < traditional_time * 1.5, "Cached approach should not be much slower"
     
     @pytest.mark.unit
-    @pytest.mark.skipif(OptimizedPairBacktester is None, reason="Требуется реальная реализация")
     def test_cache_usage_mocked(self, small_test_data):
         """
         ОПТИМИЗАЦИЯ 4: Мокирование тяжелых операций.
@@ -234,7 +227,7 @@ class TestOptimizedCachePerformance:
         Проверяет что кэш используется, без выполнения реальных вычислений.
         """
         # Мокаем тяжелые операции
-        with patch('src.coint2.engine.optimized_pair_backtester.OptimizedPairBacktester.run') as mock_run:
+        with patch('src.coint2.engine.optimized_backtest_engine.OptimizedPairBacktester.run') as mock_run:
             # Настраиваем мок для возврата предсказуемых результатов
             mock_run.return_value = None
             
@@ -243,31 +236,35 @@ class TestOptimizedCachePerformance:
                 'cumulative_pnl': [0, 100, 150, 200],
                 'positions': [0, 1, 1, 0]
             })
-            
-            with patch('src.coint2.engine.optimized_pair_backtester.OptimizedPairBacktester.results', mock_results):
-                # Тестируем что кэш инициализируется
-                with patch('src.coint2.core.memory_optimization.initialize_global_rolling_cache') as mock_init:
-                    with patch('src.coint2.core.memory_optimization.GLOBAL_PRICE', small_test_data):
-                        
-                        # Создаем бэктестер с кэшем
-                        pair_data = pd.DataFrame({
-                            'y': small_test_data['SYMBOL_00'],
-                            'x': small_test_data['SYMBOL_01']
-                        })
-                        
-                        backtester = OptimizedPairBacktester(
-                            pair_data=pair_data,
-                            use_global_cache=True,
-                            rolling_window=30
-                        )
-                        
-                        backtester.set_symbol_names('SYMBOL_00', 'SYMBOL_01')
-                        backtester.run()
-                        
-                        # Проверяем что мок был вызван
-                        mock_run.assert_called_once()
-                        
-                        print("✅ Кэш используется корректно (проверено через моки)")
+
+            # Тестируем что кэш инициализируется
+            with patch('src.coint2.core.global_rolling_cache.initialize_global_rolling_cache') as mock_init:
+                with patch('src.coint2.core.memory_optimization.GLOBAL_PRICE', small_test_data):
+                    
+                    # Создаем бэктестер с кэшем
+                    pair_data = pd.DataFrame({
+                        'y': small_test_data['SYMBOL_00'],
+                        'x': small_test_data['SYMBOL_01']
+                    })
+                    
+                    backtester = OptimizedPairBacktester(
+                        pair_data=pair_data,
+                        use_global_cache=True,
+                        rolling_window=30,
+                        z_threshold=2.0,
+                        z_exit=0.5,
+                        commission_pct=0.001,
+                        slippage_pct=0.0005
+                    )
+                    backtester.results = mock_results
+                    
+                    backtester.set_symbol_names('SYMBOL_00', 'SYMBOL_01')
+                    backtester.run()
+                    
+                    # Проверяем что мок был вызван
+                    mock_run.assert_called_once()
+                    
+                    print("✅ Кэш используется корректно (проверено через моки)")
     
     @pytest.mark.unit
     def test_performance_comparison_summary(self):

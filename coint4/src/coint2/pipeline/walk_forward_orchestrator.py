@@ -743,8 +743,9 @@ def validate_walk_forward_data(
     training_end: pd.Timestamp,
     testing_start: pd.Timestamp,
     testing_end: pd.Timestamp,
-    min_training_days: int = 30,
-    min_testing_days: int = 1
+    min_training_days: float = 30,
+    min_testing_days: float = 1,
+    bar_minutes: int = 15,
 ) -> Tuple[bool, str]:
     """
     Validate that sufficient data exists for walk-forward step.
@@ -757,6 +758,7 @@ def validate_walk_forward_data(
         testing_end: End of testing period
         min_training_days: Minimum required training days
         min_testing_days: Minimum required testing days
+        bar_minutes: Bar size in minutes (used for duration/coverage calculations)
         
     Returns:
         Tuple of (is_valid, error_message)
@@ -776,20 +778,24 @@ def validate_walk_forward_data(
     if testing_data.empty:
         return False, f"No testing data available for period {testing_start} to {testing_end}"
     
-    # Check minimum training period length
-    training_days = (training_end - training_start).days
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
+
+    # Check minimum training period length (inclusive of last bar)
+    training_days = (training_end - training_start + bar_delta) / pd.Timedelta(days=1)
     if training_days < min_training_days:
-        return False, f"Training period too short: {training_days} days < {min_training_days} required"
+        return False, f"Training period too short: {training_days:.2f} days < {min_training_days} required"
     
-    # Check minimum testing period length
-    testing_days = (testing_end - testing_start).days
+    # Check minimum testing period length (inclusive of last bar)
+    testing_days = (testing_end - testing_start + bar_delta) / pd.Timedelta(days=1)
     if testing_days < min_testing_days:
-        return False, f"Testing period too short: {testing_days} days < {min_testing_days} required"
+        return False, f"Testing period too short: {testing_days:.2f} days < {min_testing_days} required"
     
     # Check for significant data gaps in training period
     training_data_days = len(training_data)
-    expected_training_periods = training_days * (24 * 60 / 15)  # Assuming 15-min bars
-    data_coverage_ratio = training_data_days / expected_training_periods
+    expected_training_periods = training_days * (24 * 60 / bar_minutes)
+    data_coverage_ratio = (
+        training_data_days / expected_training_periods if expected_training_periods else 0.0
+    )
     
     if data_coverage_ratio < 0.5:  # Less than 50% data coverage
         logger.warning(f"⚠️  Low training data coverage: {data_coverage_ratio:.1%}")
@@ -797,8 +803,10 @@ def validate_walk_forward_data(
     
     # Check for significant data gaps in testing period
     testing_data_days = len(testing_data)
-    expected_testing_periods = testing_days * (24 * 60 / 15)  # Assuming 15-min bars
-    testing_coverage_ratio = testing_data_days / expected_testing_periods
+    expected_testing_periods = testing_days * (24 * 60 / bar_minutes)
+    testing_coverage_ratio = (
+        testing_data_days / expected_testing_periods if expected_testing_periods else 0.0
+    )
     
     if testing_coverage_ratio < 0.3:  # Less than 30% data coverage
         logger.warning(f"⚠️  Low testing data coverage: {testing_coverage_ratio:.1%}")
@@ -1053,7 +1061,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             
             # ДОПОЛНИТЕЛЬНАЯ ВАЛИДАЦИЯ: Проверка наличия данных для временных окон
             is_data_valid, data_error = validate_walk_forward_data(
-                step_df, training_start, training_end, testing_start, testing_end, bar_minutes
+                step_df,
+                training_start,
+                training_end,
+                testing_start,
+                testing_end,
+                min_training_days=cfg.walk_forward.training_period_days,
+                min_testing_days=cfg.walk_forward.testing_period_days,
+                bar_minutes=bar_minutes,
             )
             if not is_data_valid:
                 logger.warning(f"⚠️  {step_tag}: {data_error}, пропуск шага")

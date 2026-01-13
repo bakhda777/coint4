@@ -320,7 +320,7 @@ def filter_pairs_by_coint_and_half_life(
     max_bid_ask_pct: float = 0.2,
     max_avg_funding_pct: float = 0.03,
     save_filter_reasons: bool = False,
-    kpss_pvalue_threshold: float = 0.05,
+    kpss_pvalue_threshold: Optional[float] = 0.05,
     max_hurst_exponent: float = 0.5,
     *,
     stable_tokens: Optional[List[str]] = None,
@@ -496,8 +496,11 @@ def filter_pairs_by_coint_and_half_life(
     # Фильтр 6: KPSS тест (медленно)
     kpss_passed = []
     
-    # Если порог >= 0.95, пропускаем все пары (фильтр отключен)
-    if kpss_pvalue_threshold >= 0.95:
+    # Если порог не задан или >= 0.95, пропускаем все пары (фильтр отключен)
+    if kpss_pvalue_threshold is None:
+        kpss_passed = hurst_passed
+        logger.info("[ФИЛЬТР] KPSS фильтр отключен (threshold=None)")
+    elif kpss_pvalue_threshold >= 0.95:
         kpss_passed = hurst_passed
         logger.info(f"[ФИЛЬТР] KPSS фильтр отключен (threshold={kpss_pvalue_threshold:.2f} >= 0.95)")
     else:
