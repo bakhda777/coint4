@@ -131,7 +131,6 @@ class TestRunOptimizationIntegration:
     @pytest.mark.slow
     @pytest.mark.serial  # Добавляем для база данных операций 
     @pytest.mark.integration
-    @pytest.mark.skip(reason="Тест слишком медленный для регулярного запуска, требует реальной оптимизации")
     def test_optimization_pipeline_when_full_run_then_completes_successfully(self, tmp_path: Path):
         """Integration test: проверяем полный пайплайн оптимизации."""
         # Проверяем наличие необходимых файлов

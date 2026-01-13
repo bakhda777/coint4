@@ -40,21 +40,22 @@ def create_dataset(base_dir: Path) -> None:
     # ОПТИМИЗАЦИЯ: Упрощенная структура данных для тестирования
     start_date = pd.Timestamp(TEST_START_DATE) - pd.Timedelta(days=10)
     idx = pd.date_range(start_date, periods=TEST_PERIODS, freq=TEST_FREQUENCY)
-    
-    # Создаем данные для обоих символов сразу
-    timestamps = list(idx) + list(idx)
-    data = pd.DataFrame({
-        'timestamp': timestamps,
-        'symbol': [SYMBOL_A] * len(idx) + [SYMBOL_B] * len(idx),
-        'close': list(range(len(idx))) + [x + COINTEGRATION_OFFSET for x in range(len(idx))]
-    })
-    
-    # Группируем по году/месяцу и сохраняем
-    for (year, month), group in data.groupby([data['timestamp'].dt.year, data['timestamp'].dt.month]):
-        part_dir = base_dir / f"year={year}" / f"month={month:02d}"
-        part_dir.mkdir(parents=True, exist_ok=True)
-        parquet_file = part_dir / PARQUET_FILENAME
-        group.to_parquet(parquet_file, index=False)
+
+    symbol_configs = [
+        (SYMBOL_A, 0.0),
+        (SYMBOL_B, COINTEGRATION_OFFSET),
+    ]
+
+    # Пишем данные в структуре symbol=.../year=.../month=... как в реальном датасете
+    for symbol, offset in symbol_configs:
+        series = pd.Series(range(len(idx))) + offset
+        df = pd.DataFrame({"timestamp": idx, "close": series})
+
+        for (year, month), group in df.groupby([df["timestamp"].dt.year, df["timestamp"].dt.month]):
+            part_dir = base_dir / f"symbol={symbol}" / f"year={year}" / f"month={month:02d}"
+            part_dir.mkdir(parents=True, exist_ok=True)
+            parquet_file = part_dir / PARQUET_FILENAME
+            group.to_parquet(parquet_file, index=False)
 
 
 def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
@@ -65,12 +66,17 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
     equity = cfg.portfolio.initial_capital
     current = pd.Timestamp(cfg.walk_forward.start_date)
     end = pd.Timestamp(cfg.walk_forward.end_date)
+    min_training_days = getattr(cfg.pair_selection, "bar_minutes", None) or 15
     while current < end:
         train_end = current + pd.Timedelta(days=cfg.walk_forward.training_period_days)
         test_start = train_end
         test_end = test_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
         if test_end > end:
             break
+        training_days = (train_end - current).days
+        if training_days < min_training_days:
+            current = test_end
+            continue
         pairs = [(SYMBOL_A, SYMBOL_B)]
         active_pairs = pairs[: cfg.portfolio.max_active_positions]
 
@@ -86,7 +92,9 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
         for _s1, _s2 in active_pairs:
             data = master.loc[test_start:test_end, ["A", "B"]].dropna()
             # ОПТИМИЗАЦИЯ: Используем минимальный rolling_window если данных мало
-            rolling_window = min(cfg.backtest.rolling_window, max(2, len(data) - 2))
+            rolling_window = min(cfg.backtest.rolling_window, max(1, len(data) - 2))
+            if len(data) < rolling_window + 2:
+                continue
             bt = PairBacktester(
                 data,
                 rolling_window=rolling_window,
@@ -133,7 +141,6 @@ def manual_walk_forward(handler: DataHandler, cfg: AppConfig) -> dict:
     }
 
 
-@pytest.mark.skip(reason="Требует доработки структуры данных")
 @pytest.mark.slow
 @pytest.mark.integration
 def test_walk_forward_when_executed_then_produces_results(tmp_path: Path) -> None:
