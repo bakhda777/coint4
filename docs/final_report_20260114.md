@@ -105,14 +105,14 @@ WFA smoke после фикса time_stop_limit (1 шаг): total_pnl -52.40, sh
   --base-config configs/main_2024.yaml \
   --end-date 2025-06-30 \
   --top-n 200 \
-  --output-dir bench/clean_window_top200
+  --output-dir bench/clean_window_20260114_top200_step3
 
 ./.venv/bin/coint2 backtest \
   --config configs/main_2024.yaml \
-  --pairs-file bench/clean_window_top200/pairs_universe.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
   --period-start 2023-06-01 \
   --period-end 2023-08-31 \
-  --out-dir outputs/fixed_run_clean_window_top200
+  --out-dir outputs/fixed_run_clean_window_top200_20260114_step3
 
 ./.venv/bin/coint2 walk-forward \
   --config configs/main_2024.yaml
