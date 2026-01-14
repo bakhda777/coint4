@@ -622,9 +622,15 @@ class BasePairBacktester:
                          UserWarning, stacklevel=2)
         
         # FIXED: Проверка на разумность временных параметров
-        if (self.half_life is not None and self.time_stop_multiplier is not None and 
-            self.half_life * self.time_stop_multiplier < 1.0):
-            raise ValueError(f"time_stop_limit ({self.half_life * self.time_stop_multiplier}) is too small - should be at least 1 time unit")
+        if self.half_life is not None and self.time_stop_multiplier is not None:
+            time_stop_limit = self.half_life * self.time_stop_multiplier
+            if time_stop_limit < 1.0:
+                import warnings
+                warnings.warn(
+                    f"time_stop_limit ({time_stop_limit}) is too small; clamping to 1 time unit",
+                    UserWarning,
+                    stacklevel=2,
+                )
         
         # NEW: Validate enhanced risk management parameters
         if self.max_kelly_fraction <= 0 or self.max_kelly_fraction > 1.0:
@@ -2119,6 +2125,8 @@ class BasePairBacktester:
         
         # Check if duration exceeds time stop limit
         time_stop_limit_periods = self.half_life * self.time_stop_multiplier
+        if time_stop_limit_periods < 1.0:
+            time_stop_limit_periods = 1.0
         return trade_duration_periods >= time_stop_limit_periods
     
     def _check_take_profit_conditions(self, df: pd.DataFrame, i: int, z_curr: float) -> bool:

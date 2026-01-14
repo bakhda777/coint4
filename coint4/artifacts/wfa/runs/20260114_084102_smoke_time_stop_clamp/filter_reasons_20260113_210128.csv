@@ -1,0 +1,1754 @@
+s1,s2,reason
+DOGEUSDT,ETHUSDC,low_correlation_0.28
+DOGEUSDC,ETHUSDC,low_correlation_0.28
+DOGEUSDT,ETHUSDT,low_correlation_0.29
+DOGEUSDC,ETHUSDT,low_correlation_0.29
+DOGEUSDC,STETHUSDT,low_correlation_0.29
+DOGEUSDT,STETHUSDT,low_correlation_0.29
+ETHEUR,LINKUSDC,low_correlation_0.38
+ETHEUR,LINKUSDT,low_correlation_0.38
+DOGEEUR,ETHUSDC,low_correlation_0.27
+DOGEUSDC,ETHEUR,low_correlation_0.14
+DOGEUSDT,ETHEUR,low_correlation_0.14
+DOGEEUR,ETHUSDT,low_correlation_0.27
+DOGEEUR,ETHEUR,low_correlation_0.14
+DOGEEUR,STETHUSDT,low_correlation_0.28
+ETHUSDT,SHIBUSDC,low_correlation_0.35
+ETHUSDT,YFIUSDT,low_correlation_0.39
+ETHUSDC,SHIBUSDC,low_correlation_0.34
+STETHUSDT,YFIUSDT,low_correlation_0.39
+ETHUSDT,SHIBUSDT,low_correlation_0.35
+ETHUSDC,SHIBUSDT,low_correlation_0.34
+SHIBUSDC,STETHUSDT,low_correlation_0.35
+ETHUSDC,YFIUSDT,low_correlation_0.39
+ADAUSDC,XECUSDT,low_correlation_0.50
+ADAUSDT,XECUSDT,low_correlation_0.50
+ETHUSDT,PEPEUSDT,low_correlation_0.42
+SHIBUSDT,STETHUSDT,low_correlation_0.35
+ETHUSDC,PEPEUSDT,low_correlation_0.42
+ARBUSDT,OPUSDT,low_correlation_0.29
+ARBUSDC,OPUSDT,low_correlation_0.29
+ARBUSDT,OPUSDC,low_correlation_0.29
+PEPEUSDT,STETHUSDT,low_correlation_0.42
+ARBUSDC,OPUSDC,low_correlation_0.29
+ADAUSDC,ETHUSDT,low_correlation_0.35
+ADAUSDC,ETHUSDC,low_correlation_0.35
+ADAUSDT,ETHUSDT,low_correlation_0.35
+ADAUSDT,ETHUSDC,low_correlation_0.35
+ADAEUR,XECUSDT,low_correlation_0.49
+ETHEUR,SHIBUSDC,low_correlation_0.21
+ETHEUR,YFIUSDT,low_correlation_0.26
+ADAUSDC,STETHUSDT,low_correlation_0.35
+ADAUSDT,STETHUSDT,low_correlation_0.35
+ETHEUR,SHIBUSDT,low_correlation_0.21
+ETHEUR,PEPEUSDT,low_correlation_0.30
+PEPEUSDT,RDNTUSDT,low_correlation_0.05
+BEAMUSDT,ONEUSDT,low_correlation_0.29
+ETHUSDT,FLOKIUSDT,low_correlation_0.31
+ETHUSDT,SNXUSDT,low_correlation_0.43
+ETHUSDC,SNXUSDT,low_correlation_0.43
+SNXUSDT,STETHUSDT,low_correlation_0.43
+ETHUSDC,FLOKIUSDT,low_correlation_0.30
+FLOKIUSDT,STETHUSDT,low_correlation_0.31
+ETHEUR,SNXUSDT,low_correlation_0.29
+ADAEUR,ETHUSDT,low_correlation_0.34
+ADAEUR,ETHUSDC,low_correlation_0.34
+FLOKIUSDT,RDNTUSDT,low_correlation_0.08
+ADAUSDC,ETHEUR,low_correlation_0.21
+ADAUSDT,ETHEUR,low_correlation_0.21
+ADAEUR,STETHUSDT,low_correlation_0.34
+DYDXUSDT,RDNTUSDT,low_correlation_0.05
+FLOWUSDT,KDAUSDT,low_correlation_0.43
+ETHEUR,LTCEUR,low_correlation_0.37
+ADAEUR,ETHEUR,low_correlation_0.21
+ETHEUR,LTCUSDC,low_correlation_0.36
+STETHUSDT,XRPUSDC,low_correlation_0.40
+ETHUSDT,XRPUSDC,low_correlation_0.40
+STETHUSDT,XRPUSDT,low_correlation_0.40
+ETHUSDT,XRPUSDT,low_correlation_0.40
+ETHUSDC,XRPUSDC,low_correlation_0.39
+ETHEUR,LTCUSDT,low_correlation_0.36
+ETHUSDC,XRPUSDT,low_correlation_0.39
+ETHEUR,FLOKIUSDT,low_correlation_0.17
+METHUSDT,SHIBUSDC,low_correlation_0.32
+AVAXUSDT,KSMUSDT,low_correlation_0.42
+AVAXUSDC,KSMUSDT,low_correlation_0.42
+METHUSDT,SHIBUSDT,low_correlation_0.32
+METHUSDT,YFIUSDT,low_correlation_0.37
+PENDLEUSDT,STETHUSDT,low_correlation_0.28
+ETHEUR,PENDLEUSDT,low_correlation_0.39
+ETHEUR,XRPUSDC,low_correlation_0.25
+ETHEUR,XRPUSDT,low_correlation_0.25
+CYBERUSDT,ZILUSDT,low_correlation_0.19
+AVAXUSDC,INJUSDT,low_correlation_0.39
+KDAUSDT,OMGUSDT,low_correlation_0.39
+AVAXUSDT,INJUSDT,low_correlation_0.39
+DOGEUSDC,XECUSDT,low_correlation_0.37
+BTCUSDC,DOGEUSDC,low_correlation_-0.46
+BTCUSDC,DOGEUSDT,low_correlation_-0.46
+BTCUSDC,DOGEEUR,low_correlation_-0.44
+DOGEUSDT,XECUSDT,low_correlation_0.37
+METHUSDT,PEPEUSDT,low_correlation_0.40
+ETHUSDT,RVNUSDT,low_correlation_0.29
+ETHEUR,XRPEUR,low_correlation_0.26
+DOGEUSDC,METHUSDT,low_correlation_0.26
+BTCUSDT,DOGEUSDC,low_correlation_-0.46
+BTCUSDT,DOGEUSDT,low_correlation_-0.46
+BTCUSDT,DOGEEUR,low_correlation_-0.44
+ETHUSDT,PENDLEUSDT,low_correlation_0.28
+ETHUSDC,RVNUSDT,low_correlation_0.29
+DOGEUSDT,METHUSDT,low_correlation_0.25
+RVNUSDT,STETHUSDT,low_correlation_0.30
+AVAXUSDC,TIAUSDT,low_correlation_-0.40
+ETHUSDC,PENDLEUSDT,low_correlation_0.29
+AVAXUSDT,TIAUSDT,low_correlation_-0.40
+STETHUSDT,XRPEUR,low_correlation_0.40
+BTCUSDC,STETHUSDT,low_correlation_0.35
+LINKUSDC,METHUSDT,low_correlation_0.48
+FLOKIUSDT,METHUSDT,low_correlation_0.27
+APEUSDT,GMXUSDT,low_correlation_-0.11
+BTCUSDC,ETHUSDT,low_correlation_0.35
+LINKUSDT,METHUSDT,low_correlation_0.48
+APEUSDC,GMXUSDT,low_correlation_-0.11
+BTCUSDT,STETHUSDT,low_correlation_0.35
+BTCUSDC,ETHUSDC,low_correlation_0.36
+LINKUSDT,RDNTUSDT,low_correlation_0.14
+BTCUSDT,ETHUSDT,low_correlation_0.35
+MASKUSDT,YFIUSDT,low_correlation_0.11
+BTCEUR,DOGEEUR,low_correlation_-0.52
+ETHUSDT,XRPEUR,low_correlation_0.40
+ETHEUR,RVNUSDT,low_correlation_0.15
+BTCUSDT,ETHUSDC,low_correlation_0.36
+LINKUSDC,RDNTUSDT,low_correlation_0.14
+RDNTUSDT,STETHUSDT,low_correlation_0.17
+ETHUSDC,XRPEUR,low_correlation_0.39
+XECUSDT,YFIUSDT,low_correlation_0.35
+ETHUSDT,RDNTUSDT,low_correlation_0.17
+FLOKIUSDT,XECUSDT,low_correlation_0.42
+ANKRUSDT,ETHEUR,low_correlation_0.08
+ANKRUSDT,KDAUSDT,low_correlation_0.27
+ANKRUSDT,ETHUSDT,low_correlation_0.21
+ANKRUSDT,ETHUSDC,low_correlation_0.21
+DOGEEUR,METHUSDT,low_correlation_0.25
+AVAXUSDC,XAVAUSDT,low_correlation_-0.30
+AVAXUSDT,XAVAUSDT,low_correlation_-0.30
+ETHUSDC,RDNTUSDT,low_correlation_0.17
+BTCUSDC,ETHEUR,low_correlation_0.48
+ANKRUSDT,STETHUSDT,low_correlation_0.21
+ETHEUR,GMXUSDT,low_correlation_0.34
+ETHUSDT,LUNAUSDT,low_correlation_0.19
+LTCUSDC,RDNTUSDT,low_correlation_-0.04
+ETHUSDC,LUNAUSDT,low_correlation_0.19
+BTCUSDT,ETHEUR,low_correlation_0.48
+DOGEEUR,XECUSDT,low_correlation_0.35
+ETHUSDT,LUNCUSDT,low_correlation_0.21
+AAVEUSDT,RDNTUSDT,low_correlation_0.39
+LTCUSDT,RDNTUSDT,low_correlation_-0.04
+ETHUSDC,LUNCUSDT,low_correlation_0.21
+LUNAUSDT,STETHUSDT,low_correlation_0.19
+DOGEEUR,WBTCUSDT,low_correlation_-0.45
+APEUSDT,ETHUSDT,low_correlation_0.25
+STETHUSDT,WBTCUSDT,low_correlation_0.35
+FLOKIUSDT,MASKUSDT,low_correlation_0.01
+DOGEUSDC,WBTCUSDT,low_correlation_-0.47
+XECUSDT,XRPEUR,low_correlation_0.50
+LUNCUSDT,STETHUSDT,low_correlation_0.21
+DOGEUSDT,WBTCUSDT,low_correlation_-0.47
+APEUSDT,ETHUSDC,low_correlation_0.25
+APEUSDT,STETHUSDT,low_correlation_0.25
+GMXUSDT,STETHUSDT,low_correlation_0.28
+ALGOUSDT,FILUSDC,low_correlation_0.21
+APEUSDC,ETHUSDT,low_correlation_0.25
+FILUSDC,FLOWUSDT,low_correlation_0.28
+APEUSDC,STETHUSDT,low_correlation_0.25
+ALGOUSDT,FILUSDT,low_correlation_0.21
+ETHUSDT,GMXUSDT,low_correlation_0.28
+ETHUSDC,GMXUSDT,low_correlation_0.28
+MASKUSDT,QTUMUSDT,low_correlation_0.10
+ETHUSDT,WBTCUSDT,low_correlation_0.35
+DYDXUSDT,ETHUSDC,low_correlation_0.31
+ORDIUSDT,WLDUSDC,low_correlation_0.11
+APEUSDC,ETHUSDC,low_correlation_0.25
+ETHEUR,RDNTUSDT,low_correlation_0.19
+BTCEUR,DOGEUSDC,low_correlation_-0.53
+DYDXUSDT,ETHUSDT,low_correlation_0.31
+LUNAUSDT,RDNTUSDT,low_correlation_-0.15
+FILUSDT,FLOWUSDT,low_correlation_0.28
+ORDIUSDT,WLDUSDT,low_correlation_0.11
+BTCEUR,DOGEUSDT,low_correlation_-0.54
+ADAEUR,BTCUSDC,low_correlation_-0.44
+ETHUSDC,WBTCUSDT,low_correlation_0.36
+ARBUSDC,ETHEUR,low_correlation_0.27
+ARBUSDT,ETHEUR,low_correlation_0.27
+ADAEUR,BTCUSDT,low_correlation_-0.44
+ADAUSDT,BTCUSDC,low_correlation_-0.46
+ADAUSDC,BTCUSDC,low_correlation_-0.46
+APEUSDT,BEAMUSDT,low_correlation_0.16
+MASKUSDT,XEMUSDT,low_correlation_-0.02
+ADAUSDT,BTCUSDT,low_correlation_-0.46
+ADAUSDC,BTCUSDT,low_correlation_-0.46
+DYDXUSDT,STETHUSDT,low_correlation_0.31
+APEUSDT,ETHEUR,low_correlation_0.11
+CHZUSDT,CYBERUSDT,low_correlation_0.18
+ETHEUR,WBTCUSDT,low_correlation_0.49
+LUNCUSDT,METHUSDT,low_correlation_0.20
+APEUSDC,ETHEUR,low_correlation_0.11
+ARBUSDC,STETHUSDT,low_correlation_0.13
+CHZUSDC,CYBERUSDT,low_correlation_0.18
+SHIBUSDC,XECUSDT,low_correlation_0.37
+ARBUSDT,STETHUSDT,low_correlation_0.13
+KDAUSDT,MANAUSDT,low_correlation_0.42
+BTCEUR,ETHEUR,low_correlation_0.41
+SHIBUSDT,XECUSDT,low_correlation_0.37
+AAVEUSDT,ETHEUR,low_correlation_0.44
+ADAUSDC,METHUSDT,low_correlation_0.31
+APEUSDC,BEAMUSDT,low_correlation_0.16
+PENDLEUSDT,SNXUSDT,low_correlation_-0.42
+ADAUSDT,METHUSDT,low_correlation_0.31
+LTCEUR,RDNTUSDT,low_correlation_-0.04
+RDNTUSDT,SNXUSDT,low_correlation_0.06
+ETHUSDT,OMGUSDT,low_correlation_0.30
+ANKRUSDT,RDNTUSDT,low_correlation_0.04
+KDAUSDT,MANAUSDC,low_correlation_0.42
+ETHEUR,LUNAUSDT,low_correlation_0.06
+DOTUSDC,INJUSDT,low_correlation_0.18
+DOTUSDT,INJUSDT,low_correlation_0.18
+SOLBTC,SOLUSDT,beta_out_of_range (0.00)
+SOLBTC,SOLUSDC,beta_out_of_range (0.00)
+SOLBTC,SOLEUR,beta_out_of_range (0.00)
+LUNAUSDT,LUNCUSDT,beta_out_of_range (6720.32)
+LUNAUSDT,LUNCUSDC,beta_out_of_range (6783.43)
+FLOKIUSDT,YFIUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,GALAUSDT,beta_out_of_range (0.00)
+DOGEUSDT,SHIBUSDC,beta_out_of_range (9613.34)
+DOGEUSDC,SHIBUSDC,beta_out_of_range (9595.63)
+DOGEUSDT,SHIBUSDT,beta_out_of_range (9585.41)
+DOGEUSDC,SHIBUSDT,beta_out_of_range (9567.21)
+DOGEEUR,SHIBUSDC,beta_out_of_range (8262.09)
+DOTBTC,DOTUSDT,beta_out_of_range (0.00)
+DOTBTC,DOTUSDC,beta_out_of_range (0.00)
+DOGEEUR,SHIBUSDT,beta_out_of_range (8236.92)
+APEUSDT,FLOKIUSDT,beta_out_of_range (52981.60)
+FLOKIUSDT,LUNAUSDT,beta_out_of_range (0.00)
+ALGOBTC,ALGOUSDT,beta_out_of_range (0.00)
+APEUSDC,FLOKIUSDT,beta_out_of_range (53029.17)
+RVNUSDT,YFIUSDT,beta_out_of_range (0.00)
+ATOMUSDT,DOGEUSDT,beta_out_of_range (128.03)
+DOGEUSDC,FLOKIUSDT,beta_out_of_range (1984.62)
+FLOKIUSDT,OMGUSDT,beta_out_of_range (0.00)
+SANDBTC,SANDUSDT,beta_out_of_range (0.00)
+DOGEUSDT,FLOKIUSDT,beta_out_of_range (1988.01)
+SANDBTC,SANDUSDC,beta_out_of_range (0.00)
+ATOMUSDT,DOGEUSDC,beta_out_of_range (128.25)
+BCHUSDT,XECUSDT,beta_out_of_range (5769436.00)
+ATOMUSDT,DOGEEUR,beta_out_of_range (148.22)
+GALAUSDT,YFIUSDT,beta_out_of_range (0.00)
+APEUSDT,YFIUSDT,beta_out_of_range (0.00)
+LUNAUSDT,PEPEUSDT,beta_out_of_range (921537.58)
+APEUSDC,YFIUSDT,beta_out_of_range (0.00)
+PEPEUSDT,YFIUSDT,beta_out_of_range (0.00)
+DOGEEUR,FLOKIUSDT,beta_out_of_range (1707.80)
+APEUSDT,PEPEUSDT,beta_out_of_range (1255920.55)
+FLOKIUSDT,MEMEUSDT,beta_out_of_range (0.00)
+APEUSDC,PEPEUSDT,beta_out_of_range (1257385.24)
+APEUSDT,RVNUSDT,beta_out_of_range (102.08)
+ANKRUSDT,FLOKIUSDT,beta_out_of_range (840.85)
+LUNAUSDT,SHIBUSDC,beta_out_of_range (178547.62)
+LUNAUSDT,SHIBUSDT,beta_out_of_range (178002.87)
+APEUSDC,RVNUSDT,beta_out_of_range (102.14)
+ETCUSDT,XECUSDT,beta_out_of_range (366594.98)
+LUNAUSDT,YFIUSDT,beta_out_of_range (0.00)
+DOGEUSDC,YFIUSDT,beta_out_of_range (0.00)
+DOGEUSDT,YFIUSDT,beta_out_of_range (0.00)
+ADAUSDT,FLOKIUSDT,beta_out_of_range (15028.51)
+ADAUSDC,FLOKIUSDT,beta_out_of_range (15013.29)
+FLOKIUSDT,WAXPUSDT,beta_out_of_range (0.00)
+MEMEUSDT,YFIUSDT,beta_out_of_range (0.00)
+GALAUSDT,PEPEUSDT,beta_out_of_range (24410.69)
+SHIBUSDC,YFIUSDT,beta_out_of_range (0.00)
+ADAEUR,FLOKIUSDT,beta_out_of_range (13033.19)
+SHIBUSDT,YFIUSDT,beta_out_of_range (0.00)
+DOGEEUR,YFIUSDT,beta_out_of_range (0.00)
+CHZUSDC,FLOKIUSDT,beta_out_of_range (1905.37)
+FLOKIUSDT,USTCUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,QTUMUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,TOKENUSDT,beta_out_of_range (0.00)
+DYDXUSDT,PEPEUSDT,beta_out_of_range (2343585.67)
+COMPUSDT,HFTUSDT,beta_out_of_range (148.10)
+ALGOUSDT,FLOKIUSDT,beta_out_of_range (6832.33)
+DOTUSDC,RVNUSDT,beta_out_of_range (412.34)
+FLOKIUSDT,FLOWUSDT,beta_out_of_range (0.00)
+DOTUSDT,RVNUSDT,beta_out_of_range (412.74)
+CHZUSDT,FLOKIUSDT,beta_out_of_range (1915.20)
+BICOUSDT,SPELLUSDT,beta_out_of_range (535.69)
+MANABTC,MANAUSDT,beta_out_of_range (0.00)
+MANABTC,MANAUSDC,beta_out_of_range (0.00)
+AXSUSDT,CHZUSDT,beta_out_of_range (120.08)
+COMPUSDT,HFTUSDC,beta_out_of_range (147.70)
+MEMEUSDT,PEPEUSDT,beta_out_of_range (24950.75)
+AXSUSDT,GALAUSDT,beta_out_of_range (215.29)
+DOGEUSDC,PEPEUSDT,beta_out_of_range (48334.27)
+DOTUSDC,GALAUSDT,beta_out_of_range (202.05)
+AXSUSDT,CHZUSDC,beta_out_of_range (120.49)
+DOTUSDT,GALAUSDT,beta_out_of_range (202.30)
+DOGEUSDT,PEPEUSDT,beta_out_of_range (48400.15)
+XRPUSDT,YFIUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,MANAUSDT,beta_out_of_range (0.00)
+XRPUSDC,YFIUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,MANAUSDC,beta_out_of_range (0.00)
+ADAUSDT,YFIUSDT,beta_out_of_range (0.00)
+LUNCUSDT,YFIUSDT,beta_out_of_range (0.00)
+ADAUSDC,YFIUSDT,beta_out_of_range (0.00)
+DOGEEUR,PEPEUSDT,beta_out_of_range (41625.37)
+DOGEUSDT,LUNCUSDT,beta_out_of_range (333.42)
+CHZUSDT,YFIUSDT,beta_out_of_range (0.00)
+ANKRUSDT,YFIUSDT,beta_out_of_range (0.00)
+DOGEUSDC,LUNCUSDT,beta_out_of_range (332.86)
+ADAEUR,YFIUSDT,beta_out_of_range (0.00)
+AXSUSDT,RVNUSDT,beta_out_of_range (413.76)
+FLOKIUSDT,ZRXUSDT,beta_out_of_range (0.00)
+ADAUSDC,SHIBUSDC,beta_out_of_range (70904.55)
+ADAUSDT,SHIBUSDC,beta_out_of_range (70979.41)
+CHZUSDC,YFIUSDT,beta_out_of_range (0.00)
+ADAUSDC,SHIBUSDT,beta_out_of_range (70679.29)
+DOTUSDT,JASMYUSDT,beta_out_of_range (943.27)
+ADAUSDT,SHIBUSDT,beta_out_of_range (70755.70)
+DYDXUSDT,FLOKIUSDT,beta_out_of_range (95730.21)
+DOTUSDC,JASMYUSDT,beta_out_of_range (941.90)
+ATOMUSDT,HBARUSDT,beta_out_of_range (117.47)
+PEPEUSDT,RVNUSDT,beta_out_of_range (0.00)
+ANKRUSDT,PEPEUSDT,beta_out_of_range (20219.11)
+OMGUSDT,SLPUSDT,beta_out_of_range (304.94)
+FLOKIUSDT,PYTHUSDT,beta_out_of_range (0.00)
+ADAEUR,SHIBUSDC,beta_out_of_range (61497.48)
+FLOKIUSDT,LINKUSDC,beta_out_of_range (0.00)
+FLOKIUSDT,LINKUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,ICXUSDT,beta_out_of_range (0.00)
+ADAEUR,SHIBUSDT,beta_out_of_range (61293.83)
+ATOMUSDT,CHZUSDT,beta_out_of_range (123.33)
+PEPEUSDT,TOKENUSDT,beta_out_of_range (0.00)
+OMGUSDT,YFIUSDT,beta_out_of_range (0.00)
+OMGUSDT,PEPEUSDT,beta_out_of_range (653539.17)
+ATOMUSDT,CHZUSDC,beta_out_of_range (123.84)
+XRPEUR,YFIUSDT,beta_out_of_range (0.00)
+ACHUSDT,COMPUSDT,beta_out_of_range (0.00)
+COMPUSDT,DGBUSDT,beta_out_of_range (5968.29)
+FLOKIUSDT,LTCUSDC,beta_out_of_range (0.00)
+ETCUSDT,SHIBUSDC,beta_out_of_range (1393899.26)
+DOGEEUR,LUNCUSDT,beta_out_of_range (287.40)
+DYDXUSDT,ZILUSDT,beta_out_of_range (133.94)
+SHIBUSDC,XRPUSDC,beta_out_of_range (0.00)
+ETCUSDT,SHIBUSDT,beta_out_of_range (1391411.69)
+FLOKIUSDT,LTCUSDT,beta_out_of_range (0.00)
+SHIBUSDT,XRPUSDC,beta_out_of_range (0.00)
+SHIBUSDC,XRPUSDT,beta_out_of_range (0.00)
+WAXPUSDT,YFIUSDT,beta_out_of_range (0.00)
+SHIBUSDT,XRPUSDT,beta_out_of_range (0.00)
+LINKUSDT,SHIBUSDC,beta_out_of_range (1424417.86)
+LINKUSDC,SHIBUSDC,beta_out_of_range (1422398.80)
+FIDAUSDT,LADYSUSDT,beta_out_of_range (3296758.98)
+MEMEUSDT,SHIBUSDT,beta_out_of_range (4811.51)
+NEARUSDT,ONEUSDT,beta_out_of_range (166.67)
+DYDXUSDT,RVNUSDT,beta_out_of_range (185.53)
+AVAXUSDT,SOLBTC,beta_out_of_range (16988.34)
+AVAXUSDC,LADYSUSDT,beta_out_of_range (336058686.29)
+AVAXUSDC,SOLBTC,beta_out_of_range (16963.32)
+AVAXUSDT,LADYSUSDT,beta_out_of_range (336233614.80)
+QTUMUSDT,YFIUSDT,beta_out_of_range (0.00)
+MEMEUSDT,SHIBUSDC,beta_out_of_range (4828.35)
+LINKUSDT,SHIBUSDT,beta_out_of_range (1419838.32)
+ADAUSDC,LUNCUSDT,beta_out_of_range (2353.96)
+LUNCUSDT,PEPEUSDT,beta_out_of_range (135.03)
+ATOMUSDT,RVNUSDT,beta_out_of_range (505.69)
+ADAUSDT,LUNCUSDT,beta_out_of_range (2356.48)
+LINKUSDC,SHIBUSDT,beta_out_of_range (1417737.79)
+LINKUSDC,PEPEUSDT,beta_out_of_range (7313516.73)
+LINKUSDT,PEPEUSDT,beta_out_of_range (7319151.78)
+LUNCUSDC,YFIUSDT,beta_out_of_range (0.00)
+COMPUSDT,RVNUSDT,beta_out_of_range (2605.35)
+TOKENUSDT,YFIUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,XRPUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,XRPUSDC,beta_out_of_range (0.00)
+AAVEUSDT,ADAUSDT,beta_out_of_range (108.66)
+AVAXUSDC,DOGEEUR,beta_out_of_range (804.29)
+DOGEUSDT,LUNCUSDC,beta_out_of_range (335.99)
+DOGEUSDC,LUNCUSDC,beta_out_of_range (335.42)
+ICXUSDT,YFIUSDT,beta_out_of_range (0.00)
+XLMUSDT,YFIUSDT,beta_out_of_range (0.00)
+ETCUSDT,FLOKIUSDT,beta_out_of_range (286801.25)
+AVAXUSDC,DOGEUSDT,beta_out_of_range (685.05)
+AVAXUSDT,DOGEEUR,beta_out_of_range (804.89)
+AAVEUSDT,ADAUSDC,beta_out_of_range (108.70)
+FLOKIUSDT,HBARUSDT,beta_out_of_range (0.00)
+AAVEUSDT,CRVUSDT,beta_out_of_range (111.53)
+AVAXUSDT,DOGEUSDT,beta_out_of_range (685.61)
+USTCUSDT,YFIUSDT,beta_out_of_range (0.00)
+PEPEUSDT,USTCUSDT,beta_out_of_range (0.00)
+AVAXUSDC,DOGEUSDC,beta_out_of_range (686.46)
+SPELLUSDT,UMAUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,LTCEUR,beta_out_of_range (0.00)
+DOTUSDC,FLOKIUSDT,beta_out_of_range (206016.98)
+AVAXUSDT,DOGEUSDC,beta_out_of_range (687.01)
+DOTUSDT,FLOKIUSDT,beta_out_of_range (206203.56)
+XLMUSDC,YFIUSDT,beta_out_of_range (0.00)
+PEPEUSDT,XEMUSDT,beta_out_of_range (0.00)
+XECUSDT,XLMUSDC,beta_out_of_range (0.00)
+YFIUSDT,ZRXUSDT,beta_out_of_range (15724.62)
+APEUSDT,SLPUSDT,beta_out_of_range (542.34)
+AAVEUSDT,ADAEUR,beta_out_of_range (123.05)
+ETCUSDT,PEPEUSDT,beta_out_of_range (7273079.60)
+DYDXUSDT,YFIUSDT,beta_out_of_range (0.00)
+APEUSDC,SLPUSDT,beta_out_of_range (543.03)
+ADAEUR,LUNCUSDT,beta_out_of_range (2041.93)
+PYTHUSDT,YFIUSDT,beta_out_of_range (0.00)
+ADAUSDC,PEPEUSDT,beta_out_of_range (357534.88)
+FXSUSDT,PEPEUSDT,beta_out_of_range (3351547.61)
+LINKUSDC,LUNCUSDT,beta_out_of_range (46053.98)
+RVNUSDT,SHIBUSDC,beta_out_of_range (2440.88)
+XECUSDT,XLMUSDT,beta_out_of_range (0.00)
+ADAUSDT,PEPEUSDT,beta_out_of_range (357742.07)
+AXSUSDT,ONEUSDT,beta_out_of_range (447.26)
+MYRIAUSDT,YFIUSDT,beta_out_of_range (0.00)
+SHIBUSDC,XRPEUR,beta_out_of_range (0.00)
+ANKRUSDT,LUNCUSDT,beta_out_of_range (140.55)
+FLOKIUSDT,XTZUSDT,beta_out_of_range (0.00)
+AXSUSDT,ZILUSDT,beta_out_of_range (338.34)
+LINKUSDT,LUNCUSDT,beta_out_of_range (46124.97)
+ANKRUSDT,SHIBUSDC,beta_out_of_range (4055.23)
+DOGEEUR,LUNCUSDC,beta_out_of_range (289.71)
+COMPUSDT,SPELLUSDT,beta_out_of_range (68960.57)
+SHIBUSDT,XRPEUR,beta_out_of_range (0.00)
+CHZUSDC,PEPEUSDT,beta_out_of_range (43402.53)
+RVNUSDT,SHIBUSDT,beta_out_of_range (2433.56)
+QTUMUSDT,RVNUSDT,beta_out_of_range (118.18)
+XECUSDT,XRPUSDC,beta_out_of_range (0.00)
+XECUSDT,XRPUSDT,beta_out_of_range (0.00)
+LINKUSDT,RVNUSDT,beta_out_of_range (564.19)
+LINKUSDC,RVNUSDT,beta_out_of_range (563.39)
+ANKRUSDT,SHIBUSDT,beta_out_of_range (4042.22)
+ATOMUSDT,GALAUSDT,beta_out_of_range (245.38)
+ATOMUSDT,FLOKIUSDT,beta_out_of_range (254740.57)
+LTCUSDC,SHIBUSDC,beta_out_of_range (6014309.03)
+APEUSDT,DGBUSDT,beta_out_of_range (214.71)
+APEUSDC,DGBUSDT,beta_out_of_range (214.93)
+ETHWUSDT,PEPEUSDT,beta_out_of_range (2551747.30)
+FLOWUSDT,YFIUSDT,beta_out_of_range (0.00)
+LTCUSDC,SHIBUSDT,beta_out_of_range (6002625.66)
+XEMUSDT,YFIUSDT,beta_out_of_range (0.00)
+LUNCUSDC,PEPEUSDT,beta_out_of_range (133.21)
+COMPUSDT,TOKENUSDT,beta_out_of_range (582.27)
+BLURUSDT,PEPEUSDT,beta_out_of_range (190629.99)
+LOOKSUSDT,PEPEUSDT,beta_out_of_range (59609.33)
+CHZUSDT,PEPEUSDT,beta_out_of_range (43606.83)
+AAVEUSDT,ANKRUSDT,beta_out_of_range (1491.12)
+LTCUSDT,SHIBUSDC,beta_out_of_range (6027299.96)
+LTCUSDT,SHIBUSDT,beta_out_of_range (6015890.06)
+ARUSDT,DGBUSDT,beta_out_of_range (1165.86)
+AAVEUSDT,RVNUSDT,beta_out_of_range (2654.59)
+DOGEEUR,SOLUSDC,beta_out_of_range (0.00)
+MANAUSDT,YFIUSDT,beta_out_of_range (0.00)
+ANKRUSDT,AVAXUSDC,beta_out_of_range (0.00)
+COMPUSDT,ZILUSDT,beta_out_of_range (2037.41)
+PEPEUSDT,WAXPUSDT,beta_out_of_range (0.00)
+ANKRUSDT,AVAXUSDT,beta_out_of_range (0.00)
+DOGEEUR,SOLUSDT,beta_out_of_range (0.00)
+ACHUSDT,FLOKIUSDT,beta_out_of_range (588.68)
+ADAEUR,PEPEUSDT,beta_out_of_range (310069.30)
+MANAUSDC,YFIUSDT,beta_out_of_range (0.00)
+CHZUSDT,SHIBUSDC,beta_out_of_range (8976.34)
+SPELLUSDT,TWTUSDT,beta_out_of_range (0.00)
+LUNCUSDT,PYTHUSDT,beta_out_of_range (0.00)
+CHZUSDC,SHIBUSDC,beta_out_of_range (8929.92)
+MANABTC,SANDUSDC,beta_out_of_range (0.00)
+AVAXUSDC,HBARUSDT,beta_out_of_range (617.03)
+AVAXUSDT,HBARUSDT,beta_out_of_range (617.06)
+CHZUSDT,SHIBUSDT,beta_out_of_range (8953.93)
+CHZUSDC,SHIBUSDT,beta_out_of_range (8907.29)
+FLOKIUSDT,XRPEUR,beta_out_of_range (0.00)
+MANABTC,SANDUSDT,beta_out_of_range (0.00)
+LTCEUR,SHIBUSDC,beta_out_of_range (5093431.82)
+BCHUSDT,XLMUSDT,beta_out_of_range (1522.22)
+DOGEEUR,SOLEUR,beta_out_of_range (0.00)
+ATOMUSDT,SHIBUSDC,beta_out_of_range (1244208.07)
+LTCEUR,SHIBUSDT,beta_out_of_range (5083140.15)
+APEUSDC,JSTUSDT,beta_out_of_range (116.35)
+APEUSDT,JSTUSDT,beta_out_of_range (116.20)
+DGBUSDT,LINKUSDT,beta_out_of_range (0.00)
+DGBUSDT,LINKUSDC,beta_out_of_range (0.00)
+C98USDT,SPELLUSDT,beta_out_of_range (400.56)
+ALGOUSDT,YFIUSDT,beta_out_of_range (0.00)
+FLOWUSDT,JASMYUSDT,beta_out_of_range (105.87)
+ATOMUSDT,SHIBUSDT,beta_out_of_range (1240666.01)
+AVAXUSDC,CHZUSDT,beta_out_of_range (570.87)
+AXSUSDT,SLPUSDT,beta_out_of_range (3461.69)
+DOTUSDC,ONEUSDT,beta_out_of_range (325.08)
+DOTUSDT,ONEUSDT,beta_out_of_range (325.37)
+AVAXUSDT,CHZUSDT,beta_out_of_range (571.51)
+DGBUSDT,FLOKIUSDT,beta_out_of_range (232.03)
+BCHUSDT,XLMUSDC,beta_out_of_range (1519.14)
+JTOUSDT,MEMEUSDT,beta_out_of_range (124.66)
+OMGUSDT,SHIBUSDC,beta_out_of_range (132217.25)
+LUNCUSDT,OMGUSDT,beta_out_of_range (0.00)
+CYBERUSDT,SLPUSDT,beta_out_of_range (1099.27)
+ONEUSDT,YFIUSDT,beta_out_of_range (0.00)
+ADAUSDT,LUNCUSDC,beta_out_of_range (2376.77)
+ADAUSDC,LUNCUSDC,beta_out_of_range (2374.22)
+PYTHUSDT,SHIBUSDT,beta_out_of_range (67547.43)
+ETCUSDT,XLMUSDT,beta_out_of_range (160.59)
+DOGEUSDT,SOLUSDC,beta_out_of_range (0.00)
+APEUSDT,SHIBUSDC,beta_out_of_range (250727.30)
+LINKUSDC,LUNCUSDC,beta_out_of_range (46486.04)
+OMGUSDT,SHIBUSDT,beta_out_of_range (131837.49)
+AVAXUSDC,CHZUSDC,beta_out_of_range (572.65)
+AVAXUSDT,CHZUSDC,beta_out_of_range (573.28)
+CRVUSDT,FLOKIUSDT,beta_out_of_range (15292.34)
+ANKRUSDT,LUNCUSDC,beta_out_of_range (141.52)
+FLOKIUSDT,POLUSDT,beta_out_of_range (0.00)
+DOGEUSDT,SOLUSDT,beta_out_of_range (0.00)
+SHIBUSDC,USTCUSDT,beta_out_of_range (0.00)
+LINKUSDT,LUNCUSDC,beta_out_of_range (46555.40)
+DOGEUSDC,SOLUSDC,beta_out_of_range (0.00)
+PYTHUSDT,SHIBUSDC,beta_out_of_range (67741.70)
+APEUSDT,SHIBUSDT,beta_out_of_range (250032.70)
+ETCUSDT,RVNUSDT,beta_out_of_range (531.67)
+FLOKIUSDT,LOOKSUSDT,beta_out_of_range (0.00)
+SHIBUSDT,USTCUSDT,beta_out_of_range (0.00)
+AXSUSDT,FLOKIUSDT,beta_out_of_range (200690.45)
+DOGEUSDC,SOLUSDT,beta_out_of_range (0.00)
+GALAUSDT,SHIBUSDC,beta_out_of_range (4890.62)
+GALAUSDT,SHIBUSDT,beta_out_of_range (4879.02)
+ACHUSDT,YFIUSDT,beta_out_of_range (0.00)
+APEUSDC,SHIBUSDC,beta_out_of_range (250812.89)
+ATOMUSDT,LUNCUSDT,beta_out_of_range (43154.05)
+FLOKIUSDT,SNXUSDT,beta_out_of_range (0.00)
+HFTUSDT,SPELLUSDT,beta_out_of_range (432.09)
+DOTUSDC,ZILUSDT,beta_out_of_range (309.51)
+DOTUSDC,SLPUSDT,beta_out_of_range (2527.94)
+HBARUSDT,YFIUSDT,beta_out_of_range (0.00)
+GLMRUSDT,SPELLUSDT,beta_out_of_range (760.83)
+DOTUSDT,ZILUSDT,beta_out_of_range (309.78)
+FLOKIUSDT,SUSHIUSDT,beta_out_of_range (0.00)
+BELUSDT,SPELLUSDT,beta_out_of_range (910.14)
+FLOKIUSDT,XLMUSDT,beta_out_of_range (0.00)
+ADAEUR,LUNCUSDC,beta_out_of_range (2060.44)
+ONEUSDT,SHIBUSDC,beta_out_of_range (2225.57)
+DOTUSDC,LADYSUSDT,beta_out_of_range (42179215.08)
+APEUSDC,SHIBUSDT,beta_out_of_range (250112.14)
+DOTUSDT,SLPUSDT,beta_out_of_range (2528.51)
+AAVEUSDT,DOGEUSDT,beta_out_of_range (672.24)
+DOTUSDT,LADYSUSDT,beta_out_of_range (42216456.64)
+ONEUSDT,SHIBUSDT,beta_out_of_range (2220.48)
+SHIBUSDT,WAXPUSDT,beta_out_of_range (0.00)
+SHIBUSDC,WAXPUSDT,beta_out_of_range (0.00)
+HBARUSDT,SHIBUSDC,beta_out_of_range (8292.58)
+FLOKIUSDT,XLMUSDC,beta_out_of_range (0.00)
+LUNCUSDT,ZRXUSDT,beta_out_of_range (0.00)
+HFTUSDC,SPELLUSDT,beta_out_of_range (431.63)
+LTCUSDC,PEPEUSDT,beta_out_of_range (30130139.85)
+SHIBUSDC,XLMUSDC,beta_out_of_range (0.00)
+SHIBUSDC,XLMUSDT,beta_out_of_range (0.00)
+AAVEUSDT,ZRXUSDT,beta_out_of_range (215.67)
+AAVEUSDT,DOGEUSDC,beta_out_of_range (672.68)
+ETCUSDT,XLMUSDC,beta_out_of_range (159.92)
+HBARUSDT,SHIBUSDT,beta_out_of_range (8255.58)
+SHIBUSDT,XLMUSDC,beta_out_of_range (0.00)
+SHIBUSDT,XLMUSDT,beta_out_of_range (0.00)
+LUNCUSDC,PYTHUSDT,beta_out_of_range (0.00)
+LTCUSDT,PEPEUSDT,beta_out_of_range (30172550.38)
+LINKUSDC,WAXPUSDT,beta_out_of_range (153.93)
+LINKUSDT,WAXPUSDT,beta_out_of_range (154.15)
+LUNCUSDC,OMGUSDT,beta_out_of_range (0.00)
+GALAUSDT,LUNCUSDT,beta_out_of_range (166.87)
+DYDXUSDT,SHIBUSDC,beta_out_of_range (455683.60)
+DOGEUSDT,SOLEUR,beta_out_of_range (0.00)
+ALGOUSDT,PEPEUSDT,beta_out_of_range (165466.79)
+DOTUSDC,WAXPUSDT,beta_out_of_range (112.99)
+DOGEUSDC,SOLEUR,beta_out_of_range (0.00)
+DYDXUSDT,SHIBUSDT,beta_out_of_range (454418.73)
+DOTUSDT,WAXPUSDT,beta_out_of_range (113.10)
+FLOKIUSDT,TWTUSDT,beta_out_of_range (0.00)
+SNXUSDT,YFIUSDT,beta_out_of_range (0.00)
+MNTBTC,MNTUSDT,beta_out_of_range (0.00)
+PEPEUSDT,PYTHUSDT,beta_out_of_range (0.00)
+YFIUSDT,ZILUSDT,beta_out_of_range (170414.14)
+IMXUSDT,PEPEUSDT,beta_out_of_range (1524999.61)
+FXSUSDT,RVNUSDT,beta_out_of_range (238.86)
+LOOKSUSDT,YFIUSDT,beta_out_of_range (0.00)
+QNTUSDT,ROSEUSDT,beta_out_of_range (1225.48)
+IDUSDT,SPELLUSDT,beta_out_of_range (267.91)
+AAVEUSDT,DOGEEUR,beta_out_of_range (751.20)
+MANAUSDT,SLPUSDT,beta_out_of_range (162.46)
+CHZUSDT,XECUSDT,beta_out_of_range (1344.35)
+COMPUSDT,ONEUSDT,beta_out_of_range (2325.43)
+MANAUSDC,SLPUSDT,beta_out_of_range (162.38)
+AXSUSDT,JASMYUSDT,beta_out_of_range (1030.80)
+LUNCUSDC,ZRXUSDT,beta_out_of_range (0.00)
+LTCEUR,PEPEUSDT,beta_out_of_range (25511893.41)
+JSTUSDT,YFIUSDT,beta_out_of_range (0.00)
+FLOKIUSDT,WLDUSDC,beta_out_of_range (0.00)
+DGBUSDT,PEPEUSDT,beta_out_of_range (5481.55)
+FLOKIUSDT,WLDUSDT,beta_out_of_range (0.00)
+COMPUSDT,LRCUSDT,beta_out_of_range (148.20)
+ETHUSDC,XECUSDT,beta_out_of_range (14276781.46)
+ETHUSDT,XECUSDT,beta_out_of_range (14347441.04)
+CRVUSDT,SLPUSDT,beta_out_of_range (179.77)
+DOTBTC,SANDUSDT,beta_out_of_range (0.00)
+MNTBTC,MNTUSDC,beta_out_of_range (0.00)
+STETHUSDT,XECUSDT,beta_out_of_range (14439526.54)
+EGLDUSDT,SOLBTC,beta_out_of_range (36584.75)
+HFTUSDC,SLPUSDT,beta_out_of_range (125.73)
+LTCUSDC,LUNCUSDT,beta_out_of_range (190881.27)
+HFTUSDT,SLPUSDT,beta_out_of_range (125.68)
+LINKUSDC,TOKENUSDT,beta_out_of_range (134.10)
+CHZUSDT,QNTUSDT,beta_out_of_range (0.00)
+LINKUSDT,TOKENUSDT,beta_out_of_range (134.33)
+NEXOUSDT,WBTCUSDT,beta_out_of_range (0.00)
+CHZUSDC,XECUSDT,beta_out_of_range (1335.54)
+FLOWUSDT,SLPUSDT,beta_out_of_range (275.17)
+BICOUSDT,COMPUSDT,crossings_1
+SOLUSDC,SOLUSDT,half_life_0.0
+ARBUSDC,ARBUSDT,half_life_0.0
+ETHUSDC,ETHUSDT,half_life_0.1
+DOTUSDC,DOTUSDT,half_life_0.0
+ADAUSDC,ADAUSDT,half_life_0.0
+BTCUSDC,BTCUSDT,half_life_0.1
+AVAXUSDC,AVAXUSDT,half_life_0.0
+OPUSDC,OPUSDT,half_life_0.0
+WLDUSDC,WLDUSDT,half_life_0.0
+XRPUSDC,XRPUSDT,half_life_0.0
+SUIUSDC,SUIUSDT,half_life_0.0
+LINKUSDC,LINKUSDT,half_life_0.0
+LTCUSDC,LTCUSDT,half_life_0.0
+LDOUSDC,LDOUSDT,half_life_0.0
+APTUSDC,APTUSDT,half_life_0.0
+DOGEUSDC,DOGEUSDT,half_life_0.0
+ICPUSDC,ICPUSDT,half_life_0.0
+SHIBUSDC,SHIBUSDT,half_life_0.0
+MNTUSDC,MNTUSDT,half_life_0.0
+SOLEUR,SOLUSDT,half_life_0.0
+SOLEUR,SOLUSDC,half_life_0.0
+GMTUSDC,GMTUSDT,half_life_0.0
+MANAUSDC,MANAUSDT,half_life_0.0
+APEUSDC,APEUSDT,half_life_0.0
+TRXUSDC,TRXUSDT,half_life_0.0
+HFTUSDC,HFTUSDT,half_life_0.0
+ETHUSDT,STETHUSDT,half_life_0.0
+ETHUSDC,STETHUSDT,half_life_0.0
+FILUSDC,FILUSDT,half_life_0.0
+SANDUSDC,SANDUSDT,half_life_0.0
+ADAEUR,ADAUSDT,half_life_0.0
+ADAEUR,ADAUSDC,half_life_0.0
+ETHEUR,ETHUSDT,half_life_0.2
+ETHEUR,ETHUSDC,half_life_0.2
+ETHEUR,STETHUSDT,half_life_0.1
+DOGEEUR,DOGEUSDT,half_life_0.1
+DOGEEUR,DOGEUSDC,half_life_0.0
+LTCEUR,LTCUSDT,half_life_0.0
+LTCEUR,LTCUSDC,half_life_0.0
+BTCEUR,BTCUSDT,half_life_0.1
+XRPEUR,XRPUSDT,half_life_0.1
+CHZUSDC,CHZUSDT,half_life_0.0
+BTCEUR,BTCUSDC,half_life_0.1
+XRPEUR,XRPUSDC,half_life_0.1
+XLMUSDC,XLMUSDT,half_life_0.0
+LUNCUSDC,LUNCUSDT,half_life_0.0
+BTCUSDT,WBTCUSDT,half_life_0.0
+BTCUSDC,WBTCUSDT,half_life_0.0
+BTCEUR,WBTCUSDT,half_life_0.0
+USDCEUR,USDTEUR,half_life_0.0
+ADAUSDC,DOGEUSDT,half_life_0.4
+ADAUSDT,DOGEUSDT,half_life_0.4
+METHUSDT,STETHUSDT,half_life_0.0
+ADAUSDC,DOGEUSDC,half_life_0.4
+ETHUSDT,METHUSDT,half_life_0.0
+ETHUSDC,METHUSDT,half_life_0.0
+ADAUSDT,DOGEUSDC,half_life_0.4
+ETHEUR,METHUSDT,half_life_0.0
+ADAEUR,DOGEUSDT,half_life_0.3
+ADAEUR,DOGEUSDC,half_life_0.3
+BTCBRZ,BTCEUR,half_life_0.1
+ADAEUR,DOGEEUR,half_life_0.3
+ADAUSDC,DOGEEUR,half_life_0.4
+ADAUSDT,DOGEEUR,half_life_0.4
+LUNAUSDT,USTCUSDT,half_life_0.4
+BTCBRZ,BTCUSDT,half_life_0.1
+BTCBRZ,BTCUSDC,half_life_0.1
+GALAUSDT,MANAUSDT,half_life_0.3
+GALAUSDT,MANAUSDC,half_life_0.2
+APEUSDT,GALAUSDT,half_life_0.4
+LUNCUSDC,USTCUSDT,half_life_0.2
+APEUSDC,GALAUSDT,half_life_0.3
+APEUSDT,CHZUSDC,half_life_0.4
+BTCBRZ,WBTCUSDT,half_life_0.0
+APEUSDC,CHZUSDC,half_life_0.3
+ANKRUSDT,OMGUSDT,half_life_0.2
+ADAEUR,HBARUSDT,half_life_0.4
+CHZUSDC,MANAUSDT,half_life_0.4
+ANKRUSDT,RVNUSDT,half_life_0.2
+CHZUSDT,MANAUSDC,half_life_0.5
+CHZUSDC,MANAUSDC,half_life_0.3
+CHZUSDC,GALAUSDT,half_life_0.4
+FLOWUSDT,MANAUSDT,half_life_0.2
+FLOWUSDT,MANAUSDC,half_life_0.2
+ADAUSDC,XRPUSDC,half_life_0.2
+ADAUSDT,XRPUSDC,half_life_0.2
+CHZUSDC,ZILUSDT,half_life_0.3
+ADAUSDT,XRPUSDT,half_life_0.2
+ADAUSDC,XRPUSDT,half_life_0.2
+DOGEUSDC,XRPUSDC,half_life_0.3
+DOGEUSDT,XRPUSDC,half_life_0.3
+ANKRUSDT,DOGEEUR,half_life_0.2
+FLOKIUSDT,RVNUSDT,half_life_0.2
+ANKRUSDT,DOGEUSDC,half_life_0.3
+ADAEUR,XRPUSDC,half_life_0.2
+ANKRUSDT,DOGEUSDT,half_life_0.3
+DOGEUSDT,XRPUSDT,half_life_0.3
+DOGEUSDC,XRPUSDT,half_life_0.3
+ADAEUR,XRPUSDT,half_life_0.2
+ACHUSDT,RVNUSDT,half_life_0.2
+ADAEUR,ANKRUSDT,half_life_0.3
+DOGEEUR,XRPUSDC,half_life_0.3
+ADAUSDC,ANKRUSDT,half_life_0.4
+ADAUSDT,ANKRUSDT,half_life_0.4
+DOGEEUR,XRPUSDT,half_life_0.3
+ACHUSDT,SPELLUSDT,half_life_0.2
+DOGEEUR,XRPEUR,half_life_0.2
+GALAUSDT,RVNUSDT,half_life_0.3
+APEUSDT,OMGUSDT,half_life_0.3
+DGBUSDT,ZILUSDT,half_life_0.2
+ADAEUR,XRPEUR,half_life_0.2
+APEUSDT,MANAUSDT,half_life_0.5
+APEUSDC,OMGUSDT,half_life_0.2
+ANKRUSDT,APEUSDT,half_life_0.2
+ANKRUSDT,LOOKSUSDT,half_life_0.2
+APEUSDT,MANAUSDC,half_life_0.4
+ANKRUSDT,DGBUSDT,half_life_0.3
+LUNAUSDT,MEMEUSDT,half_life_0.2
+APEUSDC,MANAUSDT,half_life_0.4
+XLMUSDC,XRPUSDC,half_life_0.3
+APEUSDC,MANAUSDC,half_life_0.3
+ACHUSDT,ZILUSDT,half_life_0.1
+ANKRUSDT,APEUSDC,half_life_0.2
+XLMUSDC,XRPUSDT,half_life_0.3
+ADAUSDT,XRPEUR,half_life_0.2
+ACHUSDT,DGBUSDT,half_life_0.1
+DOGEUSDC,XRPEUR,half_life_0.2
+ADAUSDC,XRPEUR,half_life_0.2
+CHZUSDC,OMGUSDT,half_life_0.3
+DOGEUSDT,XRPEUR,half_life_0.2
+CHZUSDC,RVNUSDT,half_life_0.4
+ADAEUR,RVNUSDT,half_life_0.3
+ADAUSDT,RVNUSDT,half_life_0.4
+ADAUSDC,LINKUSDT,half_life_0.5
+ADAUSDT,LINKUSDT,half_life_0.5
+OMGUSDT,RVNUSDT,half_life_0.2
+CHZUSDT,OMGUSDT,half_life_0.4
+ADAUSDC,RVNUSDT,half_life_0.4
+ADAUSDC,LINKUSDC,half_life_0.4
+ADAUSDT,LINKUSDC,half_life_0.4
+ADAUSDT,ALGOUSDT,half_life_0.4
+ACHUSDT,BELUSDT,half_life_0.2
+ADAEUR,ALGOUSDT,half_life_0.2
+COMPUSDT,TWTUSDT,half_life_0.4
+ADAUSDC,ALGOUSDT,half_life_0.4
+WAXPUSDT,XEMUSDT,half_life_0.4
+APEUSDT,WAXPUSDT,half_life_0.1
+APEUSDC,WAXPUSDT,half_life_0.1
+DOGEUSDC,RVNUSDT,half_life_0.2
+DOGEUSDT,RVNUSDT,half_life_0.2
+TOKENUSDT,WAXPUSDT,half_life_0.5
+CHZUSDT,XTZUSDT,half_life_0.3
+DOGEEUR,RVNUSDT,half_life_0.2
+FLOWUSDT,GALAUSDT,half_life_0.3
+RVNUSDT,TWTUSDT,half_life_0.5
+ACHUSDT,CHZUSDT,half_life_0.3
+GALAUSDT,OMGUSDT,half_life_0.4
+XLMUSDT,XRPEUR,half_life_0.4
+ACHUSDT,ANKRUSDT,half_life_0.2
+APEUSDT,LOOKSUSDT,half_life_0.3
+ADAEUR,LINKUSDT,half_life_0.4
+CHZUSDC,XTZUSDT,half_life_0.3
+ADAEUR,LINKUSDC,half_life_0.4
+APEUSDC,TOKENUSDT,half_life_0.5
+SPELLUSDT,ZILUSDT,half_life_0.2
+ALGOUSDT,DOGEUSDC,half_life_0.2
+ALGOUSDT,DOGEUSDT,half_life_0.2
+ACHUSDT,CHZUSDC,half_life_0.2
+DOGEUSDT,OMGUSDT,half_life_0.4
+ALGOUSDT,DOGEEUR,half_life_0.2
+DOTUSDC,FLOWUSDT,half_life_0.4
+APEUSDC,LOOKSUSDT,half_life_0.3
+DOGEUSDC,OMGUSDT,half_life_0.4
+RVNUSDT,WAXPUSDT,half_life_0.1
+ETHUSDT,LINKUSDC,half_life_inf
+DOTUSDT,FLOWUSDT,half_life_0.4
+ETHUSDT,LINKUSDT,half_life_inf
+XLMUSDC,XRPEUR,half_life_0.3
+ETHUSDC,LINKUSDC,half_life_inf
+ETHUSDC,LINKUSDT,half_life_inf
+DGBUSDT,TOKENUSDT,half_life_0.5
+DOGEEUR,LUNAUSDT,half_life_0.5
+ADAUSDT,CHZUSDT,half_life_0.4
+FLOKIUSDT,SHIBUSDC,half_life_0.2
+ADAUSDC,CHZUSDT,half_life_0.4
+OMGUSDT,WAXPUSDT,half_life_0.2
+FLOKIUSDT,SHIBUSDT,half_life_0.3
+CHZUSDC,FLOWUSDT,half_life_0.3
+DOGEEUR,OMGUSDT,half_life_0.4
+DGBUSDT,SPELLUSDT,half_life_0.3
+FLOKIUSDT,XEMUSDT,half_life_0.2
+CHZUSDT,XRPUSDC,half_life_0.3
+ADAEUR,CHZUSDT,half_life_0.3
+CRVUSDT,TWTUSDT,half_life_0.3
+ACHUSDT,TOKENUSDT,half_life_0.4
+APEUSDT,DOGEUSDC,half_life_0.3
+ADAUSDT,CHZUSDC,half_life_0.3
+CHZUSDT,XRPUSDT,half_life_0.3
+ADAUSDC,CHZUSDC,half_life_0.3
+FLOWUSDT,RVNUSDT,half_life_0.3
+ADAEUR,CHZUSDC,half_life_0.3
+KAVAUSDT,XTZUSDT,half_life_0.1
+APEUSDT,DOGEUSDT,half_life_0.4
+RVNUSDT,ZILUSDT,half_life_0.3
+ANKRUSDT,ZILUSDT,half_life_0.4
+APEUSDT,DOGEEUR,half_life_0.3
+MEMEUSDT,USTCUSDT,half_life_0.2
+RVNUSDT,TOKENUSDT,half_life_0.3
+CHZUSDC,WAXPUSDT,half_life_0.3
+APEUSDC,DOGEUSDC,half_life_0.3
+CHZUSDT,WAVESUSDT,half_life_0.4
+MANABTC,SANDBTC,half_life_0.4
+APEUSDC,DOGEUSDT,half_life_0.3
+RVNUSDT,XRPUSDT,half_life_0.3
+APEUSDC,DOGEEUR,half_life_0.2
+ADAUSDT,OMGUSDT,half_life_0.3
+ADAUSDC,OMGUSDT,half_life_0.3
+ALGOUSDT,ANKRUSDT,half_life_0.3
+RVNUSDT,XRPUSDC,half_life_0.2
+LUNAUSDT,PYTHUSDT,half_life_0.4
+AAVEUSDT,UNIUSDT,half_life_0.5
+FLOWUSDT,OMGUSDT,half_life_0.2
+CHZUSDC,WAVESUSDT,half_life_0.3
+DOTUSDC,MANAUSDT,half_life_0.5
+ANKRUSDT,TOKENUSDT,half_life_0.3
+ADAEUR,OMGUSDT,half_life_0.3
+CHZUSDC,XRPUSDC,half_life_0.2
+OMGUSDT,ZILUSDT,half_life_0.3
+DOTUSDT,MANAUSDT,half_life_0.4
+DGBUSDT,OMGUSDT,half_life_0.2
+ANKRUSDT,WAXPUSDT,half_life_0.2
+CHZUSDC,XRPUSDT,half_life_0.2
+DGBUSDT,RVNUSDT,half_life_0.3
+BELUSDT,UMAUSDT,half_life_0.1
+APEUSDT,FLOWUSDT,half_life_0.4
+GALAUSDT,WAXPUSDT,half_life_0.2
+ACHUSDT,TWTUSDT,half_life_0.2
+ADAEUR,ZRXUSDT,half_life_0.2
+LUNCUSDT,SHIBUSDC,half_life_0.4
+ETHUSDC,FXSUSDT,half_life_inf
+DOTUSDC,MANAUSDC,half_life_0.4
+CHZUSDT,WAXPUSDT,half_life_0.4
+MANAUSDC,ZILUSDT,half_life_0.4
+PEPEUSDT,SHIBUSDC,half_life_0.3
+DOTUSDT,MANAUSDC,half_life_0.4
+LUNCUSDT,SHIBUSDT,half_life_0.4
+PEPEUSDT,SHIBUSDT,half_life_0.3
+JSTUSDT,XEMUSDT,half_life_0.1
+ETHUSDT,FXSUSDT,half_life_inf
+ADAUSDT,ZRXUSDT,half_life_0.3
+APEUSDC,FLOWUSDT,half_life_0.3
+ETHEUR,FXSUSDT,half_life_inf
+APEUSDT,ZILUSDT,half_life_0.5
+ANKRUSDT,ATOMUSDT,half_life_0.4
+ACHUSDT,HFTUSDT,half_life_0.5
+ETCUSDT,LTCUSDC,half_life_inf
+ACHUSDT,UMAUSDT,half_life_0.2
+ANKRUSDT,GALAUSDT,half_life_0.4
+CHZUSDC,ICXUSDT,half_life_0.4
+BELUSDT,TWTUSDT,half_life_0.2
+ETCUSDT,LTCUSDT,half_life_inf
+ADAUSDC,ZRXUSDT,half_life_0.3
+ANKRUSDT,FLOWUSDT,half_life_0.3
+CHZUSDT,XRPEUR,half_life_0.3
+MANAUSDT,RVNUSDT,half_life_0.4
+APEUSDT,XRPUSDC,half_life_0.3
+MANAUSDC,OMGUSDT,half_life_0.3
+RVNUSDT,XRPEUR,half_life_0.2
+WAXPUSDT,ZILUSDT,half_life_0.3
+MANAUSDC,RVNUSDT,half_life_0.3
+FLOWUSDT,WAXPUSDT,half_life_0.2
+ACHUSDT,HFTUSDC,half_life_0.4
+APEUSDC,ZILUSDT,half_life_0.4
+MANAUSDT,OMGUSDT,half_life_0.3
+DOGEEUR,GALAUSDT,half_life_0.5
+APEUSDT,XRPUSDT,half_life_0.3
+ETCUSDT,YFIUSDT,half_life_inf
+BELUSDT,HFTUSDT,half_life_0.3
+ONEUSDT,TWTUSDT,half_life_0.5
+ETHUSDT,LTCUSDC,half_life_inf
+HFTUSDT,TWTUSDT,half_life_0.3
+APEUSDC,XRPUSDC,half_life_0.2
+LOOKSUSDT,RVNUSDT,half_life_0.3
+ETCUSDT,LTCEUR,half_life_inf
+ETHUSDC,LTCUSDC,half_life_inf
+GALAUSDT,XRPUSDT,half_life_0.3
+CHZUSDC,DYDXUSDT,half_life_0.4
+ETHUSDT,LTCUSDT,half_life_inf
+ADAEUR,GALAUSDT,half_life_0.4
+DOGEUSDT,PYTHUSDT,half_life_0.3
+ACHUSDT,OMGUSDT,half_life_0.2
+GALAUSDT,XRPUSDC,half_life_0.3
+CHZUSDT,HFTUSDT,half_life_0.5
+BELUSDT,HFTUSDC,half_life_0.3
+APEUSDC,XRPUSDT,half_life_0.2
+CHZUSDC,COMPUSDT,half_life_0.5
+ETHDAI,ETHUSDC,half_life_0.0
+LTCUSDC,STETHUSDT,half_life_61.7
+ACHUSDT,APEUSDT,half_life_0.2
+DOTUSDC,OMGUSDT,half_life_0.3
+BELUSDT,RVNUSDT,half_life_0.4
+FLOKIUSDT,MYRIAUSDT,half_life_0.2
+LUNCUSDC,SHIBUSDC,half_life_0.2
+ETHDAI,STETHUSDT,half_life_0.0
+ETHDAI,ETHEUR,half_life_0.1
+ETHUSDC,LTCUSDT,half_life_inf
+DOTUSDT,OMGUSDT,half_life_0.3
+CHZUSDC,XRPEUR,half_life_0.2
+DOGEEUR,PYTHUSDT,half_life_0.2
+LUNCUSDC,SHIBUSDT,half_life_0.2
+DOGEEUR,FLOWUSDT,half_life_0.4
+DOTUSDC,SOLUSDT,half_life_0.5
+FLOKIUSDT,LUNCUSDC,half_life_0.4
+ETHDAI,ETHUSDT,half_life_0.0
+DOTUSDT,SOLUSDT,half_life_0.5
+DOTUSDC,SOLUSDC,half_life_0.5
+DOGEUSDT,MEMEUSDT,half_life_0.4
+LTCUSDT,STETHUSDT,half_life_63.6
+DOGEUSDC,PYTHUSDT,half_life_0.3
+ACHUSDT,APEUSDC,half_life_0.2
+DOTUSDT,SOLUSDC,half_life_0.5
+DOGEUSDC,MEMEUSDT,half_life_0.4
+APEUSDT,XRPEUR,half_life_0.2
+DOGEEUR,ZRXUSDT,half_life_0.3
+HFTUSDC,TWTUSDT,half_life_0.3
+ADAEUR,FLOWUSDT,half_life_0.4
+APEUSDC,XEMUSDT,half_life_0.4
+DOGEEUR,MEMEUSDT,half_life_0.3
+ICXUSDT,MANAUSDC,half_life_0.4
+CHZUSDT,ICXUSDT,half_life_0.4
+ACHUSDT,WAXPUSDT,half_life_0.2
+ICXUSDT,MANAUSDT,half_life_0.4
+ICXUSDT,ZILUSDT,half_life_0.4
+LOOKSUSDT,OMGUSDT,half_life_0.3
+CHZUSDT,HFTUSDC,half_life_0.3
+APEUSDC,XRPEUR,half_life_0.2
+ICXUSDT,RVNUSDT,half_life_0.5
+SLPUSDT,XTZUSDT,half_life_0.5
+RVNUSDT,UMAUSDT,half_life_0.4
+APEUSDT,XEMUSDT,half_life_0.4
+DOGEUSDT,ZRXUSDT,half_life_0.4
+ALGOUSDT,ZRXUSDT,half_life_0.4
+CHZUSDC,HFTUSDT,half_life_0.3
+ANKRUSDT,ZRXUSDT,half_life_0.5
+MEMEUSDT,PYTHUSDT,half_life_0.3
+ETHUSDT,LTCEUR,half_life_inf
+DOGEUSDC,ETCUSDT,half_life_inf
+ATOMUSDT,OMGUSDT,half_life_0.3
+ANKRUSDT,XRPUSDC,half_life_0.4
+DOGEUSDC,ZRXUSDT,half_life_0.3
+COMPUSDT,XTZUSDT,half_life_0.3
+DOGEUSDT,ETCUSDT,half_life_inf
+XLMBTC,XRPBTC,half_life_0.3
+LUNCUSDT,MEMEUSDT,half_life_0.2
+ETHUSDC,LTCEUR,half_life_inf
+ANKRUSDT,XRPUSDT,half_life_0.4
+BICOUSDT,TOKENUSDT,half_life_0.3
+APEUSDC,DYDXUSDT,half_life_0.5
+FLOWUSDT,ICXUSDT,half_life_0.4
+ETCUSDT,XRPUSDT,half_life_inf
+CHZUSDC,HFTUSDC,half_life_0.3
+ETCUSDT,XRPUSDC,half_life_inf
+BATUSDT,MANAUSDT,half_life_0.3
+ACHUSDT,GALAUSDT,half_life_0.3
+CHZUSDC,DGBUSDT,half_life_0.3
+JSTUSDT,WAXPUSDT,half_life_0.3
+CHZUSDC,SANDUSDC,half_life_0.5
+COMPUSDT,POLUSDT,half_life_0.3
+ADAEUR,SUSHIUSDT,half_life_0.5
+BATUSDT,MANAUSDC,half_life_0.3
+CHZUSDT,TWTUSDT,half_life_0.2
+HFTUSDT,ZILUSDT,half_life_0.5
+ACHUSDT,FLOWUSDT,half_life_0.2
+DGBUSDT,TWTUSDT,half_life_0.2
+ADAUSDT,APEUSDT,half_life_0.5
+MEMEUSDT,RVNUSDT,half_life_0.5
+DOTUSDC,FIDAUSDT,half_life_0.5
+ADAUSDC,APEUSDT,half_life_0.5
+ALGOUSDT,PYTHUSDT,half_life_0.3
+CRVUSDT,LRCUSDT,half_life_0.4
+DOTUSDT,FIDAUSDT,half_life_0.5
+ADAUSDC,XLMUSDC,half_life_0.4
+DGBUSDT,HFTUSDC,half_life_0.4
+ADAUSDT,XLMUSDC,half_life_0.4
+APEUSDC,ICXUSDT,half_life_0.5
+LRCUSDT,TWTUSDT,half_life_0.4
+ATOMUSDT,MANAUSDT,half_life_0.4
+ANKRUSDT,XRPEUR,half_life_0.3
+DOGEUSDT,USTCUSDT,half_life_0.3
+DOGEUSDC,DYDXUSDT,half_life_0.4
+ADAEUR,XLMUSDT,half_life_0.5
+CHZUSDT,DGBUSDT,half_life_0.3
+ADAEUR,XLMUSDC,half_life_0.4
+CHZUSDC,TWTUSDT,half_life_0.2
+HFTUSDT,UMAUSDT,half_life_0.2
+TWTUSDT,ZILUSDT,half_life_0.3
+ADAUSDC,ETCUSDT,half_life_inf
+ADAUSDT,ETCUSDT,half_life_inf
+DOGEUSDC,USTCUSDT,half_life_0.2
+ETHDAI,METHUSDT,half_life_0.0
+ATOMUSDT,MANAUSDC,half_life_0.4
+IDUSDT,UMAUSDT,half_life_0.5
+DGBUSDT,SNXUSDT,half_life_0.4
+ADAUSDT,APEUSDC,half_life_0.4
+HFTUSDC,TOKENUSDT,half_life_0.4
+ADAEUR,APEUSDT,half_life_0.3
+DOGEUSDT,DYDXUSDT,half_life_0.5
+ADAUSDC,APEUSDC,half_life_0.4
+LINKUSDT,XRPUSDC,half_life_0.4
+LINKUSDT,XRPUSDT,half_life_0.4
+MANAUSDC,WAXPUSDT,half_life_0.2
+ACHUSDT,DOTUSDT,half_life_0.4
+ACHUSDT,DOTUSDC,half_life_0.4
+HFTUSDC,ZILUSDT,half_life_0.3
+LINKUSDC,XRPUSDC,half_life_0.3
+OMGUSDT,TWTUSDT,half_life_0.3
+LINKUSDC,XRPUSDT,half_life_0.3
+HFTUSDC,UMAUSDT,half_life_0.1
+ADAUSDT,CRVUSDT,half_life_0.5
+MANAUSDT,WAXPUSDT,half_life_0.2
+QTUMUSDT,XLMUSDT,half_life_0.4
+ADAUSDC,CRVUSDT,half_life_0.5
+ANKRUSDT,MANAUSDC,half_life_0.5
+DOGEEUR,WAXPUSDT,half_life_0.2
+DOGEEUR,ETCUSDT,half_life_inf
+PYTHUSDT,USTCUSDT,half_life_0.2
+ADAEUR,APEUSDC,half_life_0.3
+STGUSDT,TWTUSDT,half_life_0.3
+DOGEUSDC,WAXPUSDT,half_life_0.3
+FLOKIUSDT,JSTUSDT,half_life_0.2
+ANKRUSDT,BICOUSDT,half_life_0.3
+DOGEUSDT,WAXPUSDT,half_life_0.3
+GALAUSDT,LOOKSUSDT,half_life_0.5
+ACHUSDT,XTZUSDT,half_life_0.5
+QTUMUSDT,XLMUSDC,half_life_0.3
+BELUSDT,C98USDT,half_life_0.5
+ATOMUSDT,XRPUSDC,half_life_0.4
+BATUSDT,GALAUSDT,half_life_0.4
+DOGEEUR,DYDXUSDT,half_life_0.4
+DOTBTC,JASMYUSDT,half_life_0.3
+ATOMUSDT,XRPUSDT,half_life_0.4
+GALAUSDT,XRPEUR,half_life_0.2
+TWTUSDT,UMAUSDT,half_life_0.2
+MEMEUSDT,TOKENUSDT,half_life_0.3
+APEUSDC,TWTUSDT,half_life_0.4
+OMGUSDT,XRPUSDC,half_life_0.3
+PYTHUSDT,RVNUSDT,half_life_0.4
+CHZUSDC,KAVAUSDT,half_life_0.3
+NEARUSDT,SANDUSDC,half_life_0.5
+ADAEUR,CRVUSDT,half_life_0.4
+MAGICUSDT,STGUSDT,half_life_0.5
+OMGUSDT,XRPUSDT,half_life_0.3
+ALGOUSDT,APEUSDT,half_life_0.5
+GLMRUSDT,KSMUSDT,half_life_0.5
+ACHUSDT,MANAUSDT,half_life_0.2
+CRVUSDT,OMGUSDT,half_life_0.5
+CHZUSDC,CRVUSDT,half_life_0.3
+ALGOUSDT,RVNUSDT,half_life_0.3
+ANKRUSDT,MEMEUSDT,half_life_0.3
+ACHUSDT,MANAUSDC,half_life_0.2
+LTCEUR,YFIUSDT,half_life_0.5
+ICXUSDT,WAXPUSDT,half_life_0.4
+CHZUSDT,KAVAUSDT,half_life_0.4
+GALAUSDT,JASMYUSDT,half_life_0.3
+ADAUSDT,XTZUSDT,half_life_0.4
+DOTUSDC,XRPEUR,half_life_0.4
+ADAUSDC,XTZUSDT,half_life_0.4
+HFTUSDT,MAGICUSDT,half_life_0.5
+CHZUSDT,CRVUSDT,half_life_0.4
+ACHUSDT,C98USDT,half_life_0.5
+DOGEEUR,USTCUSDT,half_life_0.2
+BATUSDT,CHZUSDT,half_life_0.4
+ALGOUSDT,APEUSDC,half_life_0.4
+DOTUSDT,XRPEUR,half_life_0.4
+PYTHUSDT,WAXPUSDT,half_life_0.4
+ANKRUSDT,SPELLUSDT,half_life_0.4
+ADAEUR,ETCUSDT,half_life_44.2
+OMGUSDT,XEMUSDT,half_life_0.4
+LINKUSDT,SNXUSDT,half_life_0.4
+LINKUSDC,SNXUSDT,half_life_0.4
+RVNUSDT,ZRXUSDT,half_life_0.5
+HFTUSDC,OMGUSDT,half_life_0.4
+ICXUSDT,QTUMUSDT,half_life_0.4
+LUNCUSDC,MEMEUSDT,half_life_0.1
+HFTUSDC,MAGICUSDT,half_life_0.4
+BATUSDT,CHZUSDC,half_life_0.3
+FLOWUSDT,ZILUSDT,half_life_0.4
+CHZUSDC,SPELLUSDT,half_life_0.3
+DYDXUSDT,TOKENUSDT,half_life_0.5
+TWTUSDT,XTZUSDT,half_life_0.3
+CHZUSDT,SPELLUSDT,half_life_0.3
+FIDAUSDT,RVNUSDT,half_life_0.2
+ADAEUR,XTZUSDT,half_life_0.4
+CYBERUSDT,IDUSDT,half_life_0.5
+ETCUSDT,XRPEUR,half_life_inf
+POLUSDT,XTZUSDT,half_life_0.3
+APEUSDC,PYTHUSDT,half_life_0.5
+CHZUSDT,UMAUSDT,half_life_0.2
+ADAEUR,MYRIAUSDT,half_life_0.3
+HFTUSDC,RVNUSDT,half_life_0.5
+OMGUSDT,XRPEUR,half_life_0.2
+ALGOUSDT,WAXPUSDT,half_life_0.3
+ATOMUSDT,XRPEUR,half_life_0.4
+DOGEUSDC,LOOKSUSDT,half_life_0.4
+DOGEUSDT,LOOKSUSDT,half_life_0.4
+ADAEUR,WLDUSDC,half_life_0.4
+DOGEEUR,LOOKSUSDT,half_life_0.3
+BELUSDT,CHZUSDT,half_life_0.3
+ADAUSDC,DYDXUSDT,half_life_0.5
+ROSEUSDT,SANDUSDT,half_life_0.3
+ADAUSDT,DYDXUSDT,half_life_0.5
+ADAEUR,WLDUSDT,half_life_0.4
+CHZUSDC,UMAUSDT,half_life_0.2
+ALGOUSDT,TOKENUSDT,half_life_0.5
+APEUSDC,IMXUSDT,half_life_0.5
+LRCUSDT,SUSHIUSDT,half_life_0.3
+LUNAUSDT,TOKENUSDT,half_life_0.4
+MEMEUSDT,MYRIAUSDT,half_life_0.2
+ACHUSDT,ICXUSDT,half_life_0.4
+SUSHIUSDT,XLMUSDT,half_life_0.3
+BELUSDT,CHZUSDC,half_life_0.2
+SLPUSDT,TWTUSDT,half_life_0.4
+ICXUSDT,XTZUSDT,half_life_0.2
+OMGUSDT,ZRXUSDT,half_life_0.4
+SLPUSDT,UMAUSDT,half_life_0.3
+LINKUSDT,XRPEUR,half_life_0.4
+ROSEUSDT,SANDUSDC,half_life_0.3
+KAVAUSDT,TWTUSDT,half_life_0.3
+ALGOUSDT,OMGUSDT,half_life_0.5
+ANKRUSDT,PYTHUSDT,half_life_0.3
+LINKUSDC,XRPEUR,half_life_0.3
+BELUSDT,FETUSDT,half_life_0.5
+ADAUSDT,MYRIAUSDT,half_life_0.4
+ARUSDT,C98USDT,half_life_0.5
+ANKRUSDT,SNXUSDT,half_life_0.5
+JASMYUSDT,RVNUSDT,half_life_0.4
+DOGEUSDC,TOKENUSDT,half_life_0.4
+ANKRUSDT,FIDAUSDT,half_life_0.2
+CHZUSDT,XLMUSDC,half_life_0.4
+DGBUSDT,WAXPUSDT,half_life_0.2
+DOGEUSDT,TOKENUSDT,half_life_0.4
+ADAUSDC,MYRIAUSDT,half_life_0.4
+CHZUSDC,ZRXUSDT,half_life_0.4
+COMPUSDT,UMAUSDT,half_life_0.5
+C98USDT,TWTUSDT,half_life_0.4
+MEMEUSDT,WAXPUSDT,half_life_0.5
+DGBUSDT,ICXUSDT,half_life_0.4
+FLOWUSDT,ZRXUSDT,half_life_0.5
+LINKUSDT,LTCEUR,half_life_0.5
+LINKUSDC,LTCEUR,half_life_0.5
+HFTUSDT,ONEUSDT,half_life_0.5
+ADAEUR,DYDXUSDT,half_life_0.4
+SLPUSDT,ZILUSDT,half_life_0.5
+DOGEEUR,TOKENUSDT,half_life_0.4
+ADAEUR,MANAUSDT,half_life_0.4
+COMPUSDT,STGUSDT,half_life_0.2
+FETUSDT,LUNAUSDT,half_life_0.4
+RVNUSDT,SNXUSDT,half_life_0.4
+GALAUSDT,UMAUSDT,half_life_0.4
+DOTUSDT,TWTUSDT,half_life_0.5
+DOTUSDC,TWTUSDT,half_life_0.5
+ADAEUR,MANAUSDC,half_life_0.4
+RVNUSDT,SPELLUSDT,half_life_0.4
+MBOXUSDT,XTZUSDT,half_life_0.2
+CHZUSDC,XLMUSDT,half_life_0.4
+CHZUSDC,LRCUSDT,half_life_0.5
+BATUSDT,QTUMUSDT,half_life_0.5
+BELUSDT,CRVUSDT,half_life_0.4
+CHZUSDC,XLMUSDC,half_life_0.4
+ACHUSDT,CRVUSDT,half_life_0.5
+HFTUSDT,STGUSDT,half_life_0.4
+ACHUSDT,DOGEEUR,half_life_0.4
+UMAUSDT,ZILUSDT,half_life_0.2
+ARKMUSDT,FETUSDT,half_life_0.4
+ARUSDT,BELUSDT,half_life_0.3
+HFTUSDC,ONEUSDT,half_life_0.3
+ATOMUSDT,FLOWUSDT,half_life_0.5
+ETCUSDT,LINKUSDT,half_life_inf
+SANDUSDC,THETAUSDT,half_life_0.4
+MANAUSDT,XRPUSDC,half_life_0.3
+DYDXUSDT,WAXPUSDT,half_life_0.3
+ETCUSDT,LINKUSDC,half_life_inf
+ADAEUR,WAXPUSDT,half_life_0.2
+GALAUSDT,MYRIAUSDT,half_life_0.3
+DOGEEUR,FIDAUSDT,half_life_0.2
+ACHUSDT,AVAUSDT,half_life_0.4
+MANAUSDT,XRPUSDT,half_life_0.3
+ANKRUSDT,ARUSDT,half_life_0.2
+CHZUSDC,STGUSDT,half_life_0.4
+ACHUSDT,ARUSDT,half_life_0.3
+ADAUSDT,SCRTUSDT,half_life_0.5
+HFTUSDC,LRCUSDT,half_life_0.4
+SUSHIUSDT,XLMUSDC,half_life_0.2
+HFTUSDC,STGUSDT,half_life_0.3
+ANKRUSDT,IMXUSDT,half_life_0.3
+FIDAUSDT,LOOKSUSDT,half_life_0.2
+AGLDUSDT,ONEUSDT,half_life_0.4
+ADAEUR,KAVAUSDT,half_life_0.5
+AVAXUSDC,FIDAUSDT,half_life_0.2
+ADAUSDC,SCRTUSDT,half_life_0.5
+AVAXUSDT,FIDAUSDT,half_life_0.2
+MANAUSDC,XRPUSDC,half_life_0.3
+USTCUSDT,ZRXUSDT,half_life_0.4
+MYRIAUSDT,PYTHUSDT,half_life_0.2
+BELUSDT,GALAUSDT,half_life_0.4
+DOGEUSDT,FIDAUSDT,half_life_0.2
+ADAUSDT,WAXPUSDT,half_life_0.3
+MANAUSDC,XRPUSDT,half_life_0.3
+DOGEUSDC,FIDAUSDT,half_life_0.2
+JASMYUSDT,MANAUSDT,half_life_0.2
+ADAEUR,FIDAUSDT,half_life_0.4
+ADAUSDC,WAXPUSDT,half_life_0.3
+ACHUSDT,DOGEUSDT,half_life_0.4
+ALGOUSDT,ARUSDT,half_life_0.4
+COMPUSDT,KAVAUSDT,half_life_0.4
+ACHUSDT,DYDXUSDT,half_life_0.4
+ARUSDT,ZRXUSDT,half_life_0.5
+ACHUSDT,DOGEUSDC,half_life_0.4
+MYRIAUSDT,WLDUSDT,half_life_0.4
+JASMYUSDT,MANAUSDC,half_life_0.2
+MYRIAUSDT,WLDUSDC,half_life_0.4
+DOTBTC,SANDBTC,half_life_0.5
+ADAEUR,LRCUSDT,half_life_0.5
+ADAEUR,USTCUSDT,half_life_0.4
+CHZUSDC,WLDUSDC,half_life_0.4
+OMGUSDT,UMAUSDT,half_life_0.3
+ADAEUR,SCRTUSDT,half_life_0.5
+FLOWUSDT,XRPUSDT,half_life_0.3
+ETCUSDT,FXSUSDT,half_life_inf
+LTCEUR,SUSHIUSDT,half_life_0.4
+ADAUSDT,FIDAUSDT,half_life_0.4
+METHUSDT,RPLUSDT,half_life_0.4
+CHZUSDC,WLDUSDT,half_life_0.4
+FLOWUSDT,XRPUSDC,half_life_0.3
+ADAUSDC,FIDAUSDT,half_life_0.4
+CRVUSDT,XTZUSDT,half_life_0.5
+SUSHIUSDT,XRPUSDT,half_life_0.4
+CRVUSDT,XRPUSDT,half_life_0.4
+ACHUSDT,LOOKSUSDT,half_life_0.3
+DGBUSDT,DOGEEUR,half_life_0.3
+ADAEUR,LOOKSUSDT,half_life_0.4
+C98USDT,HFTUSDC,half_life_0.4
+ACHUSDT,ADAEUR,half_life_0.4
+SUSHIUSDT,XRPUSDC,half_life_0.4
+JSTUSDT,OMGUSDT,half_life_0.4
+OMGUSDT,SNXUSDT,half_life_0.5
+UMAUSDT,XTZUSDT,half_life_0.3
+CRVUSDT,XRPUSDC,half_life_0.4
+WAXPUSDT,XRPUSDT,half_life_0.2
+LOOKSUSDT,TOKENUSDT,half_life_0.3
+CHZUSDT,JASMYUSDT,half_life_0.5
+DOGEUSDC,IMXUSDT,half_life_0.5
+DGBUSDT,HBARUSDT,half_life_0.5
+WAXPUSDT,XRPUSDC,half_life_0.2
+MANAUSDT,SANDUSDT,pvalue_0.297
+MANAUSDT,SANDUSDC,pvalue_0.263
+MANAUSDC,SANDUSDT,pvalue_0.314
+APEUSDT,CHZUSDT,pvalue_0.520
+APEUSDC,CHZUSDT,pvalue_0.513
+ETCUSDT,ETHUSDT,pvalue_0.320
+ETCUSDT,ETHUSDC,pvalue_0.322
+ETCUSDT,STETHUSDT,pvalue_0.344
+ETCUSDT,ETHEUR,pvalue_0.422
+DOGEUSDT,LUNAUSDT,pvalue_0.628
+ANKRUSDT,HBARUSDT,pvalue_0.314
+DOGEUSDC,LUNAUSDT,pvalue_0.633
+APEUSDT,TOKENUSDT,pvalue_0.740
+GALAUSDT,LUNAUSDT,pvalue_0.264
+ANKRUSDT,LINKUSDC,pvalue_0.580
+ANKRUSDT,LINKUSDT,pvalue_0.592
+DYDXUSDT,LTCUSDC,pvalue_0.557
+OMGUSDT,TOKENUSDT,pvalue_0.602
+LINKUSDC,STETHUSDT,pvalue_0.831
+DYDXUSDT,LTCUSDT,pvalue_0.559
+LINKUSDT,STETHUSDT,pvalue_0.824
+DOTUSDC,HBARUSDT,pvalue_0.259
+DOTUSDT,HBARUSDT,pvalue_0.261
+DYDXUSDT,LTCEUR,pvalue_0.602
+ETCUSDT,METHUSDT,pvalue_0.337
+ONEUSDT,TOKENUSDT,pvalue_0.411
+CHZUSDC,TOKENUSDT,pvalue_0.813
+CHZUSDT,TOKENUSDT,pvalue_0.818
+ADAUSDT,GALAUSDT,pvalue_0.299
+APEUSDT,DOTUSDC,pvalue_0.374
+ADAUSDC,GALAUSDT,pvalue_0.303
+APEUSDT,DOTUSDT,pvalue_0.374
+APEUSDT,LUNAUSDT,pvalue_0.388
+TOKENUSDT,ZILUSDT,pvalue_0.612
+FXSUSDT,STETHUSDT,pvalue_0.711
+APEUSDC,LUNAUSDT,pvalue_0.383
+DYDXUSDT,POLUSDT,pvalue_0.267
+APEUSDC,DOTUSDC,pvalue_0.413
+APEUSDC,DOTUSDT,pvalue_0.412
+ANKRUSDT,LUNAUSDT,pvalue_0.363
+CHZUSDT,LUNAUSDT,pvalue_0.562
+ADAUSDC,LUNAUSDT,pvalue_0.776
+ADAUSDT,LUNAUSDT,pvalue_0.740
+QTUMUSDT,WAXPUSDT,pvalue_0.404
+LINKUSDC,OMGUSDT,pvalue_0.429
+APEUSDT,LINKUSDC,pvalue_0.748
+LINKUSDT,OMGUSDT,pvalue_0.466
+APEUSDT,LINKUSDT,pvalue_0.789
+CHZUSDC,LUNAUSDT,pvalue_0.558
+APEUSDC,LINKUSDC,pvalue_0.797
+BCHUSDT,ETCUSDT,pvalue_0.762
+APEUSDC,LINKUSDT,pvalue_0.778
+LUNAUSDT,RVNUSDT,pvalue_0.620
+GALAUSDT,TOKENUSDT,pvalue_0.641
+XTZUSDT,ZILUSDT,pvalue_0.309
+LTCEUR,STETHUSDT,pvalue_0.963
+ANKRUSDT,SLPUSDT,pvalue_0.262
+HFTUSDT,TOKENUSDT,pvalue_0.721
+APEUSDT,ICXUSDT,pvalue_0.255
+ATOMUSDT,LUNAUSDT,pvalue_0.590
+ADAEUR,LUNAUSDT,pvalue_0.760
+DOTUSDT,WLDUSDC,pvalue_0.533
+ADAEUR,AVAXUSDC,pvalue_0.377
+DOTUSDC,WLDUSDC,pvalue_0.528
+ADAEUR,AVAXUSDT,pvalue_0.380
+DOTUSDT,WLDUSDT,pvalue_0.526
+ADAUSDT,AVAXUSDC,pvalue_0.375
+DOTUSDC,WLDUSDT,pvalue_0.521
+ADAUSDC,AVAXUSDC,pvalue_0.375
+ADAUSDT,AVAXUSDT,pvalue_0.351
+DYDXUSDT,FXSUSDT,pvalue_0.700
+ADAUSDC,AVAXUSDT,pvalue_0.377
+LINKUSDC,LUNAUSDT,pvalue_0.716
+TOKENUSDT,XEMUSDT,pvalue_0.768
+LINKUSDT,LUNAUSDT,pvalue_0.724
+BLURUSDT,XEMUSDT,pvalue_0.621
+RPLUSDT,STETHUSDT,pvalue_0.443
+ETHUSDT,RPLUSDT,pvalue_0.414
+ETHUSDC,RPLUSDT,pvalue_0.417
+APEUSDT,TWTUSDT,pvalue_0.382
+ADAUSDT,PYTHUSDT,pvalue_0.420
+ATOMUSDT,PYTHUSDT,pvalue_0.379
+ADAUSDC,PYTHUSDT,pvalue_0.421
+GALAUSDT,SLPUSDT,pvalue_0.292
+AVAXUSDT,PYTHUSDT,pvalue_0.412
+AVAXUSDT,FETUSDT,pvalue_0.400
+AVAXUSDC,FETUSDT,pvalue_0.399
+ICXUSDT,TOKENUSDT,pvalue_0.781
+GALAUSDT,QTUMUSDT,pvalue_0.348
+AVAXUSDC,PYTHUSDT,pvalue_0.413
+SPELLUSDT,TOKENUSDT,pvalue_0.342
+APEUSDC,BLURUSDT,pvalue_0.914
+ADAEUR,PYTHUSDT,pvalue_0.473
+APEUSDT,POLUSDT,pvalue_0.371
+DYDXUSDT,LINKUSDC,pvalue_0.667
+DYDXUSDT,LINKUSDT,pvalue_0.680
+APEUSDT,BLURUSDT,pvalue_0.893
+EGLDUSDT,MINAUSDT,pvalue_0.254
+ETHEUR,RPLUSDT,pvalue_0.425
+APEUSDC,POLUSDT,pvalue_0.375
+FXSUSDT,METHUSDT,pvalue_0.754
+DOTUSDC,YFIUSDT,pvalue_0.275
+DOTUSDC,LUNAUSDT,pvalue_0.577
+DOTUSDT,LUNAUSDT,pvalue_0.577
+TOKENUSDT,TWTUSDT,pvalue_0.741
+JTOUSDT,PYTHUSDT,pvalue_0.356
+MANAUSDC,TOKENUSDT,pvalue_0.799
+ADAUSDT,WLDUSDC,pvalue_0.469
+MANAUSDT,TOKENUSDT,pvalue_0.790
+ADAUSDT,WLDUSDT,pvalue_0.466
+GALAUSDT,LINKUSDT,pvalue_0.471
+ADAUSDC,WLDUSDC,pvalue_0.473
+C98USDT,TOKENUSDT,pvalue_0.402
+ARBUSDC,RDNTUSDT,pvalue_0.906
+BLURUSDT,IMXUSDT,pvalue_0.425
+ARBUSDT,RDNTUSDT,pvalue_0.906
+OMGUSDT,QTUMUSDT,pvalue_0.465
+GALAUSDT,LINKUSDC,pvalue_0.490
+ADAUSDC,WLDUSDT,pvalue_0.469
+DYDXUSDT,TWTUSDT,pvalue_0.326
+ANKRUSDT,XLMUSDT,pvalue_0.410
+DOGEUSDT,WLDUSDC,pvalue_0.465
+DOGEEUR,WLDUSDC,pvalue_0.486
+DOGEUSDT,WLDUSDT,pvalue_0.465
+PYTHUSDT,ZRXUSDT,pvalue_0.295
+APEUSDT,BATUSDT,pvalue_0.466
+DOGEUSDC,WLDUSDC,pvalue_0.459
+DOGEEUR,WLDUSDT,pvalue_0.488
+ANKRUSDT,XLMUSDC,pvalue_0.390
+FLOWUSDT,TOKENUSDT,pvalue_0.814
+DYDXUSDT,XTZUSDT,pvalue_0.303
+DOGEUSDC,WLDUSDT,pvalue_0.458
+APEUSDT,SNXUSDT,pvalue_0.321
+APEUSDC,SNXUSDT,pvalue_0.389
+LINKUSDC,LOOKSUSDT,pvalue_0.250
+LINKUSDT,LOOKSUSDT,pvalue_0.260
+FIDAUSDT,HBARUSDT,pvalue_0.304
+BICOUSDT,TWTUSDT,pvalue_0.398
+APEUSDC,BATUSDT,pvalue_0.501
+MANAUSDT,QTUMUSDT,pvalue_0.361
+MANAUSDC,QTUMUSDT,pvalue_0.386
+CHZUSDC,LTCEUR,pvalue_0.343
+ADAUSDT,MEMEUSDT,pvalue_0.334
+ADAUSDC,MEMEUSDT,pvalue_0.335
+GALAUSDT,ZRXUSDT,pvalue_0.300
+EGLDUSDT,SOLUSDT,pvalue_0.528
+WAXPUSDT,XLMUSDT,pvalue_0.341
+TRXUSDC,XEMUSDT,pvalue_0.499
+EGLDUSDT,SOLUSDC,pvalue_0.526
+APEUSDT,KAVAUSDT,pvalue_0.251
+WAXPUSDT,XLMUSDC,pvalue_0.320
+APEUSDT,QTUMUSDT,pvalue_0.388
+APEUSDT,HBARUSDT,pvalue_0.519
+CHZUSDC,LTCUSDC,pvalue_0.254
+TOKENUSDT,XTZUSDT,pvalue_0.641
+AAVEUSDT,ETHUSDT,pvalue_0.518
+ADAUSDT,USTCUSDT,pvalue_0.570
+CRVUSDT,TOKENUSDT,pvalue_0.763
+CHZUSDC,LTCUSDT,pvalue_0.257
+ADAUSDC,USTCUSDT,pvalue_0.572
+APEUSDC,QTUMUSDT,pvalue_0.514
+APEUSDT,SANDUSDT,pvalue_0.273
+APEUSDC,HBARUSDT,pvalue_0.583
+AAVEUSDT,ETHUSDC,pvalue_0.519
+APEUSDT,SANDUSDC,pvalue_0.271
+TRXUSDT,XEMUSDT,pvalue_0.495
+POLUSDT,ZILUSDT,pvalue_0.507
+BELUSDT,TOKENUSDT,pvalue_0.769
+EGLDUSDT,IMXUSDT,pvalue_0.434
+EGLDUSDT,SOLEUR,pvalue_0.666
+APEUSDT,XLMUSDT,pvalue_0.601
+AAVEUSDT,THETAUSDT,pvalue_0.387
+AAVEUSDT,STETHUSDT,pvalue_0.511
+CHZUSDT,WLDUSDC,pvalue_0.399
+PENDLEUSDT,RDNTUSDT,pvalue_0.970
+CHZUSDT,ZENUSDT,pvalue_0.723
+CHZUSDT,LTCEUR,pvalue_0.393
+ALGOUSDT,LUNAUSDT,pvalue_0.364
+CHZUSDT,LTCUSDC,pvalue_0.323
+NEARUSDT,WLDUSDT,pvalue_0.281
+APEUSDC,SANDUSDC,pvalue_0.274
+APEUSDC,XLMUSDT,pvalue_0.638
+CHZUSDT,WLDUSDT,pvalue_0.393
+SNXUSDT,TRXUSDC,pvalue_0.475
+NEARUSDT,WLDUSDC,pvalue_0.313
+QTUMUSDT,USTCUSDT,pvalue_0.514
+CHZUSDT,LTCUSDT,pvalue_0.331
+LUNAUSDT,ZRXUSDT,pvalue_0.695
+AAVEUSDT,ETCUSDT,pvalue_0.390
+APEUSDT,ATOMUSDT,pvalue_0.476
+APEUSDT,XLMUSDC,pvalue_0.589
+LUNAUSDT,MANAUSDT,pvalue_0.405
+DYDXUSDT,IDUSDT,pvalue_0.385
+BICOUSDT,DOTUSDC,pvalue_0.259
+TOKENUSDT,UMAUSDT,pvalue_0.702
+APEUSDT,ZENUSDT,pvalue_0.503
+ANKRUSDT,FXSUSDT,pvalue_0.512
+APEUSDC,XLMUSDC,pvalue_0.617
+APEUSDC,ZENUSDT,pvalue_0.478
+LUNAUSDT,MANAUSDC,pvalue_0.400
+SNXUSDT,TRXUSDT,pvalue_0.510
+FILUSDC,KAVAUSDT,pvalue_0.613
+LUNAUSDT,WAXPUSDT,pvalue_0.408
+LUNCUSDT,USTCUSDT,hurst_too_high (0.84)
+FLOKIUSDT,PEPEUSDT,hurst_too_high (0.63)
+ADAUSDT,HBARUSDT,hurst_too_high (0.87)
+ADAUSDC,HBARUSDT,hurst_too_high (0.87)
+AVAXUSDT,SOLUSDT,hurst_too_high (0.77)
+AVAXUSDT,SOLUSDC,hurst_too_high (0.78)
+AVAXUSDC,SOLUSDT,hurst_too_high (0.78)
+AVAXUSDC,SOLUSDC,hurst_too_high (0.78)
+AVAXUSDT,SOLEUR,hurst_too_high (0.78)
+AVAXUSDC,SOLEUR,hurst_too_high (0.79)
+ADAUSDT,ATOMUSDT,hurst_too_high (0.60)
+ADAUSDC,ATOMUSDT,hurst_too_high (0.59)
+ADAEUR,ATOMUSDT,hurst_too_high (0.71)
+DOGEEUR,HBARUSDT,hurst_too_high (0.57)
+XLMUSDT,XRPUSDT,hurst_too_high (0.84)
+DOGEUSDT,HBARUSDT,hurst_too_high (0.75)
+DOGEUSDC,HBARUSDT,hurst_too_high (0.74)
+ADAUSDT,DOTUSDC,hurst_too_high (0.64)
+CHZUSDT,RVNUSDT,hurst_too_high (0.66)
+ADAUSDT,DOTUSDT,hurst_too_high (0.64)
+ADAUSDC,DOTUSDC,hurst_too_high (0.64)
+ADAEUR,DOTUSDC,hurst_too_high (0.59)
+AXSUSDT,FLOWUSDT,hurst_too_high (0.94)
+ADAUSDC,DOTUSDT,hurst_too_high (0.64)
+ADAEUR,DOTUSDT,hurst_too_high (0.59)
+RVNUSDT,XTZUSDT,hurst_too_high (0.64)
+ACHUSDT,BICOUSDT,hurst_too_high (0.61)
+DOGEUSDT,DOTUSDC,hurst_too_high (0.56)
+DOGEUSDT,DOTUSDT,hurst_too_high (0.56)
+DOGEUSDC,DOTUSDC,hurst_too_high (0.56)
+DOTUSDT,SANDUSDT,hurst_too_high (0.70)
+DOGEUSDC,DOTUSDT,hurst_too_high (0.56)
+DOTUSDC,SANDUSDT,hurst_too_high (0.70)
+OMGUSDT,ONEUSDT,hurst_too_high (0.72)
+DOGEEUR,DOTUSDC,hurst_too_high (0.55)
+ATOMUSDT,DOTUSDC,hurst_too_high (0.56)
+DOGEEUR,DOTUSDT,hurst_too_high (0.55)
+ATOMUSDT,DOTUSDT,hurst_too_high (0.56)
+CHZUSDT,SLPUSDT,hurst_too_high (0.75)
+DOTUSDT,SANDUSDC,hurst_too_high (0.69)
+RVNUSDT,SLPUSDT,hurst_too_high (0.74)
+DOTUSDC,SANDUSDC,hurst_too_high (0.69)
+APEUSDT,ONEUSDT,hurst_too_high (0.66)
+CHZUSDC,SLPUSDT,hurst_too_high (0.76)
+ANKRUSDT,TWTUSDT,hurst_too_high (0.94)
+FLOWUSDT,SANDUSDT,hurst_too_high (0.67)
+APEUSDC,ONEUSDT,hurst_too_high (0.65)
+ALGOUSDT,FLOWUSDT,hurst_too_high (0.88)
+HBARUSDT,LINKUSDT,hurst_too_high (0.68)
+BICOUSDT,ZILUSDT,hurst_too_high (0.98)
+FLOKIUSDT,ONEUSDT,hurst_too_high (0.58)
+HBARUSDT,LINKUSDC,hurst_too_high (0.68)
+ALGOUSDT,DOTUSDC,hurst_too_high (0.99)
+FLOWUSDT,SANDUSDC,hurst_too_high (0.68)
+ALGOUSDT,DOTUSDT,hurst_too_high (0.98)
+CHZUSDT,LINKUSDC,hurst_too_high (0.98)
+C98USDT,GLMRUSDT,hurst_too_high (0.66)
+AXSUSDT,OMGUSDT,hurst_too_high (0.88)
+DYDXUSDT,GALAUSDT,hurst_too_high (0.99)
+APEUSDT,AXSUSDT,hurst_too_high (0.61)
+CHZUSDC,LINKUSDC,hurst_too_high (0.94)
+CHZUSDC,LINKUSDT,hurst_too_high (0.98)
+WAXPUSDT,XTZUSDT,hurst_too_high (0.93)
+ADAUSDT,FLOWUSDT,hurst_too_high (0.59)
+GALAUSDT,MEMEUSDT,hurst_too_high (0.72)
+ADAUSDC,FLOWUSDT,hurst_too_high (0.59)
+ALGOUSDT,HBARUSDT,hurst_too_high (0.89)
+ADAUSDT,SUSHIUSDT,hurst_too_high (0.66)
+APEUSDC,AXSUSDT,hurst_too_high (0.60)
+SUSHIUSDT,UNIUSDT,hurst_too_high (0.63)
+ADAUSDC,SUSHIUSDT,hurst_too_high (0.66)
+AAVEUSDT,LINKUSDT,hurst_too_high (0.64)
+QTUMUSDT,XEMUSDT,hurst_too_high (0.68)
+APEUSDT,XTZUSDT,hurst_too_high (0.98)
+LINKUSDT,YFIUSDT,hurst_too_high (0.86)
+LINKUSDC,YFIUSDT,hurst_too_high (0.85)
+AAVEUSDT,LINKUSDC,hurst_too_high (0.64)
+GALAUSDT,POLUSDT,hurst_too_high (0.67)
+LUNAUSDT,OMGUSDT,hurst_too_high (0.81)
+CRVUSDT,LINKUSDT,hurst_too_high (1.00)
+ANKRUSDT,ONEUSDT,hurst_too_high (0.56)
+ADAUSDC,XLMUSDT,hurst_too_high (0.98)
+ADAUSDT,XLMUSDT,hurst_too_high (0.98)
+RVNUSDT,XLMUSDT,hurst_too_high (0.96)
+GALAUSDT,ONEUSDT,hurst_too_high (0.88)
+BICOUSDT,GLMRUSDT,hurst_too_high (0.55)
+DGBUSDT,HFTUSDT,hurst_too_high (0.56)
+DOTUSDC,SOLEUR,hurst_too_high (0.69)
+DOTUSDT,SOLEUR,hurst_too_high (0.69)
+MANAUSDT,XTZUSDT,hurst_too_high (0.94)
+MANAUSDC,XTZUSDT,hurst_too_high (0.93)
+ALGOUSDT,LTCEUR,hurst_too_high (0.82)
+MANAUSDC,ROSEUSDT,hurst_too_high (0.80)
+DOGEUSDC,LTCUSDC,hurst_too_high (0.91)
+DOGEUSDT,LTCUSDC,hurst_too_high (0.91)
+DOGEUSDT,LTCUSDT,hurst_too_high (0.94)
+DOGEUSDC,LTCUSDT,hurst_too_high (0.94)
+RVNUSDT,XLMUSDC,hurst_too_high (0.99)
+ANKRUSDT,LRCUSDT,hurst_too_high (0.57)
+CRVUSDT,SUSHIUSDT,hurst_too_high (0.73)
+LTCUSDC,YFIUSDT,hurst_too_high (0.83)
+NEARUSDT,SANDUSDT,hurst_too_high (0.64)
+COMPUSDT,UNIUSDT,hurst_too_high (0.77)
+LTCUSDT,YFIUSDT,hurst_too_high (0.83)
+AAVEUSDT,SUSHIUSDT,hurst_too_high (0.59)
+DOGEUSDC,LTCEUR,hurst_too_high (0.90)
+DOTUSDC,THETAUSDT,hurst_too_high (0.61)
+C98USDT,DGBUSDT,hurst_too_high (0.87)
+DOTUSDT,THETAUSDT,hurst_too_high (0.61)
+DOGEUSDT,LTCEUR,hurst_too_high (0.91)
+AXSUSDT,PYTHUSDT,hurst_too_high (0.69)
+ANKRUSDT,MANAUSDT,hurst_too_high (0.97)
+FLOWUSDT,ONEUSDT,hurst_too_high (0.57)
+ATOMUSDT,FETUSDT,hurst_too_high (0.90)
+DOGEUSDT,MANAUSDT,hurst_too_high (0.55)
+MANAUSDT,QNTUSDT,hurst_too_high (0.61)
+KAVAUSDT,RVNUSDT,hurst_too_high (0.76)
+MANAUSDC,QNTUSDT,hurst_too_high (0.61)
+DOGEUSDC,MANAUSDT,hurst_too_high (0.55)
+ANKRUSDT,AXSUSDT,hurst_too_high (0.59)
+HBARUSDT,XRPEUR,hurst_too_high (0.88)
+DOGEEUR,LTCEUR,hurst_too_high (0.93)
+ACHUSDT,ONEUSDT,hurst_too_high (0.55)
+LINKUSDT,ZRXUSDT,hurst_too_high (0.61)
+ACHUSDT,AXSUSDT,hurst_too_high (0.55)
+GALAUSDT,ICXUSDT,hurst_too_high (0.83)
+ARKMUSDT,IDUSDT,hurst_too_high (0.92)
+LINKUSDC,ZRXUSDT,hurst_too_high (0.61)
+MANAUSDT,ZRXUSDT,hurst_too_high (0.92)
+MANAUSDC,ZRXUSDT,hurst_too_high (0.91)
+GALAUSDT,ZILUSDT,hurst_too_high (0.90)
+ALGOUSDT,GALAUSDT,hurst_too_high (0.62)
+APEUSDT,PYTHUSDT,hurst_too_high (0.56)
+ACHUSDT,LRCUSDT,hurst_too_high (0.58)
+APEUSDT,MEMEUSDT,hurst_too_high (0.66)
+ACHUSDT,KAVAUSDT,hurst_too_high (1.00)
+HBARUSDT,XRPUSDT,hurst_too_high (0.86)
+DOTUSDT,YFIUSDT,hurst_too_high (0.95)
+MANAUSDT,PYTHUSDT,hurst_too_high (0.56)
+DOGEEUR,ZILUSDT,hurst_too_high (0.56)
+ANKRUSDT,THETAUSDT,hurst_too_high (0.61)
+HBARUSDT,XRPUSDC,hurst_too_high (0.87)
+AVAXUSDT,GLMRUSDT,hurst_too_high (0.59)
+AVAXUSDC,GLMRUSDT,hurst_too_high (0.59)
+APEUSDC,MEMEUSDT,hurst_too_high (0.66)
+DOGEUSDC,XLMUSDT,hurst_too_high (0.97)
+ARBUSDC,PENDLEUSDT,hurst_too_high (0.73)
+CHZUSDT,IDUSDT,hurst_too_high (0.56)
+CRVUSDT,DYDXUSDT,hurst_too_high (0.58)
+ARBUSDT,PENDLEUSDT,hurst_too_high (0.73)
+ADAEUR,WOOUSDT,hurst_too_high (0.72)
+ALGOUSDT,ATOMUSDT,hurst_too_high (0.65)
+RVNUSDT,SUSHIUSDT,hurst_too_high (0.60)
+DOGEEUR,LTCUSDC,hurst_too_high (0.93)
+MANAUSDC,PYTHUSDT,hurst_too_high (0.55)
+DOGEUSDT,XLMUSDT,hurst_too_high (0.97)
+ANKRUSDT,DYDXUSDT,hurst_too_high (0.57)
+CHZUSDT,XLMUSDT,hurst_too_high (0.98)
+DOGEEUR,LTCUSDT,hurst_too_high (0.96)
+JASMYUSDT,PYTHUSDT,hurst_too_high (0.65)
+DOGEUSDC,ZILUSDT,hurst_too_high (0.58)
+AVAXUSDC,AXSUSDT,hurst_too_high (0.63)
+NEARUSDT,PYTHUSDT,hurst_too_high (0.55)
+AVAXUSDT,AXSUSDT,hurst_too_high (0.63)
+ANKRUSDT,STGUSDT,hurst_too_high (0.65)
+FLOKIUSDT,ZILUSDT,hurst_too_high (0.72)
+DOGEUSDT,ZILUSDT,hurst_too_high (0.58)
+WAVESUSDT,ZILUSDT,hurst_too_high (0.57)
+COMPUSDT,DYDXUSDT,hurst_too_high (0.70)
+DOGEUSDT,SUSHIUSDT,hurst_too_high (0.57)
+MANAUSDT,POLUSDT,hurst_too_high (0.62)
+DOGEUSDC,SUSHIUSDT,hurst_too_high (0.57)
+BICOUSDT,C98USDT,hurst_too_high (0.70)
+CRVUSDT,STGUSDT,hurst_too_high (0.59)
+BELUSDT,COMPUSDT,hurst_too_high (0.68)
+CHZUSDC,IDUSDT,hurst_too_high (0.56)
+ACHUSDT,IDUSDT,hurst_too_high (0.73)
+ALGOUSDT,DYDXUSDT,hurst_too_high (1.00)
+ACHUSDT,SLPUSDT,hurst_too_high (0.74)
+MANAUSDC,POLUSDT,hurst_too_high (0.61)
+AVAXUSDC,EGLDUSDT,hurst_too_high (0.66)
+C98USDT,ONEUSDT,hurst_too_high (1.00)
+AVAXUSDT,EGLDUSDT,hurst_too_high (0.66)
+ADAUSDT,MANAUSDT,hurst_too_high (0.63)
+ADAUSDC,MANAUSDT,hurst_too_high (0.63)
+GALAUSDT,TWTUSDT,hurst_too_high (0.93)
+KAVAUSDT,WAXPUSDT,hurst_too_high (0.61)
+CHZUSDC,HBARUSDT,hurst_too_high (0.97)
+GALAUSDT,WLDUSDC,hurst_too_high (0.59)
+CHZUSDT,SUSHIUSDT,hurst_too_high (0.56)
+ADAUSDT,MANAUSDC,hurst_too_high (0.63)
+BELUSDT,BICOUSDT,hurst_too_high (0.62)
+CRVUSDT,LOOKSUSDT,hurst_too_high (0.56)
+HBARUSDT,ZRXUSDT,hurst_too_high (0.65)
+MEMEUSDT,OMGUSDT,hurst_too_high (0.84)
+ADAUSDC,MANAUSDC,hurst_too_high (0.63)
+AVAXUSDT,NEARUSDT,hurst_too_high (0.68)
+GALAUSDT,WLDUSDT,hurst_too_high (0.58)
+CHZUSDT,MEMEUSDT,hurst_too_high (0.55)
+AVAXUSDC,NEARUSDT,hurst_too_high (0.67)
+CHZUSDT,HBARUSDT,hurst_too_high (0.96)
+MANAUSDC,ONEUSDT,hurst_too_high (0.62)
+CRVUSDT,MANAUSDT,hurst_too_high (0.66)
+CHZUSDC,QTUMUSDT,hurst_too_high (0.64)
+DOGEEUR,XLMUSDT,hurst_too_high (0.99)
+CHZUSDT,QTUMUSDT,hurst_too_high (0.65)
+DOTUSDC,LOOKSUSDT,hurst_too_high (0.57)
+CRVUSDT,LTCEUR,hurst_too_high (0.69)
+KAVAUSDT,OMGUSDT,hurst_too_high (0.60)
+SANDUSDT,THETAUSDT,hurst_too_high (0.61)
+DOGEUSDC,FXSUSDT,hurst_too_high (0.85)
+DOTUSDT,LOOKSUSDT,hurst_too_high (0.57)
+APEUSDT,LRCUSDT,hurst_too_high (0.60)
+MANAUSDT,ONEUSDT,hurst_too_high (0.61)
+GALAUSDT,USTCUSDT,hurst_too_high (0.61)
+KAVAUSDT,ZILUSDT,hurst_too_high (0.58)
+ARKMUSDT,TWTUSDT,hurst_too_high (0.88)
+DOGEUSDT,ONEUSDT,hurst_too_high (0.61)
+DOGEUSDC,ONEUSDT,hurst_too_high (0.62)
+DOGEUSDT,FXSUSDT,hurst_too_high (0.85)
+CRVUSDT,MANAUSDC,hurst_too_high (0.66)
+ADAUSDT,LTCUSDC,hurst_too_high (0.97)
+APEUSDC,LRCUSDT,hurst_too_high (0.61)
+ADAUSDC,LTCUSDC,hurst_too_high (0.94)
+ADAUSDC,LTCUSDT,hurst_too_high (0.92)
+LOOKSUSDT,SLPUSDT,hurst_too_high (0.75)
+DOGEEUR,FXSUSDT,hurst_too_high (0.76)
+DOGEEUR,SUSHIUSDT,hurst_too_high (0.57)
+APEUSDC,KAVAUSDT,hurst_too_high (0.88)
+OMGUSDT,PYTHUSDT,hurst_too_high (0.65)
+CRVUSDT,GALAUSDT,hurst_too_high (0.57)
+ADAUSDT,LRCUSDT,hurst_too_high (0.60)
+ADAUSDC,LRCUSDT,hurst_too_high (0.60)
+MAGICUSDT,ZILUSDT,hurst_too_high (0.63)
+CHZUSDT,PYTHUSDT,hurst_too_high (0.57)
+ATOMUSDT,CRVUSDT,hurst_too_high (0.62)
+HBARUSDT,TWTUSDT,hurst_too_high (0.70)
+DOGEEUR,ONEUSDT,hurst_too_high (0.60)
+DOGEUSDC,WOOUSDT,hurst_too_high (0.60)
+ETHWUSDT,TOKENUSDT,hurst_too_high (0.64)
+OMGUSDT,USTCUSDT,hurst_too_high (0.68)
+DYDXUSDT,MEMEUSDT,hurst_too_high (0.66)
+MANAUSDT,THETAUSDT,hurst_too_high (0.56)
+APEUSDT,COMPUSDT,hurst_too_high (0.92)
+CRVUSDT,LTCUSDC,hurst_too_high (0.71)
+CRVUSDT,DOTUSDC,hurst_too_high (0.65)
+ADAUSDT,KAVAUSDT,hurst_too_high (0.67)
+DOGEUSDT,WOOUSDT,hurst_too_high (0.60)
+CRVUSDT,DOTUSDT,hurst_too_high (0.65)
+OMGUSDT,WLDUSDC,hurst_too_high (0.58)
+CHZUSDT,STGUSDT,hurst_too_high (0.55)
+ADAEUR,QTUMUSDT,hurst_too_high (0.71)
+CHZUSDC,SUSHIUSDT,hurst_too_high (0.56)
+ADAEUR,RUNEUSDT,hurst_too_high (0.56)
+DOGEEUR,ICXUSDT,hurst_too_high (0.74)
+ADAUSDC,KAVAUSDT,hurst_too_high (0.67)
+APEUSDC,COMPUSDT,hurst_too_high (0.90)
+DOGEUSDT,FETUSDT,hurst_too_high (0.96)
+OMGUSDT,WLDUSDT,hurst_too_high (0.58)
+STGUSDT,WAXPUSDT,hurst_too_high (0.77)
+IDUSDT,TWTUSDT,hurst_too_high (0.59)
+BELUSDT,ONEUSDT,hurst_too_high (0.59)
+MANAUSDC,THETAUSDT,hurst_too_high (0.56)
+MEMEUSDT,XEMUSDT,hurst_too_high (0.81)
+DOGEUSDC,FETUSDT,hurst_too_high (0.98)
+ADAUSDC,FXSUSDT,hurst_too_high (0.71)
+LOOKSUSDT,XRPUSDT,hurst_too_high (0.81)
+DOGEEUR,THETAUSDT,hurst_too_high (0.55)
+LOOKSUSDT,XRPUSDC,hurst_too_high (0.80)
+AVAXUSDT,FLOWUSDT,hurst_too_high (0.98)
+GRTUSDT,KAVAUSDT,hurst_too_high (0.68)
+AVAXUSDC,FLOWUSDT,hurst_too_high (0.97)
+MEMEUSDT,WLDUSDC,hurst_too_high (0.59)
+DOGEUSDC,XTZUSDT,hurst_too_high (0.57)
+MEMEUSDT,WLDUSDT,hurst_too_high (0.59)
+MYRIAUSDT,QTUMUSDT,hurst_too_high (0.97)
+DOTUSDC,XTZUSDT,hurst_too_high (0.74)
+ADAUSDT,FXSUSDT,hurst_too_high (0.71)
+DOGEUSDT,XTZUSDT,hurst_too_high (0.58)
+ARKMUSDT,WLDUSDC,hurst_too_high (0.56)
+AAVEUSDT,TWTUSDT,hurst_too_high (0.61)
+ARKMUSDT,WLDUSDT,hurst_too_high (0.56)
+KSMUSDT,MOVRUSDT,hurst_too_high (0.55)
+DOGEUSDC,ICXUSDT,hurst_too_high (0.80)
+LINKUSDC,SUSHIUSDT,hurst_too_high (0.58)
+DOTUSDT,XTZUSDT,hurst_too_high (0.74)
+LINKUSDT,SUSHIUSDT,hurst_too_high (0.58)
+ADAUSDT,LTCEUR,hurst_too_high (0.85)
+DOGEUSDT,ICXUSDT,hurst_too_high (0.79)

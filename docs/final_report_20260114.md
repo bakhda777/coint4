@@ -85,6 +85,7 @@
 - fixed (Q3, top-100): `outputs/fixed_run_fast_iter_20260114_top100/`
 - WFA smoke: `coint4/artifacts/wfa/runs/20260114_075638_smoke_fast20_wfa/`
 - WFA smoke repeat: `coint4/artifacts/wfa/runs/20260114_075758_smoke_fast20_wfa_repeat/`
+- WFA smoke после фикса time_stop_limit: `coint4/artifacts/wfa/runs/20260114_084102_smoke_time_stop_clamp/`
 
 Fixed метрики:
 - 1 месяц, top-50: total_pnl 7.61, sharpe_ratio 0.8280, max_drawdown -2.28, trades 1777
@@ -93,6 +94,7 @@ Fixed метрики:
 - Q3, top-100: total_pnl -7785.79, sharpe_ratio -0.2466, max_drawdown -8775.97
 
 WFA smoke (1 шаг): total_pnl -52.40, sharpe_ratio_abs -0.6205, max_drawdown_abs -66.69, trades 394, repeat diff = 0.
+WFA smoke после фикса time_stop_limit (1 шаг): total_pnl -52.40, sharpe_ratio_abs -0.6205, max_drawdown_abs -66.69, trades 394, ошибок `time_stop_limit` нет.
 
 ## Команда production-пайплайна (для согласования)
 ```bash
@@ -117,4 +119,5 @@ WFA smoke (1 шаг): total_pnl -52.40, sharpe_ratio_abs -0.6205, max_drawdown_a
 
 ## Замечания
 - WFA использует gap в 1 бар (15 минут), поэтому предупреждает о буфере 0 дней между train/test. Если нужен дневной буфер - требуется отдельная настройка.
-- В WFA main refresh были ошибки по части пар: `time_stop_limit` < 1 (сигнал о слишком коротком лимите времени удержания).
+- В WFA main refresh были ошибки по части пар: `time_stop_limit` < 1 (до фикса, сигнал о слишком коротком лимите времени удержания).
+- Теперь `time_stop_limit` < 1 автоматически поднимается до 1 с предупреждением; smoke WFA после фикса ошибок не показал.
