@@ -7,7 +7,8 @@ This repo keeps heavy data and generated outputs out of Git to avoid GitHub size
 - run outputs (results, logs, optuna studies)
 - archives (.zip, .tar.gz)
 
-These live under `data/`, `data_downloaded/`, `outputs/`, `results/`, `artifacts/` (including `artifacts/live/logs/`), and `archive/`.
+These live under `coint4/data_downloaded/` (canonical), `data/`, `outputs/`, `results/`, `artifacts/` (including `artifacts/live/logs/`), and `archive/`.
+Root-level `data_downloaded/` is legacy/unused to avoid duplicate datasets.
 
 ## Recommended approach
 1. Use external storage for full datasets (S3/Drive/NAS).

@@ -233,6 +233,26 @@ PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
   --config configs/main_2024.yaml
 ```
 
+Для помесячной структуры (`year=YYYY/month=MM/*.parquet`) используйте режим `monthly`
+— скрипт также переключается на него автоматически при обнаружении такой структуры:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
+  --data-root data_downloaded \
+  --mode monthly \
+  --symbols BTCUSDT \
+  --config configs/main_2024.yaml
+```
+Для строгих порогов качества можно передать `configs/data_quality_strict.yaml`:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
+  --data-root data_downloaded \
+  --mode monthly \
+  --symbols BTCUSDT \
+  --config configs/data_quality_strict.yaml
+```
+Для multi-symbol monthly файлов в отчете поле `symbol` будет `ALL` (или список символов, если фильтровали `--symbols`).
+Схема выводится через `collect_schema()` (без лишней материализации данных).
+
 Для очищенной структуры:
 ```bash
 PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \

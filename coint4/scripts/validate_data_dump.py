@@ -43,6 +43,16 @@ def _iter_symbol_dirs(data_root: Path, symbols: Optional[list[str]]) -> list[Pat
         return result
     return [p for p in sorted(data_root.iterdir()) if p.is_dir() and not p.name.startswith(".")]
 
+def _is_monthly_layout(data_root: Path) -> bool:
+    return any(p.is_dir() and p.name.startswith("year=") for p in data_root.iterdir())
+
+
+def _iter_month_files(data_root: Path) -> Iterable[Path]:
+    for year_dir in sorted(data_root.glob("year=*")):
+        for month_dir in sorted(year_dir.glob("month=*")):
+            for parquet_file in sorted(month_dir.glob("*.parquet")):
+                yield parquet_file
+
 
 def _iter_day_dirs(symbol_dir: Path) -> Iterable[Path]:
     for year_dir in sorted(symbol_dir.glob("year=*")):
@@ -60,6 +70,17 @@ def _read_day(day_dir: Path, mode: str) -> Optional[pd.DataFrame]:
     if not day_dir.exists():
         return None
     return pd.read_parquet(day_dir)
+
+def _read_month(month_file: Path, symbols: Optional[list[str]]) -> Optional[pd.DataFrame]:
+    if not month_file.exists():
+        return None
+    if symbols:
+        try:
+            return pd.read_parquet(month_file, filters=[("symbol", "in", symbols)])
+        except Exception:
+            df = pd.read_parquet(month_file)
+            return df[df["symbol"].isin(symbols)]
+    return pd.read_parquet(month_file)
 
 
 def _calculate_gaps(timestamps: pd.Series, bar_minutes: int) -> tuple[int, int]:
@@ -85,9 +106,9 @@ def main() -> int:
     parser.add_argument("--data-root", default="data_downloaded", help="Data root directory")
     parser.add_argument(
         "--mode",
-        choices=["raw", "clean"],
+        choices=["raw", "clean", "monthly"],
         default="raw",
-        help="Data layout: raw (many files per day) or clean (data.parquet per day)",
+        help="Data layout: raw (many files per day), clean (data.parquet per day), or monthly (year/month parquet)",
     )
     parser.add_argument("--symbols", help="Comma-separated symbols to validate")
     parser.add_argument("--max-days", type=int, default=3, help="Max days per symbol to inspect")
@@ -114,57 +135,80 @@ def main() -> int:
         return 1
 
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()] if args.symbols else None
-    symbol_dirs = _iter_symbol_dirs(data_root, symbols)
-    if not symbol_dirs:
-        print(f"Нет символов для проверки в {data_root}")
-        return 1
+
+    mode = args.mode
+    if mode in {"raw", "clean"} and _is_monthly_layout(data_root):
+        print("Обнаружена помесячная структура, переключаюсь на режим monthly.")
+        mode = "monthly"
+
+    if mode == "monthly":
+        month_files = list(_iter_month_files(data_root))
+        if not month_files:
+            print(f"Нет parquet файлов для проверки в {data_root}")
+            return 1
+    else:
+        symbol_dirs = _iter_symbol_dirs(data_root, symbols)
+        if not symbol_dirs:
+            print(f"Нет символов для проверки в {data_root}")
+            return 1
 
     rows = []
     errors = 0
 
-    for symbol_dir in symbol_dirs:
-        day_count = 0
-        for day_dir in _iter_day_dirs(symbol_dir):
-            if day_count >= args.max_days:
+    if mode == "monthly":
+        file_count = 0
+        for month_file in month_files:
+            if file_count >= args.max_days:
                 break
-            df = _read_day(day_dir, args.mode)
+            df = _read_month(month_file, symbols)
             if df is None or df.empty:
                 rows.append(
                     {
-                        "symbol": symbol_dir.name,
-                        "day": day_dir.name,
+                        "symbol": ",".join(symbols) if symbols else "ALL",
+                        "day": f"{month_file.parent.parent.name}/{month_file.parent.name}",
                         "status": "missing",
                         "note": "нет данных",
                     }
                 )
                 errors += 1
-                day_count += 1
+                file_count += 1
                 continue
 
             missing_cols = EXPECTED_COLUMNS - set(df.columns)
             if missing_cols:
                 rows.append(
                     {
-                        "symbol": symbol_dir.name,
-                        "day": day_dir.name,
+                        "symbol": ",".join(symbols) if symbols else "ALL",
+                        "day": f"{month_file.parent.parent.name}/{month_file.parent.name}",
                         "status": "invalid",
                         "note": f"нет колонок: {', '.join(sorted(missing_cols))}",
                     }
                 )
                 errors += 1
-                day_count += 1
+                file_count += 1
                 continue
 
             unique_ts = df["timestamp"].nunique()
-            duplicates = int(df["timestamp"].duplicated().sum())
-            missing_bars, max_gap_bars = _calculate_gaps(df["timestamp"], bar_minutes)
+            duplicates = int(df.duplicated(subset=["timestamp", "symbol"]).sum())
             missing_ratio = 0.0
-            if expected_bars:
-                missing_ratio = max(0.0, (expected_bars - unique_ts) / expected_bars)
+            missing_bars = 0
+            max_gap_bars = 0
+            notes = []
+
+            if symbols and len(symbols) == 1:
+                ts_series = df["timestamp"]
+                if expected_bars:
+                    ts_sorted = pd.to_datetime(ts_series.drop_duplicates().sort_values(), unit="ms")
+                    day_count = ts_sorted.dt.normalize().nunique() if not ts_sorted.empty else 0
+                    expected_total = expected_bars * day_count
+                    if expected_total:
+                        missing_ratio = max(0.0, (expected_total - unique_ts) / expected_total)
+                missing_bars, max_gap_bars = _calculate_gaps(ts_series, bar_minutes)
+            else:
+                notes.append("gap check skipped (multi-symbol month)")
 
             status = "ok"
-            notes = []
-            if duplicates and args.mode == "clean":
+            if duplicates and mode in {"clean", "monthly"}:
                 status = "warn"
                 notes.append(f"дубликаты timestamp: {duplicates}")
             if missing_ratio > (1 - min_history_ratio):
@@ -179,8 +223,8 @@ def main() -> int:
 
             rows.append(
                 {
-                    "symbol": symbol_dir.name,
-                    "day": day_dir.name,
+                    "symbol": ",".join(symbols) if symbols else "ALL",
+                    "day": f"{month_file.parent.parent.name}/{month_file.parent.name}",
                     "status": status,
                     "rows": len(df),
                     "unique_ts": unique_ts,
@@ -191,7 +235,78 @@ def main() -> int:
                     "note": "; ".join(notes),
                 }
             )
-            day_count += 1
+            file_count += 1
+    else:
+        for symbol_dir in symbol_dirs:
+            day_count = 0
+            for day_dir in _iter_day_dirs(symbol_dir):
+                if day_count >= args.max_days:
+                    break
+                df = _read_day(day_dir, args.mode)
+                if df is None or df.empty:
+                    rows.append(
+                        {
+                            "symbol": symbol_dir.name,
+                            "day": day_dir.name,
+                            "status": "missing",
+                            "note": "нет данных",
+                        }
+                    )
+                    errors += 1
+                    day_count += 1
+                    continue
+
+                missing_cols = EXPECTED_COLUMNS - set(df.columns)
+                if missing_cols:
+                    rows.append(
+                        {
+                            "symbol": symbol_dir.name,
+                            "day": day_dir.name,
+                            "status": "invalid",
+                            "note": f"нет колонок: {', '.join(sorted(missing_cols))}",
+                        }
+                    )
+                    errors += 1
+                    day_count += 1
+                    continue
+
+                unique_ts = df["timestamp"].nunique()
+                duplicates = int(df["timestamp"].duplicated().sum())
+                missing_bars, max_gap_bars = _calculate_gaps(df["timestamp"], bar_minutes)
+                missing_ratio = 0.0
+                if expected_bars:
+                    missing_ratio = max(0.0, (expected_bars - unique_ts) / expected_bars)
+
+                status = "ok"
+                notes = []
+                if duplicates and args.mode == "clean":
+                    status = "warn"
+                    notes.append(f"дубликаты timestamp: {duplicates}")
+                if missing_ratio > (1 - min_history_ratio):
+                    status = "warn"
+                    notes.append(f"мало данных: {missing_ratio:.1%} пропусков")
+                if max_gap_bars > fill_limit:
+                    status = "warn"
+                    notes.append(f"gap {max_gap_bars} баров > лимита {fill_limit}")
+                if df["symbol"].nunique() > 1:
+                    status = "warn"
+                    notes.append("несколько символов в одном дне")
+
+                rows.append(
+                    {
+                        "symbol": symbol_dir.name,
+                        "day": day_dir.name,
+                        "status": status,
+                        "rows": len(df),
+                        "unique_ts": unique_ts,
+                        "duplicates": duplicates,
+                        "missing_ratio": round(missing_ratio, 4),
+                        "missing_bars": missing_bars,
+                        "max_gap_bars": max_gap_bars,
+                        "note": "; ".join(notes),
+                    }
+                )
+                day_count += 1
 
     report_df = pd.DataFrame(rows)
     if not report_df.empty:

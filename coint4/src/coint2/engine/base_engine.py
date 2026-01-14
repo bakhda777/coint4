@@ -204,6 +204,7 @@ class BasePairBacktester:
         adaptive_thresholds: bool = True,
         var_confidence: float = 0.05,
         max_var_multiplier: float = 3.0,
+        min_volatility: float = 0.001,
         # NEW: Volatility-based position sizing parameters
         volatility_based_sizing: bool = False,
         volatility_lookback_hours: int = 24,
@@ -325,6 +326,7 @@ class BasePairBacktester:
         self.adaptive_thresholds = adaptive_thresholds
         self.var_confidence = var_confidence
         self.max_var_multiplier = max_var_multiplier
+        self.min_volatility = min_volatility
         
         # NEW: Enhanced entry/exit rules
         if config is not None:
@@ -1583,18 +1585,20 @@ class BasePairBacktester:
         
         # ИСПРАВЛЕНИЕ LOOKAHEAD BIAS: Buffer for signals (computed on bar i, executed on bar i+1)
         signal_buffer = 0
+        signal_index: int | None = None
         
         # Main execution loop with FIXED order: execute_previous_signal -> update_rolling_stats -> compute_new_signal -> mark_to_market
         # Start from rolling_window to match manual_backtest logic
         for i in range(self.rolling_window, len(df)):
             # (a) execute_orders(i, signal_buffer) - execute signal from PREVIOUS bar (1-bar lag)
-            self.execute_orders(df, i, signal_buffer)
+            self.execute_orders(df, i, signal_buffer, signal_index)
             
             # (b) update_rolling_stats(i) - calculate stats for current bar using historical data
             self.update_rolling_stats(df, i)
             
             # (c) compute_signal(i) - generate NEW signal based on current bar stats (for next bar)
             signal_buffer = self.compute_signal(df, i)
+            signal_index = i
             
             # (d) mark_to_market(i) - update PnL and equity
             self.mark_to_market(df, i)
@@ -1681,9 +1685,11 @@ class BasePairBacktester:
         self.cooldown_remaining = 0
         self.active_positions_count = 0
         
-    def execute_orders(self, df: pd.DataFrame, i: int, signal: int) -> None:
+    def execute_orders(self, df: pd.DataFrame, i: int, signal: int, signal_index: int | None = None) -> None:
         """Execute orders from signals generated on previous bar."""
-        if signal == 0 or i >= len(df):
+        if i >= len(df):
+            return
+        if signal == 0 and self.current_position == 0:
             return
             
         # Check capital_at_risk and max_active_positions constraints
@@ -1696,12 +1702,15 @@ class BasePairBacktester:
         
         # Calculate position size based on signal
         if signal != 0 and self.current_position == 0:  # Opening new position
-            # Get z-score and other parameters from the current bar where signal was generated
-            z_score = df["z_score"].iat[i]
-            spread = df["spread"].iat[i]
-            mean = df["mean"].iat[i]
-            std = df["std"].iat[i]
-            beta = df["beta"].iat[i]
+            # Get z-score and other parameters from the bar where signal was generated
+            stats_idx = signal_index if signal_index is not None else i
+            if stats_idx < 0 or stats_idx >= len(df):
+                return
+            z_score = df["z_score"].iat[stats_idx]
+            spread = df["spread"].iat[stats_idx]
+            mean = df["mean"].iat[stats_idx]
+            std = df["std"].iat[stats_idx]
+            beta = df["beta"].iat[stats_idx]
                 
             if not pd.isna(z_score) and not pd.isna(std) and std > 0:
                 position_size = self._calculate_position_size(
@@ -1770,7 +1779,8 @@ class BasePairBacktester:
             
             # Log trade closing to incremental_trades_log
             # Use current bar for exit z_score
-            exit_z = df["z_score"].iat[i] if i >= 0 and i < len(df) else 0.0
+            exit_idx = signal_index if signal_index is not None else i
+            exit_z = df["z_score"].iat[exit_idx] if 0 <= exit_idx < len(df) else 0.0
             self._close_trade(df.index[i], exit_z, "z_exit")
             
             # CRITICAL FIX: Update state without double counting costs
@@ -1874,7 +1884,16 @@ class BasePairBacktester:
 
         # Логируем первые несколько z-score для диагностики
         if i <= self.rolling_window + 5:  # Логируем первые несколько после rolling window
-            print(f"   📊 Бар {i}: spread={spread:.4f}, mean={mean:.4f}, std={std:.4f}, z_score={z_score:.4f}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                "📊 Бар %s: spread=%.4f, mean=%.4f, std=%.4f, z_score=%.4f",
+                i,
+                spread,
+                mean,
+                std,
+                z_score,
+            )
         
         # Update DataFrame for current bar i
         df.loc[df.index[i], "beta"] = beta
@@ -1959,8 +1978,11 @@ class BasePairBacktester:
             # Take-profit conditions
             if self._check_take_profit_conditions(df, i, z_curr):
                 return 0  # Exit signal
-        
-        return 0  # No signal
+
+            # Нет условий выхода - держим позицию
+            return int(np.sign(self.current_position))
+
+        return 0  # Нет сигнала/позиции
     
     def mark_to_market(self, df: pd.DataFrame, i: int) -> None:
         """Mark positions to market and calculate PnL according to new formulas."""

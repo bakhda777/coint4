@@ -25,7 +25,14 @@ _mmap_lock = threading.Lock()
 _stats_lock = threading.Lock()
 
 
-def consolidate_price_data(data_dir: str, output_path: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> bool:
+def consolidate_price_data(
+    data_dir: str,
+    output_path: str,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    clean_window: tuple[pd.Timestamp, pd.Timestamp] | None = None,
+    exclude_symbols: list[str] | None = None,
+) -> bool:
     """
     Consolidate raw price data into a single memory-mappable Parquet file.
     
@@ -45,7 +52,13 @@ def consolidate_price_data(data_dir: str, output_path: str, start_date: pd.Times
         
         # Load all data for the specified period
         with time_block("loading raw data for consolidation"):
-            df_long = load_master_dataset(data_dir, start_date, end_date)
+            df_long = load_master_dataset(
+                data_dir,
+                start_date,
+                end_date,
+                clean_window=clean_window,
+                exclude_symbols=exclude_symbols,
+            )
             
         if df_long.empty:
             logger.error("❌ No data loaded for consolidation")

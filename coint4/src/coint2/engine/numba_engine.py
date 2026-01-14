@@ -34,10 +34,10 @@ class NumbaPairBacktester(BasePairBacktester):
             commission=self.commission_pct,
             slippage=self.slippage_pct,
             max_holding_period=99999,
-            enable_regime_detection=False,
-            enable_structural_breaks=False,
-            min_volatility=0.0001,
-            adaptive_threshold_factor=1.0
+            enable_regime_detection=self.market_regime_detection,
+            enable_structural_breaks=self.structural_break_protection,
+            min_volatility=self.min_volatility,
+            adaptive_threshold_factor=1.0 if self.adaptive_thresholds else 0.0
         )
 
         spread = y - beta * x

@@ -71,6 +71,38 @@ class DataProcessingConfig(BaseModel):
     handle_constant: bool = True
 
 
+class CleanWindowConfig(BaseModel):
+    """Optional clean data window for filtering."""
+
+    start_date: str
+    end_date: str
+
+    @model_validator(mode="after")
+    def _validate_window(self):  # type: ignore
+        if self.start_date >= self.end_date:
+            raise ValueError("`clean_window.start_date` must be before `clean_window.end_date`")
+        return self
+
+
+class DataFilterConfig(BaseModel):
+    """Dataset-level filters for clean window and symbol exclusions."""
+
+    clean_window: CleanWindowConfig | None = None
+    exclude_symbols: list[str] = Field(default_factory=list)
+    exclude_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_symbols(self):  # type: ignore
+        if self.exclude_symbols:
+            normalized = []
+            for symbol in self.exclude_symbols:
+                symbol = str(symbol).strip()
+                if symbol:
+                    normalized.append(symbol)
+            self.exclude_symbols = sorted(set(normalized))
+        return self
+
+
 class PortfolioConfig(BaseModel):
     """Configuration for portfolio and risk management."""
 
@@ -329,6 +361,7 @@ class AppConfig(BaseModel):
     data_dir: DirectoryPath
     results_dir: Path
     data_processing: DataProcessingConfig = Field(default_factory=DataProcessingConfig)
+    data_filters: DataFilterConfig | None = None
     time: TimeConfig = Field(default_factory=TimeConfig)
     risk: RiskConfig = Field(default_factory=RiskConfig)
     guards: GuardsConfig = Field(default_factory=GuardsConfig)

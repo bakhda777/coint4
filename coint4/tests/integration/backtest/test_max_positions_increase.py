@@ -164,13 +164,13 @@ class TestMaxPositionsIncrease:
         # Рассчитываем капитал под риск для одной позиции
         capital_per_position = portfolio.calculate_position_risk_capital(risk_per_position)
 
-        # ИСПРАВЛЕНО: Новая логика использует max(risk_capital, capital_per_pair)
+        # ИСПРАВЛЕНО: Логика использует min(risk_capital, capital_per_pair)
         risk_capital = initial_capital * risk_per_position  # 100.0
         capital_per_pair = initial_capital / max_positions  # 666.67
-        expected_capital_per_position = max(risk_capital, capital_per_pair)  # 666.67
+        expected_capital_per_position = min(risk_capital, capital_per_pair)  # 100.0
 
         assert abs(capital_per_position - expected_capital_per_position) < 0.01
-        assert abs(capital_per_position - 666.67) < 0.01  # Новая логика
+        assert abs(capital_per_position - 100.0) < 0.01  # Новая логика
         
         # При 15 позициях общий риск составит 15%
         total_risk_pct = max_positions * risk_per_position

@@ -52,13 +52,9 @@ class StatefulNormalizer:
                 logger.warning(f"Rolling window {self.rolling_window} > train size {len(train_data)}")
                 self.rolling_window = max(20, len(train_data) // 2)
             
-            # Вычисляем rolling mean и std на train
-            rolling_mean = train_data.rolling(window=self.rolling_window, min_periods=1).mean()
-            rolling_std = train_data.rolling(window=self.rolling_window, min_periods=1).std()
-            
-            # Сохраняем последние значения для применения к test
-            self.stats['last_mean'] = rolling_mean.iloc[-1]
-            self.stats['last_std'] = rolling_std.iloc[-1].replace(0, 1e-8)  # Избегаем деления на 0
+            # Сохраняем хвост тренировочных данных для корректного rolling на test
+            tail_len = max(1, min(self.rolling_window - 1, len(train_data)))
+            self.stats['tail'] = train_data.iloc[-tail_len:].copy()
             
         elif self.method == "minmax":
             # Для minmax сохраняем min и max из train
@@ -98,8 +94,16 @@ class StatefulNormalizer:
         logger.debug(f"Transforming {data.shape} data with {self.method}")
         
         if self.method == "rolling_zscore":
-            # Применяем сохраненные статистики
-            normalized = (data - self.stats['last_mean']) / self.stats['last_std']
+            # Rolling без lookahead: используем хвост train + текущий test
+            tail = self.stats.get('tail')
+            if tail is None or tail.empty:
+                tail = data.iloc[:0]
+            combined = pd.concat([tail, data])
+            rolling_mean = combined.rolling(window=self.rolling_window, min_periods=1).mean()
+            rolling_std = combined.rolling(window=self.rolling_window, min_periods=1).std()
+            rolling_std = rolling_std.replace(0, 1e-8)
+            normalized = (combined - rolling_mean) / rolling_std
+            normalized = normalized.iloc[-len(data):]
             
         elif self.method == "minmax":
             # Применяем сохраненные min/max
@@ -198,7 +202,8 @@ def preprocess_data_no_lookahead(
         test_filled = test_filtered.fillna(method='ffill', limit=fill_limit)
     elif fill_method == "linear":
         train_filled = train_filtered.interpolate(method='linear', limit=fill_limit)
-        test_filled = test_filtered.interpolate(method='linear', limit=fill_limit)
+        # В тесте избегаем lookahead: только ffill
+        test_filled = test_filtered.fillna(method='ffill', limit=fill_limit)
     else:
         train_filled = train_filtered
         test_filled = test_filtered
@@ -214,6 +219,8 @@ def preprocess_data_no_lookahead(
     
     # Сохраняем статистики
     stats["normalization_stats"] = normalizer.get_stats()
+    stats["normalization_stats"]["method"] = norm_method
+    stats["normalization_stats"]["rolling_window"] = rolling_window
     
     logger.info(f"✅ Preprocessing complete: train {train_normalized.shape}, test {test_normalized.shape}")
     

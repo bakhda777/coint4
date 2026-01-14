@@ -1,0 +1,9 @@
+data_processing:
+  fill_method: "ffill"      # Только forward-fill, без интерполяций
+  min_history_ratio: 0.8
+
+pair_selection:
+  bar_minutes: 15
+
+backtest:
+  fill_limit_pct: 0.1

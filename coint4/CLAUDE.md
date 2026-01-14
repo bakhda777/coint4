@@ -104,7 +104,7 @@ python archive/old_scripts/ops/monitor_drift.py
 ### Core Components (`src/coint2/`)
 
 **Data Pipeline:**
-- `core/data_loader.py`: Handles parquet data loading with caching
+- `core/data_loader.py`: Handles parquet data loading with caching (monthly `data_downloaded/` + legacy `symbol=...` layouts)
 - `core/normalization_improvements.py`: Rolling z-score and other normalization methods
 - `pipeline/pair_scanner.py`: Cointegration testing and pair selection
 - `pipeline/filters.py`: Advanced filtering (Hurst exponent, liquidity, etc.)
@@ -135,6 +135,7 @@ python archive/old_scripts/ops/monitor_drift.py
 3. **Cost Modeling**: Trading costs are aggregated to avoid double-counting:
    - `commission_pct`: Total commission (includes maker/taker fees)
    - `slippage_pct`: Total slippage (includes spread and execution slippage)
+   - `enable_realistic_costs: false` по умолчанию; детализированные параметры используются только при явном включении
 
 4. **Pair Selection Pipeline**:
    ```
@@ -153,9 +154,17 @@ python archive/old_scripts/ops/monitor_drift.py
 ## Configuration Management
 
 - **Main Config**: `configs/main_2024.yaml`
+- **Strict Data QA Overlay**: `configs/data_quality_strict.yaml` (ffill-only, stricter thresholds)
+- **Clean Data Window**: `configs/data_window_clean.yaml` (clean window + symbol exclusions)
+- **Balanced WFA Config**: `configs/main_2024_wfa_balanced.yaml`
 - **Search Spaces**: Define parameter ranges for optimization in `configs/search_spaces/`
 - **Criteria**: Pair selection criteria in `configs/criteria_*.yaml`
 - **Environment Variables**: `DATA_ROOT`, `COINT_LOG_EVERY`, `QUICK_TEST`
+
+`data_filters.clean_window` и `data_filters.exclude_symbols` применяются в загрузчике данных и клипают окно/символы для WFA и backtest.
+`walk_forward.max_steps` ограничивает число шагов WFA (по умолчанию 5, больше — только по согласованию).
+
+Operational checklist: `docs/production_checklist.md`.
 
 ## Performance Considerations
 

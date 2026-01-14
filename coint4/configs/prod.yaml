@@ -64,6 +64,7 @@ backtest:
   fill_limit_pct: 0.1
   commission_pct: 0.001
   slippage_pct: 0.0005
+  enable_realistic_costs: false
   annualizing_factor: 365
   zscore_exit: 0.5
 

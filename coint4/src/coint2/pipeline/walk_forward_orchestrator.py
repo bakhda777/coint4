@@ -18,7 +18,7 @@ from coint2.utils.visualization import calculate_extended_metrics, create_perfor
 from coint2.monitoring.metrics import TradingMetrics, DashboardGenerator
 
 # Import directly from the file path rather than the module
-from coint2.core.data_loader import DataHandler, load_master_dataset
+from coint2.core.data_loader import DataHandler, load_master_dataset, resolve_data_filters
 from coint2.core.normalization_improvements import (
     preprocess_and_normalize_data,
     apply_production_normalization,
@@ -887,6 +887,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     with time_block("initializing data handler"):
         handler = DataHandler(cfg)
         handler.clear_cache()
+    clean_window, excluded_symbols = resolve_data_filters(cfg)
 
     start_date = pd.to_datetime(cfg.walk_forward.start_date)
     end_date = pd.to_datetime(cfg.walk_forward.end_date)
@@ -968,6 +969,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         current_test_start = testing_end
 
     logger.info(f"📈 Запланировано {len(walk_forward_steps)} walk-forward шагов")
+
+    max_steps = getattr(cfg.walk_forward, "max_steps", None)
+    if max_steps is not None:
+        if max_steps < 1:
+            raise ValueError("walk_forward.max_steps должен быть >= 1 или null")
+        if len(walk_forward_steps) > max_steps:
+            logger.info(f"⛔ Ограничение WFA шагов: {len(walk_forward_steps)} → {max_steps}")
+            walk_forward_steps = walk_forward_steps[:max_steps]
     
     # КРИТИЧНО: Проверка на временные пересечения для предотвращения lookahead bias
     for i, (tr_start, tr_end, te_start, te_end) in enumerate(walk_forward_steps):
@@ -1042,6 +1051,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 str(consolidated_path),
                 data_start,
                 data_end,
+                clean_window=clean_window,
+                exclude_symbols=excluded_symbols,
             )
 
             if not consolidated_ok:
@@ -1102,7 +1113,13 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         with time_block(f"{step_tag}: training {training_start.date()}-{training_end.date()}, testing {testing_start.date()}-{testing_end.date()}"):
             # Load data only for this step
             with time_block("loading step data"):
-                step_df_long = load_master_dataset(cfg.data_dir, training_start, testing_end)
+                step_df_long = load_master_dataset(
+                    cfg.data_dir,
+                    training_start,
+                    testing_end,
+                    clean_window=clean_window,
+                    exclude_symbols=excluded_symbols,
+                )
 
             if step_df_long.empty:
                 logger.warning(f"  Нет данных для шага {step_idx}, пропуск.")

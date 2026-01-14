@@ -119,8 +119,8 @@ class OptimizationDataManager:
             logger.info(f"✅ Данные загружены БЕЗ lookahead bias:")
             logger.info(f"   Тренировочный срез: {training_slice.shape}")
             logger.info(f"   Тестовый срез: {testing_slice.shape}")
-            logger.info(f"   Метод нормализации: {norm_method}")
-            logger.info(f"   Символов удалено при фильтрации: {len(norm_stats.get('removed_symbols', []))}")
+            logger.info(f"   Метод нормализации: {stats.get('normalization_method')}")
+            logger.info(f"   Символов удалено при фильтрации: {stats.get('symbols_removed', 0)}")
             
             return walk_forward_data
             

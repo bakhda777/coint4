@@ -327,19 +327,32 @@ def apply_production_normalization(
     
     if method == 'rolling_zscore':
         # Применяем rolling z-score с сохраненными статистиками
-        rolling_mean = pd.Series(normalization_stats['rolling_mean'])
-        rolling_std = pd.Series(normalization_stats['rolling_std'])
-        
-        # Защита от деления на ноль
-        rolling_std = rolling_std.replace(0, epsilon)
-        
-        # Нормализация каждого символа
-        normalized_df = pd.DataFrame(index=price_df.index)
-        for symbol in price_df.columns:
-            if symbol in rolling_mean.index and symbol in rolling_std.index:
-                normalized_df[symbol] = (price_df[symbol] - rolling_mean[symbol]) / rolling_std[symbol]
+        if "tail" in normalization_stats and "rolling_window" in normalization_stats:
+            tail = normalization_stats["tail"]
+            rolling_window = int(normalization_stats["rolling_window"])
+            if isinstance(tail, pd.DataFrame):
+                combined = pd.concat([tail, price_df])
+                rolling_mean = combined.rolling(window=rolling_window, min_periods=1).mean()
+                rolling_std = combined.rolling(window=rolling_window, min_periods=1).std()
+                rolling_std = rolling_std.replace(0, epsilon)
+                normalized_df = (combined - rolling_mean) / rolling_std
+                normalized_df = normalized_df.iloc[-len(price_df):]
             else:
-                logger.warning(f"Символ {symbol} отсутствует в статистиках нормализации")
+                raise ValueError("tail в normalization_stats должен быть DataFrame")
+        else:
+            rolling_mean = pd.Series(normalization_stats['rolling_mean'])
+            rolling_std = pd.Series(normalization_stats['rolling_std'])
+            
+            # Защита от деления на ноль
+            rolling_std = rolling_std.replace(0, epsilon)
+            
+            # Нормализация каждого символа
+            normalized_df = pd.DataFrame(index=price_df.index)
+            for symbol in price_df.columns:
+                if symbol in rolling_mean.index and symbol in rolling_std.index:
+                    normalized_df[symbol] = (price_df[symbol] - rolling_mean[symbol]) / rolling_std[symbol]
+                else:
+                    logger.warning(f"Символ {symbol} отсутствует в статистиках нормализации")
                 
     elif method == 'percent':
         # Процентная нормализация с сохраненными первыми значениями

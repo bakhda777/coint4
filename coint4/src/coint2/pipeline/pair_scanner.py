@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from statsmodels.tsa.stattools import adfuller
 from scipy import stats
 from dask import delayed
+from coint2.core.math_utils import calculate_half_life as calculate_half_life_ou
 import warnings
 import os
 import time
@@ -289,23 +290,10 @@ def estimate_half_life(spread: np.ndarray) -> float:
         if len(spread_series) < 3 or spread_series.nunique() < 2:
             return np.inf
 
-        y = spread_series.iloc[1:]
-        y_lag = spread_series.iloc[:-1]
-        X = np.column_stack([np.ones(len(y_lag)), y_lag])
-        coeffs = np.linalg.lstsq(X, y, rcond=None)[0]
-        beta = float(coeffs[1]) if len(coeffs) > 1 else 0.0
-        if beta == 0.0:
+        half_life = calculate_half_life_ou(spread_series)
+        if not np.isfinite(half_life):
             return np.inf
 
-        if beta < 0:
-            beta_abs = min(abs(beta), 0.9)
-        else:
-            beta_abs = abs(beta)
-
-        if beta_abs >= 0.99 or beta_abs <= 0.0:
-            return np.inf
-
-        half_life = -np.log(2) / np.log(beta_abs)
         return min(max(half_life, 1), 1000)
     except Exception:
         return np.inf

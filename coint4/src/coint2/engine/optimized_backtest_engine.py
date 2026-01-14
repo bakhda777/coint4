@@ -201,125 +201,14 @@ class OptimizedPairBacktester(BasePairBacktester):
         """
         import logging
         logger = logging.getLogger(__name__)
-        
-        # Логируем начало обработки пары
-        logger.info(f"🔄 Начинаем оптимизированный бэктест пары {self.pair_name or 'Unknown'} с {len(self.pair_data)} периодами данных")
-        
-        if self.pair_data.empty or len(self.pair_data.columns) < 2:
-            logger.warning(f"⚠️ Пустые данные для пары {self.pair_name or 'Unknown'}, пропускаем")
-            self.results = pd.DataFrame(
-                columns=["spread", "z_score", "position", "pnl", "cumulative_pnl"]
-            )
-            return
-            
-        # Log cache usage with detailed diagnostics
+
         if self.use_global_cache and self.cache_manager and self.cache_manager.initialized:
-            cache_info = self.cache_manager.get_cache_info()
-            logger.info(f"🚀 Running optimized backtest with global cache: {cache_info['total_memory_mb']:.1f} MB")
-            logger.info(f"📊 Cache symbols: {self.symbol1}, {self.symbol2}")
-        else:
-            logger.info("📊 Running standard backtest (no global cache)")
-            if not self.use_global_cache:
-                logger.info("   ❌ use_global_cache=False")
-            elif self.cache_manager is None:
-                logger.info("   ❌ cache_manager is None")
-            elif not self.cache_manager.initialized:
-                logger.info("   ❌ cache_manager not initialized")
-            else:
-                logger.info("   ❌ Unknown cache issue")
-            
-        # Rename columns for convenience
-        df = self.pair_data.rename(
-            columns={
-                self.pair_data.columns[0]: "y",
-                self.pair_data.columns[1]: "x"
-            }
-        )
-        
-        # Add optimized rolling statistics
-        df = self._calculate_rolling_statistics_optimized(df, self.rolling_window)
-        
-        # Continue with standard backtest logic
-        # Calculate spread using rolling regression
-        df['spread'] = np.nan
-        df['z_score'] = np.nan
-        df['position'] = 0
-        df['pnl'] = 0.0
-        df['cumulative_pnl'] = 0.0
-        
-        # Initialize tracking variables
-        current_position = 0
-        cumulative_pnl = 0.0
-        
-        # Main backtest loop
-        for i in range(self.rolling_window, len(df)):
-            # Get rolling window data
-            y_window = df['y'].iloc[i - self.rolling_window:i]
-            x_window = df['x'].iloc[i - self.rolling_window:i]
-            
-            # Skip if insufficient data
-            if y_window.isna().any() or x_window.isna().any():
-                continue
-                
-            # Calculate rolling regression
-            try:
-                # Use numpy for faster computation
-                y_vals = y_window.values
-                x_vals = x_window.values
-                
-                # Add constant term
-                X = np.column_stack([np.ones(len(x_vals)), x_vals])
-                
-                # OLS regression: y = alpha + beta * x
-                coeffs = np.linalg.lstsq(X, y_vals, rcond=None)[0]
-                alpha, beta = coeffs[0], coeffs[1]
-                
-                # Calculate current spread
-                current_spread = df['y'].iloc[i] - (alpha + beta * df['x'].iloc[i])
-                df.loc[df.index[i], 'spread'] = current_spread
-                
-                # Calculate z-score using rolling statistics
-                if i >= self.rolling_window:
-                    spread_window = df['spread'].iloc[i - self.rolling_window:i]
-                    spread_mean = spread_window.mean()
-                    spread_std = spread_window.std()
-                    
-                    if spread_std > 0:
-                        z_score = (current_spread - spread_mean) / spread_std
-                        df.loc[df.index[i], 'z_score'] = z_score
-                        
-                        # Trading logic
-                        new_position = self._determine_position(z_score, current_position)
-                        
-                        if new_position != current_position:
-                            # Position change - calculate PnL
-                            if current_position != 0:
-                                # Close existing position
-                                pnl = self._calculate_position_pnl(
-                                    current_position, df.iloc[i], df.iloc[i-1]
-                                )
-                                cumulative_pnl += pnl
-                                df.loc[df.index[i], 'pnl'] = pnl
-                                
-                            current_position = new_position
-                            
-                        df.loc[df.index[i], 'position'] = current_position
-                        df.loc[df.index[i], 'cumulative_pnl'] = cumulative_pnl
-                        
-            except np.linalg.LinAlgError:
-                # Skip if regression fails
-                continue
-                
-        # Store results
-        self.results = df[['spread', 'z_score', 'position', 'pnl', 'cumulative_pnl']].copy()
-        
-        # Log performance summary
-        if not self.results.empty:
-            total_pnl = self.results['cumulative_pnl'].iloc[-1]
-            num_trades = (self.results['position'].diff() != 0).sum()
-            logger.info(f"✅ {self.pair_name or 'Unknown'}: Завершен оптимизированный бэктест - PnL: {total_pnl:.4f}, Сделок: {num_trades}")
-        else:
-            logger.info(f"✅ {self.pair_name or 'Unknown'}: Завершен оптимизированный бэктест - нет результатов")
+            logger.warning(
+                "Global rolling cache пока не интегрирован с полной логикой бэктеста. "
+                "Запускаем стандартный бэктест для корректных расчетов."
+            )
+
+        super().run()
     
     def _determine_position(self, z_score: float, current_position: int) -> int:
         """

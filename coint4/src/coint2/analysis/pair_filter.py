@@ -12,8 +12,11 @@ def calculate_hurst_exponent(series: pd.Series) -> float:
         return 0.5
     
     # Check for invalid values that would cause log10 errors
-    if (series <= 0).any() or not series.var() > 0:
+    if not series.var() > 0:
         return 0.5
+    if (series <= 0).any():
+        shift = -series.min() + 1e-6
+        series = series + shift
     
     try:
         H, _c, _data = compute_Hc(series, kind="price", simplified=True)

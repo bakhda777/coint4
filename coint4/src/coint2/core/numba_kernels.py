@@ -706,6 +706,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     position = 0.0
     entry_bar = 0
     entry_spread = 0.0  # Добавляем переменную для хранения спреда при входе
+    entry_beta = 1.0    # Бета на момент входа (для консистентного PnL)
     total_pnl = 0.0
 
     # Определяем рыночный режим (если включено)
@@ -723,12 +724,20 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             positions[i] = position
             continue
 
-        # CRITICAL FIX: Используем данные предыдущего бара для избежания lookahead bias
+        # CRITICAL FIX: Используем данные предыдущего бара и предыдущие статистики
+        beta_signal = beta[i]
         if i > rolling_window:
-            prev_spread = y[i-1] - beta[i] * x[i-1]
+            beta_signal = beta[i - 1]
+            mu_prev = mu[i - 1]
+            sigma_prev = sigma[i - 1]
+            if np.isnan(beta_signal) or np.isnan(mu_prev) or np.isnan(sigma_prev):
+                positions[i] = position
+                continue
+
+            prev_spread = y[i - 1] - beta_signal * x[i - 1]
 
             # Проверяем минимальную волатильность
-            current_vol = max(sigma[i], min_volatility)
+            current_vol = max(sigma_prev, min_volatility)
 
             # Адаптивные пороги
             adaptive_entry = calculate_adaptive_threshold(
@@ -747,7 +756,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                 adaptive_entry *= 1.5
                 adaptive_exit *= 1.2
 
-            z_curr = (prev_spread - mu[i]) / current_vol
+            z_curr = (prev_spread - mu_prev) / current_vol
         else:
             z_curr = 0.0
             adaptive_entry = entry_threshold
@@ -769,23 +778,26 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             if z_curr > adaptive_entry:
                 new_position = -1.0  # Short spread
                 entry_bar = i
-                entry_spread = y[i] - beta[i] * x[i]  # Сохраняем спред при входе
+                entry_beta = beta_signal
+                entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
             elif z_curr < -adaptive_entry:
                 new_position = 1.0   # Long spread
                 entry_bar = i
-                entry_spread = y[i] - beta[i] * x[i]  # Сохраняем спред при входе
+                entry_beta = beta_signal
+                entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
 
         # Расчет PnL при изменении позиции
         if new_position != position:
             # Торговые издержки
             trade_size = abs(new_position - position)
             total_cost_pct = commission + slippage
-            cost = trade_size * total_cost_pct
+            cost_notional = abs(y[i]) + abs(entry_beta * x[i])
+            cost = trade_size * cost_notional * total_cost_pct
             
             # Если закрываем позицию, рассчитываем PnL от изменения цены
             if position != 0.0 and new_position == 0.0:
                 # Рассчитываем текущий спред
-                current_spread = y[i] - beta[i] * x[i]
+                current_spread = y[i] - entry_beta * x[i]
                 # PnL от изменения спреда (position уже содержит знак)
                 price_pnl = position * (current_spread - entry_spread)
                 # Общий PnL = прибыль от цены минус комиссии

@@ -28,8 +28,8 @@ risk_management:
     
   time_stop_multiplier:
     type: float
-    low: 1.5
-    high: 2.5
+    low: 2.5
+    high: 4.0
     step: 0.5
 
 filters:

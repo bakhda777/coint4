@@ -142,6 +142,7 @@ def enhanced_pair_screening(
             try:
                 X = sm.add_constant(x_aligned)
                 model = sm.OLS(y_aligned, X).fit()
+                alpha = model.params.iloc[0]
                 beta = model.params.iloc[1]
                 
                 # 2. Beta criterion
@@ -152,7 +153,7 @@ def enhanced_pair_screening(
                     continue
                 
                 # Calculate spread and statistics
-                spread = y_aligned - beta * x_aligned
+                spread = y_aligned - (alpha + beta * x_aligned)
                 
                 # Check for empty spread to avoid numpy warnings
                 if len(spread) == 0 or spread.isna().all():

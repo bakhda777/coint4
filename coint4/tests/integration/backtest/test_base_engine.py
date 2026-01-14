@@ -56,6 +56,7 @@ def manual_backtest(
     bid_ask_spread_pct_s1: float = 0.001,
     bid_ask_spread_pct_s2: float = 0.001,
     take_profit_multiplier: float | None = None,
+    require_signal_confirmation: bool = False,
 ) -> pd.DataFrame:
     """Эталонная реализация логики бэктеста для проверки."""
     df = df.copy()
@@ -102,6 +103,9 @@ def manual_backtest(
     cooldown_remaining = 0
     entry_index = 0
     entry_time = None
+    entry_beta = np.nan
+    signal_buffer = 0
+    signal_index = None
 
     # Вынесем get_loc вычисления из цикла для оптимизации
     position_col_idx = df.columns.get_loc("position")
@@ -110,134 +114,66 @@ def manual_backtest(
     pnl_col_idx = df.columns.get_loc("pnl")
 
     for i in range(1, len(df)):
-        if (
-            pd.isna(df["spread"].iat[i])
-            or pd.isna(df["spread"].iat[i - 1])
-            or pd.isna(df["z_score"].iat[i])
-        ):
-            df.iat[i, position_col_idx] = position
-            df.iat[i, trades_col_idx] = 0.0
-            df.iat[i, costs_col_idx] = 0.0
-            df.iat[i, pnl_col_idx] = 0.0
-            continue
-
-        beta = df["beta"].iat[i]
-        mean = df["mean"].iat[i]
-        std = df["std"].iat[i]
-        # spread_prev не используется в текущей логике
+        beta_curr = df["beta"].iat[i]
         spread_curr = df["spread"].iat[i]
         z_curr = df["z_score"].iat[i]
+
+        beta_for_pnl = entry_beta if position != 0 and not pd.isna(entry_beta) else beta_curr
+        if pd.isna(beta_for_pnl):
+            beta_for_pnl = 1.0
 
         # Рассчитываем PnL от изменения цен по каждой "ноге"
         delta_y = df[y_col].iat[i] - df[y_col].iat[i - 1]
         delta_x = df[x_col].iat[i] - df[x_col].iat[i - 1]
         size_s1 = position  # Позиция, открытая на предыдущем шаге
-        size_s2 = -beta * size_s1
+        size_s2 = -beta_for_pnl * size_s1
         pnl_change = size_s1 * delta_y + size_s2 * delta_x
         pnl = pnl_change
 
         new_position = position
+        closed_trade = False
 
-        if (
-            position != 0
-            and half_life is not None
-            and time_stop_multiplier is not None
-        ):
-            if entry_time is not None:
-                if isinstance(df.index, pd.DatetimeIndex):
-                    trade_duration = (
-                        df.index[i] - entry_time
-                    ).total_seconds() / (60 * 60 * 24)
-                else:
-                    trade_duration = float(df.index[i] - entry_time)
-                time_stop_limit = half_life * time_stop_multiplier
-                if trade_duration >= time_stop_limit:
-                    new_position = 0.0
-                    cooldown_remaining = cooldown_periods
+        # Исполнение сигнала предыдущего бара
+        if signal_buffer != 0 and position == 0:
+            stats_idx = signal_index if signal_index is not None else i
+            if 0 <= stats_idx < len(df):
+                mean = df["mean"].iat[stats_idx]
+                std = df["std"].iat[stats_idx]
+                entry_z_signal = df["z_score"].iat[stats_idx]
+                spread_signal = df["spread"].iat[stats_idx]
+                beta_signal = df["beta"].iat[stats_idx]
 
-        # Уменьшаем cooldown счетчик
-        if cooldown_remaining > 0:
-            cooldown_remaining -= 1
+                if not pd.isna(entry_z_signal) and not pd.isna(std) and std > 1e-6:
+                    entry_z = entry_z_signal
+                    stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
+                    stop_loss_price = mean + stop_loss_z * std
+                    risk_per_unit = abs(spread_signal - stop_loss_price)
+                    trade_value = df[y_col].iat[i] + abs(beta_signal) * df[x_col].iat[i]
+                    size_risk = (
+                        capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
+                    )
+                    size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
+                    size = min(size_risk, size_value)
+                    new_position = signal_buffer * size
+                    # entry_index используется для отслеживания входа в позицию
+                    entry_index = i  # noqa: F841
+                    entry_time = df.index[i]
+                    entry_beta = beta_signal
 
-        # Закрытие позиций в конце теста для чистоты метрик
-        if i == len(df) - 1 and position != 0:
-            new_position = 0.0  # Форс-закрытие в последнем периоде
-            cooldown_remaining = cooldown_periods
-        elif position > 0 and z_curr <= stop_loss_z:
+        elif signal_buffer == 0 and position != 0:
             new_position = 0.0
             cooldown_remaining = cooldown_periods
-        elif position < 0 and z_curr >= stop_loss_z:
-            new_position = 0.0
-            cooldown_remaining = cooldown_periods
-        # Take-profit exit: закрываем позицию при движении z-score к нулю
-        elif (
-            take_profit_multiplier is not None
-            and position != 0
-            and abs(z_curr) <= abs(entry_z) / take_profit_multiplier
-        ):
-            new_position = 0.0
-            cooldown_remaining = cooldown_periods
-        # Z-score exit: закрываем позицию если z-score вернулся к нулю
-        elif position != 0 and abs(z_curr) <= z_exit:
-            new_position = 0.0
-            cooldown_remaining = cooldown_periods
-
-        # Проверяем сигналы входа только если не в последнем периоде и не в cooldown
-        if i < len(df) - 1 and cooldown_remaining == 0:
-            signal = 0
-            if z_curr > z_threshold:
-                signal = -1
-            elif z_curr < -z_threshold:
-                signal = 1
-
-            z_prev = df["z_score"].iat[i - 1]
-            long_confirmation = (signal == 1) and (z_curr > z_prev)
-            short_confirmation = (signal == -1) and (z_curr < z_prev)
-
-            if new_position == 0 and (long_confirmation or short_confirmation):
-                entry_z = z_curr
-                stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
-                stop_loss_price = mean + stop_loss_z * std
-                risk_per_unit = abs(spread_curr - stop_loss_price)
-                trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
-                size_risk = (
-                    capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
-                )
-                size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
-                size = min(size_risk, size_value)
-                new_position = signal * size
-                # entry_index используется для отслеживания входа в позицию
-                entry_index = i  # noqa: F841
-                entry_time = df.index[i]
-
-            elif (
-                new_position != 0
-                and (long_confirmation or short_confirmation)
-                and np.sign(new_position) != signal
-            ):
-
-                entry_z = z_curr
-                stop_loss_z = float(np.sign(entry_z) * stop_loss_multiplier)
-                stop_loss_price = mean + stop_loss_z * std
-                risk_per_unit = abs(spread_curr - stop_loss_price)
-                trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
-                size_risk = (
-                    capital_at_risk / risk_per_unit if risk_per_unit != 0 else 0.0
-                )
-                size_value = capital_at_risk / trade_value if trade_value != 0 else 0.0
-                size = min(size_risk, size_value)
-                new_position = signal * size
-                # entry_index используется для отслеживания входа в позицию
-                entry_index = i  # noqa: F841
-                entry_time = df.index[i]
+            closed_trade = True
 
         trades = abs(new_position - position)
-        trade_value = df[y_col].iat[i] + abs(beta) * df[x_col].iat[i]
+        trade_beta = entry_beta if not pd.isna(entry_beta) else beta_curr
+        if pd.isna(trade_beta):
+            trade_beta = 1.0
 
         price_s1 = df[y_col].iat[i]
         price_s2 = df[x_col].iat[i]
         position_s1_change = new_position - position
-        position_s2_change = -new_position * beta - (-position * beta)
+        position_s2_change = -trade_beta * new_position - (-trade_beta * position)
 
         notional_change_s1 = abs(position_s1_change * price_s1)
         notional_change_s2 = abs(position_s2_change * price_s2)
@@ -254,6 +190,68 @@ def manual_backtest(
         df.iat[i, pnl_col_idx] = pnl - costs
 
         position = new_position
+        if closed_trade:
+            entry_time = None
+            entry_beta = np.nan
+
+        # Генерация сигнала на следующий бар
+        if cooldown_remaining > 0:
+            cooldown_remaining -= 1
+
+        if pd.isna(spread_curr) or pd.isna(z_curr):
+            next_signal = 0
+        else:
+            if position != 0:
+                exit_signal = False
+                if (
+                    half_life is not None
+                    and time_stop_multiplier is not None
+                    and entry_time is not None
+                ):
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        trade_duration = (
+                            df.index[i] - entry_time
+                        ).total_seconds() / (60 * 60 * 24)
+                    else:
+                        trade_duration = float(df.index[i] - entry_time)
+                    time_stop_limit = half_life * time_stop_multiplier
+                    if trade_duration >= time_stop_limit:
+                        exit_signal = True
+
+                if not exit_signal:
+                    if position > 0 and z_curr <= stop_loss_z:
+                        exit_signal = True
+                    elif position < 0 and z_curr >= stop_loss_z:
+                        exit_signal = True
+                    elif (
+                        take_profit_multiplier is not None
+                        and abs(z_curr) <= abs(entry_z) / take_profit_multiplier
+                    ):
+                        exit_signal = True
+                    elif abs(z_curr) <= abs(z_exit):
+                        exit_signal = True
+
+                next_signal = 0 if exit_signal else int(np.sign(position))
+            else:
+                next_signal = 0
+                if cooldown_remaining == 0:
+                    if z_curr > z_threshold:
+                        next_signal = -1
+                    elif z_curr < -z_threshold:
+                        next_signal = 1
+
+                    if next_signal != 0 and require_signal_confirmation and i > 0:
+                        z_prev = df["z_score"].iat[i - 1]
+                        if pd.isna(z_prev):
+                            next_signal = 0
+                        else:
+                            long_confirmation = (next_signal == 1) and (z_curr < z_prev)
+                            short_confirmation = (next_signal == -1) and (z_curr > z_prev)
+                            if not (long_confirmation or short_confirmation):
+                                next_signal = 0
+
+        signal_buffer = next_signal
+        signal_index = i
 
     df["cumulative_pnl"] = df["pnl"].cumsum()
     return df
@@ -504,6 +502,7 @@ def test_zero_std_when_spread_constant_then_handled_correctly() -> None:
         capital_at_risk=100.0,
         stop_loss_multiplier=2.0,
         cooldown_periods=0,
+        require_signal_confirmation=bt.require_signal_confirmation,
     )
     expected_for_comparison = expected[
         ["spread", "z_score", "position", "pnl", "cumulative_pnl"]

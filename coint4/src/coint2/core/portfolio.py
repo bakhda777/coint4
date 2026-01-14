@@ -81,10 +81,10 @@ class Portfolio:
         max_position_capital = current_equity * max_position_size_pct
         
         # 4. Логика выбора (ИСПРАВЛЕНО):
-        # Используем максимум из risk_capital и capital_per_pair, но ограничиваем max_position_capital
+        # Используем минимум из risk_capital и capital_per_pair, но ограничиваем max_position_capital
         if risk_per_position_pct > 0:
-            # Берем больший из риск-капитала и базового капитала на пару
-            base_capital = max(risk_capital, capital_per_pair)
+            # Берем меньший из риск-капитала и базового капитала на пару
+            base_capital = min(risk_capital, capital_per_pair)
             # Ограничиваем максимальным размером позиции
             final_capital = min(base_capital, max_position_capital)
         else:

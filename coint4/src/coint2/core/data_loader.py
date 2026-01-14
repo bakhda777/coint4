@@ -19,6 +19,67 @@ from coint2.utils.timing_utils import logged_time, time_block, log_progress
 logger = logging.getLogger(__name__)
 
 
+def _normalize_symbol_list(symbols: list[str] | None) -> list[str]:
+    if not symbols:
+        return []
+    normalized = []
+    for symbol in symbols:
+        symbol = str(symbol).strip()
+        if symbol:
+            normalized.append(symbol)
+    return sorted(set(normalized))
+
+
+def resolve_data_filters(cfg: AppConfig | dict | None) -> tuple[tuple[pd.Timestamp, pd.Timestamp] | None, list[str]]:
+    """Extract clean window and excluded symbols from config."""
+    if cfg is None:
+        return None, []
+
+    filters = None
+    if isinstance(cfg, dict):
+        filters = cfg.get("data_filters")
+    else:
+        filters = getattr(cfg, "data_filters", None)
+
+    if not filters:
+        return None, []
+
+    clean_window = None
+    exclude_symbols: list[str] = []
+
+    if isinstance(filters, dict):
+        raw_clean = filters.get("clean_window") or {}
+        if isinstance(raw_clean, dict):
+            start = raw_clean.get("start_date")
+            end = raw_clean.get("end_date")
+            if start and end:
+                clean_window = (pd.Timestamp(start), pd.Timestamp(end))
+        exclude_symbols = filters.get("exclude_symbols") or []
+    else:
+        raw_clean = getattr(filters, "clean_window", None)
+        if raw_clean and getattr(raw_clean, "start_date", None) and getattr(raw_clean, "end_date", None):
+            clean_window = (pd.Timestamp(raw_clean.start_date), pd.Timestamp(raw_clean.end_date))
+        exclude_symbols = getattr(filters, "exclude_symbols", []) or []
+
+    return clean_window, _normalize_symbol_list(exclude_symbols)
+
+
+def _clamp_dates_to_window(
+    start_date: pd.Timestamp | None,
+    end_date: pd.Timestamp | None,
+    clean_window: tuple[pd.Timestamp, pd.Timestamp] | None,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    if not clean_window:
+        return start_date, end_date
+
+    window_start, window_end = clean_window
+    if start_date is None or start_date < window_start:
+        start_date = window_start
+    if end_date is None or end_date > window_end:
+        end_date = window_end
+    return start_date, end_date
+
+
 def _scan_parquet_files(path: Path | str, glob: str = "*.parquet", max_shards: int | None = None) -> ds.Dataset:
     """Build pyarrow dataset from parquet files under ``path``."""
     base = Path(path)
@@ -34,6 +95,37 @@ def _dir_mtime_hash(path: Path) -> float:
     """Return hash value based on modification times of ``.parquet`` files."""
     mtimes = [f.stat().st_mtime for f in path.rglob("*.parquet")]
     return max(mtimes) if mtimes else 0.0
+
+
+def _read_symbols_from_monthly_layout(root: Path) -> list[str]:
+    """Return symbols from a year/month parquet layout (one file per month)."""
+    parquet_files: list[Path] = []
+    for year_dir in sorted(root.iterdir()):
+        if not year_dir.is_dir() or not year_dir.name.startswith("year="):
+            continue
+
+        for month_dir in sorted(year_dir.iterdir()):
+            if not month_dir.is_dir() or not month_dir.name.startswith("month="):
+                continue
+
+            for file in month_dir.glob("*.parquet"):
+                parquet_files.append(file)
+                break
+
+            if parquet_files:
+                break
+
+        if parquet_files:
+            break
+
+    if not parquet_files:
+        return []
+
+    import polars as pl
+
+    df = pl.read_parquet(parquet_files[0], columns=["symbol"])
+    symbols = df["symbol"].unique().to_list()
+    return sorted(symbols)
 
 
 class DataHandler:
@@ -60,6 +152,7 @@ class DataHandler:
         self._freq: str | None = None
         self._lock = threading.Lock()
         self.lookback_days: int = cfg.pair_selection.lookback_days
+        self.clean_window, self.excluded_symbols = resolve_data_filters(cfg)
 
     @property
     def freq(self) -> str | None:
@@ -84,42 +177,40 @@ class DataHandler:
             logger.info(f"Используем оптимизированную структуру данных: {optimized_dir}")
             
             try:
-                # Загружаем один файл для получения списка символов
-                # Находим первый доступный файл parquet
-                parquet_files = []
-                for year_dir in optimized_dir.iterdir():
-                    if not year_dir.is_dir() or not year_dir.name.startswith("year="):
-                        continue
-                    
-                    for month_dir in year_dir.iterdir():
-                        if not month_dir.is_dir() or not month_dir.name.startswith("month="):
-                            continue
-                            
-                        for file in month_dir.glob("*.parquet"):
-                            parquet_files.append(file)
-                            break
-                        
-                        if parquet_files:
-                            break
-                    
-                    if parquet_files:
-                        break
-                
-                if not parquet_files:
+                symbols = _read_symbols_from_monthly_layout(optimized_dir)
+                if not symbols:
                     logger.warning(f"Не найдено parquet файлов в {optimized_dir}")
                     return []
-                
-                # Читаем первый файл и получаем уникальные символы
-                import polars as pl
-                df = pl.read_parquet(parquet_files[0])
-                symbols = df["symbol"].unique().to_list()
-                
                 logger.info(f"Найдено {len(symbols)} символов в оптимизированной структуре: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
-                return sorted(symbols)
+                symbols = sorted(symbols)
+                return self._filter_excluded_symbols(symbols)
                 
             except Exception as e:
                 logger.error(f"Ошибка при чтении оптимизированных данных: {e}")
                 # Если произошла ошибка, пробуем использовать старую структуру
+
+        # Если data_dir уже в помесячной структуре (year=/month=), читаем символы оттуда
+        try:
+            has_year_partitions = any(
+                p.is_dir() and p.name.startswith("year=") for p in self.data_dir.iterdir()
+            )
+        except FileNotFoundError:
+            has_year_partitions = False
+
+        if has_year_partitions:
+            try:
+                symbols = _read_symbols_from_monthly_layout(self.data_dir)
+                if symbols:
+                    logger.info(
+                        "Найдено %s символов в помесячной структуре: %s%s",
+                        len(symbols),
+                        symbols[:10],
+                        "..." if len(symbols) > 10 else "",
+                    )
+                    symbols = sorted(symbols)
+                    return self._filter_excluded_symbols(symbols)
+            except Exception as e:
+                logger.error(f"Ошибка при чтении помесячной структуры: {e}")
         
         # Используем старую структуру, если оптимизированная недоступна
         if not self.data_dir.exists():
@@ -137,7 +228,8 @@ class DataHandler:
                     symbols.append(p.name)
         
         logger.info(f"Found {len(symbols)} symbols in legacy structure: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
-        return sorted(symbols)
+        symbols = sorted(symbols)
+        return self._filter_excluded_symbols(symbols)
 
     @logged_time("load_full_dataset")
     def _load_full_dataset(self, start_date: pd.Timestamp = None, end_date: pd.Timestamp = None, symbols: list[str] = None) -> dd.DataFrame:
@@ -159,6 +251,12 @@ class DataHandler:
             Dask DataFrame с данными за указанный период
         """
         try:
+            # Применяем чистое окно данных (если задано)
+            start_date, end_date = _clamp_dates_to_window(start_date, end_date, self.clean_window)
+            if start_date is not None and end_date is not None and start_date > end_date:
+                logger.warning("Clean window clamped requested dates to empty range")
+                return empty_ddf()
+
             # Проверяем наличие оптимизированной директории
             optimized_dir = Path(self.data_dir.parent / "data_optimized")
             data_path = optimized_dir if optimized_dir.exists() else self.data_dir
@@ -190,15 +288,17 @@ class DataHandler:
             
             # Добавляем фильтры по символам, если указаны
             if symbols is not None and len(symbols) > 0:
+                symbols = self._filter_excluded_symbols(symbols)
+                if not symbols:
+                    logger.warning("Все символы исключены фильтром, возвращаю пустой датасет")
+                    return empty_ddf()
                 logger.info(f"Фильтрация по символам: {symbols[:10]}{'...' if len(symbols) > 10 else ''}")
-                # Для оптимизированной структуры используем фильтр по столбцу symbol
-                if optimized_dir.exists():
-                    filters.append(("symbol", "in", symbols))
-                    timestamp_filters.append(("symbol", "in", symbols))
-                    epoch_filters.append(("symbol", "in", symbols))
+                filters.append(("symbol", "in", symbols))
+                timestamp_filters.append(("symbol", "in", symbols))
+                epoch_filters.append(("symbol", "in", symbols))
             
-            # Предпочитаем фильтры по timestamp (datetime), с fallback на epoch ms
-            effective_filters = timestamp_filters if timestamp_filters else None
+            # Предпочитаем epoch-фильтры для int64 timestamp, с fallback на datetime-фильтры
+            effective_filters = epoch_filters if epoch_filters else None
             if effective_filters is None:
                 effective_filters = filters if filters else None
 
@@ -220,8 +320,11 @@ class DataHandler:
             try:
                 ddf = _read_with_filters(effective_filters)
             except Exception as e:
-                logger.warning(f"Фильтр по timestamp не сработал, пробуем epoch: {e}")
-                ddf = _read_with_filters(epoch_filters if epoch_filters else None)
+                logger.warning(f"Фильтр по epoch не сработал, пробуем datetime: {e}")
+                ddf = _read_with_filters(timestamp_filters if timestamp_filters else None)
+
+            if self.excluded_symbols:
+                ddf = ddf[~ddf["symbol"].isin(list(self.excluded_symbols))]
 
             # Репартиционируем для лучшего параллелизма и кешируем в памяти
             # npartitions можно настроить в зависимости от системы
@@ -264,7 +367,15 @@ class DataHandler:
             # Определяем временные рамки для загрузки
             days_back = lookback_days or self.lookback_days
             end_date = end_date or pd.Timestamp.now()
-            start_date = end_date - pd.Timedelta(days=days_back)
+            if self.clean_window:
+                end_date = min(end_date, self.clean_window[1])
+                start_date = end_date - pd.Timedelta(days=days_back)
+                start_date = max(start_date, self.clean_window[0])
+                if start_date > end_date:
+                    logger.warning("Clean window resulted in empty date range")
+                    return pd.DataFrame()
+            else:
+                start_date = end_date - pd.Timedelta(days=days_back)
 
             logger.info(
                 f"Загрузка данных за период: {start_date} - {end_date} ({days_back} дней)"
@@ -341,7 +452,7 @@ class DataHandler:
                             def fill_within_session(group):
                                 if len(group) <= 1:
                                     return group
-                                return group.ffill(limit=limit).bfill(limit=limit)
+                                return group.ffill(limit=limit)
 
                             result = (result.groupby(session_dates)
                                      .apply(fill_within_session)
@@ -349,10 +460,10 @@ class DataHandler:
 
                         except Exception as e:
                             # Fallback к стандартному методу
-                            result = result.ffill(limit=limit).bfill(limit=limit)
+                            result = result.ffill(limit=limit)
                     else:
                         # Стандартное поведение для тестов
-                        result = result.ffill(limit=limit).bfill(limit=limit)
+                        result = result.ffill(limit=limit)
                 
                 # Удаляем столбцы с слишком большим количеством NaN
                 nan_threshold = 0.5  # Remove symbols with >50% NaN
@@ -387,6 +498,10 @@ class DataHandler:
         end_date: pd.Timestamp,
     ) -> pd.DataFrame:
         """Load and align data for two symbols within the given date range."""
+        if self.excluded_symbols and (symbol1 in self.excluded_symbols or symbol2 in self.excluded_symbols):
+            logger.warning(f"Пара {symbol1}-{symbol2} исключена фильтром символов")
+            return pd.DataFrame()
+
         # Обеспечиваем, что даты в наивном формате (без timezone)
         if start_date.tzinfo is not None:
             logger.debug(f"Удаляю timezone из start_date: {start_date}")
@@ -394,7 +509,20 @@ class DataHandler:
         if end_date.tzinfo is not None:
             logger.debug(f"Удаляю timezone из end_date: {end_date}")
             end_date = end_date.tz_localize(None)
-            
+
+        start_date, end_date = _clamp_dates_to_window(start_date, end_date, self.clean_window)
+        if start_date is not None and end_date is not None and start_date > end_date:
+            logger.warning("Clean window clamped pair load to empty range")
+            return pd.DataFrame()
+
+        # Legacy per-symbol layout (symbol=SYM/year=YYYY/...)
+        symbol1_dir = self.data_dir / f"symbol={symbol1}"
+        symbol2_dir = self.data_dir / f"symbol={symbol2}"
+        if symbol1_dir.exists() or symbol2_dir.exists():
+            legacy_pair = self._load_pair_data_legacy(symbol1, symbol2, start_date, end_date)
+            if not legacy_pair.empty:
+                return legacy_pair
+
         logger.debug(
             f"Загрузка данных для пары {symbol1}-{symbol2} ({start_date} - {end_date})"
         )
@@ -405,7 +533,7 @@ class DataHandler:
 
         start_ms = int(start_date.timestamp() * 1000)
         end_ms = int(end_date.timestamp() * 1000)
-        
+
         # Сначала пробуем partition-filters (symbol, year, month, day)
         filters = [
             ("symbol", "in", [symbol1, symbol2]),
@@ -456,8 +584,8 @@ class DataHandler:
                     dataset = _scan_parquet_files(self.data_dir, max_shards=self.max_shards)
                     arrow_filter = (
                         ds.field("symbol").isin([symbol1, symbol2])
-                        & (ds.field("timestamp") >= pa.scalar(start_date))
-                        & (ds.field("timestamp") <= pa.scalar(end_date))
+                        & (ds.field("timestamp") >= pa.scalar(start_ms))
+                        & (ds.field("timestamp") <= pa.scalar(end_ms))
                     )
                     table = dataset.to_table(
                         columns=["timestamp", "close", "symbol"],
@@ -516,10 +644,8 @@ class DataHandler:
                             return group
                         # Применяем asfreq только внутри сессии
                         group_resampled = group.asfreq(freq_val)
-                        # Заполняем пропуски только внутри сессии (не через границы)
-                        return (group_resampled
-                                .interpolate(method="linear", limit=limit)
-                                .ffill(limit=limit))
+                        # Заполняем пропуски только внутри сессии (без lookahead)
+                        return group_resampled.ffill(limit=limit)
 
                     wide_df = (wide_df.groupby(session_dates)
                               .apply(fill_within_session)
@@ -531,21 +657,85 @@ class DataHandler:
                     print(f"⚠️ Ошибка при сессионном заполнении, используем стандартный метод: {e}")
                     # Fallback к стандартному методу
                     wide_df = wide_df.asfreq(freq_val)
-                    wide_df = wide_df.interpolate(method="linear", limit=limit)
                     wide_df = wide_df.ffill(limit=limit)
             else:
                 # Стандартное заполнение (для тестов или когда сессионное заполнение отключено)
                 wide_df = wide_df.asfreq(freq_val)
                 limit = 5
-                wide_df = wide_df.interpolate(method="linear", limit=limit)
                 wide_df = wide_df.ffill(limit=limit)
-
 
         # Возвращаем только нужные символы и удаляем строки с NA
         if symbol1 in wide_df.columns and symbol2 in wide_df.columns:
             return wide_df[[symbol1, symbol2]].dropna()
         else:
             return pd.DataFrame()
+
+    def _filter_excluded_symbols(self, symbols: list[str]) -> list[str]:
+        if not self.excluded_symbols:
+            return symbols
+        filtered = [symbol for symbol in symbols if symbol not in self.excluded_symbols]
+        removed = len(symbols) - len(filtered)
+        if removed > 0:
+            logger.info(f"Исключено символов по фильтру: {removed}")
+        return filtered
+
+    def _load_pair_data_legacy(
+        self,
+        symbol1: str,
+        symbol2: str,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+    ) -> pd.DataFrame:
+        """Load pair data from legacy per-symbol layout (no symbol column)."""
+        def _load_symbol(symbol: str) -> pd.DataFrame:
+            symbol_dir = self.data_dir / f"symbol={symbol}"
+            if not symbol_dir.exists():
+                symbol_dir = self.data_dir / symbol
+            if not symbol_dir.exists():
+                return pd.DataFrame()
+
+            dataset = _scan_parquet_files(symbol_dir, max_shards=self.max_shards)
+            try:
+                table = dataset.to_table(columns=["timestamp", "close"])
+                df = table.to_pandas()
+            except Exception:
+                try:
+                    df = pd.read_parquet(symbol_dir, columns=["timestamp", "close"])
+                except Exception:
+                    return pd.DataFrame()
+
+            if df.empty:
+                return df
+
+            if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+                if pd.api.types.is_numeric_dtype(df["timestamp"]):
+                    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+                else:
+                    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+            if df["timestamp"].dt.tz is not None:
+                df["timestamp"] = df["timestamp"].dt.tz_localize(None)
+
+            df = df.dropna(subset=["timestamp"])
+            mask = (df["timestamp"] >= start_date) & (df["timestamp"] <= end_date)
+            df = df.loc[mask].drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
+            return df[["close"]]
+
+        left = _load_symbol(symbol1)
+        right = _load_symbol(symbol2)
+        if left.empty or right.empty:
+            return pd.DataFrame()
+
+        wide_df = pd.concat(
+            [left.rename(columns={"close": symbol1}), right.rename(columns={"close": symbol2})],
+            axis=1,
+        ).sort_index()
+
+        freq_val = pd.infer_freq(wide_df.index) if len(wide_df.index) >= 3 else None
+        with self._lock:
+            self._freq = freq_val
+
+        return wide_df[[symbol1, symbol2]].dropna()
 
     def preload_all_data(self, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """Load raw data for all symbols between ``start_date`` and ``end_date``.
@@ -854,7 +1044,13 @@ def _synth_master_dataset(start_date: pd.Timestamp, end_date: pd.Timestamp) -> p
     return result
 
 
-def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+def load_master_dataset(
+    data_path: str,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    clean_window: tuple[pd.Timestamp, pd.Timestamp] | None = None,
+    exclude_symbols: list[str] | None = None,
+) -> pd.DataFrame:
     """
     Загружает данные для указанного диапазона, используя Polars для надежной фильтрации
     и строгого контроля типов данных.
@@ -873,6 +1069,12 @@ def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.T
     pd.DataFrame
         DataFrame с данными за указанный период
     """
+    exclude_symbols = _normalize_symbol_list(exclude_symbols)
+    start_date, end_date = _clamp_dates_to_window(start_date, end_date, clean_window)
+    if start_date is None or end_date is None or start_date > end_date:
+        print("⚠️  Clean window ограничило диапазон до пустого.")
+        return pd.DataFrame()
+
     print(f"⚙️  Загрузка данных за период: {start_date.date()} -> {end_date.date()}")
 
     # Проверяем наличие оптимизированной структуры данных
@@ -943,13 +1145,15 @@ def load_master_dataset(data_path: str, start_date: pd.Timestamp, end_date: pd.T
         ldf = pl.scan_parquet(parquet_files)
         
         # Проверяем схему данных
-        print(f"📊 Схема данных: {ldf.schema}")
+        print(f"📊 Схема данных: {ldf.collect_schema()}")
         
         # Фильтруем по timestamp
         filtered_ldf = ldf.filter(
-            (pl.col("timestamp") >= start_ts) & 
-            (pl.col("timestamp") <= end_ts)
+            (pl.col("timestamp") >= start_ts)
+            & (pl.col("timestamp") <= end_ts)
         )
+        if exclude_symbols:
+            filtered_ldf = filtered_ldf.filter(~pl.col("symbol").is_in(exclude_symbols))
         
         # Выбираем нужные столбцы и собираем данные
         result = filtered_ldf.select(

@@ -93,6 +93,9 @@ def _cache_data(self, cache_key, data):
 **Файлы**: 
 - `configs/search_spaces/fast.yaml` - основной быстрый режим
 - `configs/search_space_fast.yaml` - минимальный режим для тестов (legacy/минимальный набор)
+- `configs/main_2024_smoke.yaml` - укороченный базовый конфиг для smoke‑оптимизаций (меньше пар и короче окно)
+
+Примечание: в `configs/search_spaces/fast.yaml` диапазон `time_stop_multiplier` согласован с `stop_loss_multiplier` (time_stop >= stop_loss), чтобы быстрые проверки не отбрасывали все трейлы.
 
 **Ключевые изменения**:
 - Фиксированные `commission_pct` и `slippage_pct`

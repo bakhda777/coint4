@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
+from coint2.core import performance
 import pandas as pd
 import yaml
 
@@ -182,21 +183,27 @@ def run_backtest(
     return {"trades": trades, "pnl": pnl, "pair": f"{sym1}/{sym2}"}
 
 
-def calculate_metrics(all_trades: List[Dict[str, Any]], all_pnl: List[float]) -> Dict[str, Any]:
+def calculate_metrics(
+    all_trades: List[Dict[str, Any]],
+    all_pnl: List[float],
+    initial_capital: float,
+    annualizing_factor: int,
+) -> Dict[str, Any]:
     """Calculate performance metrics."""
     if not all_pnl:
         return {"error": "No trades executed"}
 
     pnl_array = np.array(all_pnl, dtype=float)
-    returns = pnl_array
-    std = np.std(returns)
+    capital = initial_capital if initial_capital > 0 else 1.0
+    returns = pnl_array / capital
+    cumulative_pnl = pd.Series(pnl_array).cumsum()
 
     return {
         "total_pnl": float(np.sum(pnl_array)),
         "num_trades": len(all_trades),
         "win_rate": float(np.mean([1 if t["pnl"] > 0 else 0 for t in all_trades])) if all_trades else 0,
-        "sharpe_ratio": float(np.mean(returns) / std * np.sqrt(252)) if std > 0 else 0,
-        "max_drawdown": float(np.min(np.minimum.accumulate(pnl_array) - pnl_array)) if pnl_array.size else 0,
+        "sharpe_ratio": float(performance.sharpe_ratio(pd.Series(returns), annualizing_factor)),
+        "max_drawdown": float(performance.max_drawdown(cumulative_pnl)) if pnl_array.size else 0,
         "avg_bars_held": float(np.mean([t["bars_held"] for t in all_trades])) if all_trades else 0,
     }
 
@@ -258,7 +265,9 @@ def run_fixed_backtest(
             cumulative_pnl.append(running_sum)
         all_pnl.extend(result["pnl"])
 
-    metrics = calculate_metrics(all_trades, all_pnl)
+    initial_capital = float(raw_cfg.get("portfolio", {}).get("initial_capital", 1.0))
+    annualizing_factor = int(raw_cfg.get("backtest", {}).get("annualizing_factor", 252))
+    metrics = calculate_metrics(all_trades, all_pnl, initial_capital, annualizing_factor)
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)

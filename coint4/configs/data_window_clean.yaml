@@ -1,0 +1,10 @@
+# Clean data window: excludes known problematic months
+data_filters:
+  clean_window:
+    start_date: "2022-03-01"
+    end_date: "2025-06-30"
+  exclude_symbols: []
+  exclude_reason: "На clean window не найдено критичных разрывов; список пустой, держим для явных проблем."
+walk_forward:
+  start_date: "2022-04-30"
+  end_date: "2025-06-30"

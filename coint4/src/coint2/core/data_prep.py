@@ -9,7 +9,7 @@ from typing import Tuple, Dict, Any, Optional
 import logging
 from pathlib import Path
 
-from .data_loader import load_master_dataset
+from .data_loader import load_master_dataset, resolve_data_filters
 from .stateful_normalizer import preprocess_data_no_lookahead
 
 logger = logging.getLogger(__name__)
@@ -71,10 +71,13 @@ def prepare_walk_forward_slices(
         if data_dir is None:
             data_dir = config.get('data_dir', 'data_downloaded')
         
+        clean_window, excluded_symbols = resolve_data_filters(config)
         raw_data = load_master_dataset(
             data_path=data_dir,
             start_date=training_start,
-            end_date=testing_end
+            end_date=testing_end,
+            clean_window=clean_window,
+            exclude_symbols=excluded_symbols,
         )
         
         stats["raw_shape"] = raw_data.shape
