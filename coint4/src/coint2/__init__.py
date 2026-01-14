@@ -7,6 +7,10 @@ with walk-forward optimization and Optuna parameter tuning.
 
 __version__ = "0.1.0"
 
+from coint2.utils.runtime_env import configure_runtime_environment
+
+configure_runtime_environment()
+
 # Экспорт основных компонентов для удобного импорта
 from coint2.utils.config import load_config, AppConfig
 from coint2.core.data_loader import DataHandler

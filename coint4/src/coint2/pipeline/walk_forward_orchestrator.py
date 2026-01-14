@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Tuple, List
 import time
 
 import pandas as pd
-from joblib import Parallel, delayed
 
 from coint2.core import math_utils, performance
 from coint2.utils.config import AppConfig
@@ -48,6 +48,18 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     if hours <= 0:
         return 0
     return int(hours * 60 / bar_minutes)
+
+
+def _threaded_map(func, items, n_jobs: int | None) -> list:
+    if not items:
+        return []
+    if not n_jobs or n_jobs < 1:
+        n_jobs = 1
+    max_workers = min(n_jobs, len(items))
+    if max_workers <= 1:
+        return [func(item) for item in items]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(func, items))
 
 def _simulate_realistic_portfolio(all_pnls, cfg):
     """
@@ -1383,25 +1395,25 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             
             if use_memory_map:
                 # Use memory-mapped version for optimal performance
-                pair_results = Parallel(n_jobs=n_jobs, backend='threading')(
-                    delayed(process_single_pair_mmap)(
+                def _run_pair(pair_data_tuple):
+                    return process_single_pair_mmap(
                         (pair_data_tuple[0], pair_data_tuple[1]),  # (s1, s2)
                         testing_start, testing_end, cfg,
                         capital_per_pair, bar_minutes, period_label,
                         (pair_data_tuple[2], pair_data_tuple[3], pair_data_tuple[4], pair_data_tuple[5]),  # (beta, mean, std, metrics)
                         training_normalization_params
                     )
-                    for pair_data_tuple in active_pairs
-                )
+
+                pair_results = _threaded_map(_run_pair, active_pairs, n_jobs)
             else:
                 # Fallback to traditional method
-                pair_results = Parallel(n_jobs=n_jobs, backend='threading')(
-                    delayed(process_single_pair)(
+                def _run_pair(pair_data_tuple):
+                    return process_single_pair(
                         pair_data_tuple, step_df, testing_start, testing_end, cfg,
                         capital_per_pair, bar_minutes, period_label, training_normalization_params
                     )
-                    for pair_data_tuple in active_pairs
-                )
+
+                pair_results = _threaded_map(_run_pair, active_pairs, n_jobs)
             
             processing_time = time.time() - start_time
             logger.info(f"  ⏱️ Параллельная обработка завершена за {processing_time:.1f}с ({len(active_pairs)/processing_time:.1f} пар/с)")
