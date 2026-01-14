@@ -1,5 +1,7 @@
 # Чек-лист production-запуска
 
+Для прод-пайплайна используйте `configs/main_2024.yaml` (поверх `configs/data_window_clean.yaml`). `configs/prod.yaml` предназначен для live/paper и не используется в scan/backtest/WFA.
+
 1. Обновить данные в `coint4/data_downloaded/` и убедиться, что структура помесячная (`year=YYYY/month=MM`).
 2. Зафиксировать `data_filters.clean_window` и список `data_filters.exclude_symbols` (сейчас пустой) в `configs/main_2024.yaml` / `configs/data_window_clean.yaml`.
 3. Для WFA убедиться, что `walk_forward.start_date` ≥ `clean_window.start_date + training_period_days` (по умолчанию 60 дней → `2022-04-30`).
