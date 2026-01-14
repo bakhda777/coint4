@@ -163,6 +163,7 @@ python archive/old_scripts/ops/monitor_drift.py
 
 `data_filters.clean_window` и `data_filters.exclude_symbols` применяются в загрузчике данных и клипают окно/символы для WFA и backtest.
 `walk_forward.max_steps` ограничивает число шагов WFA (по умолчанию 5, больше — только по согласованию).
+`walk_forward.pairs_file` позволяет зафиксировать universe для WFA (например, top-200 из scan); CLI поддерживает `--pairs-file` и `--results-dir`.
 
 Operational checklist: `docs/production_checklist.md`.
 

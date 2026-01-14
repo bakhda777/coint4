@@ -65,6 +65,11 @@ def _handle_walk_forward(args: argparse.Namespace) -> int:
     if args.data_root:
         cfg.data_dir = Path(args.data_root)
         cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    if args.results_dir:
+        cfg.results_dir = Path(args.results_dir)
+        cfg.results_dir.mkdir(parents=True, exist_ok=True)
+    if args.pairs_file:
+        cfg.walk_forward.pairs_file = args.pairs_file
     run_walk_forward(cfg, use_memory_map=not args.no_memory_map)
     return 0
 
@@ -171,6 +176,14 @@ def main() -> int:
     wf_parser.add_argument(
         "--data-root",
         help="Override data root directory (defaults to config data_dir)",
+    )
+    wf_parser.add_argument(
+        "--pairs-file",
+        help="Use fixed pairs universe for WFA (YAML from scan)",
+    )
+    wf_parser.add_argument(
+        "--results-dir",
+        help="Override results directory for WFA outputs",
     )
     wf_parser.add_argument(
         "--no-memory-map",

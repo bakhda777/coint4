@@ -59,6 +59,8 @@
 - main repeat: `coint4/artifacts/wfa/runs/20260114_095105_main_2024_wfa_step5_repeat/`
 - balanced: `coint4/artifacts/wfa/runs/20260114_072317_balanced_2024_wfa/`
 - balanced repeat: `coint4/artifacts/wfa/runs/20260114_073405_balanced_2024_wfa_repeat/`
+- fixed top-200: `coint4/artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5/`
+- fixed top-200 repeat: `coint4/artifacts/wfa/runs/20260114_110717_main_2024_wfa_fixed_top200_step5_repeat/`
 - main refresh (legacy): `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`
 - baseline prev: `coint4/results/strategy_metrics_baseline_prev.csv`
 
@@ -67,14 +69,18 @@
 | --- | --- | --- | --- | --- | --- |
 | main_2024_wfa_5steps | 311.91 | 0.2618 | -126.23 | 2694 | 290 |
 | balanced_2024_wfa_5steps | 1.30 | 0.0140 | -20.38 | 265 | 29 |
+| fixed_top200_wfa_5steps | 11.21 | 0.1866 | -7.46 | 75 | 6 |
 | baseline_prev | -7.85 | -0.1001 | -14.38 | 113 | 14 |
 
 Разница:
 - main - balanced: +310.61 PnL, +0.2478 Sharpe, более глубокая просадка (-105.85).
+- main - fixed: +300.69 PnL, +0.0752 Sharpe, более глубокая просадка (-118.77).
+- fixed - balanced: +9.91 PnL, +0.1726 Sharpe, просадка меньше на 12.93.
+- fixed - baseline: +19.06 PnL, +0.2867 Sharpe, просадка меньше на 6.92.
 - balanced - baseline: +9.15 PnL, +0.1141 Sharpe, просадка хуже на 6.00.
 - main - baseline: +319.76 PnL, +0.3619 Sharpe, просадка хуже на 111.85.
 
-Повтор WFA (balanced и main): метрики полностью совпали (детерминизм подтвержден).
+Повтор WFA (balanced, main, fixed): метрики полностью совпали (детерминизм подтвержден).
 
 ## Быстрая итерация (smoke)
 Артефакты:
@@ -116,10 +122,17 @@ WFA smoke после фикса time_stop_limit (1 шаг): total_pnl -52.40, sh
 
 ./.venv/bin/coint2 walk-forward \
   --config configs/main_2024.yaml
+
+# Опционально: WFA с фиксированным universe (top-200)
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
+  --results-dir artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5
 ```
 
 ## Замечания
 - WFA использует gap в 1 бар (15 минут), поэтому предупреждает о буфере 0 дней между train/test. Если нужен дневной буфер - требуется отдельная настройка.
 - WFA всегда отбирает пары динамически по `pair_selection` на каждом шаге; фиксированный top‑200 применяется только для fixed backtest. Для WFA по фиксированному universe нужен отдельный режим/CLI.
+- WFA по фиксированному top-200 дает 1-2 пары на шаг (строгие фильтры + узкий universe), поэтому в оценке устойчивости предпочтителен динамический отбор.
 - В WFA main refresh были ошибки по части пар: `time_stop_limit` < 1 (до фикса, сигнал о слишком коротком лимите времени удержания).
 - Теперь `time_stop_limit` < 1 автоматически поднимается до 1 с предупреждением; smoke WFA после фикса ошибок не показал.

@@ -27,3 +27,4 @@ For production runs, use `docs/production_checklist.md`. Overlays and configs:
 - `coint4/configs/data_quality_strict.yaml` (strict QA)
 - `coint4/configs/data_window_clean.yaml` (clean window + symbol exclusions overlay)
 - `coint4/configs/main_2024_wfa_balanced.yaml` (balanced WFA)
+Note: WFA supports optional fixed universe via `--pairs-file` and custom output via `--results-dir` (see `docs/quickstart.md`).

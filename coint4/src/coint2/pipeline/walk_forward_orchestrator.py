@@ -14,6 +14,7 @@ from coint2.utils.config import AppConfig
 from coint2.utils.logging_config import get_trading_logger, setup_logging_from_config
 from coint2.utils.logging_utils import get_logger
 from coint2.utils.timing_utils import ProgressTracker, logged_time, time_block
+from coint2.utils.pairs_loader import load_pair_tuples
 from coint2.utils.visualization import calculate_extended_metrics, create_performance_report, format_metrics_summary
 from coint2.monitoring.metrics import TradingMetrics, DashboardGenerator
 
@@ -958,6 +959,16 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         logger.error(f"❌ Ошибка валидации параметров: {e}")
         raise
 
+    fixed_pairs = None
+    pairs_file = getattr(cfg.walk_forward, "pairs_file", None)
+    if pairs_file:
+        fixed_pairs = load_pair_tuples(pairs_file)
+        if not fixed_pairs:
+            raise ValueError(f"Файл pairs_file пуст или не содержит пар: {pairs_file}")
+        logger.info(f"🔒 WFA: фиксированный universe из {pairs_file} ({len(fixed_pairs)} пар)")
+    else:
+        logger.info("🧭 WFA: динамический отбор пар на каждом шаге")
+
     # Calculate walk-forward steps
     # ИСПРАВЛЕНИЕ: start_date теперь начало ТЕСТОВОГО периода, а не тренировочного
     current_test_start = start_date
@@ -1273,39 +1284,59 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                     logger.warning("  После нормализации осталось менее 2 символов")
                     pairs = []
                 else:
-                    # SSD computation
-                    with time_block("SSD computation"):
-                        logger.info("  Расчет SSD для всех пар (без ограничения)")
-                        # Сначала считаем SSD для всех пар
-                        ssd = math_utils.calculate_ssd(normalized_training, top_k=None)
-                        logger.info(f"  SSD результат (все пары): {len(ssd)} пар")
-                        
-                        # Затем берем только top-N пар для дальнейшей фильтрации
-                        ssd_top_n = cfg.pair_selection.ssd_top_n
-                        if len(ssd) > ssd_top_n:
-                            logger.info(f"  Ограничиваем до top-{ssd_top_n} пар для дальнейшей обработки")
-                            ssd = ssd.sort_values().head(ssd_top_n)
-                        
-                    # Filter pairs
-                    with time_block("filtering pairs by cointegration and half-life"):
-                        from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
-                        ssd_pairs = [(s1, s2) for s1, s2 in ssd.index]
-                        filtered_pairs = filter_pairs_by_coint_and_half_life(
-                            ssd_pairs,
-                            training_slice,
-                            pvalue_threshold=cfg.pair_selection.coint_pvalue_threshold,
-                            min_beta=cfg.filter_params.min_beta,
-                            max_beta=cfg.filter_params.max_beta,
-                            min_half_life=cfg.filter_params.min_half_life_days,
-                            max_half_life=cfg.filter_params.max_half_life_days,
-                            min_mean_crossings=cfg.filter_params.min_mean_crossings,
-                            max_hurst_exponent=cfg.filter_params.max_hurst_exponent,
-                            save_filter_reasons=cfg.pair_selection.save_filter_reasons,
-                            kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
-                            # Параметры commission_pct и slippage_pct удалены
+                    pairs_for_filter = []
+                    if fixed_pairs:
+                        available_symbols = set(training_slice.columns)
+                        pairs_for_filter = [
+                            (s1, s2)
+                            for s1, s2 in fixed_pairs
+                            if s1 in available_symbols and s2 in available_symbols
+                        ]
+                        dropped = len(fixed_pairs) - len(pairs_for_filter)
+                        logger.info(
+                            f"  Фиксированный universe: {len(pairs_for_filter)} пар "
+                            f"(отфильтровано {dropped} недоступных)"
                         )
-                        logger.info(f"  Фильтрация: {len(ssd_pairs)} → {len(filtered_pairs)} пар")
-                        pairs = filtered_pairs
+                    else:
+                        # SSD computation
+                        with time_block("SSD computation"):
+                            logger.info("  Расчет SSD для всех пар (без ограничения)")
+                            # Сначала считаем SSD для всех пар
+                            ssd = math_utils.calculate_ssd(normalized_training, top_k=None)
+                            logger.info(f"  SSD результат (все пары): {len(ssd)} пар")
+
+                            # Затем берем только top-N пар для дальнейшей фильтрации
+                            ssd_top_n = cfg.pair_selection.ssd_top_n
+                            if len(ssd) > ssd_top_n:
+                                logger.info(f"  Ограничиваем до top-{ssd_top_n} пар для дальнейшей обработки")
+                                ssd = ssd.sort_values().head(ssd_top_n)
+                        pairs_for_filter = [(s1, s2) for s1, s2 in ssd.index]
+
+                    if not pairs_for_filter:
+                        logger.warning("  Нет пар для фильтрации")
+                        pairs = []
+                    else:
+                        # Filter pairs
+                        with time_block("filtering pairs by cointegration and half-life"):
+                            from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
+                            filtered_pairs = filter_pairs_by_coint_and_half_life(
+                                pairs_for_filter,
+                                training_slice,
+                                pvalue_threshold=cfg.pair_selection.coint_pvalue_threshold,
+                                min_beta=cfg.filter_params.min_beta,
+                                max_beta=cfg.filter_params.max_beta,
+                                min_half_life=cfg.filter_params.min_half_life_days,
+                                max_half_life=cfg.filter_params.max_half_life_days,
+                                min_mean_crossings=cfg.filter_params.min_mean_crossings,
+                                max_hurst_exponent=cfg.filter_params.max_hurst_exponent,
+                                save_filter_reasons=cfg.pair_selection.save_filter_reasons,
+                                kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
+                                # Параметры commission_pct и slippage_pct удалены
+                            )
+                            logger.info(
+                                f"  Фильтрация: {len(pairs_for_filter)} → {len(filtered_pairs)} пар"
+                            )
+                            pairs = filtered_pairs
 
         # Select all filtered pairs for trading (no limit here)
         # Сортируем пары по качеству (по убыванию std, что означает большую волатильность спреда)

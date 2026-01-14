@@ -308,6 +308,7 @@ class WalkForwardConfig(BaseModel):
     min_training_samples: int | None = None
     refit_frequency: str | None = None
     gap_minutes: int = 15
+    pairs_file: str | None = None
     train_days: int | None = None
     test_days: int | None = None
 

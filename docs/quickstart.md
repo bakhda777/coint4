@@ -86,6 +86,14 @@ max_shards: null
 
 `walk_forward.max_steps` ограничивает количество шагов WFA (по умолчанию 5 в `configs/main_2024.yaml` и `configs/main_2024_wfa_balanced.yaml`).
 
+Опционально можно зафиксировать universe (для сравнения с fixed backtest):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
+  --results-dir artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5
+```
+
 Для более быстрых проверок WFA используйте сбалансированный конфиг:
 ```bash
 ./.venv/bin/coint2 walk-forward \

@@ -16,6 +16,8 @@
 10. Запустить fixed backtest на выбранных парах и периоде, сохранить метрики в `outputs/`.
 11. Запустить walk-forward `./.venv/bin/coint2 walk-forward --config configs/main_2024.yaml` и проверить `results/`.
    Для ускоренной проверки можно использовать `configs/main_2024_wfa_balanced.yaml`.
+   Для сравнения с fixed backtest допустим режим фиксированного universe:
+   `./.venv/bin/coint2 walk-forward --config configs/main_2024.yaml --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml --results-dir artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5`.
 12. Сверить метрики (P&L, Sharpe, max drawdown) с предыдущей базовой линией.
 13. Проверить повторяемость (повторить fixed backtest и сравнить метрики).
 14. Прогнать тесты: `./.venv/bin/pytest -q`.
@@ -31,6 +33,8 @@
   - main repeat: `coint4/artifacts/wfa/runs/20260114_095105_main_2024_wfa_step5_repeat/`
   - balanced: `coint4/artifacts/wfa/runs/20260114_072317_balanced_2024_wfa/`
   - balanced repeat: `coint4/artifacts/wfa/runs/20260114_073405_balanced_2024_wfa_repeat/`
+  - fixed top-200: `coint4/artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5/`
+  - fixed top-200 repeat: `coint4/artifacts/wfa/runs/20260114_110717_main_2024_wfa_fixed_top200_step5_repeat/`
 - Детерминизм: fixed и main/balanced WFA повторены без отличий в метриках.
 - Итоговый отчет: `docs/final_report_20260114.md`.
 - Fast iteration (smoke): `bench/fast_iter_20260114_top50/`, `bench/fast_iter_20260114_top100/`.

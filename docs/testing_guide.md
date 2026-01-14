@@ -38,6 +38,14 @@
   --config configs/main_2024.yaml
 ```
 
+Для фиксированного universe (сравнение с fixed backtest):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
+  --results-dir artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5
+```
+
 ### Скрипт для типового прогона
 ```bash
 bash scripts/run_pipeline.sh
@@ -60,6 +68,7 @@ bash scripts/run_pipeline.sh
 - `bench/pairs_universe.yaml` и `bench/UNIVERSE_REPORT.md`
 - `outputs/fixed_run/metrics.yaml`, `outputs/fixed_run/trades.csv`, `outputs/fixed_run/equity.csv`
 - `results/strategy_metrics.csv` (walk-forward), а также `results/daily_pnl.csv` и `results/equity_curve.csv`
+- Для фиксированного universe: `artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5/strategy_metrics.csv`
 
 ## Структура тестов
 
