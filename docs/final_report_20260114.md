@@ -13,7 +13,7 @@
   --base-config configs/main_2024.yaml \
   --end-date 2025-06-30 \
   --top-n 200 \
-  --output-dir bench/clean_window_20260114_top200
+  --output-dir bench/clean_window_20260114_top200_step3
 ```
 
 Результаты:
@@ -21,17 +21,17 @@
 - прошли фильтры: 598
 - отобрано: 200
 
-Артефакты: `bench/clean_window_20260114_top200/` (`pairs_universe.yaml`, `universe_full.csv`, `UNIVERSE_REPORT.md`).
+Артефакты: `bench/clean_window_20260114_top200_step3/` (`pairs_universe.yaml`, `universe_full.csv`, `UNIVERSE_REPORT.md`, старый `bench/clean_window_20260114_top200/` — archived).
 
 ## Fixed backtest на расширенном наборе (top-200)
 Команда:
 ```bash
 ./.venv/bin/coint2 backtest \
   --config configs/main_2024.yaml \
-  --pairs-file bench/clean_window_20260114_top200/pairs_universe.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
   --period-start 2023-06-01 \
   --period-end 2023-08-31 \
-  --out-dir outputs/fixed_run_clean_window_top200_20260114
+  --out-dir outputs/fixed_run_clean_window_top200_20260114_step3
 ```
 
 Метрики:
@@ -46,34 +46,35 @@
 ```bash
 ./.venv/bin/coint2 backtest \
   --config configs/main_2024.yaml \
-  --pairs-file bench/clean_window_20260114_top200/pairs_universe.yaml \
+  --pairs-file bench/clean_window_20260114_top200_step3/pairs_universe.yaml \
   --period-start 2023-06-01 \
   --period-end 2023-08-31 \
-  --out-dir outputs/fixed_run_clean_window_top200_20260114_repeat
+  --out-dir outputs/fixed_run_clean_window_top200_20260114_step3_repeat
 ```
-Результат: метрики полностью совпали (diff = 0). Артефакты: `outputs/fixed_run_clean_window_top200_20260114/`, `outputs/fixed_run_clean_window_top200_20260114_repeat/`.
+Результат: метрики полностью совпали (diff = 0). Артефакты: `outputs/fixed_run_clean_window_top200_20260114_step3/`, `outputs/fixed_run_clean_window_top200_20260114_step3_repeat/` (старые `outputs/fixed_run_clean_window_top200_20260114/` и `outputs/fixed_run_clean_window_top200_20260114_repeat/` — archived).
 
 ## WFA сравнение (5 шагов)
 Артефакты WFA:
-- main: `coint4/artifacts/wfa/runs/20260114_071935_main_2024_wfa/`
+- main: `coint4/artifacts/wfa/runs/20260114_093244_main_2024_wfa_step5/`
+- main repeat: `coint4/artifacts/wfa/runs/20260114_095105_main_2024_wfa_step5_repeat/`
 - balanced: `coint4/artifacts/wfa/runs/20260114_072317_balanced_2024_wfa/`
 - balanced repeat: `coint4/artifacts/wfa/runs/20260114_073405_balanced_2024_wfa_repeat/`
-- main refresh: `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`
+- main refresh (legacy): `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`
 - baseline prev: `coint4/results/strategy_metrics_baseline_prev.csv`
 
 Метрики:
 | Run | total_pnl | sharpe_ratio_abs | max_drawdown_abs | total_trades | total_pairs_traded |
 | --- | --- | --- | --- | --- | --- |
-| main_2024_wfa_5steps | 112.80 | 0.1696 | -77.16 | 1841 | 290 |
+| main_2024_wfa_5steps | 311.91 | 0.2618 | -126.23 | 2694 | 290 |
 | balanced_2024_wfa_5steps | 1.30 | 0.0140 | -20.38 | 265 | 29 |
 | baseline_prev | -7.85 | -0.1001 | -14.38 | 113 | 14 |
 
 Разница:
-- main - balanced: +111.50 PnL, +0.1555 Sharpe, более глубокая просадка (-56.78).
-- balanced - baseline: +9.15 PnL, +0.1141 Sharpe, просадка хуже на 6.01.
-- main - baseline: +120.65 PnL, +0.2696 Sharpe, просадка хуже на 62.79.
+- main - balanced: +310.61 PnL, +0.2478 Sharpe, более глубокая просадка (-105.85).
+- balanced - baseline: +9.15 PnL, +0.1141 Sharpe, просадка хуже на 6.00.
+- main - baseline: +319.76 PnL, +0.3619 Sharpe, просадка хуже на 111.85.
 
-Повтор WFA (balanced): метрики полностью совпали (детерминизм подтвержден).
+Повтор WFA (balanced и main): метрики полностью совпали (детерминизм подтвержден).
 
 ## Быстрая итерация (smoke)
 Артефакты:

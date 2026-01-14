@@ -21,16 +21,18 @@
 
 ## Последний прогон (2026-01-14)
 
-- Universe (clean window, top-200): `bench/clean_window_20260114_top200/` (tested: 5253, passing: 598, selected: 200).
-- Fixed backtest: `outputs/fixed_run_clean_window_top200_20260114/` (total_pnl: -243.99, sharpe_ratio: -0.1758).
+- Universe (clean window, top-200): `bench/clean_window_20260114_top200_step3/` (tested: 5253, passing: 598, selected: 200).
+- Fixed backtest: `outputs/fixed_run_clean_window_top200_20260114_step3/` (total_pnl: -243.99, sharpe_ratio: -0.1758).
+- Fixed repeat: `outputs/fixed_run_clean_window_top200_20260114_step3_repeat/` (diff = 0).
 - WFA:
-  - main: `coint4/artifacts/wfa/runs/20260114_071935_main_2024_wfa/`
+  - main: `coint4/artifacts/wfa/runs/20260114_093244_main_2024_wfa_step5/`
+  - main repeat: `coint4/artifacts/wfa/runs/20260114_095105_main_2024_wfa_step5_repeat/`
   - balanced: `coint4/artifacts/wfa/runs/20260114_072317_balanced_2024_wfa/`
   - balanced repeat: `coint4/artifacts/wfa/runs/20260114_073405_balanced_2024_wfa_repeat/`
-- Детерминизм: fixed и balanced WFA повторены без отличий в метриках.
+- Детерминизм: fixed и main/balanced WFA повторены без отличий в метриках.
 - Итоговый отчет: `docs/final_report_20260114.md`.
 - Fast iteration (smoke): `bench/fast_iter_20260114_top50/`, `bench/fast_iter_20260114_top100/`.
 - Fast fixed (1 месяц): `outputs/fixed_run_fast_iter_20260114_top50/` + repeat `outputs/fixed_run_fast_iter_20260114_top50_repeat/`.
 - Fast fixed (Q3): `outputs/fixed_run_fast_iter_20260114_top50_q3/`, `outputs/fixed_run_fast_iter_20260114_top100/`.
-- WFA main refresh: `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`.
+- WFA main refresh (legacy): `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`.
 - WFA smoke: `coint4/artifacts/wfa/runs/20260114_075638_smoke_fast20_wfa/` + repeat `coint4/artifacts/wfa/runs/20260114_075758_smoke_fast20_wfa_repeat/`.
