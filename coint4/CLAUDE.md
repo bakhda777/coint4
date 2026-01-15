@@ -41,6 +41,19 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
   --config configs/main_2024.yaml \
   --search-space configs/search_spaces/fast.yaml
 
+# Signals-only optimization (dynamic selection, Q4 2023 baseline)
+PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
+  --mode balanced \
+  --n-trials 12 \
+  --config configs/main_2024_optimize_dynamic.yaml \
+  --search-space configs/search_spaces/optimize_signals.yaml \
+  --study-name opt_signals_dynamic_coarse_20260114_v2
+
+# Selection grid (filters, Q4 2023, 3 steps)
+./run_wfa_fullcpu.sh \
+  configs/selection_grid_20260115/selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100.yaml \
+  artifacts/wfa/runs/20260115_selgrid/selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100
+
 # Optimization modes:
 # - fast: Quick optimization with fewer trials (max 50)
 # - balanced: Standard optimization (default)

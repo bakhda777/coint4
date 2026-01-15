@@ -132,6 +132,11 @@ PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
 ./.venv/bin/pytest -q
 ```
 
+## Оптимизация параметров
+
+См. `docs/optimization_plan_20260114.md` для актуального плана, критериев и команд.
+Selection grid по фильтрам (2026-01-15): `docs/optimization_runs_20260115.md`, конфиги в `configs/selection_grid_20260115/`, агрегатор в `artifacts/wfa/aggregate/20260115_selgrid/`.
+
 ## Чек-лист запуска
 
 См. `docs/production_checklist.md`.

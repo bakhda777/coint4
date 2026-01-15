@@ -1,6 +1,7 @@
 # План оптимизации параметров (2026-01-14)
 
 Журнал прогонов: `docs/optimization_runs_20260114.md`.
+Дополнение (2026-01-15): `docs/optimization_runs_20260115.md` (selection grid по фильтрам, запуск частично завершен).
 
 ## Цель и критерии отбора
 - Основная метрика: `sharpe_ratio_abs` по WFA (5 шагов).
@@ -58,6 +59,11 @@
 Текущая итерация фильтров (sanity):
 - `ssd_top_n=5000`, `min_correlation=0.4`, `max_hurst_exponent=0.65`, `kpss_pvalue_threshold=0.05`, `coint_pvalue_threshold=0.35`.
 
+### Selection grid (2026-01-15)
+- Сгенерировано 108 конфигов (полный факторный набор) для `coint_pvalue_threshold`, `kpss_pvalue_threshold`, `max_hurst_exponent`, `min_correlation`, `half_life`.
+- Очередь запусков и частичные результаты: `docs/optimization_runs_20260115.md`.
+- Продолжить: `coint4/artifacts/wfa/aggregate/20260115_selgrid/selected_runs.csv` или `screening_runs.csv` (см. журнал).
+
 Микро-чувствительность сигналов (sanity):
 - `zscore=0.8` дает лучший PnL и более плотные сделки по сравнению с `zscore=1.2`; кандидатом для следующей проверки остается нижний порог (0.8–1.0).
 - `zscore_exit=0.1` улучшает Sharpe до `0.2927` и PnL до `181.40` при сохранении объема сделок; текущий лидер среди ручных проверок.
@@ -70,6 +76,12 @@
 - Ослабление KPSS до `0.03` на 5 шагах увеличивает пары/PNL (Sharpe `0.2406`, PnL `355.80`, max DD `-125.69`), но Sharpe остается около 0.24.
 
 ## Команды (из `coint4/`)
+Полный CPU (WFA helper):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_smoke.yaml \
+  artifacts/wfa/runs/$(date +%Y%m%d_%H%M%S)_smoke_fullcpu
+```
+
 Coarse-оптимизация (динамический отбор, 3 шага, Q4 2023):
 ```bash
 PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
@@ -94,7 +106,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
 - WFA validation Aug-Dec 2023 (5 шагов): `total_pnl=235.03`, `sharpe_ratio_abs=0.2157`, `max_drawdown_abs=-148.28`, `total_trades=5838`, `total_pairs_traded=248` (шаг 4: 18 пар, ниже целевого минимума).
 - Holdout fixed (2024-01-01 → 2024-06-30, top-200): `total_pnl=1461.36`, `sharpe_ratio=0.2710`, `max_drawdown=-329.99`, `num_trades=74366`.
 - Детерминизм: повтор fixed backtest дал идентичные метрики.
-- Статус: текущий лидер, но WFA5 Sharpe `0.2157` и шаг 4 < 20 пар → нужна дополнительная устойчивость/улучшение.
+- Статус: базовый ориентир; WFA5 Sharpe `0.2157` и шаг 4 < 20 пар → нужна дополнительная устойчивость/улучшение. Лидерство смещается к варианту zscore_exit=0.06 + pvalue=0.4 (см. ниже).
 
 ## Sanity-кандидат (zscore=0.8, zscore_exit=0.1)
 - Конфиг: `configs/main_2024_optimize_dynamic_zscore_0p8_exit_0p1.yaml`.
@@ -103,6 +115,26 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
 - WFA validation Aug-Dec 2023 (5 шагов, kpss=0.03): `total_pnl=355.80`, `sharpe_ratio_abs=0.2406`, `max_drawdown_abs=-125.69`, `total_trades=8749`.
 - Holdout fixed (zscore_exit=0.1, 2024-01-01 → 2024-06-30, top-200): `total_pnl=51.13`, `sharpe_ratio=0.0080`, `max_drawdown=-436.40`, `num_trades=125689`.
 - Статус: holdout показал слабую устойчивость; вариант `zscore_exit=0.1` отклонен, продолжаем поиск/валидацию.
+
+## Sanity-кандидат (zscore=0.8, zscore_exit=0.05)
+- Конфиг: `configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05.yaml`.
+- WFA sanity Q4 2023 (3 шага): `total_pnl=171.03`, `sharpe_ratio_abs=0.2764`, `max_drawdown_abs=-82.22`, `total_trades=3688`.
+- Статус: хороший результат, но уступает комбинации exit0p05 + pvalue0p4; держим как альтернативный кандидат.
+
+## Sanity-кандидат (zscore=0.8, zscore_exit=0.05, pvalue=0.4)
+- Конфиг: `configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_pvalue0p4.yaml`.
+- WFA sanity Q4 2023 (3 шага): `total_pnl=179.11`, `sharpe_ratio_abs=0.2855`, `max_drawdown_abs=-82.22`, `total_trades=3768`.
+- Статус: сильный кандидат, но уступает exit0p06 + pvalue0p4 по Sharpe/PnL.
+
+## Sanity-кандидат (zscore=0.8, zscore_exit=0.06, pvalue=0.4)
+- Конфиг: `configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml`.
+- WFA sanity Q4 2023 (3 шага): `total_pnl=182.31`, `sharpe_ratio_abs=0.2905`, `max_drawdown_abs=-81.50`, `total_trades=3768`.
+- Статус: текущий лидер на Q4 sanity; требуется WFA5 и holdout перед финализацией.
+
+## Sanity-кандидат (zscore=0.8, zscore_exit=0.05, hurst=0.7)
+- Конфиг: `configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_hurst0p7.yaml`.
+- WFA sanity Q4 2023 (3 шага): `total_pnl=193.25`, `sharpe_ratio_abs=0.2831`, `max_drawdown_abs=-98.87`, `total_trades=4112`.
+- Статус: альтернативный кандидат (PnL выше, но Sharpe и просадка хуже лидера).
 
 Последний coarse-прогон:
 - `opt_signals_dynamic_coarse_20260114_v4` (Q4 2023, `ssd_top_n=1000`): Sharpe `-11.6984`, `total_trades=11056`, `win_rate=0.0110`, `max_drawdown=0.0016`.
