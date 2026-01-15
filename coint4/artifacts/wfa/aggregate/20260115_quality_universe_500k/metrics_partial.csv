@@ -1,0 +1,2 @@
+run_id,config_path,zscore_threshold,zscore_exit,coint_pvalue_threshold,kpss_pvalue_threshold,max_hurst_exponent,min_correlation,min_half_life_days,max_half_life_days,sharpe_ratio_abs,total_pnl,max_drawdown_abs,total_trades,total_pairs_traded
+20260115_quality_universe_500k_z0p8_corr0p45,configs/quality_runs_20260115/quality_500k_z0p8_corr0p45.yaml,0.8,0.06,0.05,0.05,0.55,0.45,0.01,60,0.3550950321289985,145.71859105298063,-13.801402196346316,203,9.0

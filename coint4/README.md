@@ -137,7 +137,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
 См. `docs/optimization_plan_20260114.md` для актуального плана, критериев и команд.
 Selection grid по фильтрам (2026-01-15): `docs/optimization_runs_20260115.md`, базовая сетка в `configs/selection_grid_20260115/`, строгая сетка p-value в `configs/selection_grid_20260115_strictpv/` (параллельный запуск описан в docs), агрегаторы в `artifacts/wfa/aggregate/20260115_selgrid/` и `artifacts/wfa/aggregate/20260115_selgrid_strictpv/`.
 Sharpe target (строгие сигналы): `docs/optimization_runs_20260115.md`, конфиги в `configs/sharpe_target_20260115/`, агрегатор `artifacts/wfa/aggregate/20260115_sharpe_target/`.
-Quality universe (исключение мусорных символов): `docs/optimization_runs_20260115.md`, конфиги `configs/quality_runs_20260115/` (включая corr0.45 alignment), артефакты `artifacts/universe/quality_universe_20260115_250k/` и `artifacts/universe/quality_universe_20260115_200k/`, агрегаторы `artifacts/wfa/aggregate/20260115_quality_universe/` и `artifacts/wfa/aggregate/20260115_quality_universe_200k/`.
+Quality universe (исключение мусорных символов): `docs/optimization_runs_20260115.md`, конфиги `configs/quality_runs_20260115/` (включая corr0.45 alignment, tradeability/hl0p05-45 и denylist `configs/quality_runs_20260115/denylist_symbols_20260115.yaml`), артефакты `artifacts/universe/quality_universe_20260115/`, `artifacts/universe/quality_universe_20260115_250k/` и `artifacts/universe/quality_universe_20260115_200k/`, агрегаторы `artifacts/wfa/aggregate/20260115_quality_universe_500k/`, `artifacts/wfa/aggregate/20260115_quality_universe/` и `artifacts/wfa/aggregate/20260115_quality_universe_200k/`.
 
 Сборка quality universe (пример):
 ```bash

@@ -898,6 +898,70 @@ remaining_after_stage:
   after_market_microstructure: 20
 ```
 
+## Quality universe (20260115_500k)
+- Скрипт: `coint4/scripts/universe/build_quality_universe.py`.
+- Период качества: 2023-01-01..2023-09-30, bar 15m, min_history 180d, coverage>=0.9, avg_daily_turnover>=500k, max_days_since_last=14.
+- Результат: 50 символов включено, 226 исключено (short_history 43, low_coverage 58, low_turnover 216).
+- Артефакты: `coint4/artifacts/universe/quality_universe_20260115/` (quality_report.csv, exclude_symbols.yaml, included_symbols.txt, excluded_symbols.txt, quality_summary.json).
+
+### WFA: quality universe 500k + z0p8 corr0p45 (Q4 2023)
+- Конфиги: `coint4/configs/quality_runs_20260115/`.
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_quality_universe_500k/` (`metrics_partial.csv`, `run_log.txt`).
+- Прогоны: `20260115_quality_universe_500k_z0p8_corr0p45`.
+- Команда:
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_500k_z0p8_corr0p45.yaml artifacts/wfa/runs/20260115_quality_universe_500k_z0p8_corr0p45`
+
+#### 20260115_quality_universe_500k_z0p8_corr0p45
+- Метрики (strategy_metrics.csv): total_pnl `145.72`, sharpe_ratio_abs `0.3551`, max_drawdown_abs `-13.80`, total_trades `203`, total_pairs_traded `9.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_500k_z0p8_corr0p45/`.
+- Худшая пара по PnL: `ETHUSDC-ETHUSDT` (`-0.91`).
+- Статус: `rejected` (меньше пар и Sharpe ниже 200k/250k).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 1225
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1014
+  after_beta: 674
+  after_mean_crossings: 674
+  after_half_life: 660
+  after_pvalue: 133
+  after_hurst: 64
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 1225
+passed_pairs: 2
+remaining_after_stage:
+  after_low_correlation: 714
+  after_beta: 488
+  after_mean_crossings: 488
+  after_half_life: 483
+  after_pvalue: 105
+  after_hurst: 53
+  after_kpss: 2
+  after_market_microstructure: 2
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 1275
+passed_pairs: 4
+remaining_after_stage:
+  after_low_correlation: 1007
+  after_beta: 698
+  after_mean_crossings: 698
+  after_half_life: 697
+  after_pvalue: 88
+  after_hurst: 38
+  after_kpss: 4
+  after_market_microstructure: 4
+```
+
 ## Quality universe (20260115_250k)
 - Скрипт: `coint4/scripts/universe/build_quality_universe.py`.
 - Период качества: 2023-01-01..2023-09-30, bar 15m, min_history 180d, coverage>=0.9, avg_daily_turnover>=250k, max_days_since_last=14.
@@ -1240,10 +1304,165 @@ remaining_after_stage:
   after_market_microstructure: 3
 ```
 
+#### 20260115_quality_universe_200k_z0p8_corr0p45
+- Метрики (strategy_metrics.csv): total_pnl `181.00`, sharpe_ratio_abs `0.4105`, max_drawdown_abs `-15.32`, total_trades `457`, total_pairs_traded `18.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
+- Статус: `candidate` (лучший Sharpe среди quality-universe на 2023 Q4).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2926
+passed_pairs: 10
+remaining_after_stage:
+  after_low_correlation: 2355
+  after_beta: 1544
+  after_mean_crossings: 1544
+  after_half_life: 1527
+  after_pvalue: 381
+  after_hurst: 186
+  after_kpss: 10
+  after_market_microstructure: 10
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2926
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1574
+  after_beta: 1083
+  after_mean_crossings: 1083
+  after_half_life: 1077
+  after_pvalue: 265
+  after_hurst: 147
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 3003
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 2346
+  after_beta: 1627
+  after_mean_crossings: 1627
+  after_half_life: 1625
+  after_pvalue: 188
+  after_hurst: 72
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
+#### 20260115_quality_universe_200k_z0p8_corr0p45_tradeable
+- Метрики (strategy_metrics.csv): total_pnl `153.13`, sharpe_ratio_abs `0.3681`, max_drawdown_abs `-15.06`, total_trades `278`, total_pairs_traded `12.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45_tradeable/`.
+- Худшая пара по PnL: `ETHUSDC-ETHUSDT` (`-0.91`).
+- Статус: `rejected` (tradeability фильтры и denylist сократили пары и ухудшили Sharpe).
+- Примечание: curated denylist `coint4/configs/quality_runs_20260115/denylist_symbols_20260115.yaml`, tradeability filter включен (min_volume=1m, days_live=30, bid_ask<=0.2, funding<=0.02).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2628
+passed_pairs: 6
+remaining_after_stage:
+  after_low_correlation: 2083
+  after_beta: 1334
+  after_mean_crossings: 1334
+  after_half_life: 1318
+  after_pvalue: 323
+  after_hurst: 160
+  after_kpss: 6
+  after_market_microstructure: 6
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2628
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1362
+  after_beta: 924
+  after_mean_crossings: 924
+  after_half_life: 918
+  after_pvalue: 215
+  after_hurst: 118
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2701
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 2081
+  after_beta: 1415
+  after_mean_crossings: 1415
+  after_half_life: 1414
+  after_pvalue: 166
+  after_hurst: 63
+  after_kpss: 3
+  after_market_microstructure: 3
+```
+
+#### 20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45
+- Метрики (strategy_metrics.csv): total_pnl `81.72`, sharpe_ratio_abs `0.4000`, max_drawdown_abs `-13.09`, total_trades `436`, total_pairs_traded `16.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
+- Статус: `rejected` (Sharpe ниже базового 200k z0p8/corr0.45, PnL заметно ниже).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2926
+passed_pairs: 9
+remaining_after_stage:
+  after_low_correlation: 2280
+  after_beta: 1487
+  after_mean_crossings: 1487
+  after_half_life: 1466
+  after_pvalue: 365
+  after_hurst: 181
+  after_kpss: 9
+  after_market_microstructure: 9
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2926
+passed_pairs: 2
+remaining_after_stage:
+  after_low_correlation: 1462
+  after_beta: 1006
+  after_mean_crossings: 1006
+  after_half_life: 997
+  after_pvalue: 253
+  after_hurst: 141
+  after_kpss: 2
+  after_market_microstructure: 2
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 3003
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 2301
+  after_beta: 1612
+  after_mean_crossings: 1612
+  after_half_life: 1607
+  after_pvalue: 185
+  after_hurst: 72
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
 ## Итоги на текущий момент
 - Лучший по Sharpe (строгий pv): `pv=0.05, kpss=0.05, hurst=0.55, corr=0.50, hl=0.01-60` (Sharpe `0.3776`, PnL `108.97`, DD `-29.67`).
 - Лучший по Sharpe среди широкой сетки: `pv=0.40, kpss=0.05, hurst=0.70, corr=0.40` (Sharpe `0.2965`, PnL `205.20`, DD `-98.16`).
 - Лучший по PnL среди широкой сетки: `pv=0.40, kpss=0.03, hurst=0.65, corr=0.40` (Sharpe `0.2515`, PnL `244.29`, DD `-133.90`).
 - Sharpe target (z1p2/z1p4): отрицательный Sharpe → отклонены, требуется смягчить сигналы или изменить окно.
 - Quality universe: z0p8 Sharpe `0.3724` (PnL `153.62`), z1p2 Sharpe `0.2266` → Sharpe>1 не достигнут, требуется донастройка фильтров/сигналов.
-- Quality universe 200k: z1p0/exit0p15 Sharpe `0.3379`, blacklist Sharpe `0.3090` → улучшений Sharpe нет, требуется иной срез фильтров/сигналов.
+- Quality universe 200k: z0p8/corr0.45 Sharpe `0.4105` (PnL `181.00`), corr0.5/hl0.05-45 Sharpe `0.4000`, tradeable+denylist Sharpe `0.3681`, z1p0/exit0p15 Sharpe `0.3379`, blacklist Sharpe `0.3090` → лучший кандидат в рамках quality-universe, требуется иной срез tradeability/сигналов.
+- Quality universe 500k: z0p8/corr0.45 Sharpe `0.3551` (PnL `145.72`) → ниже 200k/250k, пар меньше.

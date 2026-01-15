@@ -21,3 +21,36 @@ max_drawdown_abs: -14.766026481986046
 total_trades: 135
 total_pairs_traded: 14
 filter_reasons: results/filter_reasons_20260115_144547.csv, results/filter_reasons_20260115_144734.csv, results/filter_reasons_20260115_145018.csv
+
+run_id: 20260115_quality_universe_200k_z0p8_corr0p45
+config: configs/quality_runs_20260115/quality_200k_z0p8_corr0p45.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z0p8_corr0p45.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45
+sharpe_ratio_abs: 0.4104752602974087
+total_pnl: 180.99626567593077
+max_drawdown_abs: -15.319148959650192
+total_trades: 457
+total_pairs_traded: 18.0
+filter_reasons: results/filter_reasons_20260115_154129.csv, results/filter_reasons_20260115_154156.csv, results/filter_reasons_20260115_154224.csv
+
+run_id: 20260115_quality_universe_200k_z0p8_corr0p45_tradeable
+config: configs/quality_runs_20260115/quality_200k_z0p8_corr0p45_tradeable.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45_tradeable
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z0p8_corr0p45_tradeable.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45_tradeable
+sharpe_ratio_abs: 0.36812697324432436
+total_pnl: 153.12730544887017
+max_drawdown_abs: -15.059766375285108
+total_trades: 278
+total_pairs_traded: 12.0
+filter_reasons: results/filter_reasons_20260115_155110.csv, results/filter_reasons_20260115_155132.csv, results/filter_reasons_20260115_155157.csv
+
+run_id: 20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45
+config: configs/quality_runs_20260115/quality_200k_z0p8_corr0p5_hl0p05-45.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z0p8_corr0p5_hl0p05-45.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45
+sharpe_ratio_abs: 0.3999760355933704
+total_pnl: 81.72154964378569
+max_drawdown_abs: -13.089532906189561
+total_trades: 436
+total_pairs_traded: 16.0
+filter_reasons: results/filter_reasons_20260115_155536.csv, results/filter_reasons_20260115_155600.csv, results/filter_reasons_20260115_155628.csv

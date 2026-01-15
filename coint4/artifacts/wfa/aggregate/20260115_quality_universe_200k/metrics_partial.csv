@@ -1,3 +1,6 @@
 run_id,config_path,zscore_threshold,zscore_exit,coint_pvalue_threshold,kpss_pvalue_threshold,max_hurst_exponent,min_correlation,min_half_life_days,max_half_life_days,sharpe_ratio_abs,total_pnl,max_drawdown_abs,total_trades,total_pairs_traded
 20260115_quality_universe_200k_z1p0_exit0p15,configs/quality_runs_20260115/quality_200k_z1p0_exit0p15.yaml,1.0,0.15,0.05,0.05,0.55,0.45,0.01,60,0.33789539674835944,141.79572391405236,-19.961118646897376,177,18
 20260115_quality_universe_200k_z1p0_exit0p15_blacklist,configs/quality_runs_20260115/quality_200k_z1p0_exit0p15_blacklist.yaml,1.0,0.15,0.05,0.05,0.55,0.45,0.01,60,0.30895336450006367,128.37931071978528,-14.766026481986046,135,14
+20260115_quality_universe_200k_z0p8_corr0p45,configs/quality_runs_20260115/quality_200k_z0p8_corr0p45.yaml,0.8,0.06,0.05,0.05,0.55,0.45,0.01,60,0.4104752602974087,180.99626567593077,-15.319148959650192,457,18.0
+20260115_quality_universe_200k_z0p8_corr0p45_tradeable,configs/quality_runs_20260115/quality_200k_z0p8_corr0p45_tradeable.yaml,0.8,0.06,0.05,0.05,0.55,0.45,0.01,60,0.36812697324432436,153.12730544887017,-15.059766375285108,278,12.0
+20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45,configs/quality_runs_20260115/quality_200k_z0p8_corr0p5_hl0p05-45.yaml,0.8,0.06,0.05,0.05,0.55,0.5,0.05,45,0.3999760355933704,81.72154964378569,-13.089532906189561,436,16.0

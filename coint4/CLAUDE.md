@@ -113,10 +113,15 @@ python scripts/universe/select_pairs.py \
   --out-dir artifacts/universe/quality_universe_20260115_250k
 
 Последние quality universe артефакты:
+- `artifacts/universe/quality_universe_20260115/`
+- `artifacts/wfa/aggregate/20260115_quality_universe_500k/`
 - `artifacts/universe/quality_universe_20260115_250k/`
 - `artifacts/wfa/aggregate/20260115_quality_universe/` (corr0.45 alignment)
 - `artifacts/universe/quality_universe_20260115_200k/`
 - `artifacts/wfa/aggregate/20260115_quality_universe_200k/`
+- `configs/quality_runs_20260115/denylist_symbols_20260115.yaml`
+- `configs/quality_runs_20260115/quality_200k_z0p8_corr0p45_tradeable.yaml`
+- `configs/quality_runs_20260115/quality_200k_z0p8_corr0p5_hl0p05-45.yaml`
 
 # Merge pairs from multiple selections
 python scripts/universe/merge_pairs.py
