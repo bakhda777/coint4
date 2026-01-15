@@ -1,0 +1,14 @@
+[ssd_topn_sweep_3vals] start: 2026-01-15T19:29:40Z
+base_config: configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml
+concurrency: 1
+n_jobs_per_run: -1
+runs:
+- config: configs/ssd_topn_sweep_20260115_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000
+  status: completed
+- config: configs/ssd_topn_sweep_20260115_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd40000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd40000
+  status: stalled
+- config: configs/ssd_topn_sweep_20260115_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd50000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd50000
+  status: planned

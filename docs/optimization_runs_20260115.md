@@ -808,7 +808,7 @@ cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
   xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id/run.log" 2>&1' _ {}
 ```
 
-Статус: `active` (прогоны в процессе).
+Статус: `partial` (1/6 completed; 2 stalled; 3 planned; активных процессов нет — требуется перезапуск ssd10000/ssd25000).
 
 ### SSD top-N sweep (subset 4 values, 20260115_4vals)
 
@@ -827,7 +827,284 @@ cat configs/ssd_topn_sweep_20260115_4vals/ssd_topn_configs.txt | \
   xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/$run_id/run.log" 2>&1' _ {}
 ```
 
-Статус: `planned` (ожидает запуска).
+Статус: `completed` (4/4, лучший Sharpe в sweep — 0.6502 на ssd25000).
+
+### Выполненные прогоны (Q4 2023, 3 шага)
+
+#### ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd5000
+- Метрики (strategy_metrics.csv): total_pnl `182.31`, sharpe_ratio_abs `0.2905`, max_drawdown_abs `-81.50`, total_trades `3768`, total_pairs_traded `157.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd5000/`.
+- Статус: `rejected` (Sharpe ниже 1).
+
+Сводка фильтрации пар (Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 5000
+passed_pairs: 69
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 5000
+passed_pairs: 21
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 5000
+passed_pairs: 75
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+#### ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd10000
+- Метрики (strategy_metrics.csv): total_pnl `489.63`, sharpe_ratio_abs `0.4998`, max_drawdown_abs `-111.53`, total_trades `5898`, total_pairs_traded `249.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd10000/`.
+- Статус: `rejected` (Sharpe ниже 1).
+
+Сводка фильтрации пар (Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 10000
+passed_pairs: 103
+remaining_after_stage:
+  after_low_correlation: 9431
+  after_beta: 6370
+  after_mean_crossings: 6370
+  after_half_life: 6320
+  after_pvalue: 4730
+  after_hurst: 3251
+  after_kpss: 103
+  after_market_microstructure: 103
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 10000
+passed_pairs: 36
+remaining_after_stage:
+  after_low_correlation: 7803
+  after_beta: 5461
+  after_mean_crossings: 5461
+  after_half_life: 5444
+  after_pvalue: 3794
+  after_hurst: 3002
+  after_kpss: 36
+  after_market_microstructure: 36
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 10000
+passed_pairs: 118
+remaining_after_stage:
+  after_low_correlation: 9558
+  after_beta: 6637
+  after_mean_crossings: 6637
+  after_half_life: 6633
+  after_pvalue: 4331
+  after_hurst: 2807
+  after_kpss: 118
+  after_market_microstructure: 118
+```
+
+#### ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd15000
+- Метрики (strategy_metrics.csv): total_pnl `614.21`, sharpe_ratio_abs `0.5392`, max_drawdown_abs `-175.19`, total_trades `8033`, total_pairs_traded `348.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd15000/`.
+- Статус: `rejected` (Sharpe ниже 1).
+
+Сводка фильтрации пар (Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 15000
+passed_pairs: 147
+remaining_after_stage:
+  after_low_correlation: 13404
+  after_beta: 8792
+  after_mean_crossings: 8792
+  after_half_life: 8742
+  after_pvalue: 6833
+  after_hurst: 4747
+  after_kpss: 147
+  after_market_microstructure: 147
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 15000
+passed_pairs: 62
+remaining_after_stage:
+  after_low_correlation: 10830
+  after_beta: 7361
+  after_mean_crossings: 7361
+  after_half_life: 7338
+  after_pvalue: 5316
+  after_hurst: 4278
+  after_kpss: 62
+  after_market_microstructure: 62
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 15000
+passed_pairs: 149
+remaining_after_stage:
+  after_low_correlation: 14038
+  after_beta: 9495
+  after_mean_crossings: 9495
+  after_half_life: 9486
+  after_pvalue: 6094
+  after_hurst: 3965
+  after_kpss: 149
+  after_market_microstructure: 149
+```
+
+#### ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000
+- Метрики (strategy_metrics.csv): total_pnl `1205.94`, sharpe_ratio_abs `0.6502`, max_drawdown_abs `-199.31`, total_trades `11041`, total_pairs_traded `520.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000/`.
+- Статус: `candidate` (лидер sweep, Sharpe все еще ниже 1).
+
+Сводка фильтрации пар (Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 25000
+passed_pairs: 238
+remaining_after_stage:
+  after_low_correlation: 20216
+  after_beta: 13215
+  after_mean_crossings: 13215
+  after_half_life: 13164
+  after_pvalue: 10517
+  after_hurst: 7389
+  after_kpss: 238
+  after_market_microstructure: 238
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 25000
+passed_pairs: 104
+remaining_after_stage:
+  after_low_correlation: 14874
+  after_beta: 10035
+  after_mean_crossings: 10035
+  after_half_life: 10009
+  after_pvalue: 7486
+  after_hurst: 6030
+  after_kpss: 104
+  after_market_microstructure: 104
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 25000
+passed_pairs: 190
+remaining_after_stage:
+  after_low_correlation: 22285
+  after_beta: 15291
+  after_mean_crossings: 15291
+  after_half_life: 15258
+  after_pvalue: 9573
+  after_hurst: 6358
+  after_kpss: 190
+  after_market_microstructure: 190
+```
+
+
+### SSD top-N sweep (subset 3 values, 20260115_3vals)
+
+Диапазоны (3 конфига):
+- `ssd_top_n`: 30000, 40000, 50000
+
+Артефакты и агрегация:
+- Конфиги: `coint4/configs/ssd_topn_sweep_20260115_3vals/`
+- Manifest: `coint4/configs/ssd_topn_sweep_20260115_3vals/manifest.csv`
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep_3vals/` (`run_log.txt`, `run_queue.csv`, `configs.txt`)
+- Прогоны: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/`
+
+Команда (из `coint4/`, `n_jobs: -1` в конфигах, каждый прогон использует все ядра):
+```bash
+cat configs/ssd_topn_sweep_20260115_3vals/ssd_topn_configs.txt | \
+  xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/$run_id/run.log" 2>&1' _ {}
+```
+
+Статус: `partial` (1/3 completed; 1 stalled; 1 planned).
+
+Примечание:
+- `ssd40000`: run.log остановился на WF-шаге 3 (2026-01-15 20:19); требуется перезапуск.
+
+### Выполненные прогоны (Q4 2023, 3 шага)
+
+#### ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000
+- Метрики (strategy_metrics.csv): total_pnl `1154.73`, sharpe_ratio_abs `0.5348`, max_drawdown_abs `-201.94`, total_trades `12419`, total_pairs_traded `605.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000/`.
+- Статус: `rejected` (Sharpe ниже 1; хуже ssd25000).
+
+Сводка фильтрации пар (Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 30000
+passed_pairs: 296
+remaining_after_stage:
+  after_low_correlation: 23024
+  after_beta: 15165
+  after_mean_crossings: 15165
+  after_half_life: 15114
+  after_pvalue: 11985
+  after_hurst: 8464
+  after_kpss: 296
+  after_market_microstructure: 296
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 30000
+passed_pairs: 115
+remaining_after_stage:
+  after_low_correlation: 16249
+  after_beta: 10995
+  after_mean_crossings: 10995
+  after_half_life: 10967
+  after_pvalue: 8224
+  after_hurst: 6612
+  after_kpss: 115
+  after_market_microstructure: 115
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 30000
+passed_pairs: 207
+remaining_after_stage:
+  after_low_correlation: 25306
+  after_beta: 17351
+  after_mean_crossings: 17351
+  after_half_life: 17289
+  after_pvalue: 10734
+  after_hurst: 7089
+  after_kpss: 207
+  after_market_microstructure: 207
+```
 
 ## Sharpe target (strict signals + tradeability filter, Q4 2023, 3 шага)
 
