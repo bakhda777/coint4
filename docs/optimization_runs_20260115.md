@@ -1014,6 +1014,116 @@ remaining_after_stage:
   after_market_microstructure: 5
 ```
 
+### WFA: quality universe 250k + corr0.45 alignment (Q4 2023)
+- Конфиги: `coint4/configs/quality_runs_20260115/`.
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_quality_universe/` (`metrics_partial.csv`, `run_log.txt`).
+- Прогоны: `20260115_quality_universe_250k_z1p0_exit0p15_corr0p45`, `20260115_quality_universe_250k_z0p8_corr0p45`.
+- Команды:
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_250k_z1p0_exit0p15_corr0p45.yaml artifacts/wfa/runs/20260115_quality_universe_250k_z1p0_exit0p15_corr0p45`
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_250k_z0p8_corr0p45.yaml artifacts/wfa/runs/20260115_quality_universe_250k_z0p8_corr0p45`
+
+#### 20260115_quality_universe_250k_z1p0_exit0p15_corr0p45
+- Метрики (strategy_metrics.csv): total_pnl `129.25`, sharpe_ratio_abs `0.3241`, max_drawdown_abs `-10.10`, total_trades `107`, total_pairs_traded `13.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_250k_z1p0_exit0p15_corr0p45/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-1.56`).
+- Статус: `rejected` (Sharpe ниже базового z0p8; exit 0.15/entry 1.0 не улучшили профиль).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2485
+passed_pairs: 6
+remaining_after_stage:
+  after_low_correlation: 2028
+  after_beta: 1309
+  after_mean_crossings: 1309
+  after_half_life: 1292
+  after_pvalue: 282
+  after_hurst: 138
+  after_kpss: 6
+  after_market_microstructure: 6
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2485
+passed_pairs: 2
+remaining_after_stage:
+  after_low_correlation: 1393
+  after_beta: 943
+  after_mean_crossings: 943
+  after_half_life: 937
+  after_pvalue: 214
+  after_hurst: 116
+  after_kpss: 2
+  after_market_microstructure: 2
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2556
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 1981
+  after_beta: 1362
+  after_mean_crossings: 1362
+  after_half_life: 1361
+  after_pvalue: 161
+  after_hurst: 63
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
+#### 20260115_quality_universe_250k_z0p8_corr0p45
+- Метрики (strategy_metrics.csv): total_pnl `153.62`, sharpe_ratio_abs `0.3724`, max_drawdown_abs `-16.84`, total_trades `294`, total_pairs_traded `13.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_250k_z0p8_corr0p45/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
+- Статус: `candidate` (результат совпал с базовым z0p8; выравнивание min_correlation_threshold не изменило Sharpe).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2485
+passed_pairs: 6
+remaining_after_stage:
+  after_low_correlation: 2028
+  after_beta: 1309
+  after_mean_crossings: 1309
+  after_half_life: 1292
+  after_pvalue: 282
+  after_hurst: 138
+  after_kpss: 6
+  after_market_microstructure: 6
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2485
+passed_pairs: 2
+remaining_after_stage:
+  after_low_correlation: 1393
+  after_beta: 943
+  after_mean_crossings: 943
+  after_half_life: 937
+  after_pvalue: 214
+  after_hurst: 116
+  after_kpss: 2
+  after_market_microstructure: 2
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2556
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 1981
+  after_beta: 1362
+  after_mean_crossings: 1362
+  after_half_life: 1361
+  after_pvalue: 161
+  after_hurst: 63
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
 ## Quality universe (20260115_200k)
 - Скрипт: `coint4/scripts/universe/build_quality_universe.py`.
 - Период качества: 2023-01-01..2023-09-30, bar 15m, min_history 180d, coverage>=0.9, avg_daily_turnover>=200k, max_days_since_last=14.
