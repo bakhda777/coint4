@@ -1197,7 +1197,7 @@ remaining_after_stage:
 ### WFA: quality universe 200k + z1p0/exit0p15 (Q4 2023)
 - Конфиги: `coint4/configs/quality_runs_20260115/`.
 - Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_quality_universe_200k/` (`metrics_partial.csv`, `run_log.txt`).
-- Прогоны: `20260115_quality_universe_200k_z1p0_exit0p15`, `20260115_quality_universe_200k_z1p0_exit0p15_blacklist`.
+- Прогоны: `20260115_quality_universe_200k_z1p0_exit0p15`, `20260115_quality_universe_200k_z1p0_exit0p15_blacklist`, `20260115_quality_universe_200k_z0p8_corr0p45`, `20260115_quality_universe_200k_z0p8_corr0p45_signal_strict`, `20260115_quality_universe_200k_z0p8_corr0p45_tradeable`, `20260115_quality_universe_200k_z0p8_corr0p5_hl0p05-45`, `20260115_quality_universe_200k_z0p9_exit0p1`, `20260115_quality_universe_200k_z1p0_exit0p1`.
 - Команды:
   - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15`
   - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15_blacklist.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15_blacklist`
@@ -1309,6 +1309,57 @@ remaining_after_stage:
 - Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45/`.
 - Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
 - Статус: `candidate` (лучший Sharpe среди quality-universe на 2023 Q4).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2926
+passed_pairs: 10
+remaining_after_stage:
+  after_low_correlation: 2355
+  after_beta: 1544
+  after_mean_crossings: 1544
+  after_half_life: 1527
+  after_pvalue: 381
+  after_hurst: 186
+  after_kpss: 10
+  after_market_microstructure: 10
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2926
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1574
+  after_beta: 1083
+  after_mean_crossings: 1083
+  after_half_life: 1077
+  after_pvalue: 265
+  after_hurst: 147
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 3003
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 2346
+  after_beta: 1627
+  after_mean_crossings: 1627
+  after_half_life: 1625
+  after_pvalue: 188
+  after_hurst: 72
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
+#### 20260115_quality_universe_200k_z0p8_corr0p45_signal_strict
+- Метрики (strategy_metrics.csv): total_pnl `181.00`, sharpe_ratio_abs `0.4105`, max_drawdown_abs `-15.32`, total_trades `457`, total_pairs_traded `18.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z0p8_corr0p45_signal_strict/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
+- Статус: `rejected` (строгие сигналы не улучшили Sharpe, метрики совпали с базой).
 
 Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
 ```yaml
@@ -1566,5 +1617,5 @@ remaining_after_stage:
 - Лучший по PnL среди широкой сетки: `pv=0.40, kpss=0.03, hurst=0.65, corr=0.40` (Sharpe `0.2515`, PnL `244.29`, DD `-133.90`).
 - Sharpe target (z1p2/z1p4): отрицательный Sharpe → отклонены, требуется смягчить сигналы или изменить окно.
 - Quality universe: z0p8 Sharpe `0.3724` (PnL `153.62`), z1p2 Sharpe `0.2266` → Sharpe>1 не достигнут, требуется донастройка фильтров/сигналов.
-- Quality universe 200k: z0p8/corr0.45 Sharpe `0.4105` (PnL `181.00`), z0p9/exit0p1 Sharpe `0.3832`, corr0.5/hl0.05-45 Sharpe `0.4000`, tradeable+denylist Sharpe `0.3681`, z1p0/exit0p1 Sharpe `0.3379`, blacklist Sharpe `0.3090` → лучший кандидат в рамках quality-universe, требуется иной срез tradeability/сигналов.
+- Quality universe 200k: z0p8/corr0.45 Sharpe `0.4105` (PnL `181.00`), signal_strict Sharpe `0.4105` (без изменений), z0p9/exit0p1 Sharpe `0.3832`, corr0.5/hl0.05-45 Sharpe `0.4000`, tradeable+denylist Sharpe `0.3681`, z1p0/exit0p1 Sharpe `0.3379`, blacklist Sharpe `0.3090` → лучший кандидат в рамках quality-universe, требуется иной срез tradeability/сигналов.
 - Quality universe 500k: z0p8/corr0.45 Sharpe `0.3551` (PnL `145.72`) → ниже 200k/250k, пар меньше.
