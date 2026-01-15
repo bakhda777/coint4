@@ -1,0 +1,23 @@
+2026-01-15
+
+run_id: 20260115_quality_universe_200k_z1p0_exit0p15
+config: configs/quality_runs_20260115/quality_200k_z1p0_exit0p15.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15
+sharpe_ratio_abs: 0.33789539674835944
+total_pnl: 141.79572391405236
+max_drawdown_abs: -19.961118646897376
+total_trades: 177
+total_pairs_traded: 18
+filter_reasons: results/filter_reasons_20260115_144550.csv, results/filter_reasons_20260115_144739.csv, results/filter_reasons_20260115_145025.csv
+
+run_id: 20260115_quality_universe_200k_z1p0_exit0p15_blacklist
+config: configs/quality_runs_20260115/quality_200k_z1p0_exit0p15_blacklist.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15_blacklist
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15_blacklist.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15_blacklist
+sharpe_ratio_abs: 0.30895336450006367
+total_pnl: 128.37931071978528
+max_drawdown_abs: -14.766026481986046
+total_trades: 135
+total_pairs_traded: 14
+filter_reasons: results/filter_reasons_20260115_144547.csv, results/filter_reasons_20260115_144734.csv, results/filter_reasons_20260115_145018.csv

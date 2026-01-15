@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-01-15T14:38:35.305153+00:00",
+  "thresholds": {
+    "period_start": "2023-01-01",
+    "period_end": "2023-09-30",
+    "bar_minutes": 15,
+    "min_history_days": 180,
+    "min_coverage_ratio": 0.9,
+    "min_avg_daily_turnover_usd": 200000.0,
+    "max_days_since_last": 14,
+    "leveraged_regex": "(?:UP|DOWN|BULL|BEAR|[0-9]+[LS])(?:USDT|USDC|USD|BUSD)$"
+  },
+  "window_days": 273,
+  "bars_per_day": 96,
+  "symbols_total": 276,
+  "symbols_included": 77,
+  "symbols_excluded": 199,
+  "exclude_reason_counts": {
+    "short_history": 43,
+    "low_coverage": 58,
+    "low_turnover": 177,
+    "stale": 0,
+    "leveraged_token": 0
+  }
+}

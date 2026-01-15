@@ -112,6 +112,10 @@ python scripts/universe/select_pairs.py \
   --max-days-since-last 14 \
   --out-dir artifacts/universe/quality_universe_20260115_250k
 
+Последние quality universe артефакты:
+- `artifacts/universe/quality_universe_20260115_200k/`
+- `artifacts/wfa/aggregate/20260115_quality_universe_200k/`
+
 # Merge pairs from multiple selections
 python scripts/universe/merge_pairs.py
 

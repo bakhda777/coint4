@@ -1014,9 +1014,126 @@ remaining_after_stage:
   after_market_microstructure: 5
 ```
 
+## Quality universe (20260115_200k)
+- Скрипт: `coint4/scripts/universe/build_quality_universe.py`.
+- Период качества: 2023-01-01..2023-09-30, bar 15m, min_history 180d, coverage>=0.9, avg_daily_turnover>=200k, max_days_since_last=14.
+- Результат: 77 символов включено, 199 исключено (short_history 43, low_coverage 58, low_turnover 177).
+- Артефакты: `coint4/artifacts/universe/quality_universe_20260115_200k/` (quality_report.csv, exclude_symbols.yaml, included_symbols.txt, excluded_symbols.txt, quality_summary.json).
+
+### WFA: quality universe 200k + z1p0/exit0p15 (Q4 2023)
+- Конфиги: `coint4/configs/quality_runs_20260115/`.
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_quality_universe_200k/` (`metrics_partial.csv`, `run_log.txt`).
+- Прогоны: `20260115_quality_universe_200k_z1p0_exit0p15`, `20260115_quality_universe_200k_z1p0_exit0p15_blacklist`.
+- Команды:
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15`
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_200k_z1p0_exit0p15_blacklist.yaml artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15_blacklist`
+
+#### 20260115_quality_universe_200k_z1p0_exit0p15
+- Метрики (strategy_metrics.csv): total_pnl `141.80`, sharpe_ratio_abs `0.3379`, max_drawdown_abs `-19.96`, total_trades `177`, total_pairs_traded `18.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15/`.
+- Худшая пара по PnL: `DOGEUSDC-ETHWUSDT` (`-5.66`).
+- Статус: `candidate` (Sharpe ниже 250k z0p8; шум снизили, но Sharpe>1 не достигнут).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2926
+passed_pairs: 10
+remaining_after_stage:
+  after_low_correlation: 2355
+  after_beta: 1544
+  after_mean_crossings: 1544
+  after_half_life: 1527
+  after_pvalue: 381
+  after_hurst: 186
+  after_kpss: 10
+  after_market_microstructure: 10
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2926
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1574
+  after_beta: 1083
+  after_mean_crossings: 1083
+  after_half_life: 1077
+  after_pvalue: 265
+  after_hurst: 147
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 3003
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 2346
+  after_beta: 1627
+  after_mean_crossings: 1627
+  after_half_life: 1625
+  after_pvalue: 188
+  after_hurst: 72
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
+#### 20260115_quality_universe_200k_z1p0_exit0p15_blacklist
+- Метрики (strategy_metrics.csv): total_pnl `128.38`, sharpe_ratio_abs `0.3090`, max_drawdown_abs `-14.77`, total_trades `135`, total_pairs_traded `14.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_200k_z1p0_exit0p15_blacklist/`.
+- Худшая пара по PnL: `DOGEUSDC-ETHWUSDT` (`-5.66`).
+- Статус: `rejected` (blacklist GMTUSDT/SANDUSDT не улучшил Sharpe).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2775
+passed_pairs: 8
+remaining_after_stage:
+  after_low_correlation: 2217
+  after_beta: 1436
+  after_mean_crossings: 1436
+  after_half_life: 1420
+  after_pvalue: 358
+  after_hurst: 176
+  after_kpss: 8
+  after_market_microstructure: 8
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2775
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 1462
+  after_beta: 998
+  after_mean_crossings: 998
+  after_half_life: 992
+  after_pvalue: 239
+  after_hurst: 133
+  after_kpss: 3
+  after_market_microstructure: 3
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2850
+passed_pairs: 3
+remaining_after_stage:
+  after_low_correlation: 2211
+  after_beta: 1515
+  after_mean_crossings: 1515
+  after_half_life: 1513
+  after_pvalue: 171
+  after_hurst: 64
+  after_kpss: 3
+  after_market_microstructure: 3
+```
+
 ## Итоги на текущий момент
 - Лучший по Sharpe (строгий pv): `pv=0.05, kpss=0.05, hurst=0.55, corr=0.50, hl=0.01-60` (Sharpe `0.3776`, PnL `108.97`, DD `-29.67`).
 - Лучший по Sharpe среди широкой сетки: `pv=0.40, kpss=0.05, hurst=0.70, corr=0.40` (Sharpe `0.2965`, PnL `205.20`, DD `-98.16`).
 - Лучший по PnL среди широкой сетки: `pv=0.40, kpss=0.03, hurst=0.65, corr=0.40` (Sharpe `0.2515`, PnL `244.29`, DD `-133.90`).
 - Sharpe target (z1p2/z1p4): отрицательный Sharpe → отклонены, требуется смягчить сигналы или изменить окно.
 - Quality universe: z0p8 Sharpe `0.3724` (PnL `153.62`), z1p2 Sharpe `0.2266` → Sharpe>1 не достигнут, требуется донастройка фильтров/сигналов.
+- Quality universe 200k: z1p0/exit0p15 Sharpe `0.3379`, blacklist Sharpe `0.3090` → улучшений Sharpe нет, требуется иной срез фильтров/сигналов.
