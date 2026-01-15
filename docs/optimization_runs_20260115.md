@@ -65,6 +65,17 @@ cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
   xargs -P 2 -I {} bash -lc 'cfg=\"$1\"; run_id=$(basename \"$cfg\" .yaml); ./run_wfa_fullcpu.sh \"$cfg\" \"artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id\"' _ {}
 ```
 
+Доп. конфиг (отключение top-N, верхний лимит валидатора):
+- `coint4/configs/selection_grid_20260115_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p50_hl0p01-60_ssdall.yaml` (`ssd_top_n: 500000`).
+
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/selection_grid_20260115_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p50_hl0p01-60_ssdall.yaml \
+  artifacts/wfa/runs/20260115_selgrid_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p50_hl0p01-60_ssdall
+```
+
+Статус: `planned` (ожидает запуска).
+
 ### Выполненные прогоны (Q4 2023, 3 шага)
 
 #### selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100
@@ -777,6 +788,46 @@ remaining_after_stage:
 ### Очереди для продолжения
 - `selected_runs.csv` (27 конфигов, широкая выборка по pvalue/kpss/hurst + корреляция/half-life).
 - `screening_runs.csv` (12 конфигов, скрининг завершен 12/12; очередь закрыта).
+
+## SSD top-N sweep (dynamic selection, Q4 2023, 3 шага)
+
+Базовый конфиг: `coint4/configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml`.
+
+Диапазоны (6 конфигов):
+- `ssd_top_n`: 5000, 10000, 25000, 50000, 100000, 200000
+
+Артефакты и агрегация:
+- Конфиги: `coint4/configs/ssd_topn_sweep_20260115/`
+- Manifest: `coint4/configs/ssd_topn_sweep_20260115/manifest.csv`
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/` (`run_log.txt`, `run_queue.csv`, `configs.txt`)
+- Прогоны: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep/`
+
+Команда (из `coint4/`, параллельно 2 прогона, `n_jobs: 8` в конфигах):
+```bash
+cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
+  xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id/run.log" 2>&1' _ {}
+```
+
+Статус: `active` (прогоны в процессе).
+
+### SSD top-N sweep (subset 4 values, 20260115_4vals)
+
+Диапазоны (4 конфига):
+- `ssd_top_n`: 5000, 10000, 15000, 25000
+
+Артефакты и агрегация:
+- Конфиги: `coint4/configs/ssd_topn_sweep_20260115_4vals/`
+- Manifest: `coint4/configs/ssd_topn_sweep_20260115_4vals/manifest.csv`
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep_4vals/` (`run_log.txt`, `run_queue.csv`, `configs.txt`)
+- Прогоны: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/`
+
+Команда (из `coint4/`, `n_jobs: -1` в конфигах, каждый прогон использует все ядра):
+```bash
+cat configs/ssd_topn_sweep_20260115_4vals/ssd_topn_configs.txt | \
+  xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/$run_id/run.log" 2>&1' _ {}
+```
+
+Статус: `planned` (ожидает запуска).
 
 ## Sharpe target (strict signals + tradeability filter, Q4 2023, 3 шага)
 

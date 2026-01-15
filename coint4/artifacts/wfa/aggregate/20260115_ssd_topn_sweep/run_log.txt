@@ -1,0 +1,23 @@
+[ssd_topn_sweep] start: 2026-01-15T17:10:29Z
+base_config: configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml
+concurrency: 2
+n_jobs_per_run: 8
+runs:
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd5000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd5000
+  status: planned
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd10000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd10000
+  status: planned
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000
+  status: planned
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd50000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd50000
+  status: planned
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd100000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd100000
+  status: planned
+- config: configs/ssd_topn_sweep_20260115/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd200000.yaml
+  results_dir: artifacts/wfa/runs/20260115_ssd_topn_sweep/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd200000
+  status: planned

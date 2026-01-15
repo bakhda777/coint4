@@ -214,6 +214,8 @@ python archive/old_scripts/ops/monitor_drift.py
 - **Strict Data QA Overlay**: `configs/data_quality_strict.yaml` (ffill-only, stricter thresholds)
 - **Clean Data Window**: `configs/data_window_clean.yaml` (clean window + symbol exclusions)
 - **Balanced WFA Config**: `configs/main_2024_wfa_balanced.yaml`
+- **SSD top-N sweep**: `configs/ssd_topn_sweep_20260115/` (см. `docs/optimization_runs_20260115.md`)
+- **SSD top-N sweep (subset 4 values)**: `configs/ssd_topn_sweep_20260115_4vals/` (см. `docs/optimization_runs_20260115.md`)
 - **Search Spaces**: Define parameter ranges for optimization in `configs/search_spaces/`
 - **Criteria**: Pair selection criteria in `configs/criteria_*.yaml`
 - **Environment Variables**: `DATA_ROOT`, `COINT_LOG_EVERY`, `QUICK_TEST`

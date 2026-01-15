@@ -1,5 +1,5 @@
 # Live Trading Dashboard
-*Last updated: 2026-01-15 16:24:41*
+*Last updated: 2026-01-15 17:29:08*
 
 ## Status: 🟢 HEALTHY
 
@@ -7,19 +7,19 @@
 
 | Metric | Value |
 |--------|-------|
-| Total PnL | $181.00 |
-| Win Rate | 0.5% |
-| Max Drawdown | 0.2% |
-| Current Drawdown | 0.2% |
+| Total PnL | $182.31 |
+| Win Rate | 0.4% |
+| Max Drawdown | 0.8% |
+| Current Drawdown | 0.8% |
 | Exposure | 0.0% |
-| Active Positions | 18 |
-| Total Trades | 457 |
-| Sharpe Ratio | 0.41 |
+| Active Positions | 157 |
+| Total Trades | 3768 |
+| Sharpe Ratio | 0.29 |
 
 ## Performance
 
 ```
-PnL: +$181.00 █
+PnL: +$182.31 █
 ```
 
 ## System Health
