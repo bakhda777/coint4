@@ -1,0 +1,180 @@
+data_dir: "data_downloaded"
+results_dir: "results"
+
+# Настройки предобработки и нормализации данных
+data_processing:
+  normalization_method: "rolling_zscore"  # Production-совместимый метод: rolling_zscore, percent, log_returns
+  fill_method: "linear"             # Метод заполнения пропусков: ffill, linear, none
+  min_history_ratio: 0.8            # Минимальная доля непропущенных значений
+  handle_constant: true             # Обрабатывать ли символы с постоянной ценой
+
+data_filters:
+  clean_window:
+    start_date: "2022-03-01"
+    end_date: "2025-06-30"
+  exclude_symbols: []
+  exclude_reason: "На clean window не найдено критичных разрывов; список пустой, держим для явных проблем."
+portfolio:
+  initial_capital: 10000.0      # Капитал $10,000
+  risk_per_position_pct: 0.01  # Риск 1.0% на позицию
+  max_active_positions: 10     # Максимум 10 позиций для лучшей диверсификации
+  max_margin_usage: 0.5         # Максимальное использование маржи 50%
+  # Динамическое позиционирование на основе волатильности
+  volatility_based_sizing: true # Включить динамическое позиционирование
+  volatility_lookback_hours: 24 # Окно для расчета волатильности (24 часа)
+  min_position_size_pct: 0.005  # Минимальный размер позиции (0.5%)
+  max_position_size_pct: 0.02   # Максимальный размер позиции (2%)
+  volatility_adjustment_factor: 2.0 # Коэффициент корректировки на волатильность
+
+pair_selection:
+  lookback_days: 60             # Коинтеграцию считать по последним 60 суткам
+  coint_pvalue_threshold: 0.05  # ОПТИМИЗАЦИЯ: смягчаем до 0.4 для увеличения числа пар
+  ssd_top_n: 5000               # ОПТИМИЗАЦИЯ: баланс скорость/качество для sanity и coarse
+  min_half_life_days: 0.01  # ИСПРАВЛЕНО: снижен до 0.001 дня (1.44 минуты)
+  max_half_life_days: 60  # МАКСИМАЛЬНО ОСЛАБЛЕНО: максимальный порог
+  min_mean_crossings: 0         # ВРЕМЕННО: отключен фильтр пересечений
+  min_correlation: 0.50  # ОПТИМИЗАЦИЯ: смягчаем корреляцию для увеличения числа пар
+  # Новые параметры фильтрации пар
+  adaptive_quantiles: false     # Используем абсолютные пороги std
+  bar_minutes: 15               # Размер бара в минутах
+  liquidity_usd_daily: 1_000_000    # УВЕЛИЧЕНО: 1M для снижения влияния проскальзывания
+  max_bid_ask_pct: 0.5          # Ослабляем с 0.2 до 0.5
+  max_avg_funding_pct: 0.05     # Ослабляем с 0.03 до 0.05
+  save_filter_reasons: true
+  max_hurst_exponent: 0.55  # ОПТИМИЗАЦИЯ: смягчаем Hurst для увеличения числа пар
+  # Параметры min_abs_spread_mult и cost_filter удалены
+  kpss_pvalue_threshold: 0.05  # ОПТИМИЗАЦИЯ: компромисс по KPSS (баланс пар/качества)
+  pvalue_top_n: 1000            # МАКСИМАЛЬНО УВЕЛИЧЕНО: топ-1000 пар
+  # Дополнительные параметры
+  save_std_histogram: true     # Сохранять гистограмму σ
+  
+  # NEW: Фильтр допустимости пар (максимально ослабленный)
+  enable_pair_tradeability_filter: true  # ВКЛЮЧЕН: отсечь неликвидные/нестабильные пары
+  min_volume_usd_24h: 1_000_000     # УЖЕСТОЧЕНО: минимум 1M дневного оборота
+  min_days_live: 30                 # УЖЕСТОЧЕНО: минимум 30 дней торговли
+  max_funding_rate_abs: 0.005       # УЖЕСТОЧЕНО: ограничение по фандингу
+  max_tick_size_pct: 0.005          # УЖЕСТОЧЕНО: ограничение по тикам
+  max_half_life_hours: 2400.0       # Увеличиваем до 100 дней
+
+filter_params:
+  min_beta: 0.001              # МАКСИМАЛЬНО ОСЛАБЛЕНО: минимальная бета
+  max_beta: 100.0              # МАКСИМАЛЬНО ОСЛАБЛЕНО: максимальная бета
+  min_half_life_days: 0.01  # Синхронизировано с pair_selection
+  max_half_life_days: 60  # Синхронизировано с pair_selection
+  min_mean_crossings: 0        # Синхронизировано с pair_selection
+  max_hurst_exponent: 0.55  # Синхронизировано с pair_selection
+
+backtest:
+  timeframe: "15min"
+  rolling_window: 96                # Восстановлено 96 (было 30) для стабильности сигналов
+  zscore_threshold: 1.2         # ОПТИМИЗАЦИЯ: повышен порог входа для снижения шума
+  zscore_entry_threshold: 1.2   # Дублируем для совместимости
+  zscore_exit: 0.2              # Более ранний выход для защиты от хвостов
+  stop_loss_multiplier: 2.5     # Стоп-лосс при 2.5 std
+  time_stop_multiplier: 2.5
+  min_volatility: 0.001         # ИСПРАВЛЕНИЕ: минимальная волатильность для избежания деления на 0
+  fill_limit_pct: 0.1
+
+  # Параметры издержек (агрегированные для простоты и избежания двойного учета)
+  commission_pct: 0.0004        # Общая комиссия (0.04%) - включает maker/taker усредненно
+  slippage_pct: 0.0005          # Общее проскальзывание (0.05%) - включает spread и проскальзывание
+  
+  # Дополнительные параметры моделирования издержек
+  slippage_stress_multiplier: 1.0  # Множитель для стресс-тестирования проскальзывания
+  always_model_slippage: true   # Всегда моделировать проскальзывание при исполнении
+  
+  # ПРИМЕЧАНИЕ: Детализированные параметры (fee_maker, fee_taker, slippage_bps, half_spread_bps) 
+  # удалены во избежание двойного учета издержек. Используются агрегированные параметры выше.
+  annualizing_factor: 365
+  cooldown_hours: 4             # УВЕЛИЧЕНО: меньше сделок, ниже шум
+  wait_for_candle_close: true   # Ждем закрытия свечи перед входом
+
+  # NEW: Улучшенные правила входа/выхода (временно смягчены для оптимизации)
+  min_spread_move_sigma: 0.3        # УЖЕСТОЧЕНО: меньше входов на слабых движениях
+  min_position_hold_minutes: 120    # УЖЕСТОЧЕНО: минимальная выдержка позиции
+  anti_churn_cooldown_minutes: 120  # УЖЕСТОЧЕНО: защита от частых перезаходов
+  
+  # NEW: Улучшенные стоп-лоссы
+  pair_stop_loss_usd: 50.0          # Пара-стоп-лосс 50 USD
+  pair_stop_loss_zscore: 3.0        # Z-score стоп-лосс при 3 сигма
+  portfolio_daily_stop_pct: 0.01    # Портфельный стоп-аут 1%
+  
+  # NEW: Временные фильтры
+  enable_funding_time_filter: true
+  funding_blackout_minutes: 30      # 30 мин до/после фандинга
+  funding_reset_hours: [0, 8, 16]   # UTC часы сброса фандинга
+  enable_macro_event_filter: true
+  macro_blackout_minutes: 30        # 30 мин после макроданных
+  
+  # NEW: Карантин "сломанных" пар
+  enable_pair_quarantine: false
+  quarantine_pnl_threshold_sigma: 3.0    # -3 сигма PnL порог
+  quarantine_drawdown_threshold_pct: 0.08 # 8% просадка порог
+  quarantine_period_days: 7              # 7 дней карантина
+  quarantine_rolling_window_days: 30     # 30 дней окно для статистики
+  
+  # NEW: Реалистичные издержки (отключены, используем агрегированную модель)
+  enable_realistic_costs: false
+  commission_rate_per_leg: 0.0004        # 0.04% за ногу
+  slippage_half_spread_multiplier: 2.0   # 2x полуспред для проскальзывания
+  funding_cost_enabled: true
+  
+  # NEW: Улучшенное позиционирование с пересчетом беты
+  beta_recalc_frequency_hours: 48        # Пересчет беты каждые 48 часов
+  beta_window_days_min: 60               # Минимум 60 дней для беты
+  beta_window_days_max: 120              # Максимум 120 дней для беты
+  use_ols_beta_sizing: true              # Использовать OLS бету для размера позиций
+  
+  # Определение рыночных режимов
+  market_regime_detection: true     # Включить определение рыночных режимов для защиты
+  hurst_window: 720                 # 30 дней для 15-минутных данных (30*24*4/3 = 720)
+  hurst_trending_threshold: 0.5     # H > 0.5 = trending режим
+  variance_ratio_window: 480        # 20 дней для Variance Ratio Test
+  variance_ratio_trending_min: 1.2  # VR > 1.2 = trending
+  variance_ratio_mean_reverting_max: 0.8  # VR < 0.8 = mean-reverting
+  
+  # Защита от структурных сдвигов
+  structural_break_protection: true  # Включить защиту от структурных сдвигов
+  cointegration_test_frequency: 2688 # Каждые 7 дней (7*24*4*4 = 2688 15-минутных баров)
+  adf_pvalue_threshold: 0.05        # p-value > 0.05 → закрыть позицию
+  exclusion_period_days: 30         # Исключить пару на 30 дней
+  min_correlation_threshold: 0.6    # Корреляция < 0.6 → закрыть позицию
+  correlation_window: 720           # 30 дней для скользящей корреляции
+  
+  # Performance optimization parameters
+  regime_check_frequency: 192       # Проверять режим каждые 192 бара (48 часов для 15-мин данных) - УСКОРЕНИЕ
+  use_market_regime_cache: true     # Включить кэширование для Hurst/VR расчетов - УСКОРЕНИЕ
+  adf_check_frequency: 5376         # ADF тесты каждые 14 дней (14*24*4*4 = 5376 15-минутных баров) - УСКОРЕНИЕ
+  cache_cleanup_frequency: 1000     # Очищать кэш каждые 1000 баров
+  lazy_adf_threshold: 0.1           # Запускать ADF только при изменении корреляции > 0.1 - УСКОРЕНИЕ
+  hurst_neutral_band: 0.05          # Нейтральная зона вокруг 0.5 для Hurst - СТАБИЛЬНОСТЬ
+  vr_neutral_band: 0.2              # Нейтральная зона вокруг 1.0 для VR - СТАБИЛЬНОСТЬ
+  n_jobs: -1                        # Количество параллельных процессов (-1 = все доступные ядра) - УСКОРЕНИЕ
+  use_exponential_weighted_correlation: true  # Использовать экспоненциально взвешенную корреляцию - ТОЧНОСТЬ
+  ew_correlation_alpha: 0.1         # Параметр сглаживания для EW-корреляции (0.05-0.2) - ТОЧНОСТЬ
+  
+  # NEW: Enhanced risk management parameters
+  use_kelly_sizing: false       # Отключаем Kelly для снижения вариативности
+  max_kelly_fraction: 0.25      # Максимальная доля Kelly (25%)
+  volatility_lookback: 96       # Окно для расчета волатильности (24 часа для 15-мин данных)
+  adaptive_thresholds: true     # Адаптивные пороги входа на основе волатильности
+  var_confidence: 0.05          # Уровень доверия для VaR (5%)
+  max_var_multiplier: 3.0       # Максимальный множитель порога при высокой волатильности
+
+walk_forward:
+  enabled: true                 # Включаем walk-forward анализ
+  start_date: "2023-10-01"      # Оптимизация: тестовый период в Q4 2023
+  end_date: "2023-12-31"        # Оптимизация: конец тестового периода (до holdout)
+  training_period_days: 60      # ОПТИМИЗАЦИЯ: 60 дней обучения
+  testing_period_days: 30       # ОПТИМИЗАЦИЯ: 30 дней тестирования для лучшей статистики
+  step_size_days: 30            # Шаг равен testing_period_days
+  max_steps: 3                  # Лимит WFA шагов для ускоренной оптимизации
+  min_training_samples: 500     # Минимум данных для обучения
+  refit_frequency: "weekly"     # Частота переобучения: daily, weekly, monthly
+  gap_minutes: 15               # Минимальный gap 15 минут (1 бар) между train и test
+  
+max_shards: null
+
+logging:
+  trade_details: true           # Логирование деталей сделок
+  debug_level: "INFO"           # Уровень логирования

@@ -388,17 +388,118 @@ def run_optimization(n_trials: int = 50,
         # УЛУЧШЕНИЕ: Добавляем базовую точку для TPE с правильными значениями
         if len(study.trials) == 0:  # Только если study пустой
             logger.info("🎯 Добавляем базовую точку для TPE...")
-            base_params = {
-                'zscore_threshold': 1.6,  # в диапазоне 1.2-2.0
-                'zscore_exit': 0.2,       # в диапазоне 0.0-0.5, гистерезис = 1.4
-                'rolling_window': 30,     # в диапазоне 20-50 step 10
-                'max_active_positions': 10, # в диапазоне 5-15 step 5
-                'risk_per_position_pct': 0.02, # в диапазоне 0.01-0.03
-                'stop_loss_multiplier': 3.0,   # в диапазоне 2.0-4.0
-                'time_stop_multiplier': 5.0,   # в диапазоне 4.0-8.0 (исправлено)
-                'normalization_method': 'rolling_zscore',  
-                'min_history_ratio': 0.7  # в диапазоне 0.6-0.8
-            }
+
+            def _pick_base(value, low, high, step=None, as_int=False):
+                if value is None:
+                    base = (low + high) / 2
+                else:
+                    base = max(low, min(high, value))
+                if step is not None and step > 0:
+                    base = low + round((base - low) / step) * step
+                if as_int:
+                    base = int(round(base))
+                return base
+
+            with open(search_space_path, "r", encoding="utf-8") as f:
+                search_space = yaml.safe_load(f) or {}
+
+            base_cfg = objective.base_config
+            base_params = {}
+
+            signals = search_space.get("signals", {})
+            if "zscore_threshold" in signals:
+                cfg = signals["zscore_threshold"]
+                base_params["zscore_threshold"] = _pick_base(
+                    getattr(base_cfg.backtest, "zscore_threshold", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+            if "rolling_window" in signals:
+                cfg = signals["rolling_window"]
+                base_params["rolling_window"] = _pick_base(
+                    getattr(base_cfg.backtest, "rolling_window", None),
+                    cfg["low"],
+                    cfg["high"],
+                    step=cfg.get("step"),
+                    as_int=True,
+                )
+            if "zscore_exit" in signals:
+                cfg = signals["zscore_exit"]
+                threshold = base_params.get("zscore_threshold")
+                z_low = cfg["low"]
+                z_high = cfg["high"]
+                if threshold is not None:
+                    z_high = min(z_high, threshold - 0.1)
+                    z_low = max(z_low, -threshold + 0.1)
+                base_params["zscore_exit"] = _pick_base(
+                    getattr(base_cfg.backtest, "zscore_exit", None),
+                    z_low,
+                    z_high,
+                )
+
+            risk = search_space.get("risk_management", {})
+            if "stop_loss_multiplier" in risk:
+                cfg = risk["stop_loss_multiplier"]
+                base_params["stop_loss_multiplier"] = _pick_base(
+                    getattr(base_cfg.backtest, "stop_loss_multiplier", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+            if "time_stop_multiplier" in risk:
+                cfg = risk["time_stop_multiplier"]
+                base_params["time_stop_multiplier"] = _pick_base(
+                    getattr(base_cfg.backtest, "time_stop_multiplier", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+            if "cooldown_hours" in risk:
+                cfg = risk["cooldown_hours"]
+                base_params["cooldown_hours"] = _pick_base(
+                    getattr(base_cfg.backtest, "cooldown_hours", None),
+                    cfg["low"],
+                    cfg["high"],
+                    step=cfg.get("step"),
+                    as_int=True,
+                )
+
+            portfolio = search_space.get("portfolio", {})
+            if "max_active_positions" in portfolio:
+                cfg = portfolio["max_active_positions"]
+                base_params["max_active_positions"] = _pick_base(
+                    getattr(base_cfg.portfolio, "max_active_positions", None),
+                    cfg["low"],
+                    cfg["high"],
+                    step=cfg.get("step"),
+                    as_int=True,
+                )
+            if "risk_per_position_pct" in portfolio:
+                cfg = portfolio["risk_per_position_pct"]
+                base_params["risk_per_position_pct"] = _pick_base(
+                    getattr(base_cfg.portfolio, "risk_per_position_pct", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+            if "max_position_size_pct" in portfolio:
+                cfg = portfolio["max_position_size_pct"]
+                base_params["max_position_size_pct"] = _pick_base(
+                    getattr(base_cfg.portfolio, "max_position_size_pct", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+
+            normalization = search_space.get("normalization", {})
+            if "normalization_method" in normalization:
+                base_params["normalization_method"] = getattr(
+                    base_cfg.data_processing, "normalization_method", "rolling_zscore"
+                )
+            if "min_history_ratio" in normalization:
+                cfg = normalization["min_history_ratio"]
+                base_params["min_history_ratio"] = _pick_base(
+                    getattr(base_cfg.data_processing, "min_history_ratio", None),
+                    cfg["low"],
+                    cfg["high"],
+                )
+
             study.enqueue_trial(base_params)
 
         # Запускаем оптимизацию

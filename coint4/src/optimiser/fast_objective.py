@@ -24,6 +24,7 @@ PairBacktester = FullNumbaPairBacktester
 from coint2.core.portfolio import Portfolio
 from coint2.core.math_utils import calculate_ssd
 from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
+from coint2.utils.pairs_loader import load_pair_tuples
 from coint2.core.normalization_improvements import preprocess_and_normalize_data, compute_normalization_params, apply_normalization_with_params
 from coint2.utils.logging_utils import get_logger
 from coint2.utils.time_utils import ensure_datetime_index
@@ -736,26 +737,45 @@ class FastWalkForwardObjective:
                 print(f"   ❌ Недостаточно данных для отбора пар в шаге {step_idx + 1}")
                 return pd.DataFrame(), norm_stats.get('normalization_stats', {})
             
-            # Сканирование пар
-            ssd = calculate_ssd(normalized_training, top_k=None)
-            
-            # Фильтрация по котировочной валюте (*USDT)
-            usdt_ssd = ssd[ssd.index.map(lambda x: x[0].endswith('USDT') and x[1].endswith('USDT'))]
-            
-            # Берем только top-N пар для дальнейшей фильтрации
-            ssd_top_n = cfg.pair_selection.ssd_top_n
-            if len(usdt_ssd) > ssd_top_n:
-                usdt_ssd = usdt_ssd.sort_values().head(ssd_top_n)
-            
-            ssd_pairs = [(s1, s2) for s1, s2 in usdt_ssd.index]
-            
-            if not ssd_pairs:
-                print(f"   ❌ Не найдено пар после SSD фильтрации в шаге {step_idx + 1}")
+            pairs_file = getattr(getattr(cfg, "walk_forward", None), "pairs_file", None)
+            if pairs_file:
+                fixed_pairs = load_pair_tuples(pairs_file)
+                if not fixed_pairs:
+                    print(f"   ❌ Файл pairs_file пуст или не содержит пар: {pairs_file}")
+                    return pd.DataFrame(), norm_stats.get('normalization_stats', {})
+
+                available_symbols = set(normalized_training.columns)
+                pairs_for_filter = [
+                    (s1, s2)
+                    for s1, s2 in fixed_pairs
+                    if s1 in available_symbols and s2 in available_symbols
+                ]
+                dropped = len(fixed_pairs) - len(pairs_for_filter)
+                print(
+                    f"   🔒 Фиксированный universe: {len(pairs_for_filter)} пар "
+                    f"(отфильтровано {dropped} недоступных)"
+                )
+            else:
+                # Сканирование пар
+                ssd = calculate_ssd(normalized_training, top_k=None)
+
+                # Фильтрация по котировочной валюте (*USDT)
+                usdt_ssd = ssd[ssd.index.map(lambda x: x[0].endswith('USDT') and x[1].endswith('USDT'))]
+
+                # Берем только top-N пар для дальнейшей фильтрации
+                ssd_top_n = cfg.pair_selection.ssd_top_n
+                if len(usdt_ssd) > ssd_top_n:
+                    usdt_ssd = usdt_ssd.sort_values().head(ssd_top_n)
+
+                pairs_for_filter = [(s1, s2) for s1, s2 in usdt_ssd.index]
+
+            if not pairs_for_filter:
+                print(f"   ❌ Не найдено пар для фильтрации в шаге {step_idx + 1}")
                 return pd.DataFrame(), norm_stats.get('normalization_stats', {})
-            
+
             # Фильтрация пар по коинтеграции и другим критериям
             filtered_pairs = filter_pairs_by_coint_and_half_life(
-                ssd_pairs,
+                pairs_for_filter,
                 training_data,
                 min_half_life=getattr(cfg.pair_selection, 'min_half_life_days', 1.0),
                 max_half_life=getattr(cfg.pair_selection, 'max_half_life_days', 30.0),
@@ -796,7 +816,10 @@ class FastWalkForwardObjective:
             
             step_pairs_df = pd.DataFrame(pairs_list)
             
-            print(f"   ✅ Шаг {step_idx + 1}: отобрано {len(step_pairs_df)} пар из {len(ssd_pairs)} кандидатов")
+            print(
+                f"   ✅ Шаг {step_idx + 1}: отобрано {len(step_pairs_df)} пар "
+                f"из {len(pairs_for_filter)} кандидатов"
+            )
             
             # ВАЖНО: Возвращаем пары И статистики нормализации
             normalization_stats = norm_stats.get('normalization_stats', {})

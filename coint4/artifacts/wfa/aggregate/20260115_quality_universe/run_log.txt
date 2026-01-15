@@ -1,0 +1,23 @@
+2026-01-15
+
+run_id: 20260115_quality_universe_z0p8
+config: configs/quality_runs_20260115/quality_strictpv_z0p8.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_z0p8
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_strictpv_z0p8.yaml artifacts/wfa/runs/20260115_quality_universe_z0p8
+sharpe_ratio_abs: 0.3724241931886633
+total_pnl: 153.62180585804163
+max_drawdown_abs: -16.837151422922034
+total_trades: 294
+total_pairs_traded: 13
+filter_reasons: results/filter_reasons_20260115_141029.csv, results/filter_reasons_20260115_141341.csv, results/filter_reasons_20260115_141820.csv
+
+run_id: 20260115_quality_universe_z1p2_hl0p05_mc3_c0p5
+config: configs/quality_runs_20260115/quality_strictpv_z1p2_hl0p05_mc3_c0p5.yaml
+results_dir: artifacts/wfa/runs/20260115_quality_universe_z1p2_hl0p05_mc3_c0p5
+command: ./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_strictpv_z1p2_hl0p05_mc3_c0p5.yaml artifacts/wfa/runs/20260115_quality_universe_z1p2_hl0p05_mc3_c0p5
+sharpe_ratio_abs: 0.22663353190025814
+total_pnl: 17.642133060260676
+max_drawdown_abs: -5.2106469720602036
+total_trades: 52
+total_pairs_traded: 11
+filter_reasons: results/filter_reasons_20260115_141028.csv, results/filter_reasons_20260115_141340.csv, results/filter_reasons_20260115_141818.csv

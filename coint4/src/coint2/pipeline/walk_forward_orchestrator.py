@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Tuple, List
 import time
+import multiprocessing
 
 import pandas as pd
 
@@ -51,7 +52,14 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     return int(hours * 60 / bar_minutes)
 
 
-def _threaded_map(func, items, n_jobs: int | None) -> list:
+def _parallel_map(
+    func,
+    items,
+    n_jobs: int | None,
+    use_processes: bool = False,
+    initializer=None,
+    initargs=(),
+) -> list:
     if not items:
         return []
     if not n_jobs or n_jobs < 1:
@@ -59,8 +67,87 @@ def _threaded_map(func, items, n_jobs: int | None) -> list:
     max_workers = min(n_jobs, len(items))
     if max_workers <= 1:
         return [func(item) for item in items]
+    if use_processes:
+        return _fork_process_map(
+            func,
+            items,
+            max_workers,
+            initializer=initializer,
+            initargs=initargs,
+        )
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(func, items))
+
+
+def _process_chunk(conn, func, chunk, initializer=None, initargs=()):
+    try:
+        if initializer:
+            initializer(*initargs)
+        if func and conn:
+            results = [func(item) for item in chunk]
+            conn.send({"results": results})
+            return
+        conn.send({"error": "invalid process chunk"})
+    except Exception as exc:
+        conn.send({"error": str(exc)})
+    finally:
+        if conn:
+            conn.close()
+
+
+def _fork_process_map(func, items, n_jobs: int, initializer=None, initargs=()) -> list:
+    if not items:
+        return []
+    max_workers = min(n_jobs, len(items))
+    if max_workers <= 1:
+        return [func(item) for item in items]
+    try:
+        ctx = multiprocessing.get_context("fork")
+    except ValueError:
+        ctx = multiprocessing.get_context()
+    chunks = [items[i::max_workers] for i in range(max_workers)]
+    processes = []
+    conns = []
+    for chunk in chunks:
+        parent_conn, child_conn = ctx.Pipe(duplex=False)
+        proc = ctx.Process(
+            target=_process_chunk,
+            args=(child_conn, func, chunk, initializer, initargs),
+        )
+        proc.start()
+        child_conn.close()
+        processes.append(proc)
+        conns.append(parent_conn)
+    results = []
+    errors = []
+    for conn in conns:
+        payload = conn.recv()
+        conn.close()
+        if isinstance(payload, dict) and payload.get("error"):
+            errors.append(payload["error"])
+        else:
+            results.extend(payload.get("results", []))
+    for proc in processes:
+        proc.join()
+    if errors:
+        raise RuntimeError(f"Process worker error: {errors[0]}")
+    return results
+
+
+def _process_pair_mmap_worker(args):
+    return process_single_pair_mmap(*args)
+
+
+def _process_pair_worker(args):
+    return process_single_pair(*args)
+
+
+def _init_worker_global_price(consolidated_path: str) -> None:
+    if not consolidated_path:
+        return
+    from coint2.core.memory_optimization import GLOBAL_PRICE, initialize_global_price_data
+    if GLOBAL_PRICE is None:
+        initialize_global_price_data(consolidated_path)
 
 def _simulate_realistic_portfolio(all_pnls, cfg):
     """
@@ -1053,6 +1140,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             logger.info(f"   Шаг {i}: тренировка {tr_start.date()}-{tr_end.date()}, тест {te_start.date()}-{te_end.date()}")
 
     # Memory-mapped data optimization
+    memory_map_path: str | None = None
     if use_memory_map and walk_forward_steps:
         logger.info("🗂️ Consolidating price data for memory-mapped access...")
         
@@ -1083,6 +1171,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             
             # Initialize global memory-mapped data
             initialize_global_price_data(str(consolidated_path))
+            memory_map_path = str(consolidated_path)
             
             # Verify memory mapping is working
             if GLOBAL_PRICE is not None and not GLOBAL_PRICE.empty:
@@ -1329,6 +1418,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 max_half_life=cfg.filter_params.max_half_life_days,
                                 min_mean_crossings=cfg.filter_params.min_mean_crossings,
                                 max_hurst_exponent=cfg.filter_params.max_hurst_exponent,
+                                min_correlation=cfg.pair_selection.min_correlation,
                                 save_filter_reasons=cfg.pair_selection.save_filter_reasons,
                                 kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
                                 # Параметры commission_pct и slippage_pct удалены
@@ -1424,27 +1514,52 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             # Process pairs in parallel with progress tracking
             start_time = time.time()
             
-            if use_memory_map:
-                # Use memory-mapped version for optimal performance
-                def _run_pair(pair_data_tuple):
-                    return process_single_pair_mmap(
-                        (pair_data_tuple[0], pair_data_tuple[1]),  # (s1, s2)
-                        testing_start, testing_end, cfg,
-                        capital_per_pair, bar_minutes, period_label,
-                        (pair_data_tuple[2], pair_data_tuple[3], pair_data_tuple[4], pair_data_tuple[5]),  # (beta, mean, std, metrics)
-                        training_normalization_params
+            if use_memory_map and memory_map_path:
+                logger.info(f"🚀 {step_tag}: Режим параллельности: процессы")
+                pair_args = [
+                    (
+                        (s1, s2),
+                        testing_start,
+                        testing_end,
+                        cfg,
+                        capital_per_pair,
+                        bar_minutes,
+                        period_label,
+                        (beta, mean, std, metrics),
+                        training_normalization_params,
                     )
-
-                pair_results = _threaded_map(_run_pair, active_pairs, n_jobs)
+                    for (s1, s2, beta, mean, std, metrics) in active_pairs
+                ]
+                pair_results = _parallel_map(
+                    _process_pair_mmap_worker,
+                    pair_args,
+                    n_jobs,
+                    use_processes=True,
+                    initializer=_init_worker_global_price,
+                    initargs=(memory_map_path,),
+                )
             else:
-                # Fallback to traditional method
-                def _run_pair(pair_data_tuple):
-                    return process_single_pair(
-                        pair_data_tuple, step_df, testing_start, testing_end, cfg,
-                        capital_per_pair, bar_minutes, period_label, training_normalization_params
+                logger.info(f"🚀 {step_tag}: Режим параллельности: потоки")
+                pair_args = [
+                    (
+                        pair_data_tuple,
+                        step_df,
+                        testing_start,
+                        testing_end,
+                        cfg,
+                        capital_per_pair,
+                        bar_minutes,
+                        period_label,
+                        training_normalization_params,
                     )
-
-                pair_results = _threaded_map(_run_pair, active_pairs, n_jobs)
+                    for pair_data_tuple in active_pairs
+                ]
+                pair_results = _parallel_map(
+                    _process_pair_worker,
+                    pair_args,
+                    n_jobs,
+                    use_processes=False,
+                )
             
             processing_time = time.time() - start_time
             logger.info(f"  ⏱️ Параллельная обработка завершена за {processing_time:.1f}с ({len(active_pairs)/processing_time:.1f} пар/с)")

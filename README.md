@@ -30,4 +30,6 @@ For production runs, use `docs/production_checklist.md`. Overlays and configs:
 Note: WFA supports optional fixed universe via `--pairs-file` and custom output via `--results-dir` (see `docs/quickstart.md`).
 
 Optimization plan: `docs/optimization_plan_20260114.md`.
-Selection grid runs (filters): `docs/optimization_runs_20260115.md` and configs in `coint4/configs/selection_grid_20260115/`.
+Selection grid runs (filters): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/selection_grid_20260115/` and strict p-value grid in `coint4/configs/selection_grid_20260115_strictpv/` (parallel run notes in docs).
+Sharpe target runs (strict signals): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/sharpe_target_20260115/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_sharpe_target/`.
+Quality universe (data-driven exclusions): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/quality_runs_20260115/`, universe artifacts in `coint4/artifacts/universe/quality_universe_20260115_250k/`, and WFA aggregate in `coint4/artifacts/wfa/aggregate/20260115_quality_universe/`.

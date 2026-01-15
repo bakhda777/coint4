@@ -135,7 +135,23 @@ PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
 ## Оптимизация параметров
 
 См. `docs/optimization_plan_20260114.md` для актуального плана, критериев и команд.
-Selection grid по фильтрам (2026-01-15): `docs/optimization_runs_20260115.md`, конфиги в `configs/selection_grid_20260115/`, агрегатор в `artifacts/wfa/aggregate/20260115_selgrid/`.
+Selection grid по фильтрам (2026-01-15): `docs/optimization_runs_20260115.md`, базовая сетка в `configs/selection_grid_20260115/`, строгая сетка p-value в `configs/selection_grid_20260115_strictpv/` (параллельный запуск описан в docs), агрегаторы в `artifacts/wfa/aggregate/20260115_selgrid/` и `artifacts/wfa/aggregate/20260115_selgrid_strictpv/`.
+Sharpe target (строгие сигналы): `docs/optimization_runs_20260115.md`, конфиги в `configs/sharpe_target_20260115/`, агрегатор `artifacts/wfa/aggregate/20260115_sharpe_target/`.
+Quality universe (исключение мусорных символов): `docs/optimization_runs_20260115.md`, конфиги `configs/quality_runs_20260115/`, артефакты `artifacts/universe/quality_universe_20260115_250k/`, агрегатор `artifacts/wfa/aggregate/20260115_quality_universe/`.
+
+Сборка quality universe (пример):
+```bash
+./.venv/bin/python scripts/universe/build_quality_universe.py \
+  --data-root data_downloaded \
+  --period-start 2023-01-01 \
+  --period-end 2023-09-30 \
+  --bar-minutes 15 \
+  --min-history-days 180 \
+  --min-coverage-ratio 0.9 \
+  --min-avg-daily-turnover-usd 250000 \
+  --max-days-since-last 14 \
+  --out-dir artifacts/universe/quality_universe_20260115_250k
+```
 
 ## Чек-лист запуска
 

@@ -1,0 +1,3 @@
+run_id,config_path,zscore_threshold,zscore_exit,coint_pvalue_threshold,kpss_pvalue_threshold,max_hurst_exponent,min_correlation,min_half_life_days,max_half_life_days,sharpe_ratio_abs,total_pnl,max_drawdown_abs,total_trades,total_pairs_traded
+20260115_sharpe_target_strict_z1p2,configs/sharpe_target_20260115/sharpe_target_strict_z1p2.yaml,1.2,0.2,0.05,0.05,0.55,0.5,0.01,60,-0.12885073821149046,-20.03598869117559,-48.84716686489992,207,44.0
+20260115_sharpe_target_strict_z1p4,configs/sharpe_target_20260115/sharpe_target_strict_z1p4.yaml,1.4,0.25,0.05,0.05,0.55,0.5,0.01,60,-0.03462161096817364,-4.6707064796064515,-25.64533393783495,118,44.0

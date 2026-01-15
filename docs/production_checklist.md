@@ -42,3 +42,6 @@
 - Fast fixed (Q3): `outputs/fixed_run_fast_iter_20260114_top50_q3/`, `outputs/fixed_run_fast_iter_20260114_top100/`.
 - WFA main refresh (legacy): `coint4/artifacts/wfa/runs/20260114_081835_main_2024_wfa_refresh/`.
 - WFA smoke: `coint4/artifacts/wfa/runs/20260114_075638_smoke_fast20_wfa/` + repeat `coint4/artifacts/wfa/runs/20260114_075758_smoke_fast20_wfa_repeat/`.
+- Sanity WFA (zscore=0.8): `coint4/artifacts/wfa/runs/20260114_145500_optimize_q4_sanity_wfa_zscore_0p8/`.
+- Sanity WFA (zscore=1.2): `coint4/artifacts/wfa/runs/20260114_150400_optimize_q4_sanity_wfa_zscore_1p2/`.
+- Holdout fixed (zscore=0.8): `outputs/fixed_run_zscore_0p8_holdout_20260114/` + repeat `outputs/fixed_run_zscore_0p8_holdout_20260114_repeat/`.

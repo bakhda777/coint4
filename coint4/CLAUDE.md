@@ -54,6 +54,24 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
   configs/selection_grid_20260115/selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100.yaml \
   artifacts/wfa/runs/20260115_selgrid/selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100
 
+# Selection grid (strict p-value, Q4 2023, 3 steps)
+./run_wfa_fullcpu.sh \
+  configs/selection_grid_20260115_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60.yaml \
+  artifacts/wfa/runs/20260115_selgrid_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60
+
+# Selection grid (strict p-value, parallel 2x, n_jobs=4)
+cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
+  xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id"' _ {}
+
+# Sharpe target (strict signals, Q4 2023, 3 steps)
+./run_wfa_fullcpu.sh \
+  configs/sharpe_target_20260115/sharpe_target_strict_z1p2.yaml \
+  artifacts/wfa/runs/20260115_sharpe_target_strict_z1p2
+
+./run_wfa_fullcpu.sh \
+  configs/sharpe_target_20260115/sharpe_target_strict_z1p4.yaml \
+  artifacts/wfa/runs/20260115_sharpe_target_strict_z1p4
+
 # Optimization modes:
 # - fast: Quick optimization with fewer trials (max 50)
 # - balanced: Standard optimization (default)
@@ -81,6 +99,18 @@ python scripts/universe/select_pairs.py \
   --period-end 2024-01-31 \
   --criteria-config configs/criteria_relaxed.yaml \
   --out-dir artifacts/universe/
+
+# Build quality universe (liquidity/history screen)
+./.venv/bin/python scripts/universe/build_quality_universe.py \
+  --data-root data_downloaded \
+  --period-start 2023-01-01 \
+  --period-end 2023-09-30 \
+  --bar-minutes 15 \
+  --min-history-days 180 \
+  --min-coverage-ratio 0.9 \
+  --min-avg-daily-turnover-usd 250000 \
+  --max-days-since-last 14 \
+  --out-dir artifacts/universe/quality_universe_20260115_250k
 
 # Merge pairs from multiple selections
 python scripts/universe/merge_pairs.py

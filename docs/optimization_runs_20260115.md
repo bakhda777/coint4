@@ -34,6 +34,37 @@
   artifacts/wfa/runs/20260115_selgrid/selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100
 ```
 
+## Strict PV grid (dynamic selection, Q4 2023, 3 шага)
+
+Базовый конфиг для генерации: `coint4/configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml`.
+
+Диапазоны (32 конфига, строгий отбор):
+- `coint_pvalue_threshold`: 0.05, 0.10
+- `kpss_pvalue_threshold`: 0.05, 0.10
+- `max_hurst_exponent`: 0.55, 0.60
+- `min_correlation`: 0.45, 0.50
+- `half_life`: min 0.01/0.05, max 60
+
+Артефакты и агрегация:
+- Сгенерированные конфиги: `coint4/configs/selection_grid_20260115_strictpv/`
+- Manifest: `coint4/configs/selection_grid_20260115_strictpv/manifest.csv`
+- Агрегатор запусков: `coint4/artifacts/wfa/aggregate/20260115_selgrid_strictpv/`
+  - `strictpv_configs.txt`, `strictpv_runs.csv`, `strictpv_run_log.txt`
+
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/selection_grid_20260115_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60.yaml \
+  artifacts/wfa/runs/20260115_selgrid_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60
+```
+
+Статус: `active` (запуск в очереди).
+
+Параллельный запуск (2 прогона одновременно, `n_jobs: 4` в строгих конфигах):
+```bash
+cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
+  xargs -P 2 -I {} bash -lc 'cfg=\"$1\"; run_id=$(basename \"$cfg\" .yaml); ./run_wfa_fullcpu.sh \"$cfg\" \"artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id\"' _ {}
+```
+
 ### Выполненные прогоны (Q4 2023, 3 шага)
 
 #### selgrid_20260115_exit0p06_pv0p30_kpss0p03_h0p60_c0p35_hl0p001-100
@@ -747,7 +778,245 @@ remaining_after_stage:
 - `selected_runs.csv` (27 конфигов, широкая выборка по pvalue/kpss/hurst + корреляция/half-life).
 - `screening_runs.csv` (12 конфигов, скрининг завершен 12/12; очередь закрыта).
 
+## Sharpe target (strict signals + tradeability filter, Q4 2023, 3 шага)
+
+Базовый шаблон: строгая сетка p-value (pv=0.05/kpss=0.05/hurst=0.55/corr=0.50/half-life 0.01-60) + ужесточенные сигналы.
+
+Артефакты и агрегация:
+- Конфиги: `coint4/configs/sharpe_target_20260115/`
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_sharpe_target/` (`run_log.txt`, `metrics_partial.csv`)
+- Прогоны: `coint4/artifacts/wfa/runs/20260115_sharpe_target_strict_z1p2/`, `coint4/artifacts/wfa/runs/20260115_sharpe_target_strict_z1p4/`
+
+Команды (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/sharpe_target_20260115/sharpe_target_strict_z1p2.yaml \
+  artifacts/wfa/runs/20260115_sharpe_target_strict_z1p2
+
+./run_wfa_fullcpu.sh configs/sharpe_target_20260115/sharpe_target_strict_z1p4.yaml \
+  artifacts/wfa/runs/20260115_sharpe_target_strict_z1p4
+```
+
+### Выполненные прогоны (Q4 2023, 3 шага)
+
+#### 20260115_sharpe_target_strict_z1p2
+- Метрики (strategy_metrics.csv): total_pnl `-20.04`, sharpe_ratio_abs `-0.1289`, max_drawdown_abs `-48.85`, total_trades `207`, total_pairs_traded `44.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_sharpe_target_strict_z1p2/`.
+- Статус: `rejected` (слишком строгие сигналы, отрицательный Sharpe).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 5000
+passed_pairs: 19
+remaining_after_stage:
+  after_low_correlation: 4921
+  after_beta: 3469
+  after_mean_crossings: 3469
+  after_half_life: 3407
+  after_pvalue: 1004
+  after_hurst: 435
+  after_kpss: 19
+  after_market_microstructure: 19
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 5000
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 4006
+  after_beta: 2868
+  after_mean_crossings: 2868
+  after_half_life: 2831
+  after_pvalue: 746
+  after_hurst: 420
+  after_kpss: 5
+  after_market_microstructure: 5
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 5000
+passed_pairs: 20
+remaining_after_stage:
+  after_low_correlation: 4850
+  after_beta: 3533
+  after_mean_crossings: 3533
+  after_half_life: 3503
+  after_pvalue: 894
+  after_hurst: 324
+  after_kpss: 20
+  after_market_microstructure: 20
+```
+
+#### 20260115_sharpe_target_strict_z1p4
+- Метрики (strategy_metrics.csv): total_pnl `-4.67`, sharpe_ratio_abs `-0.0346`, max_drawdown_abs `-25.65`, total_trades `118`, total_pairs_traded `44.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_sharpe_target_strict_z1p4/`.
+- Статус: `rejected` (строгие сигналы снизили торговую активность без роста Sharpe).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 5000
+passed_pairs: 19
+remaining_after_stage:
+  after_low_correlation: 4921
+  after_beta: 3469
+  after_mean_crossings: 3469
+  after_half_life: 3407
+  after_pvalue: 1004
+  after_hurst: 435
+  after_kpss: 19
+  after_market_microstructure: 19
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 5000
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 4006
+  after_beta: 2868
+  after_mean_crossings: 2868
+  after_half_life: 2831
+  after_pvalue: 746
+  after_hurst: 420
+  after_kpss: 5
+  after_market_microstructure: 5
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 5000
+passed_pairs: 20
+remaining_after_stage:
+  after_low_correlation: 4850
+  after_beta: 3533
+  after_mean_crossings: 3533
+  after_half_life: 3503
+  after_pvalue: 894
+  after_hurst: 324
+  after_kpss: 20
+  after_market_microstructure: 20
+```
+
+## Quality universe (20260115_250k)
+- Скрипт: `coint4/scripts/universe/build_quality_universe.py`.
+- Период качества: 2023-01-01..2023-09-30, bar 15m, min_history 180d, coverage>=0.9, avg_daily_turnover>=250k, max_days_since_last=14.
+- Результат: 71 символов включено, 205 исключено (short_history 43, low_coverage 58, low_turnover 187).
+- Артефакты: `coint4/artifacts/universe/quality_universe_20260115_250k/` (quality_report.csv, exclude_symbols.yaml, included_symbols.txt, excluded_symbols.txt, quality_summary.json).
+
+### WFA: quality universe + strictpv base (Q4 2023)
+- Конфиги: `coint4/configs/quality_runs_20260115/`.
+- Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_quality_universe/` (`metrics_partial.csv`, `run_log.txt`).
+- Прогоны: `20260115_quality_universe_z0p8`, `20260115_quality_universe_z1p2_hl0p05_mc3_c0p5`.
+- Команды:
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_strictpv_z0p8.yaml artifacts/wfa/runs/20260115_quality_universe_z0p8`
+  - `./run_wfa_fullcpu.sh configs/quality_runs_20260115/quality_strictpv_z1p2_hl0p05_mc3_c0p5.yaml artifacts/wfa/runs/20260115_quality_universe_z1p2_hl0p05_mc3_c0p5`
+
+#### 20260115_quality_universe_z0p8
+- Метрики (strategy_metrics.csv): total_pnl `153.62`, sharpe_ratio_abs `0.3724`, max_drawdown_abs `-16.84`, total_trades `294`, total_pairs_traded `13.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_z0p8/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-3.79`).
+- Статус: `candidate` (ниже Sharpe=1; качество пары улучшено, но рост Sharpe не достигнут).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2485
+passed_pairs: 6
+remaining_after_stage:
+  after_low_correlation: 2028
+  after_beta: 1309
+  after_mean_crossings: 1309
+  after_half_life: 1292
+  after_pvalue: 282
+  after_hurst: 138
+  after_kpss: 6
+  after_market_microstructure: 6
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2485
+passed_pairs: 2
+remaining_after_stage:
+  after_low_correlation: 1393
+  after_beta: 943
+  after_mean_crossings: 943
+  after_half_life: 937
+  after_pvalue: 214
+  after_hurst: 116
+  after_kpss: 2
+  after_market_microstructure: 2
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2556
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 1981
+  after_beta: 1362
+  after_mean_crossings: 1362
+  after_half_life: 1361
+  after_pvalue: 161
+  after_hurst: 63
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
+#### 20260115_quality_universe_z1p2_hl0p05_mc3_c0p5
+- Метрики (strategy_metrics.csv): total_pnl `17.64`, sharpe_ratio_abs `0.2266`, max_drawdown_abs `-5.21`, total_trades `52`, total_pairs_traded `11.0`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260115_quality_universe_z1p2_hl0p05_mc3_c0p5/`.
+- Худшая пара по PnL: `GMTUSDT-SANDUSDT` (`-1.46`).
+- Статус: `rejected` (сильная фильтрация и более строгий вход снизили Sharpe).
+
+Сводка фильтрации пар (из filter_reasons_*.csv, Q4 2023):
+```yaml
+step: 1
+period: 10/01-10/31
+candidates_total: 2485
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 1963
+  after_beta: 1259
+  after_mean_crossings: 1259
+  after_half_life: 1240
+  after_pvalue: 268
+  after_hurst: 133
+  after_kpss: 5
+  after_market_microstructure: 5
+---
+step: 2
+period: 10/31-11/30
+candidates_total: 2485
+passed_pairs: 1
+remaining_after_stage:
+  after_low_correlation: 1294
+  after_beta: 877
+  after_mean_crossings: 877
+  after_half_life: 871
+  after_pvalue: 206
+  after_hurst: 112
+  after_kpss: 1
+  after_market_microstructure: 1
+---
+step: 3
+period: 11/30-12/30
+candidates_total: 2556
+passed_pairs: 5
+remaining_after_stage:
+  after_low_correlation: 1959
+  after_beta: 1359
+  after_mean_crossings: 1359
+  after_half_life: 1355
+  after_pvalue: 158
+  after_hurst: 63
+  after_kpss: 5
+  after_market_microstructure: 5
+```
+
 ## Итоги на текущий момент
-- Лучший по Sharpe среди завершенных: `pv=0.40, kpss=0.05, hurst=0.70, corr=0.40` (Sharpe `0.2965`, PnL `205.20`, DD `-98.16`).
-- Лучший по PnL среди завершенных: `pv=0.40, kpss=0.03, hurst=0.65, corr=0.40` (Sharpe `0.2515`, PnL `244.29`, DD `-133.90`).
-- Скрининг `screening_runs.csv` завершен; следующий шаг — `selected_runs.csv` или узкая сетка вокруг топов.
+- Лучший по Sharpe (строгий pv): `pv=0.05, kpss=0.05, hurst=0.55, corr=0.50, hl=0.01-60` (Sharpe `0.3776`, PnL `108.97`, DD `-29.67`).
+- Лучший по Sharpe среди широкой сетки: `pv=0.40, kpss=0.05, hurst=0.70, corr=0.40` (Sharpe `0.2965`, PnL `205.20`, DD `-98.16`).
+- Лучший по PnL среди широкой сетки: `pv=0.40, kpss=0.03, hurst=0.65, corr=0.40` (Sharpe `0.2515`, PnL `244.29`, DD `-133.90`).
+- Sharpe target (z1p2/z1p4): отрицательный Sharpe → отклонены, требуется смягчить сигналы или изменить окно.
+- Quality universe: z0p8 Sharpe `0.3724` (PnL `153.62`), z1p2 Sharpe `0.2266` → Sharpe>1 не достигнут, требуется донастройка фильтров/сигналов.

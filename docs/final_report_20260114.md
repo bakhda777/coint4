@@ -82,6 +82,39 @@
 
 Повтор WFA (balanced, main, fixed): метрики полностью совпали (детерминизм подтвержден).
 
+## Оптимизация параметров (Q4 2023)
+Источник оптимизации: `opt_signals_dynamic_coarse_20260114_v2` (Q4 2023, `ssd_top_n=2000`).
+
+Лучшие параметры (best trial):
+- zscore_threshold: 1.2093748675144944
+- zscore_exit: -0.015260574604334757
+- rolling_window: 48
+- stop_loss_multiplier: 2.385850643358193
+- time_stop_multiplier: 2.8561156882189986
+- cooldown_hours: 1
+
+Артефакты:
+- best config: `coint4/configs/best_config__opt_signals_dynamic_coarse_20260114_v2__20260114_122737.yaml`
+- candidate config: `coint4/configs/main_2024_optuna_candidate.yaml`
+- holdout fixed backtest: `coint4/outputs/fixed_run_optuna_candidate_holdout/`
+- WFA candidate (5 шагов): `coint4/artifacts/wfa/runs/20260114_124742_optuna_candidate_wfa/`
+
+Метрики holdout (2024-01-01 → 2024-06-30, top-200):
+- total_pnl: 148.37
+- sharpe_ratio: 0.0165
+- max_drawdown: -280.11
+- num_trades: 191505
+- win_rate: 0.3342
+
+Метрики WFA candidate (5 шагов):
+- total_pnl: -228.49
+- sharpe_ratio_abs: -0.0939
+- max_drawdown_abs: -379.04
+- total_trades: 1816
+- total_pairs_traded: 290
+
+Вывод: кандидат убыточен на WFA; требуется пересмотр параметров/критериев.
+
 ## Быстрая итерация (smoke)
 Артефакты:
 - scan (top-50): `bench/fast_iter_20260114_top50/`

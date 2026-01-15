@@ -2620,3 +2620,1533 @@ remaining_after_stage:
 - Метрики: total_pnl `51.13`, sharpe_ratio `0.0080`, max_drawdown `-436.40`, num_trades `125689`, win_rate `0.5301`.
 - Артефакты: `outputs/fixed_run_zscore_0p8_exit_0p1_holdout_20260114/` (metrics.yaml, equity.csv, trades.csv).
 - Статус: holdout run (Sharpe близок к 0).
+
+## Дополнительные WFA sanity прогоны (параметрические, Q4 2023)
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, corr>=0.35)
+Команда (из `coint4/`):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024_optimize_dynamic_zscore_0p8_corr0p35.yaml \
+  --results-dir artifacts/wfa/runs/20260114_181839_optimize_q4_sanity_wfa_zscore_0p8_corr0p35
+```
+- Метрики: total_pnl `158.54`, sharpe_ratio_abs `0.2569`, max_drawdown_abs `-82.19`, total_trades `3687`, total_pairs_traded `153`.
+- Артефакты: `artifacts/wfa/runs/20260114_181839_optimize_q4_sanity_wfa_zscore_0p8_corr0p35/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: sanity run (без улучшения относительно базового).
+
+#### Сводка фильтрации пар (WFA sanity, corr>=0.35)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_181839_optimize_q4_sanity_wfa_zscore_0p8_corr0p35/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 65
+dropped_by_reason:
+  low_correlation: 30
+  beta: 1458
+  mean_crossings: 0
+  half_life: 42
+  pvalue: 1048
+  hurst: 831
+  kpss: 1526
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4970
+  after_beta: 3512
+  after_mean_crossings: 3512
+  after_half_life: 3470
+  after_pvalue: 2422
+  after_hurst: 1591
+  after_kpss: 65
+  after_market_microstructure: 65
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 553
+  beta: 1241
+  mean_crossings: 0
+  half_life: 16
+  pvalue: 1080
+  hurst: 436
+  kpss: 1653
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4447
+  after_beta: 3206
+  after_mean_crossings: 3206
+  after_half_life: 3190
+  after_pvalue: 2110
+  after_hurst: 1674
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 105
+  beta: 1331
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1267
+  hurst: 878
+  kpss: 1344
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4895
+  after_beta: 3564
+  after_mean_crossings: 3564
+  after_half_life: 3564
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, hurst<=0.7)
+Команда (из `coint4/`):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024_optimize_dynamic_zscore_0p8_hurst0p7.yaml \
+  --results-dir artifacts/wfa/runs/20260114_182548_optimize_q4_sanity_wfa_zscore_0p8_hurst0p7
+```
+- Метрики: total_pnl `177.30`, sharpe_ratio_abs `0.2602`, max_drawdown_abs `-98.84`, total_trades `4110`, total_pairs_traded `166`.
+- Артефакты: `artifacts/wfa/runs/20260114_182548_optimize_q4_sanity_wfa_zscore_0p8_hurst0p7/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: sanity run (Sharpe чуть выше базового, но хуже по просадке).
+
+#### Сводка фильтрации пар (WFA sanity, hurst<=0.7)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_182548_optimize_q4_sanity_wfa_zscore_0p8_hurst0p7/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 72
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 665
+  kpss: 1684
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1756
+  after_kpss: 72
+  after_market_microstructure: 72
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 22
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 348
+  kpss: 1709
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1731
+  after_kpss: 22
+  after_market_microstructure: 22
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 84
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 765
+  kpss: 1448
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1532
+  after_kpss: 84
+  after_market_microstructure: 84
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, kpss=0.07)
+Команда (из `coint4/`):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024_optimize_dynamic_zscore_0p8_kpss0p07.yaml \
+  --results-dir artifacts/wfa/runs/20260114_183705_optimize_q4_sanity_wfa_zscore_0p8_kpss0p07
+```
+- Метрики: total_pnl `102.99`, sharpe_ratio_abs `0.1878`, max_drawdown_abs `-77.16`, total_trades `2934`, total_pairs_traded `119`.
+- Артефакты: `artifacts/wfa/runs/20260114_183705_optimize_q4_sanity_wfa_zscore_0p8_kpss0p07/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (хуже базового).
+
+#### Сводка фильтрации пар (WFA sanity, kpss=0.07)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_183705_optimize_q4_sanity_wfa_zscore_0p8_kpss0p07/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 49
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 831
+  kpss: 1541
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1590
+  after_kpss: 49
+  after_market_microstructure: 49
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 14
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 436
+  kpss: 1629
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1643
+  after_kpss: 14
+  after_market_microstructure: 14
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 62
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 878
+  kpss: 1357
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 62
+  after_market_microstructure: 62
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, pvalue=0.3)
+Команда (из `coint4/`):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024_optimize_dynamic_zscore_0p8_pvalue0p3.yaml \
+  --results-dir artifacts/wfa/runs/20260114_184657_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p3
+```
+- Метрики: total_pnl `157.00`, sharpe_ratio_abs `0.2548`, max_drawdown_abs `-82.19`, total_trades `3628`, total_pairs_traded `151`.
+- Артефакты: `artifacts/wfa/runs/20260114_184657_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p3/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: sanity run (без улучшения относительно базового).
+
+#### Сводка фильтрации пар (WFA sanity, pvalue=0.3)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_184657_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p3/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 63
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1181
+  hurst: 785
+  kpss: 1431
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2279
+  after_hurst: 1494
+  after_kpss: 63
+  after_market_microstructure: 63
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1141
+  hurst: 417
+  kpss: 1517
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 1955
+  after_hurst: 1538
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1393
+  hurst: 843
+  kpss: 1248
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2166
+  after_hurst: 1323
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./.venv/bin/coint2 walk-forward \
+  --config configs/main_2024_optimize_dynamic_zscore_0p8_pvalue0p4.yaml \
+  --results-dir artifacts/wfa/runs/20260114_185355_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p4
+```
+- Метрики: total_pnl `166.62`, sharpe_ratio_abs `0.2662`, max_drawdown_abs `-82.19`, total_trades `3767`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_185355_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: sanity run (лучше базового по Sharpe/PnL, но без подтверждения WFA5).
+
+#### Сводка фильтрации пар (WFA sanity, pvalue=0.4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_185355_optimize_q4_sanity_wfa_zscore_0p8_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.8, fullcpu повтор)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8.yaml \
+  "artifacts/wfa/runs/20260114_192502_fullcpu_zscore0p8_sanity"
+```
+- Метрики: total_pnl `158.54`, sharpe_ratio_abs `0.2569`, max_drawdown_abs `-82.19`, total_trades `3687`, total_pairs_traded `153`.
+- Артефакты: `artifacts/wfa/runs/20260114_192502_fullcpu_zscore0p8_sanity/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: sanity run (повтор базового; детерминизм подтвержден).
+
+#### Сводка фильтрации пар (WFA sanity, fullcpu повтор)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_192502_fullcpu_zscore0p8_sanity/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 65
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 831
+  kpss: 1525
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1590
+  after_kpss: 65
+  after_market_microstructure: 65
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 436
+  kpss: 1622
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1643
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 878
+  kpss: 1344
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA smoke (short window, fullcpu)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_smoke.yaml \
+  "artifacts/wfa/runs/20260114_192408_smoke_fullcpu"
+```
+- Метрики: total_pnl `-52.40`, sharpe_ratio_abs `-0.6205`, max_drawdown_abs `-66.69`, total_trades `394`, total_pairs_traded `108`.
+- Артефакты: `artifacts/wfa/runs/20260114_192408_smoke_fullcpu/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `legacy/archived` (smoke run; метрики отрицательные).
+- Примечание: в каталоге есть лишние `filter_reasons_*.csv` из других запусков; для smoke учитывать только `filter_reasons_20260114_192423.csv`.
+
+#### Сводка фильтрации пар (WFA smoke, 1 шаг)
+Источник: `filter_reasons_20260114_192423.csv` из `artifacts/wfa/runs/20260114_192408_smoke_fullcpu/`.
+
+```yaml
+step: 1
+period: 01/01-02/01
+candidates_total: 5000
+passed_pairs: 3108
+dropped_by_reason:
+  low_correlation: 698
+  beta: 382
+  mean_crossings: 0
+  half_life: 493
+  pvalue: 265
+  hurst: 54
+  kpss: 0
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4302
+  after_beta: 3920
+  after_mean_crossings: 3920
+  after_half_life: 3427
+  after_pvalue: 3162
+  after_hurst: 3108
+  after_kpss: 3108
+  after_market_microstructure: 3108
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.75)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_zscore0p75.yaml \
+  "artifacts/wfa/runs/20260114_194852_optimize_q4_sanity_wfa_zscore_0p8_zscore0p75"
+```
+- Метрики: total_pnl `89.92`, sharpe_ratio_abs `0.1326`, max_drawdown_abs `-138.49`, total_trades `4845`, total_pairs_traded `153`.
+- Артефакты: `artifacts/wfa/runs/20260114_194852_optimize_q4_sanity_wfa_zscore_0p8_zscore0p75/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (хуже базового).
+
+#### Сводка фильтрации пар (WFA sanity, zscore=0.75)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_194852_optimize_q4_sanity_wfa_zscore_0p8_zscore0p75/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 65
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 831
+  kpss: 1525
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1590
+  after_kpss: 65
+  after_market_microstructure: 65
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 436
+  kpss: 1622
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1643
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 878
+  kpss: 1344
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.85)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_zscore0p85.yaml \
+  "artifacts/wfa/runs/20260114_195745_optimize_q4_sanity_wfa_zscore_0p8_zscore0p85"
+```
+- Метрики: total_pnl `15.44`, sharpe_ratio_abs `0.0266`, max_drawdown_abs `-106.95`, total_trades `2864`, total_pairs_traded `153`.
+- Артефакты: `artifacts/wfa/runs/20260114_195745_optimize_q4_sanity_wfa_zscore_0p8_zscore0p85/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (хуже базового).
+
+#### Сводка фильтрации пар (WFA sanity, zscore=0.85)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_195745_optimize_q4_sanity_wfa_zscore_0p8_zscore0p85/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 65
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 831
+  kpss: 1525
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1590
+  after_kpss: 65
+  after_market_microstructure: 65
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 436
+  kpss: 1622
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1643
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 878
+  kpss: 1344
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.05)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05.yaml \
+  "artifacts/wfa/runs/20260114_200445_optimize_q4_sanity_wfa_zscore_0p8_exit0p05"
+```
+- Метрики: total_pnl `171.03`, sharpe_ratio_abs `0.2764`, max_drawdown_abs `-82.22`, total_trades `3688`, total_pairs_traded `153`.
+- Артефакты: `artifacts/wfa/runs/20260114_200445_optimize_q4_sanity_wfa_zscore_0p8_exit0p05/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `candidate` (хороший результат, но уступает комбинации exit0p05 + pvalue0p4).
+
+#### Сводка фильтрации пар (WFA sanity, zscore_exit=0.05)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_200445_optimize_q4_sanity_wfa_zscore_0p8_exit0p05/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 65
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 831
+  kpss: 1525
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1590
+  after_kpss: 65
+  after_market_microstructure: 65
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 436
+  kpss: 1622
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1643
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 878
+  kpss: 1344
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1419
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.05, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_pvalue0p4.yaml \
+  "artifacts/wfa/runs/20260114_202104_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p4"
+```
+- Метрики: total_pnl `179.11`, sharpe_ratio_abs `0.2855`, max_drawdown_abs `-82.22`, total_trades `3768`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_202104_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `candidate` (новый лидер по Sharpe/PnL на Q4 sanity).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p05 + pvalue0p4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_202104_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.04, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p04_pvalue0p4.yaml \
+  "artifacts/wfa/runs/20260114_204846_optimize_q4_sanity_wfa_zscore_0p8_exit0p04_pvalue0p4"
+```
+- Метрики: total_pnl `177.89`, sharpe_ratio_abs `0.2835`, max_drawdown_abs `-82.16`, total_trades `3768`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_204846_optimize_q4_sanity_wfa_zscore_0p8_exit0p04_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (хуже exit0p06 + pvalue0p4 по Sharpe и PnL).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p04 + pvalue0p4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_204846_optimize_q4_sanity_wfa_zscore_0p8_exit0p04_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.06, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml \
+  "artifacts/wfa/runs/20260114_205609_optimize_q4_sanity_wfa_zscore_0p8_exit0p06_pvalue0p4"
+```
+- Метрики: total_pnl `182.31`, sharpe_ratio_abs `0.2905`, max_drawdown_abs `-81.50`, total_trades `3768`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_205609_optimize_q4_sanity_wfa_zscore_0p8_exit0p06_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `candidate` (новый лидер по Sharpe/PnL на Q4 sanity).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p06 + pvalue0p4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_205609_optimize_q4_sanity_wfa_zscore_0p8_exit0p06_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.05, pvalue=0.45)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_pvalue0p45.yaml \
+  "artifacts/wfa/runs/20260114_210901_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p45"
+```
+- Метрики: total_pnl `179.46`, sharpe_ratio_abs `0.2846`, max_drawdown_abs `-82.22`, total_trades `3831`, total_pairs_traded `160`.
+- Артефакты: `artifacts/wfa/runs/20260114_210901_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p45/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (ниже лидера exit0p06 + pvalue0p4 по Sharpe).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p05 + pvalue0p45)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_210901_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p45/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 72
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 789
+  hurst: 902
+  kpss: 1697
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2671
+  after_hurst: 1769
+  after_kpss: 72
+  after_market_microstructure: 72
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 815
+  hurst: 464
+  kpss: 1796
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2281
+  after_hurst: 1817
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 969
+  hurst: 956
+  kpss: 1559
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2590
+  after_hurst: 1634
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.05, pvalue=0.5)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_pvalue0p5.yaml \
+  "artifacts/wfa/runs/20260114_211724_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p5"
+```
+- Метрики: total_pnl `182.40`, sharpe_ratio_abs `0.2785`, max_drawdown_abs `-87.69`, total_trades `4005`, total_pairs_traded `166`.
+- Артефакты: `artifacts/wfa/runs/20260114_211724_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p5/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (Sharpe ниже exit0p06 + pvalue0p4).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p05 + pvalue0p5)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_211724_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_pvalue0p5/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 73
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 685
+  hurst: 930
+  kpss: 1772
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2775
+  after_hurst: 1845
+  after_kpss: 73
+  after_market_microstructure: 73
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 23
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 730
+  hurst: 472
+  kpss: 1871
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2366
+  after_hurst: 1894
+  after_kpss: 23
+  after_market_microstructure: 23
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 78
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 855
+  hurst: 994
+  kpss: 1632
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2704
+  after_hurst: 1710
+  after_kpss: 78
+  after_market_microstructure: 78
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.75, zscore_exit=0.05, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p75_exit0p05_pvalue0p4.yaml \
+  "artifacts/wfa/runs/20260114_212610_optimize_q4_sanity_wfa_zscore_0p75_exit0p05_pvalue0p4"
+```
+- Метрики: total_pnl `119.22`, sharpe_ratio_abs `0.1715`, max_drawdown_abs `-138.69`, total_trades `4956`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_212610_optimize_q4_sanity_wfa_zscore_0p75_exit0p05_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (значимо хуже лидера по Sharpe/PnL).
+
+#### Сводка фильтрации пар (WFA sanity, zscore0p75 + exit0p05 + pvalue0p4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_212610_optimize_q4_sanity_wfa_zscore_0p75_exit0p05_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore=0.85, zscore_exit=0.05, pvalue=0.4)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p85_exit0p05_pvalue0p4.yaml \
+  "artifacts/wfa/runs/20260114_213413_optimize_q4_sanity_wfa_zscore_0p85_exit0p05_pvalue0p4"
+```
+- Метрики: total_pnl `24.97`, sharpe_ratio_abs `0.0417`, max_drawdown_abs `-100.42`, total_trades `2920`, total_pairs_traded `157`.
+- Артефакты: `artifacts/wfa/runs/20260114_213413_optimize_q4_sanity_wfa_zscore_0p85_exit0p05_pvalue0p4/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `rejected` (слабая доходность и Sharpe).
+
+#### Сводка фильтрации пар (WFA sanity, zscore0p85 + exit0p05 + pvalue0p4)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_213413_optimize_q4_sanity_wfa_zscore_0p85_exit0p05_pvalue0p4/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 69
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 913
+  hurst: 864
+  kpss: 1614
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2547
+  after_hurst: 1683
+  after_kpss: 69
+  after_market_microstructure: 69
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 21
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 916
+  hurst: 455
+  kpss: 1704
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2180
+  after_hurst: 1725
+  after_kpss: 21
+  after_market_microstructure: 21
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 75
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1103
+  hurst: 913
+  kpss: 1468
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2456
+  after_hurst: 1543
+  after_kpss: 75
+  after_market_microstructure: 75
+```
+
+### WFA sanity (Q4 2023, dynamic selection, ssd_top_n=5000, zscore_exit=0.05, hurst<=0.7)
+Команда (из `coint4/`):
+```bash
+./run_wfa_fullcpu.sh configs/main_2024_optimize_dynamic_zscore_0p8_exit0p05_hurst0p7.yaml \
+  "artifacts/wfa/runs/20260114_203041_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_hurst0p7"
+```
+- Метрики: total_pnl `193.25`, sharpe_ratio_abs `0.2831`, max_drawdown_abs `-98.87`, total_trades `4112`, total_pairs_traded `166`.
+- Артефакты: `artifacts/wfa/runs/20260114_203041_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_hurst0p7/` (strategy_metrics.csv, equity_curve.csv, daily_pnl.csv, trade_statistics.csv, CointegrationStrategy_performance_report.png, filter_reasons_*.csv).
+- Статус: `candidate` (PnL выше, но Sharpe и просадка хуже лидера).
+
+#### Сводка фильтрации пар (WFA sanity, exit0p05 + hurst0p7)
+Источник: `filter_reasons_*.csv` + `trade_statistics.csv` из `artifacts/wfa/runs/20260114_203041_optimize_q4_sanity_wfa_zscore_0p8_exit0p05_hurst0p7/`.
+
+```yaml
+step: 1
+period: 08/02-10/31
+candidates_total: 5000
+passed_pairs: 72
+dropped_by_reason:
+  low_correlation: 47
+  beta: 1455
+  mean_crossings: 0
+  half_life: 38
+  pvalue: 1039
+  hurst: 665
+  kpss: 1684
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4953
+  after_beta: 3498
+  after_mean_crossings: 3498
+  after_half_life: 3460
+  after_pvalue: 2421
+  after_hurst: 1756
+  after_kpss: 72
+  after_market_microstructure: 72
+---
+step: 2
+period: 09/01-11/30
+candidates_total: 5000
+passed_pairs: 22
+dropped_by_reason:
+  low_correlation: 680
+  beta: 1211
+  mean_crossings: 0
+  half_life: 13
+  pvalue: 1017
+  hurst: 348
+  kpss: 1709
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4320
+  after_beta: 3109
+  after_mean_crossings: 3109
+  after_half_life: 3096
+  after_pvalue: 2079
+  after_hurst: 1731
+  after_kpss: 22
+  after_market_microstructure: 22
+---
+step: 3
+period: 10/01-12/30
+candidates_total: 5000
+passed_pairs: 84
+dropped_by_reason:
+  low_correlation: 111
+  beta: 1330
+  mean_crossings: 0
+  half_life: 0
+  pvalue: 1262
+  hurst: 765
+  kpss: 1448
+  market_microstructure: 0
+dropped_other: 0
+remaining_after_stage:
+  after_low_correlation: 4889
+  after_beta: 3559
+  after_mean_crossings: 3559
+  after_half_life: 3559
+  after_pvalue: 2297
+  after_hurst: 1532
+  after_kpss: 84
+  after_market_microstructure: 84
+```
+
+### Failed/archived runs (WFA sanity / smoke)
+- `20260114_190126_optimize_q4_sanity_wfa_zscore_0p8_zscore0p85`: артефакты пустые, метрики не сформированы (падение до фикса /dev/shm и process pool). Статус: `legacy/archived`.
+- `20260114_192052_smoke_fullcpu`: прерван из-за проблем с process pool (до фикса /dev/shm), метрики не сформированы. Статус: `legacy/archived`.
