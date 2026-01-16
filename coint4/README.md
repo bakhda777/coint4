@@ -143,6 +143,28 @@ Sharpe target (строгие сигналы): `docs/optimization_runs_20260115.
 Quality universe (исключение мусорных символов): `docs/optimization_runs_20260115.md`, конфиги `configs/quality_runs_20260115/` (включая corr0.45 alignment, signal_strict, tradeability/hl0p05-45, z0p9/z1p0 exit0p1 и denylist `configs/quality_runs_20260115/denylist_symbols_20260115.yaml`), артефакты `artifacts/universe/quality_universe_20260115/`, `artifacts/universe/quality_universe_20260115_250k/` и `artifacts/universe/quality_universe_20260115_200k/`, агрегаторы `artifacts/wfa/aggregate/20260115_quality_universe_500k/`, `artifacts/wfa/aggregate/20260115_quality_universe/` и `artifacts/wfa/aggregate/20260115_quality_universe_200k/`.
 Журнал возобновления (после остановки): `docs/optimization_runs_20260116.md`.
 Rollup индекс прогонов: `artifacts/wfa/aggregate/rollup/` (генерация `scripts/optimization/build_run_index.py`).
+SSD refine/signal/risk sweeps (2026-01-16): конфиги `configs/ssd_topn_refine_20260116/`, `configs/signal_sweep_20260116/`, `configs/signal_grid_20260116/`, `configs/risk_sweep_20260116/`, агрегаторы `artifacts/wfa/aggregate/20260116_ssd_topn_refine/`, `artifacts/wfa/aggregate/20260116_signal_sweep/`, `artifacts/wfa/aggregate/20260116_signal_grid/`, `artifacts/wfa/aggregate/20260116_risk_sweep/`.
+Piogoga grid (leader filters, zscore sweep): `docs/optimization_runs_20260116.md`, конфиги `configs/piogoga_grid_20260116/`, агрегатор `artifacts/wfa/aggregate/20260116_piogoga_grid/`.
+Leader validation (post-analysis, SSD leader): `docs/optimization_runs_20260116.md`, конфиги `configs/leader_validation_20260116/`, агрегатор `artifacts/wfa/aggregate/20260116_leader_validation/`.
+Очереди WFA с CPU‑heartbeat (без зависимости от логов): `scripts/optimization/watch_wfa_queue.sh`.
+Состояние оптимизации: `docs/optimization_state.md` (обновлять после каждого блока прогонов).
+Шаблон prompt для headless Codex: `scripts/optimization/on_done_codex_prompt.txt` (ключевая строка: "Прогон завершён, продолжай выполнение плана", + headless‑инструкция и запись причины в `docs/optimization_state.md` при ошибке).
+
+Пример запуска watcher (с heartbeat и проверкой max_steps<=5):
+```bash
+bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
+  --parallel 1
+```
+
+Пример запуска watcher с on-done (headless Codex + лог):
+```bash
+bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
+  --parallel 1 \
+  --on-done-prompt-file scripts/optimization/on_done_codex_prompt.txt \
+  --on-done-log artifacts/wfa/aggregate/20260115_ssd_topn_sweep/codex_on_done.log
+```
 
 Сборка quality universe (пример):
 ```bash

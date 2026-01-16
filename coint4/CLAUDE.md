@@ -59,9 +59,9 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
   configs/selection_grid_20260115_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60.yaml \
   artifacts/wfa/runs/20260115_selgrid_strictpv/selgrid_20260115_strictpv_exit0p06_pv0p05_kpss0p05_h0p55_c0p45_hl0p01-60
 
-# Selection grid (strict p-value, parallel 2x, n_jobs=4)
+# Selection grid (strict p-value, n_jobs=-1, sequential)
 cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
-  xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id"' _ {}
+  xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id"' _ {}
 
 # SSD top-N sweep (dynamic selection, full CPU, sequential runs)
 cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
@@ -71,9 +71,48 @@ cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
 PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
   --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv
 
+# Resume queued runs with CPU heartbeat (recommended)
+bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
+  --parallel 1
+
+# Resume queued runs with headless Codex on completion
+bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
+  --parallel 1 \
+  --on-done-prompt-file scripts/optimization/on_done_codex_prompt.txt \
+  --on-done-log artifacts/wfa/aggregate/20260115_ssd_topn_sweep/codex_on_done.log
+
+Шаблон prompt должен включать ключевую фразу "Прогон завершён, продолжай выполнение плана" и инструкции: headless‑режим + запись причины сбоя в `docs/optimization_state.md`.
+
+# Strict PV grid (queue)
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260115_selgrid_strictpv/run_queue.csv
+
+# Selection grid (queue)
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260115_selgrid/run_queue.csv
+
 # Build rollup index of WFA runs
 PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \
   --output-dir artifacts/wfa/aggregate/rollup
+
+# SSD refine / signal / risk sweeps (2026-01-16)
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260116_ssd_topn_refine/run_queue.csv
+
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260116_signal_sweep/run_queue.csv
+
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv
+
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260116_risk_sweep/run_queue.csv
+
+# Piogoga grid (leader filters, zscore sweep, 2026-01-16)
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260116_piogoga_grid/run_queue.csv
 
 # Sharpe target (strict signals, Q4 2023, 3 steps)
 ./run_wfa_fullcpu.sh \
@@ -229,6 +268,7 @@ python archive/old_scripts/ops/monitor_drift.py
 - **SSD top-N sweep**: `configs/ssd_topn_sweep_20260115/` (см. `docs/optimization_runs_20260115.md`)
 - **SSD top-N sweep (subset 4 values)**: `configs/ssd_topn_sweep_20260115_4vals/` (см. `docs/optimization_runs_20260115.md`)
 - **SSD top-N sweep (subset 3 values, 30k/40k/50k)**: `configs/ssd_topn_sweep_20260115_3vals/` (см. `docs/optimization_runs_20260115.md`)
+- **Leader validation (post-analysis)**: `configs/leader_validation_20260116/` (см. `docs/optimization_runs_20260116.md`)
 - **Search Spaces**: Define parameter ranges for optimization in `configs/search_spaces/`
 - **Criteria**: Pair selection criteria in `configs/criteria_*.yaml`
 - **Environment Variables**: `DATA_ROOT`, `COINT_LOG_EVERY`, `QUICK_TEST`
