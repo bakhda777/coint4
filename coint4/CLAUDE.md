@@ -321,3 +321,5 @@ Active components remain in:
 - Universe selection: `scripts/universe/`
 - Pipeline helpers: `scripts/run_pipeline.sh`, `scripts/run_preflight.py`, `scripts/perf_audit.py`
 - Main source: `src/coint2/` and `src/optimiser/`
+
+Heartbeat watcher: поле `run_cpu` в `watch_wfa_queue.sh` теперь относится к воркеру `coint2 walk-forward`; отдельно пишутся `watcher_cpu`, `worker_pid`, `worker_cpu`.

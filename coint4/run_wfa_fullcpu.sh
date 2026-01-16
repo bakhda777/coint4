@@ -28,6 +28,17 @@ import os
 print(os.cpu_count())
 PY
 
-./.venv/bin/coint2 walk-forward --config "$CONFIG_PATH" --results-dir "$RESULTS_DIR"
+WORKER_PID_FILE="$RESULTS_DIR/worker.pid"
+
+./.venv/bin/coint2 walk-forward --config "$CONFIG_PATH" --results-dir "$RESULTS_DIR" &
+WORKER_PID=$!
+echo "$WORKER_PID" > "$WORKER_PID_FILE"
+echo "[run_wfa_fullcpu] worker_pid=$WORKER_PID"
+
+set +e
+wait "$WORKER_PID"
+RC=$?
+set -e
 
 echo "[run_wfa_fullcpu] end: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+exit "$RC"
