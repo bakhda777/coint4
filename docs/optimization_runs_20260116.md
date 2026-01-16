@@ -144,6 +144,7 @@ remaining_after_stage:
 - Очередь: `coint4/artifacts/wfa/aggregate/20260116_leader_validation/run_queue.csv`.
 - Артефакты: `coint4/artifacts/wfa/runs/20260116_leader_validation/`.
 - Статус: `planned` (parallel `1`, n_jobs `-1`).
+- Примечание: первый рестарт завершился ошибкой `UnboundLocalError: os` в `walk_forward_orchestrator.py` (параллельная фильтрация); исправлено, нужен повторный запуск.
 
 ## Очереди на возобновление
 - SSD top-N sweep (6 значений): `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv`.

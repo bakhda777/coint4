@@ -15,6 +15,7 @@ Parallel stage:
 - SSD sweep (6 values) via artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv (queue has running statuses; check worker activity before resume).
 - Leader validation (post-analysis, single run) queued: artifacts/wfa/aggregate/20260116_leader_validation/run_queue.csv (parallel=1, n_jobs=-1).
 - Патч: фильтрация пар теперь параллельная (n_jobs из backtest, processes при memory-map) — ожидаем полную загрузку CPU.
+- Рестарт leader validation упал из-за `UnboundLocalError: os` (исправлено), требуется повторный запуск очереди.
 
 After ssd50000 DONE:
 1) Update docs/optimization_runs_20260116.md (metrics + filtering summary for ssd50000).

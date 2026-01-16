@@ -1510,7 +1510,6 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             # Determine number of parallel jobs
             n_jobs = getattr(cfg.backtest, 'n_jobs', -1)  # -1 means use all available cores
             if n_jobs == -1:
-                import os
                 n_jobs = os.cpu_count()
             
             logger.info(f"🚀 {step_tag}: Запускаем параллельную обработку {len(active_pairs)} пар на {n_jobs} ядрах...")
