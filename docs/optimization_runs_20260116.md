@@ -143,8 +143,77 @@ remaining_after_stage:
 - Фильтрация пар: параллельная (берет `backtest.n_jobs`, backend `threads` по умолчанию; можно форсировать `COINT_FILTER_BACKEND=processes`, используется `spawn` для OpenMP‑безопасности).
 - Очередь: `coint4/artifacts/wfa/aggregate/20260116_leader_validation/run_queue.csv`.
 - Артефакты: `coint4/artifacts/wfa/runs/20260116_leader_validation/`.
-- Статус: `planned` (parallel `1`, n_jobs `-1`).
-- Примечание: первый рестарт завершился ошибкой `UnboundLocalError: os` в `walk_forward_orchestrator.py` (параллельная фильтрация); исправлено, нужен повторный запуск.
+- Метрики (strategy_metrics.csv): total_pnl `1388.71`, sharpe_ratio_abs `0.5255`, max_drawdown_abs `-199.31`, total_trades `17096`, total_pairs_traded `775`.
+- Примечание: total_costs = `0.0` — проверить учет комиссий/слиппеджа.
+- Статус: `completed` (parallel `1`, n_jobs `-1`, backend `processes`).
+
+Сводка фильтрации пар (из run.log, WFA 5 шагов):
+```yaml
+step: 1
+candidates_total: 25000
+passed_pairs: 238
+remaining_after_stage:
+  after_low_correlation: 20216
+  after_beta: 13215
+  after_mean_crossings: 13215
+  after_half_life: 13164
+  after_pvalue: 10517
+  after_hurst: 7389
+  after_kpss: 238
+  after_market_microstructure: 238
+---
+step: 2
+candidates_total: 25000
+passed_pairs: 104
+remaining_after_stage:
+  after_low_correlation: 14874
+  after_beta: 10035
+  after_mean_crossings: 10035
+  after_half_life: 10009
+  after_pvalue: 7486
+  after_hurst: 6030
+  after_kpss: 104
+  after_market_microstructure: 104
+---
+step: 3
+candidates_total: 25000
+passed_pairs: 190
+remaining_after_stage:
+  after_low_correlation: 22285
+  after_beta: 15291
+  after_mean_crossings: 15291
+  after_half_life: 15258
+  after_pvalue: 9573
+  after_hurst: 6358
+  after_kpss: 190
+  after_market_microstructure: 190
+---
+step: 4
+candidates_total: 25000
+passed_pairs: 158
+remaining_after_stage:
+  after_low_correlation: 19205
+  after_beta: 13022
+  after_mean_crossings: 13022
+  after_half_life: 12982
+  after_pvalue: 8106
+  after_hurst: 5887
+  after_kpss: 158
+  after_market_microstructure: 158
+---
+step: 5
+candidates_total: 25000
+passed_pairs: 128
+remaining_after_stage:
+  after_low_correlation: 11234
+  after_beta: 7916
+  after_mean_crossings: 7916
+  after_half_life: 7916
+  after_pvalue: 7011
+  after_hurst: 5426
+  after_kpss: 128
+  after_market_microstructure: 128
+```
 
 ## Очереди на возобновление
 - SSD top-N sweep (6 значений): `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv`.
