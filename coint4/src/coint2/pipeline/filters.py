@@ -230,11 +230,11 @@ def _filter_pairs_parallel(
 
     if backend == "processes":
         try:
-            ctx = multiprocessing.get_context("fork")
+            ctx = multiprocessing.get_context("spawn")
         except ValueError:
             ctx = multiprocessing.get_context()
-        if ctx.get_start_method() != "fork":
-            logger.warning("[ФИЛЬТР] Fork недоступен, переключаюсь на threads для фильтрации")
+        if ctx.get_start_method() != "spawn":
+            logger.warning("[ФИЛЬТР] Spawn недоступен, переключаюсь на threads для фильтрации")
             backend = "threads"
 
     if backend == "threads":

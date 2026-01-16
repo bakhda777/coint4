@@ -285,7 +285,7 @@ Operational checklist: `docs/production_checklist.md`.
 - **Caching**: Data loading is cached via joblib Memory
 - **Parallel Processing**: Use `joblib.Parallel` for pair processing
 - **Memory Management**: Large datasets use memory-mapped arrays when possible
-- **Pair Filtering**: WFA filters scale with `backtest.n_jobs` (default backend: threads; `COINT_FILTER_BACKEND=processes` for override)
+- **Pair Filtering**: WFA filters scale with `backtest.n_jobs` (default backend: threads; `COINT_FILTER_BACKEND=processes` uses spawn for OpenMP safety)
 
 ## Common Development Tasks
 
