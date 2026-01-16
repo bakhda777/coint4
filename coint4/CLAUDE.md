@@ -63,6 +63,18 @@ PYTHONPATH=src ./.venv/bin/python scripts/core/optimize.py \
 cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
   xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id"' _ {}
 
+# SSD top-N sweep (dynamic selection, full CPU, sequential runs)
+cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
+  xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id/run.log" 2>&1' _ {}
+
+# Resume queued runs (run_queue.csv)
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+  --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv
+
+# Build rollup index of WFA runs
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \
+  --output-dir artifacts/wfa/aggregate/rollup
+
 # Sharpe target (strict signals, Q4 2023, 3 steps)
 ./run_wfa_fullcpu.sh \
   configs/sharpe_target_20260115/sharpe_target_strict_z1p2.yaml \
@@ -216,6 +228,7 @@ python archive/old_scripts/ops/monitor_drift.py
 - **Balanced WFA Config**: `configs/main_2024_wfa_balanced.yaml`
 - **SSD top-N sweep**: `configs/ssd_topn_sweep_20260115/` (см. `docs/optimization_runs_20260115.md`)
 - **SSD top-N sweep (subset 4 values)**: `configs/ssd_topn_sweep_20260115_4vals/` (см. `docs/optimization_runs_20260115.md`)
+- **SSD top-N sweep (subset 3 values, 30k/40k/50k)**: `configs/ssd_topn_sweep_20260115_3vals/` (см. `docs/optimization_runs_20260115.md`)
 - **Search Spaces**: Define parameter ranges for optimization in `configs/search_spaces/`
 - **Criteria**: Pair selection criteria in `configs/criteria_*.yaml`
 - **Environment Variables**: `DATA_ROOT`, `COINT_LOG_EVERY`, `QUICK_TEST`

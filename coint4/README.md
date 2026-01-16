@@ -134,12 +134,15 @@ PYTHONPATH=src ./.venv/bin/python scripts/validate_data_dump.py \
 
 ## Оптимизация параметров
 
-См. `docs/optimization_plan_20260114.md` для актуального плана, критериев и команд.
+См. `docs/optimization_plan_20260116.md` для актуального плана, критериев и команд (`docs/optimization_plan_20260114.md` помечен как legacy/archived).
 Selection grid по фильтрам (2026-01-15): `docs/optimization_runs_20260115.md`, базовая сетка в `configs/selection_grid_20260115/`, строгая сетка p-value в `configs/selection_grid_20260115_strictpv/` (параллельный запуск описан в docs), агрегаторы в `artifacts/wfa/aggregate/20260115_selgrid/` и `artifacts/wfa/aggregate/20260115_selgrid_strictpv/`.
-SSD top-N sweep (dynamic selection): `docs/optimization_runs_20260115.md`, конфиги в `configs/ssd_topn_sweep_20260115/`, агрегатор `artifacts/wfa/aggregate/20260115_ssd_topn_sweep/`.
+SSD top-N sweep (dynamic selection): `docs/optimization_runs_20260115.md`, конфиги в `configs/ssd_topn_sweep_20260115/`, агрегатор `artifacts/wfa/aggregate/20260115_ssd_topn_sweep/` (конфиги обновлены под `n_jobs: -1`, запуск по одному).
 SSD top-N sweep (subset 4 values): `docs/optimization_runs_20260115.md`, конфиги в `configs/ssd_topn_sweep_20260115_4vals/`, агрегатор `artifacts/wfa/aggregate/20260115_ssd_topn_sweep_4vals/`.
+SSD top-N sweep (subset 3 values, 30k/40k/50k): `docs/optimization_runs_20260115.md`, конфиги в `configs/ssd_topn_sweep_20260115_3vals/`, агрегатор `artifacts/wfa/aggregate/20260115_ssd_topn_sweep_3vals/`.
 Sharpe target (строгие сигналы): `docs/optimization_runs_20260115.md`, конфиги в `configs/sharpe_target_20260115/`, агрегатор `artifacts/wfa/aggregate/20260115_sharpe_target/`.
 Quality universe (исключение мусорных символов): `docs/optimization_runs_20260115.md`, конфиги `configs/quality_runs_20260115/` (включая corr0.45 alignment, signal_strict, tradeability/hl0p05-45, z0p9/z1p0 exit0p1 и denylist `configs/quality_runs_20260115/denylist_symbols_20260115.yaml`), артефакты `artifacts/universe/quality_universe_20260115/`, `artifacts/universe/quality_universe_20260115_250k/` и `artifacts/universe/quality_universe_20260115_200k/`, агрегаторы `artifacts/wfa/aggregate/20260115_quality_universe_500k/`, `artifacts/wfa/aggregate/20260115_quality_universe/` и `artifacts/wfa/aggregate/20260115_quality_universe_200k/`.
+Журнал возобновления (после остановки): `docs/optimization_runs_20260116.md`.
+Rollup индекс прогонов: `artifacts/wfa/aggregate/rollup/` (генерация `scripts/optimization/build_run_index.py`).
 
 Сборка quality universe (пример):
 ```bash

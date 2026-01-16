@@ -9,6 +9,16 @@
 - `aborted` — прерван вручную/по ошибке.
 - `legacy/archived` — устаревший или остановленный прогон.
 
+## Обновление (2026-01-16)
+- Ночные прогоны прерваны из-за отключения сервера; все активные/планируемые запуски требуют возобновления.
+- Возобновление через очередь (из `coint4/`):
+  ```bash
+  PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
+    --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv
+  ```
+- Rollup индекс прогонов: `coint4/artifacts/wfa/aggregate/rollup/` (генерация `scripts/optimization/build_run_index.py`).
+- Новые возобновленные прогоны фиксируются в `docs/optimization_runs_20260116.md`.
+
 ## Selection grid (dynamic selection, Q4 2023, 3 шага)
 
 Базовый конфиг для генерации: `coint4/configs/main_2024_optimize_dynamic_zscore_0p8_exit0p06_pvalue0p4.yaml`.
@@ -802,13 +812,19 @@ remaining_after_stage:
 - Агрегатор: `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/` (`run_log.txt`, `run_queue.csv`, `configs.txt`)
 - Прогоны: `coint4/artifacts/wfa/runs/20260115_ssd_topn_sweep/`
 
-Команда (из `coint4/`, параллельно 2 прогона, `n_jobs: 8` в конфигах):
+Команда (из `coint4/`, `n_jobs: -1` в конфигах, запуск по одному для полной загрузки CPU):
+```bash
+cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
+  xargs -P 1 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id/run.log" 2>&1' _ {}
+```
+
+Legacy/archived (старый запуск, `n_jobs: 8`, 2 прогона параллельно):
 ```bash
 cat configs/ssd_topn_sweep_20260115/ssd_topn_configs.txt | \
   xargs -P 2 -I {} bash -lc 'cfg="$1"; run_id=$(basename "$cfg" .yaml); ./run_wfa_fullcpu.sh "$cfg" "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id" > "artifacts/wfa/runs/20260115_ssd_topn_sweep/$run_id/run.log" 2>&1' _ {}
 ```
 
-Статус: `partial` (1/6 completed; 2 stalled; 3 planned; активных процессов нет — требуется перезапуск ssd10000/ssd25000).
+Статус: `partial` (1/6 completed; 2 stalled; 3 planned; активных процессов нет — требуется перезапуск ssd10000/ssd25000 после перехода на `n_jobs: -1`).
 
 ### SSD top-N sweep (subset 4 values, 20260115_4vals)
 

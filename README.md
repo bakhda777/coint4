@@ -29,9 +29,11 @@ For production runs, use `docs/production_checklist.md`. Overlays and configs:
 - `coint4/configs/main_2024_wfa_balanced.yaml` (balanced WFA)
 Note: WFA supports optional fixed universe via `--pairs-file` and custom output via `--results-dir` (see `docs/quickstart.md`).
 
-Optimization plan: `docs/optimization_plan_20260114.md`.
+Optimization plan: `docs/optimization_plan_20260116.md` (supersedes `docs/optimization_plan_20260114.md`, legacy/archived).
 Selection grid runs (filters): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/selection_grid_20260115/` and strict p-value grid in `coint4/configs/selection_grid_20260115_strictpv/` (parallel run notes in docs).
-SSD top-N sweep (dynamic selection): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/ssd_topn_sweep_20260115/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/`.
+SSD top-N sweep (dynamic selection): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/ssd_topn_sweep_20260115/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/` (конфиги обновлены под `n_jobs: -1`, запуск по одному).
 SSD top-N sweep (subset 4 values): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/ssd_topn_sweep_20260115_4vals/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep_4vals/`.
+SSD top-N sweep (subset 3 values, 30k/40k/50k): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/ssd_topn_sweep_20260115_3vals/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep_3vals/`.
 Sharpe target runs (strict signals): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/sharpe_target_20260115/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_sharpe_target/`.
 Quality universe (data-driven exclusions): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/quality_runs_20260115/` (including corr0.45 alignment runs, signal_strict, tradeability/hl0p05-45, z0p9/z1p0 exit0p1 variants, and denylist `coint4/configs/quality_runs_20260115/denylist_symbols_20260115.yaml`), universe artifacts in `coint4/artifacts/universe/quality_universe_20260115/`, `coint4/artifacts/universe/quality_universe_20260115_250k/`, and `coint4/artifacts/universe/quality_universe_20260115_200k/`, WFA aggregates in `coint4/artifacts/wfa/aggregate/20260115_quality_universe_500k/`, `coint4/artifacts/wfa/aggregate/20260115_quality_universe/`, and `coint4/artifacts/wfa/aggregate/20260115_quality_universe_200k/`.
+Rollup index for WFA runs: `coint4/artifacts/wfa/aggregate/rollup/` (built by `coint4/scripts/optimization/build_run_index.py`).
