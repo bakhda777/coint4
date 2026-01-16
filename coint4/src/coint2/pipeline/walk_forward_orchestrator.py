@@ -1414,7 +1414,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 filter_n_jobs = os.cpu_count() or 1
                             if not filter_n_jobs or filter_n_jobs < 1:
                                 filter_n_jobs = 1
-                            filter_backend = "processes" if use_memory_map else "threads"
+                            filter_backend = os.getenv("COINT_FILTER_BACKEND", "threads")
                             filtered_pairs = filter_pairs_by_coint_and_half_life(
                                 pairs_for_filter,
                                 training_slice,
