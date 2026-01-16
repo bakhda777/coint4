@@ -215,6 +215,12 @@ remaining_after_stage:
   after_market_microstructure: 128
 ```
 
+### Leader holdout (next run, planned)
+- Основание: rollup‑лидер по композиту Sharpe/PnL/DD/стабильность — `ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000`.
+- Конфиг: `coint4/configs/best_config__leader_holdout_ssd25000__20260116_211943.yaml`.
+- Окно WFA: `2024-05-01` → `2024-12-31`, 60/30, max_steps `5`.
+- Статус: `planned`.
+
 ## Очереди на возобновление
 - SSD top-N sweep (6 значений): `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv`.
 - SSD top-N sweep (3 значения): `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep_3vals/run_queue.csv`.

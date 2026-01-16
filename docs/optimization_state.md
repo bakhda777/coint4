@@ -10,6 +10,7 @@ Progress:
 - ssd25000 completed
 - ssd50000 active (WF step 3/3, step 2: 122 pairs, P&L +355.58)
 - leader_validation completed (Sharpe 0.5255, PnL 1388.71, DD -199.31)
+- подготовлен holdout‑конфиг лидера для следующего прогона: coint4/configs/best_config__leader_holdout_ssd25000__20260116_211943.yaml (WFA 2024-05-01 → 2024-12-31, max_steps=5)
 
 Parallel stage:
 - Signal grid (16 configs, z=0.75/0.8/0.85/0.9 × exit=0.04/0.06/0.08/0.1) via artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv (parallel=16, n_jobs=1).
