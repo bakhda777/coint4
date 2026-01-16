@@ -41,5 +41,6 @@ SSD refine / signal / risk sweeps (2026-01-16): `docs/optimization_runs_20260116
 Piogoga grid (leader filters, zscore sweep): `docs/optimization_runs_20260116.md` with configs in `coint4/configs/piogoga_grid_20260116/` and агрегатором `coint4/artifacts/wfa/aggregate/20260116_piogoga_grid/`.
 Leader validation (post-analysis, SSD leader): `docs/optimization_runs_20260116.md` with configs in `coint4/configs/leader_validation_20260116/` and агрегатором `coint4/artifacts/wfa/aggregate/20260116_leader_validation/`.
 WFA queue watcher (CPU heartbeat, idle detection): `coint4/scripts/optimization/watch_wfa_queue.sh`.
+WFA pair filtering: parallelized via `backtest.n_jobs` (processes when memory-map is enabled) to maximize CPU usage.
 Optimization state file (headless continuation): `docs/optimization_state.md`.
 Headless codex prompt template: `coint4/scripts/optimization/on_done_codex_prompt.txt` (ключевая фраза: "Прогон завершён, продолжай выполнение плана" + инструкции headless/запись причины сбоя в `docs/optimization_state.md`).

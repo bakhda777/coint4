@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Tuple, List
 import time
 import multiprocessing
+import os
 
 import pandas as pd
 
@@ -1408,6 +1409,12 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                         # Filter pairs
                         with time_block("filtering pairs by cointegration and half-life"):
                             from coint2.pipeline.filters import filter_pairs_by_coint_and_half_life
+                            filter_n_jobs = getattr(cfg.backtest, 'n_jobs', None)
+                            if filter_n_jobs == -1:
+                                filter_n_jobs = os.cpu_count() or 1
+                            if not filter_n_jobs or filter_n_jobs < 1:
+                                filter_n_jobs = 1
+                            filter_backend = "processes" if use_memory_map else "threads"
                             filtered_pairs = filter_pairs_by_coint_and_half_life(
                                 pairs_for_filter,
                                 training_slice,
@@ -1421,6 +1428,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 min_correlation=cfg.pair_selection.min_correlation,
                                 save_filter_reasons=cfg.pair_selection.save_filter_reasons,
                                 kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
+                                n_jobs=filter_n_jobs,
+                                parallel_backend=filter_backend,
                                 # Параметры commission_pct и slippage_pct удалены
                             )
                             logger.info(

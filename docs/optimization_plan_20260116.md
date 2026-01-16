@@ -6,6 +6,7 @@
 - Основная метрика: `sharpe_ratio_abs` по WFA (макс 5 шагов).
 - Минимумы: `total_trades >= 200`, `total_pairs_traded >= 50`.
 - Ограничение по риску: `max_drawdown_abs >= -200` (жестче — по результатам лидеров).
+- Фильтрация пар: параллельная (n_jobs = `backtest.n_jobs`, backend `processes` при memory-map) для полной загрузки CPU.
 
 ## Файл состояния
 - `docs/optimization_state.md` — краткое состояние и следующий шаг; обновлять после каждого блока прогонов.

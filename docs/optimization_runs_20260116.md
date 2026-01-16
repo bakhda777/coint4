@@ -140,6 +140,7 @@ remaining_after_stage:
 - Основание: лидер rollup по Sharpe/PnL — `ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000`.
 - Конфиг: `coint4/configs/leader_validation_20260116/leader_validate_20260116_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000.yaml`.
 - Период WFA: `2023-10-01` → `2024-04-30`, 60/30, max_steps `5`.
+- Фильтрация пар: параллельная (берет `backtest.n_jobs`, backend `processes` при memory-map; цель — полный CPU).
 - Очередь: `coint4/artifacts/wfa/aggregate/20260116_leader_validation/run_queue.csv`.
 - Артефакты: `coint4/artifacts/wfa/runs/20260116_leader_validation/`.
 - Статус: `planned` (parallel `1`, n_jobs `-1`).

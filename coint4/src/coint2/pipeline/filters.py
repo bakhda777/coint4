@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from dataclasses import dataclass
 from coint2.core.math_utils import calculate_half_life, count_mean_crossings
 from coint2.core.fast_coint import fast_coint
 from coint2.analysis.pair_filter import calculate_hurst_exponent
@@ -11,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 import logging
+import multiprocessing
+import os
 from typing import List, Tuple, Dict, Any, Optional
 
 # --- Placeholder market data helpers ---
@@ -32,6 +36,304 @@ from typing import List, Tuple, Optional, Dict, Any
 # Разумные границы для коэффициента beta
 MIN_BETA = 0.1
 MAX_BETA = 10.0
+
+_FILTER_PRICE_DF: Optional[pd.DataFrame] = None
+_FILTER_WORKER_CFG: Optional["_FilterWorkerCfg"] = None
+
+
+@dataclass(frozen=True)
+class _FilterWorkerCfg:
+    pvalue_threshold: float
+    min_beta: float
+    max_beta: float
+    min_half_life: float
+    max_half_life: float
+    min_mean_crossings: int
+    min_history_ratio: float
+    min_correlation: float
+    liquidity_usd_daily: float
+    max_bid_ask_pct: float
+    max_avg_funding_pct: float
+    kpss_pvalue_threshold: Optional[float]
+    max_hurst_exponent: float
+
+
+def _normalize_n_jobs(n_jobs: Optional[int]) -> int:
+    if n_jobs is None:
+        return 1
+    try:
+        n_jobs = int(n_jobs)
+    except (TypeError, ValueError):
+        return 1
+    if n_jobs == -1:
+        return os.cpu_count() or 1
+    return max(1, n_jobs)
+
+
+def _set_numba_threads(target_threads: int) -> None:
+    try:
+        from numba import set_num_threads
+        set_num_threads(max(1, int(target_threads)))
+    except Exception:
+        pass
+
+
+def _init_filter_worker(price_df: pd.DataFrame, cfg: _FilterWorkerCfg, numba_threads: int) -> None:
+    global _FILTER_PRICE_DF, _FILTER_WORKER_CFG
+    _FILTER_PRICE_DF = price_df
+    _FILTER_WORKER_CFG = cfg
+    _set_numba_threads(numba_threads)
+
+
+def _reject_pair(stage: str, reason_key: str, reason_detail: Optional[str], s1: str, s2: str) -> tuple:
+    return ("reject", stage, reason_key, reason_detail or reason_key, (s1, s2))
+
+
+def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWorkerCfg) -> tuple:
+    s1, s2 = pair
+    try:
+        pair_data = price_df[[s1, s2]].dropna()
+    except KeyError:
+        return _reject_pair("data", "insufficient_data", "missing_price_data", s1, s2)
+
+    if pair_data.empty or len(pair_data) < 960:
+        return _reject_pair("data", "insufficient_data", "insufficient_data", s1, s2)
+    if pair_data[s2].var() == 0:
+        return _reject_pair("data", "zero_variance", "zero_variance", s1, s2)
+
+    corr = pair_data[s1].corr(pair_data[s2])
+    if corr < cfg.min_correlation:
+        return _reject_pair("correlation", "low_correlation", f"low_correlation_{corr:.2f}", s1, s2)
+
+    beta = pair_data[s1].cov(pair_data[s2]) / pair_data[s2].var()
+    if not (cfg.min_beta <= abs(beta) <= cfg.max_beta):
+        return _reject_pair("beta", "beta", f"beta_out_of_range ({beta:.2f})", s1, s2)
+
+    spread = pair_data[s1] - beta * pair_data[s2]
+    mean_crossings = count_mean_crossings(spread)
+    if mean_crossings < cfg.min_mean_crossings:
+        return _reject_pair("crossings", "crossings", f"crossings_{mean_crossings}", s1, s2)
+
+    hl_bars = calculate_half_life(spread)
+    try:
+        bar_minutes = int((pair_data.index[1] - pair_data.index[0]).total_seconds() / 60)
+        if bar_minutes <= 0:
+            bar_minutes = 15
+    except Exception:
+        bar_minutes = 15
+    hl_days = hl_bars * bar_minutes / 1440
+    if not (cfg.min_half_life < hl_days < cfg.max_half_life):
+        return _reject_pair("half_life", "half_life", f"half_life_{hl_days:.1f}", s1, s2)
+
+    try:
+        _score, pvalue, _ = fast_coint(pair_data[s1], pair_data[s2], trend='n')
+        if pvalue is None or np.isnan(pvalue):
+            return _reject_pair("coint", "invalid_pvalue", "invalid_pvalue", s1, s2)
+    except Exception:
+        return _reject_pair("coint", "coint_test_error", "coint_test_error", s1, s2)
+
+    if pvalue >= cfg.pvalue_threshold:
+        return _reject_pair("coint", "pvalue", f"pvalue_{pvalue:.3f}", s1, s2)
+
+    hurst_exponent = calculate_hurst_exponent(spread)
+    if hurst_exponent > cfg.max_hurst_exponent:
+        return _reject_pair("hurst", "hurst", f"hurst_too_high ({hurst_exponent:.2f})", s1, s2)
+
+    if cfg.kpss_pvalue_threshold is not None and cfg.kpss_pvalue_threshold < 0.95:
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=InterpolationWarning)
+                p_kpss = kpss(spread, regression='c', nlags='auto')[1]
+            if p_kpss < cfg.kpss_pvalue_threshold:
+                return _reject_pair("kpss", "kpss", "kpss", s1, s2)
+        except Exception:
+            pass
+
+    if cfg.liquidity_usd_daily > 0 and cfg.max_bid_ask_pct < 1.0:
+        hist_ratio1 = price_df[s1].notna().mean()
+        hist_ratio2 = price_df[s2].notna().mean()
+        if min(hist_ratio1, hist_ratio2) < cfg.min_history_ratio:
+            return _reject_pair("market", "history", "history", s1, s2)
+
+        vol1, ba1, fund1 = _get_market_metrics(s1)
+        vol2, ba2, fund2 = _get_market_metrics(s2)
+        if (
+            min(vol1, vol2) < cfg.liquidity_usd_daily
+            or max(ba1, ba2) > cfg.max_bid_ask_pct
+            or max(abs(fund1), abs(fund2)) > cfg.max_avg_funding_pct
+        ):
+            return _reject_pair("market", "liquidity", "liquidity", s1, s2)
+
+    if len(spread) == 0 or spread.isna().all():
+        return _reject_pair("market", "spread_empty_stats", "spread_empty_stats", s1, s2)
+
+    mean = spread.mean()
+    std = spread.std()
+    metrics = {
+        'half_life': hl_days,
+        'correlation': corr,
+        'mean_crossings': mean_crossings,
+        'spread_std': std,
+        'pvalue': pvalue,
+    }
+
+    return ("pass", None, None, None, (s1, s2, beta, mean, std, metrics))
+
+
+def _filter_pairs_parallel(
+    pairs: List[Tuple[str, str]],
+    price_df: pd.DataFrame,
+    cfg: _FilterWorkerCfg,
+    n_jobs: int,
+    parallel_backend: str,
+    save_filter_reasons: bool,
+) -> List[Tuple[str, str, float, float, float, Dict[str, Any]]]:
+    logger = logging.getLogger("pair_filter")
+    total_pairs = len(pairs)
+
+    stage_order = (
+        "data",
+        "correlation",
+        "beta",
+        "crossings",
+        "half_life",
+        "coint",
+        "hurst",
+        "kpss",
+        "market",
+    )
+    stage_idx = {stage: idx for idx, stage in enumerate(stage_order)}
+
+    filter_stats: Dict[str, int] = {
+        'total': total_pairs,
+        'insufficient_data': 0,
+        'zero_variance': 0,
+        'low_correlation': 0,
+        'pvalue': 0,
+        'beta': 0,
+        'half_life': 0,
+        'crossings': 0,
+        'hurst': 0,
+        'kpss': 0,
+        'history': 0,
+        'liquidity': 0,
+    }
+
+    backend = (parallel_backend or "threads").strip().lower()
+    if backend not in ("threads", "processes", "auto"):
+        backend = "threads"
+    if backend == "auto":
+        backend = "processes"
+
+    numba_threads = max(1, (os.cpu_count() or 1) // max(1, n_jobs))
+    results = []
+
+    if backend == "processes":
+        try:
+            ctx = multiprocessing.get_context("fork")
+        except ValueError:
+            ctx = multiprocessing.get_context()
+        if ctx.get_start_method() != "fork":
+            logger.warning("[ФИЛЬТР] Fork недоступен, переключаюсь на threads для фильтрации")
+            backend = "threads"
+
+    if backend == "threads":
+        logger.info(f"[ФИЛЬТР] Параллельная фильтрация: threads ({n_jobs} workers)")
+        _set_numba_threads(numba_threads)
+        with ThreadPoolExecutor(max_workers=n_jobs) as executor:
+            results = list(executor.map(lambda p: _evaluate_pair(p, price_df, cfg), pairs))
+    else:
+        logger.info(f"[ФИЛЬТР] Параллельная фильтрация: processes ({n_jobs} workers)")
+        with ProcessPoolExecutor(
+            max_workers=n_jobs,
+            mp_context=ctx,
+            initializer=_init_filter_worker,
+            initargs=(price_df, cfg, numba_threads),
+        ) as executor:
+            chunksize = max(1, total_pairs // max(1, n_jobs * 4))
+            results = list(executor.map(_filter_pair_worker, pairs, chunksize=chunksize))
+
+    filter_reasons: list[tuple[str, str, str]] = []
+    stage_indices: list[int] = []
+    passed_pairs: list[Tuple[str, str, float, float, float, Dict[str, Any]]] = []
+
+    for status, stage, reason_key, reason_detail, payload in results:
+        if status == "pass":
+            stage_indices.append(len(stage_order))
+            passed_pairs.append(payload)
+            continue
+
+        stage_indices.append(stage_idx.get(stage, 0))
+        s1, s2 = payload
+        if reason_key:
+            filter_stats.setdefault(reason_key, 0)
+            filter_stats[reason_key] += 1
+        if save_filter_reasons:
+            filter_reasons.append((s1, s2, reason_detail or reason_key or "unknown"))
+
+    def _count_after(stage_name: str) -> int:
+        idx = stage_idx[stage_name]
+        return sum(stage_idx_val > idx for stage_idx_val in stage_indices)
+
+    data_passed = _count_after("data")
+    correlation_passed = _count_after("correlation")
+    beta_passed = _count_after("beta")
+    crossings_passed = _count_after("crossings")
+    half_life_passed = _count_after("half_life")
+    coint_passed = _count_after("coint")
+    hurst_passed = _count_after("hurst")
+    kpss_passed = _count_after("kpss")
+    microstructure_passed = _count_after("market")
+
+    logger.info(f"[ФИЛЬТР] После проверки данных: {data_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра корреляции (>{cfg.min_correlation}): {correlation_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра beta: {beta_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра mean crossings: {crossings_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра half-life: {half_life_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра коинтеграции: {coint_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра Hurst: {hurst_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра KPSS: {kpss_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра market microstructure: {microstructure_passed} пар")
+
+    logger.info(f"[ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):")
+    logger.info(f"  1. SSD → Коинтеграция: {total_pairs} → {coint_passed} пар")
+    logger.info(f"  2. Коинтеграция → Beta: {coint_passed} → {beta_passed} пар")
+    logger.info(f"  3. Beta → Half-life: {beta_passed} → {half_life_passed} пар")
+    logger.info(f"  4. Half-life → Mean crossings: {half_life_passed} → {crossings_passed} пар")
+    logger.info(f"  5. Mean crossings → Hurst: {crossings_passed} → {hurst_passed} пар")
+    logger.info(f"  6. Hurst → KPSS: {hurst_passed} → {kpss_passed} пар")
+    logger.info(f"  7. KPSS → Market microstructure: {kpss_passed} → {microstructure_passed} пар")
+
+    filter_percentages = {
+        reason: (count / total_pairs * 100)
+        for reason, count in filter_stats.items()
+        if count > 0 and reason != "total"
+    }
+
+    logger.info(f"[ФИЛЬТР] Причины отсева:")
+    for reason, percent in sorted(filter_percentages.items(), key=lambda x: x[1], reverse=True):
+        logger.info(f"  • {reason}: {filter_stats[reason]} пар ({percent:.1f}%)")
+
+    logger.info(
+        f"[ФИЛЬТР] Итого: {total_pairs} → {len(passed_pairs)} пар "
+        f"({len(passed_pairs)/total_pairs*100:.1f}% прошли все фильтры)"
+    )
+
+    if save_filter_reasons and filter_reasons:
+        out_dir = Path('results')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_path = out_dir / f'filter_reasons_{ts}.csv'
+        pd.DataFrame(filter_reasons, columns=['s1','s2','reason']).to_csv(out_path, index=False)
+        logger.info(f"Причины отсева сохранены в {out_path}")
+
+    return passed_pairs
+
+
+def _filter_pair_worker(pair: Tuple[str, str]) -> tuple:
+    if _FILTER_PRICE_DF is None or _FILTER_WORKER_CFG is None:
+        raise RuntimeError("Filter worker not initialized")
+    return _evaluate_pair(pair, _FILTER_PRICE_DF, _FILTER_WORKER_CFG)
 
 def enhanced_pair_screening(
     pairs: List[Tuple[str, str]],
@@ -325,6 +627,8 @@ def filter_pairs_by_coint_and_half_life(
     max_hurst_exponent: float = 0.5,
     *,
     stable_tokens: Optional[List[str]] = None,
+    n_jobs: Optional[int] = None,
+    parallel_backend: str = "threads",
 ) -> List[Tuple[str, str, float, float, float, Dict[str, Any]]]:
     """
     Фильтрует пары по ключевым критериям качества:
@@ -351,6 +655,32 @@ def filter_pairs_by_coint_and_half_life(
         ]
     def _is_stable(sym: str) -> bool:
         return sym in stable_tokens
+
+    normalized_jobs = _normalize_n_jobs(n_jobs)
+    if normalized_jobs > 1 and pairs:
+        worker_cfg = _FilterWorkerCfg(
+            pvalue_threshold=pvalue_threshold,
+            min_beta=min_beta,
+            max_beta=max_beta,
+            min_half_life=min_half_life,
+            max_half_life=max_half_life,
+            min_mean_crossings=min_mean_crossings,
+            min_history_ratio=min_history_ratio,
+            min_correlation=min_correlation,
+            liquidity_usd_daily=liquidity_usd_daily,
+            max_bid_ask_pct=max_bid_ask_pct,
+            max_avg_funding_pct=max_avg_funding_pct,
+            kpss_pvalue_threshold=kpss_pvalue_threshold,
+            max_hurst_exponent=max_hurst_exponent,
+        )
+        return _filter_pairs_parallel(
+            pairs=pairs,
+            price_df=price_df,
+            cfg=worker_cfg,
+            n_jobs=normalized_jobs,
+            parallel_backend=parallel_backend,
+            save_filter_reasons=save_filter_reasons,
+        )
     logger.info(f"[ФИЛЬТР] На входе после SSD: {len(pairs)} пар")
     logger.info(f"[ФИЛЬТР] Оптимизированный порядок: Данные → Корреляция → Beta → Crossings → Half-life → Коинтеграция → Hurst → KPSS")
     

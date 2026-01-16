@@ -147,6 +147,7 @@ SSD refine/signal/risk sweeps (2026-01-16): конфиги `configs/ssd_topn_ref
 Piogoga grid (leader filters, zscore sweep): `docs/optimization_runs_20260116.md`, конфиги `configs/piogoga_grid_20260116/`, агрегатор `artifacts/wfa/aggregate/20260116_piogoga_grid/`.
 Leader validation (post-analysis, SSD leader): `docs/optimization_runs_20260116.md`, конфиги `configs/leader_validation_20260116/`, агрегатор `artifacts/wfa/aggregate/20260116_leader_validation/`.
 Очереди WFA с CPU‑heartbeat (без зависимости от логов): `scripts/optimization/watch_wfa_queue.sh`.
+Фильтрация пар WFA: параллелится через `backtest.n_jobs` (процессы при memory-map) для максимальной загрузки CPU.
 Состояние оптимизации: `docs/optimization_state.md` (обновлять после каждого блока прогонов).
 Шаблон prompt для headless Codex: `scripts/optimization/on_done_codex_prompt.txt` (ключевая строка: "Прогон завершён, продолжай выполнение плана", + headless‑инструкция и запись причины в `docs/optimization_state.md` при ошибке).
 
