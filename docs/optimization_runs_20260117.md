@@ -74,6 +74,7 @@ step_3:
 - Прогон 9: `configs/_tmp_fast_next10/signal_sweep_20260117_z0p95_exit0p08_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260117_z0p95_exit0p08_ssd25000` (parallel, done `2026-01-17T19:21:25Z`).
 - Метрики (strategy_metrics.csv): total_pnl `685.02`, sharpe_ratio_abs `0.5665`, max_drawdown_abs `-114.16`, total_trades `2157`, total_pairs_traded `197`, win_rate `0.6154`.
 - Фильтрация пар (batch): `coint4/results/filter_reasons_20260117_192115.csv`, `coint4/results/filter_reasons_20260117_192116.csv`, `coint4/results/filter_reasons_20260117_192142.csv` (три файла из параллельного запуска).
+- В очереди (planned): `risk_sweep_20260117_stop2p5_time2p0_z0p85_exit0p08_ssd25000`, `risk_sweep_20260117_stop3p0_time2p5_z0p85_exit0p08_ssd25000`, `risk_sweep_20260117_stop3p5_time3p0_z0p85_exit0p08_ssd25000` (конфиги в `coint4/configs/_tmp_fast_next10/`).
 
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).
