@@ -114,3 +114,11 @@ Testing период: 30 дней
 - `artifacts/live/logs/alerts.jsonl` — алерты и предупреждения
 
 Эти улучшения обеспечивают полную прозрачность процесса walk-forward анализа и позволяют эффективно мониторить производительность системы.
+
+## Логи команд
+
+Для диагностики падений и восстановления контекста сохраняются трассы команд:
+
+- WFA-запуски через `run_wfa_fullcpu.sh`: `artifacts/wfa/runs/<run_id>/run.commands.log` (xtrace с UTC-таймстампами).
+- Очереди WFA: строка `[run_wfa_queue] ... cmd:` в `artifacts/wfa/runs/<run_id>/run.log`.
+- Полный пайплайн: `artifacts/command_logs/run_pipeline_<UTC_TIMESTAMP>.log`.

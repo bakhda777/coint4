@@ -3,6 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+LOG_DIR="${LOG_DIR:-$ROOT_DIR/artifacts/command_logs}"
+mkdir -p "$LOG_DIR"
+RUN_STAMP="$(date -u +%Y%m%d_%H%M%S)"
+CMD_LOG="${LOG_DIR}/run_pipeline_${RUN_STAMP}.log"
+exec 3>>"$CMD_LOG"
+export BASH_XTRACEFD=3
+export PS4='+ $(date -u +%Y-%m-%dT%H:%M:%SZ) [run_pipeline] '
+set -x
+
 PYTHON_BIN="${PYTHON_BIN:-$ROOT_DIR/.venv/bin/python}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="python"

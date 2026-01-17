@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,8 +37,12 @@ def _run_entry(
     if rotate_logs:
         _rotate_log(log_path)
     with log_path.open("w") as handle:
+        cmd = [str(runner), entry.config_path, entry.results_dir]
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        handle.write(f"[run_wfa_queue] {timestamp} cmd: {shlex.join(cmd)}\n")
+        handle.flush()
         process = subprocess.run(
-            [str(runner), entry.config_path, entry.results_dir],
+            cmd,
             cwd=project_root,
             stdout=handle,
             stderr=subprocess.STDOUT,
@@ -174,4 +179,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

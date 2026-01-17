@@ -107,6 +107,11 @@ Walk-forward (сбалансированный, чистое окно):
 bash scripts/run_pipeline.sh
 ```
 
+Логи команд:
+- WFA runner: `artifacts/wfa/runs/<run_id>/run.commands.log`
+- Очереди WFA: строка `[run_wfa_queue] ... cmd:` в `artifacts/wfa/runs/<run_id>/run.log`
+- Пайплайн: `artifacts/command_logs/run_pipeline_<UTC_TIMESTAMP>.log`
+
 ## UI (Streamlit)
 
 ```bash

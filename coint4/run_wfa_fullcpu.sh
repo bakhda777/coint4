@@ -21,6 +21,16 @@ export JOBLIB_MULTIPROCESSING=1
 mkdir -p "$JOBLIB_TEMP_FOLDER"
 mkdir -p "$RESULTS_DIR"
 
+CMD_LOG="${RESULTS_DIR}/run.commands.log"
+if [[ -f "$CMD_LOG" ]]; then
+  STAMP="$(date -u +%Y%m%d_%H%M%S)"
+  mv "$CMD_LOG" "${CMD_LOG}.stalled_${STAMP}"
+fi
+exec 3>>"$CMD_LOG"
+export BASH_XTRACEFD=3
+export PS4='+ $(date -u +%Y-%m-%dT%H:%M:%SZ) [run_wfa_fullcpu] '
+set -x
+
 echo "[run_wfa_fullcpu] start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo -n "[run_wfa_fullcpu] os.cpu_count: "
 ./.venv/bin/python - <<'PY'
