@@ -2,7 +2,7 @@
 
 Last updated: 2026-01-17
 
-Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best: signal_sweep_20260117_z0p85_exit0p12_ssd25000); queued: none.
+Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best: signal_sweep_20260117_z0p85_exit0p12_ssd25000); queued: pair_sweep_20260117_corr0p6_z0p85_exit0p12_ssd25000, pair_sweep_20260117_pv0p03_top800_z0p85_exit0p12_ssd25000, pair_sweep_20260117_hurst0p52_z0p85_exit0p12_ssd25000, pair_sweep_20260117_ssd15000_z0p85_exit0p12_ssd25000.
 
 Progress:
 - ssd5000 completed
