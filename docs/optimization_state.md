@@ -2,7 +2,7 @@
 
 Last updated: 2026-01-17
 
-Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1)
+Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA queue via artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv (parallel=1, backtest.n_jobs=-1, COINT_FILTER_BACKEND=processes).
 
 Progress:
 - ssd5000 completed
