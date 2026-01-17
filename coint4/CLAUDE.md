@@ -11,6 +11,8 @@ Coint2 is a cointegration pairs trading framework for cryptocurrencies. It provi
 - Walk-forward validation
 - Live trading capabilities
 
+Remote run helper (Serverspace): `scripts/remote/run_server_job.sh` powers on the server, waits for SSH, pulls latest code, runs a command, syncs artifacts, and powers off. It uses `SERVSPACE_API_KEY` + `SERVER_ID`/`SERVER_NAME` + `SERVER_IP` env vars.
+
 ## Key Commands
 
 ### Testing

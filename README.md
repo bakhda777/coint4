@@ -29,6 +29,8 @@ For production runs, use `docs/production_checklist.md`. Overlays and configs:
 - `coint4/configs/main_2024_wfa_balanced.yaml` (balanced WFA)
 Note: WFA supports optional fixed universe via `--pairs-file` and custom output via `--results-dir` (see `docs/quickstart.md`).
 
+Remote runs (Serverspace): `coint4/scripts/remote/run_server_job.sh` can power on the server, wait for SSH, pull latest code, execute a command, sync artifacts back, and power off. Set `SERVSPACE_API_KEY`, `SERVER_ID`, and `SERVER_IP` before running.
+
 Optimization plan: `docs/optimization_plan_20260116.md` (supersedes `docs/optimization_plan_20260114.md`, legacy/archived).
 Selection grid runs (filters): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/selection_grid_20260115/` and strict p-value grid in `coint4/configs/selection_grid_20260115_strictpv/` (parallel run notes in docs).
 SSD top-N sweep (dynamic selection): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/ssd_topn_sweep_20260115/` and агрегатором `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/` (конфиги обновлены под `n_jobs: -1`, запуск по одному).

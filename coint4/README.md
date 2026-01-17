@@ -112,6 +112,20 @@ bash scripts/run_pipeline.sh
 - Очереди WFA: строка `[run_wfa_queue] ... cmd:` в `artifacts/wfa/runs/<run_id>/run.log`
 - Пайплайн: `artifacts/command_logs/run_pipeline_<UTC_TIMESTAMP>.log`
 
+## Удаленные прогоны (Serverspace)
+
+Скрипт `scripts/remote/run_server_job.sh` включает/выключает сервер через API, ждёт SSH, подтягивает код, запускает команду и синхронизирует артефакты обратно.
+
+```bash
+export SERVSPACE_API_KEY="***"
+export SERVER_ID="***"
+export SERVER_IP="85.198.90.128"
+cd coint4
+bash scripts/remote/run_server_job.sh \
+  bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv
+```
+
 ## UI (Streamlit)
 
 ```bash
