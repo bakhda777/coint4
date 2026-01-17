@@ -63,6 +63,7 @@ step_3:
 - Прогон 6: `configs/_tmp_fast_next10/risk_sweep_20260116_stop2p5_time3p5.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/risk_sweep_20260116_stop2p5_time3p5` (parallel, done `2026-01-17T18:40:49Z`).
 - Метрики (strategy_metrics.csv): total_pnl `771.63`, sharpe_ratio_abs `0.5860`, max_drawdown_abs `-146.72`, total_trades `4334`, total_pairs_traded `197`, win_rate `0.6813`.
 - Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260117_183518.csv`.
+- В очереди (planned): `signal_sweep_20260117_z0p9_exit0p08_ssd25000`, `signal_sweep_20260117_z0p9_exit0p1_ssd25000`, `signal_sweep_20260117_z0p95_exit0p08_ssd25000` (конфиги в `coint4/configs/_tmp_fast_next10/`).
 - Примечание: попытка с `COINT_FILTER_BACKEND=processes` упала на `PermissionError: [Errno 13] Permission denied` (semlock); перезапуск на threads.
 - Legacy/archived: запуск очереди через `COINT_FILTER_BACKEND=threads bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel 1` остановлен, оставлен только для истории.
 - Статус: `active` (последовательный запуск для анализа между прогонами).
