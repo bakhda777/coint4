@@ -30,6 +30,7 @@ For production runs, use `docs/production_checklist.md`. Overlays and configs:
 Note: WFA supports optional fixed universe via `--pairs-file` and custom output via `--results-dir` (see `docs/quickstart.md`).
 
 Remote runs (Serverspace): `coint4/scripts/remote/run_server_job.sh` can power on the server, wait for SSH, pull latest code, execute a command, sync artifacts back, and power off. Set `SERVSPACE_API_KEY`, `SERVER_ID`, and `SERVER_IP` before running.
+Execution policy: do not run heavy jobs on this server (146.103.41.248). All WFA/optimization/long backtests must run only on 85.198.90.128.
 
 Optimization plan: `docs/optimization_plan_20260116.md` (supersedes `docs/optimization_plan_20260114.md`, legacy/archived).
 Selection grid runs (filters): `docs/optimization_runs_20260115.md` with configs in `coint4/configs/selection_grid_20260115/` and strict p-value grid in `coint4/configs/selection_grid_20260115_strictpv/` (parallel run notes in docs).
