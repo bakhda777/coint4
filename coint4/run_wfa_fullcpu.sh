@@ -8,6 +8,7 @@ fi
 
 CONFIG_PATH="$1"
 RESULTS_DIR="$2"
+NO_MEMORY_MAP="${COINT_WFA_NO_MEMORY_MAP:-0}"
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
@@ -43,7 +44,12 @@ PY
 
 WORKER_PID_FILE="$RESULTS_DIR/worker.pid"
 
-./.venv/bin/coint2 walk-forward --config "$CONFIG_PATH" --results-dir "$RESULTS_DIR" &
+CLI_ARGS=(--config "$CONFIG_PATH" --results-dir "$RESULTS_DIR")
+if [[ "$NO_MEMORY_MAP" == "1" ]]; then
+  CLI_ARGS+=(--no-memory-map)
+fi
+
+./.venv/bin/coint2 walk-forward "${CLI_ARGS[@]}" &
 WORKER_PID=$!
 echo "$WORKER_PID" > "$WORKER_PID_FILE"
 echo "[run_wfa_fullcpu] worker_pid=$WORKER_PID"
