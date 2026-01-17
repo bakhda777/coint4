@@ -53,11 +53,13 @@ step_3:
 - Метрики (strategy_metrics.csv): total_pnl `707.41`, sharpe_ratio_abs `0.4315`, max_drawdown_abs `-256.19`, total_trades `5598`, total_pairs_traded `197`, win_rate `0.6264`.
 - Примечание: попытка с `COINT_FILTER_BACKEND=processes` упала на `PermissionError: [Errno 13] Permission denied` (semlock); перезапуск на threads.
 - Legacy/archived: запуск очереди через `COINT_FILTER_BACKEND=threads bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel 1` остановлен, оставлен только для истории.
-- Статус: `active` (последовательный запуск для анализа между прогонами).
-
 - Прогон 3: `configs/_tmp_fast_next10/signal_sweep_20260116_z0p8_exit0p06_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260116_z0p8_exit0p06_ssd25000` (done `2026-01-17T16:27:43Z`).
 - Метрики (strategy_metrics.csv): total_pnl `771.63`, sharpe_ratio_abs `0.5860`, max_drawdown_abs `-146.72`, total_trades `4334`, total_pairs_traded `197`, win_rate `0.6813`.
 - Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260117_161818.csv`.
+- Прогон 4: `configs/_tmp_fast_next10/signal_sweep_20260116_z0p85_exit0p06_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260116_z0p85_exit0p06_ssd25000` (done `2026-01-17T18:05:14Z`).
+- Метрики (strategy_metrics.csv): total_pnl `815.67`, sharpe_ratio_abs `0.6345`, max_drawdown_abs `-132.02`, total_trades `3406`, total_pairs_traded `197`, win_rate `0.6593`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260117_175527.csv`.
+- Статус: `active` (последовательный запуск для анализа между прогонами).
 
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).

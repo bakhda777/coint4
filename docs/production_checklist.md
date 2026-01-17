@@ -1,7 +1,6 @@
 # Чек-лист production-запуска
 
 Для прод-пайплайна используйте `configs/main_2024.yaml` (поверх `configs/data_window_clean.yaml`). `configs/prod.yaml` предназначен для live/paper и не используется в scan/backtest/WFA.
-Политика выполнения: на сервере 146.103.41.248 не запускать тяжёлые прогоны; все WFA/оптимизации/долгие бэктесты выполняются только на 85.198.90.128.
 
 1. Обновить данные в `coint4/data_downloaded/` и убедиться, что структура помесячная (`year=YYYY/month=MM`).
 2. Зафиксировать `data_filters.clean_window` и список `data_filters.exclude_symbols` (сейчас пустой) в `configs/main_2024.yaml` / `configs/data_window_clean.yaml`.
