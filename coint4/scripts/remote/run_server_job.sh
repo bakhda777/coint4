@@ -35,7 +35,9 @@ api_get() {
 }
 
 api_post() {
-  curl -sS -X POST -H 'content-type: application/json' -H "x-api-key: ${API_KEY}" "${API_BASE}/$1" >/dev/null
+  local path=$1
+  local data=${2:-"{}"}
+  curl -sS -X POST -H 'content-type: application/json' -H "x-api-key: ${API_KEY}" -d "${data}" "${API_BASE}/${path}" >/dev/null
 }
 
 resolve_server_id() {
@@ -98,7 +100,7 @@ start_server() {
   fi
   SERVER_ID="$sid"
   echo "[server] starting ${SERVER_ID}"
-  api_post "servers/${SERVER_ID}/start" || true
+  api_post "servers/${SERVER_ID}/power/on" "{\"server_id\":\"${SERVER_ID}\"}" || true
 }
 
 stop_server() {
@@ -113,7 +115,7 @@ stop_server() {
     SERVER_ID=$(resolve_server_id)
   fi
   echo "[server] stopping ${SERVER_ID}"
-  api_post "servers/${SERVER_ID}/stop" || true
+  api_post "servers/${SERVER_ID}/power/shutdown" "{\"server_id\":\"${SERVER_ID}\"}" || true
 }
 
 wait_for_ssh() {
