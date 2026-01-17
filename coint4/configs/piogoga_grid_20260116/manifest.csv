@@ -1,0 +1,17 @@
+config_path,zscore_threshold,zscore_exit,ssd_top_n
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p75_exit0p05_ssd25000.yaml,0.75,0.05,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p75_exit0p06_ssd25000.yaml,0.75,0.06,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p75_exit0p07_ssd25000.yaml,0.75,0.07,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p75_exit0p08_ssd25000.yaml,0.75,0.08,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p8_exit0p05_ssd25000.yaml,0.8,0.05,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p8_exit0p06_ssd25000.yaml,0.8,0.06,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p8_exit0p07_ssd25000.yaml,0.8,0.07,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p8_exit0p08_ssd25000.yaml,0.8,0.08,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p85_exit0p05_ssd25000.yaml,0.85,0.05,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p85_exit0p06_ssd25000.yaml,0.85,0.06,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p85_exit0p07_ssd25000.yaml,0.85,0.07,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p85_exit0p08_ssd25000.yaml,0.85,0.08,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p9_exit0p05_ssd25000.yaml,0.9,0.05,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p9_exit0p06_ssd25000.yaml,0.9,0.06,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p9_exit0p07_ssd25000.yaml,0.9,0.07,25000
+configs/piogoga_grid_20260116/piogoga_grid_20260116_z0p9_exit0p08_ssd25000.yaml,0.9,0.08,25000

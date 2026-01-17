@@ -1,0 +1,14 @@
+++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] date -u +%Y-%m-%dT%H:%M:%SZ
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] start: 2026-01-17T12:21:52Z'
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] echo -n '[run_wfa_fullcpu] os.cpu_count: '
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] ./.venv/bin/python -
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] WORKER_PID_FILE=artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260116_z0p8_exit0p06_ssd25000/worker.pid
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] CLI_ARGS=(--config "$CONFIG_PATH" --results-dir "$RESULTS_DIR")
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] [[ 1 == \1 ]]
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] CLI_ARGS+=(--no-memory-map)
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] WORKER_PID=62304
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] ./.venv/bin/coint2 walk-forward --config configs/_tmp_fast_next10/signal_sweep_20260116_z0p8_exit0p06_ssd25000.yaml --results-dir artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260116_z0p8_exit0p06_ssd25000 --no-memory-map
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] echo 62304
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] worker_pid=62304'
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] set +e
++ 2026-01-17T12:21:52Z [run_wfa_fullcpu] wait 62304

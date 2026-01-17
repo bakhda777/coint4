@@ -1,0 +1,5 @@
+[run_wfa_queue] 2026-01-17T12:24:11Z cmd: /opt/coint4/coint4/run_wfa_fullcpu.sh configs/_tmp_fast_next10/signal_sweep_20260116_z0p8_exit0p06_ssd25000.yaml artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260116_z0p8_exit0p06_ssd25000
+[run_wfa_fullcpu] start: 2026-01-17T12:24:11Z
+[run_wfa_fullcpu] os.cpu_count: 8
+[run_wfa_fullcpu] worker_pid=63333
+[run_wfa_fullcpu] end: 2026-01-17T12:24:11Z

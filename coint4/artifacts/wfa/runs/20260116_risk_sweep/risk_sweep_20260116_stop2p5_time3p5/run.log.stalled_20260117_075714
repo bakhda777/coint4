@@ -1,0 +1,73 @@
+[run_wfa_queue] 2026-01-17T07:51:17Z cmd: /opt/coint4/coint4/run_wfa_fullcpu.sh configs/_tmp_fast_next10/risk_sweep_20260116_stop2p5_time3p5.yaml artifacts/wfa/runs/20260116_risk_sweep/risk_sweep_20260116_stop2p5_time3p5
+[run_wfa_fullcpu] start: 2026-01-17T07:51:17Z
+[run_wfa_fullcpu] os.cpu_count: 16
+[run_wfa_fullcpu] worker_pid=4983
+2026-01-17 07:51:20,939 - coint2.core.memory_optimization - INFO - ✅ BLAS threading limits set to 1 via threadpoolctl
+2026-01-17 07:51:20,940 - coint2.core.memory_optimization - INFO - 🔧 Controlled libraries: openblas, openmp
+2026-01-17 07:51:20,940 - coint2.core.memory_optimization - INFO - 🧵 Process threads: 2 → 2
+2026-01-17 07:51:20,940 - coint2.core.memory_optimization - INFO - 📝 Set 11 environment variables
+2026-01-17 07:51:21,309 - INFO - ✅ Параметры конфигурации валидны
+2026-01-17 07:51:21,309 - INFO - 📝 Некоторые параметры были скорректированы:
+2026-01-17 07:51:21,309 - INFO - 🧭 WFA: динамический отбор пар на каждом шаге
+2026-01-17 07:51:21,309 - INFO -   Шаг 1: тренировка 2023-08-02-2023-09-30, тест 2023-10-01-2023-10-31
+2026-01-17 07:51:21,309 - INFO -   Шаг 2: тренировка 2023-09-01-2023-10-30, тест 2023-10-31-2023-11-30
+2026-01-17 07:51:21,309 - INFO -   Шаг 3: тренировка 2023-10-01-2023-11-29, тест 2023-11-30-2023-12-30
+2026-01-17 07:51:21,309 - INFO -   Шаг 4: тренировка 2023-10-31-2023-12-29, тест 2023-12-30-2024-01-29
+2026-01-17 07:51:21,309 - INFO - 📈 Запланировано 4 walk-forward шагов
+2026-01-17 07:51:21,309 - INFO - ⛔ Ограничение WFA шагов: 4 → 3
+2026-01-17 07:51:21,310 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 1: 0 дней. Рекомендуется минимум 1 день.
+2026-01-17 07:51:21,310 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 2: 0 дней. Рекомендуется минимум 1 день.
+2026-01-17 07:51:21,310 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 3: 0 дней. Рекомендуется минимум 1 день.
+2026-01-17 07:51:21,310 - INFO - ✅ Шаги успешно запланированы:
+2026-01-17 07:51:21,310 - INFO -    Шаг 1: тренировка 2023-08-02-2023-09-30, тест 2023-10-01-2023-10-31
+2026-01-17 07:51:21,310 - INFO -    Шаг 2: тренировка 2023-09-01-2023-10-30, тест 2023-10-31-2023-11-30
+2026-01-17 07:51:21,310 - INFO -    Шаг 3: тренировка 2023-10-01-2023-11-29, тест 2023-11-30-2023-12-30
+2026-01-17 07:51:21,310 - INFO - 🗂️ Consolidating price data for memory-mapped access...
+2026-01-17 07:51:21,310 - INFO - 📊 Consolidating data range: 2023-07-28 → 2024-01-04
+2026-01-17 07:51:21,310 - coint2.core.memory_optimization - INFO - 🔄 Consolidating price data from data_downloaded to .cache/consolidated_prices.parquet
+2026-01-17 07:51:21,310 - INFO - ⇢ loading raw data for consolidation — start
+2026-01-17 07:51:22,513 - INFO - ⇠ loading raw data for consolidation — done in 1.20s
+2026-01-17 07:51:22,514 - INFO - ⇢ pivoting data to wide format — start
+2026-01-17 07:51:26,818 - INFO - ⇠ pivoting data to wide format — done in 4.30s
+2026-01-17 07:51:26,898 - coint2.core.memory_optimization - INFO - 📊 Consolidated data: 15361 rows × 310 symbols
+2026-01-17 07:51:26,901 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 19.2 MB
+2026-01-17 07:51:26,903 - INFO - ⇢ writing consolidated Parquet file — start
+2026-01-17 07:51:27,079 - INFO - ⇠ writing consolidated Parquet file — done in 0.18s
+2026-01-17 07:51:27,079 - coint2.core.memory_optimization - INFO - ✅ Successfully consolidated data to .cache/consolidated_prices.parquet
+2026-01-17 07:51:27,101 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-17 07:51:27,101 - INFO - ⇢ loading memory-mapped data — start
+2026-01-17 07:51:27,102 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-17 07:51:27,209 - INFO - ⇠ loading memory-mapped data — done in 0.11s
+2026-01-17 07:51:27,217 - coint2.core.memory_optimization - INFO - 📊 Loaded 15361 rows × 310 symbols
+2026-01-17 07:51:27,217 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 19.2 MB (memory-mapped)
+2026-01-17 07:51:27,218 - INFO - ✅ Memory-mapped data initialized successfully
+2026-01-17 07:51:27,221 - INFO - ⇢ Walk-forward steps — starting 3 items
+2026-01-17 07:51:27,224 - INFO - 📈 Инициализация equity кривой с первой тестовой даты: 2023-10-01 00:00:00
+2026-01-17 07:51:27,224 - INFO - 🔍 WF-шаг 1/3: Валидация временных окон...
+2026-01-17 07:51:27,232 - INFO - ⇢ WF-шаг 1/3: training 2023-08-02-2023-09-30, testing 2023-10-01-2023-10-31 — start
+2026-01-17 07:51:27,232 - INFO - ⇢ loading step data — start
+2026-01-17 07:51:27,475 - INFO - ⇠ loading step data — done in 0.24s
+2026-01-17 07:51:28,902 - INFO - 📊 WF-шаг 1/3: Границы данных:
+2026-01-17 07:51:28,903 - INFO -    Training: 2023-08-02 00:00:00 → 2023-09-30 23:45:00 (5,760 строк × 282 символов)
+2026-01-17 07:51:28,903 - INFO -    Testing:  2023-10-01 00:00:00 → 2023-10-31 00:00:00 (2,881 строк × 282 символов)
+2026-01-17 07:51:28,903 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-17 07:51:28,943 - INFO - ⇢ normalizing training data — start
+2026-01-17 07:51:28,978 - INFO -   Символы с NaN значениями: 20
+2026-01-17 07:51:28,978 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-17 07:51:29,000 - INFO - Символы с недостаточной историей: 20 из 282
+2026-01-17 07:51:29,411 - INFO - Символы с NaN после нормализации: 262
+2026-01-17 07:51:29,419 - INFO - Удалено 1 начальных строк с NaN от rolling расчетов
+2026-01-17 07:51:29,422 - INFO - Итоговое количество символов после нормализации: 262 из 282
+2026-01-17 07:51:29,423 - INFO -   Статистика нормализации:
+2026-01-17 07:51:29,423 - INFO -     Исходные символы: 282
+2026-01-17 07:51:29,423 - INFO -     Недостаточная история: 20
+2026-01-17 07:51:29,423 - INFO -     Постоянная цена: 0
+2026-01-17 07:51:29,423 - INFO -     NaN после нормализации: 262
+2026-01-17 07:51:29,423 - INFO -     Итоговые символы: 262 (92.9%)
+2026-01-17 07:51:29,423 - INFO -   После нормализации: 262 символов (потеряно 20)
+2026-01-17 07:51:29,423 - INFO -   Отброшенные символы: ADAEUR, BEAMUSDT, BTCEUR, CYBERUSDT, DOGEEUR, ETHEUR, FETUSDT, JEFFUSDT, KASUSDT, KAVAUSDT, LTCEUR, ORDIUSDT, POLUSDT, PPTUSDT, PYUSDUSDT, SEIUSDT, SOLEUR, USDCEUR, XRPEUR, ZTXUSDT
+2026-01-17 07:51:29,423 - INFO - ⇠ normalizing training data — done in 0.48s
+2026-01-17 07:51:29,423 - INFO - ⇢ SSD computation — start
+2026-01-17 07:51:29,423 - INFO -   Расчет SSD для всех пар (без ограничения)
+/opt/coint4/coint4/run_wfa_fullcpu.sh: line 49:  4983 Killed                  ./.venv/bin/coint2 walk-forward --config "$CONFIG_PATH" --results-dir "$RESULTS_DIR"
+[run_wfa_fullcpu] end: 2026-01-17T07:51:40Z

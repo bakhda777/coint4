@@ -1,0 +1,16 @@
+++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] date -u +%Y-%m-%dT%H:%M:%SZ
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] start: 2026-01-17T07:51:17Z'
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] echo -n '[run_wfa_fullcpu] os.cpu_count: '
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] ./.venv/bin/python -
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] WORKER_PID_FILE=artifacts/wfa/runs/20260116_signal_sweep/signal_sweep_20260116_z0p75_exit0p08_ssd25000/worker.pid
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] WORKER_PID=4963
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] ./.venv/bin/coint2 walk-forward --config configs/_tmp_fast_next10/signal_sweep_20260116_z0p75_exit0p08_ssd25000.yaml --results-dir artifacts/wfa/runs/20260116_signal_sweep/signal_sweep_20260116_z0p75_exit0p08_ssd25000
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] echo 4963
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] worker_pid=4963'
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] set +e
++ 2026-01-17T07:51:17Z [run_wfa_fullcpu] wait 4963
++ 2026-01-17T07:51:35Z [run_wfa_fullcpu] RC=137
++ 2026-01-17T07:51:35Z [run_wfa_fullcpu] set -e
+++ 2026-01-17T07:51:35Z [run_wfa_fullcpu] date -u +%Y-%m-%dT%H:%M:%SZ
++ 2026-01-17T07:51:35Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] end: 2026-01-17T07:51:35Z'
++ 2026-01-17T07:51:35Z [run_wfa_fullcpu] exit 137

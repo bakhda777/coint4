@@ -69,10 +69,10 @@
 
 Статус: `active` (запуск в очереди).
 
-Параллельный запуск (2 прогона одновременно, `n_jobs: 4` в строгих конфигах):
+Запуск после перехода на `n_jobs: -1` (каждый прогон использует все ядра, запуск по одному):
 ```bash
 cat artifacts/wfa/aggregate/20260115_selgrid_strictpv/strictpv_configs.txt | \
-  xargs -P 2 -I {} bash -lc 'cfg=\"$1\"; run_id=$(basename \"$cfg\" .yaml); ./run_wfa_fullcpu.sh \"$cfg\" \"artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id\"' _ {}
+  xargs -P 1 -I {} bash -lc 'cfg=\"$1\"; run_id=$(basename \"$cfg\" .yaml); ./run_wfa_fullcpu.sh \"$cfg\" \"artifacts/wfa/runs/20260115_selgrid_strictpv/$run_id\"' _ {}
 ```
 
 Доп. конфиг (отключение top-N, верхний лимит валидатора):

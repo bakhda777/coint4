@@ -215,11 +215,21 @@ remaining_after_stage:
   after_market_microstructure: 128
 ```
 
-### Leader holdout (next run, planned)
+### Leader holdout (active)
 - Основание: rollup‑лидер по композиту Sharpe/PnL/DD/стабильность — `ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000`.
 - Конфиг: `coint4/configs/best_config__leader_holdout_ssd25000__20260116_211943.yaml`.
 - Окно WFA: `2024-05-01` → `2024-12-31`, 60/30, max_steps `5`.
-- Статус: `planned`.
+- Очередь: `coint4/artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260116_leader_holdout/best_config__leader_holdout_ssd25000__20260116_211943/`.
+- Статус: `active` (CPU‑watcher, COINT_FILTER_BACKEND=processes, backtest.n_jobs=-1).
+- Фильтрация пар по шагам WFA — будет добавлена после завершения (run.log/filter_reasons_*.csv).
+
+Команда запуска (из `coint4/`):
+```bash
+COINT_FILTER_BACKEND=processes bash scripts/optimization/watch_wfa_queue.sh \
+  --queue artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv \
+  --parallel 1
+```
 
 ## Очереди на возобновление
 - SSD top-N sweep (6 значений): `coint4/artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv`.

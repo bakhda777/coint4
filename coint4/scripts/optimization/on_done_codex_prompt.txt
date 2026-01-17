@@ -1,0 +1,16 @@
+Прогон завершён, продолжай выполнение плана.
+
+Open and use:
+- docs/optimization_plan_20260116.md
+- docs/optimization_state.md
+
+Do exactly:
+1) Inspect artifacts and logs in RUN_DIR.
+2) Record results in docs/optimization_runs_20260116.md.
+3) Update rollup in artifacts/wfa/aggregate/rollup.
+4) Start the next queue step from the plan (SSD sweep 3 values).
+5) Update docs/optimization_state.md with what is done and the next step.
+
+Write changes to files, not chat.
+Работай headless: вноси изменения в файлы и логируй действия.
+Если что-то не получается — напиши в docs/optimization_state.md причину и следующий шаг.
