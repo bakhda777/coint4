@@ -74,14 +74,18 @@ PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \
 # Resume queued runs with CPU heartbeat (recommended)
 bash scripts/optimization/watch_wfa_queue.sh \
   --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
-  --parallel 1
+  --parallel "$(nproc)"
 
 # Resume queued runs with headless Codex on completion
 bash scripts/optimization/watch_wfa_queue.sh \
   --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
-  --parallel 1 \
+  --parallel "$(nproc)" \
   --on-done-prompt-file scripts/optimization/on_done_codex_prompt.txt \
   --on-done-log artifacts/wfa/aggregate/20260115_ssd_topn_sweep/codex_on_done.log
+
+watch_wfa_queue.sh по умолчанию ставит `--parallel` равным числу CPU (можно переопределить).
+run_wfa_queue.py по умолчанию ставит `--parallel` равным числу CPU (override через флаг).
+run_wfa_fullcpu.sh фиксирует `NUMBA_NUM_THREADS=1`, чтобы не раздувать потоки при параллельных прогонах (override через env `NUMBA_NUM_THREADS`).
 
 Шаблон prompt должен включать ключевую фразу "Прогон завершён, продолжай выполнение плана" и инструкции: headless‑режим + запись причины сбоя в `docs/optimization_state.md`.
 

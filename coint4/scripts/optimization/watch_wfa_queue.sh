@@ -7,7 +7,7 @@ Usage: watch_wfa_queue.sh --queue <path> [options]
 
 Options:
   --queue <path>           Path to run_queue.csv (relative to repo root or absolute).
-  --parallel <n>           Number of concurrent runs (default: 1).
+  --parallel <n>           Number of concurrent runs (default: CPU count).
   --heartbeat <sec>        Heartbeat interval in seconds (default: 30).
   --idle-minutes <min>     Minutes without workers before marking idle (default: 5).
   --cpu-threshold <pct>    CPU threshold (sum %) for informational logging (default: 50).
@@ -20,8 +20,19 @@ Options:
 EOF
 }
 
+detect_cpu_count() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+    return
+  fi
+  getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1
+}
+
 QUEUE_PATH=""
-PARALLEL=1
+PARALLEL="$(detect_cpu_count)"
+if [[ -z "$PARALLEL" || "$PARALLEL" -lt 1 ]]; then
+  PARALLEL=1
+fi
 HEARTBEAT=30
 IDLE_MINUTES=5
 CPU_THRESHOLD=50

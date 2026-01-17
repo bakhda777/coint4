@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import subprocess
 import threading
@@ -138,8 +139,8 @@ def main() -> int:
     parser.add_argument(
         "--parallel",
         type=int,
-        default=1,
-        help="Number of concurrent runs.",
+        default=os.cpu_count() or 1,
+        help="Number of concurrent runs (default: CPU count).",
     )
     parser.add_argument(
         "--runner",

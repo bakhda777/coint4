@@ -153,6 +153,11 @@ Piogoga grid (leader filters, zscore sweep): `docs/optimization_runs_20260116.md
 Leader validation (post-analysis, SSD leader): `docs/optimization_runs_20260116.md`, конфиги `configs/leader_validation_20260116/`, агрегатор `artifacts/wfa/aggregate/20260116_leader_validation/`.
 Leader holdout (next run, rollup leader): `docs/optimization_runs_20260116.md`, конфиг `configs/best_config__leader_holdout_ssd25000__20260116_211943.yaml` (WFA 2024-05-01 → 2024-12-31, max_steps=5).
 Очереди WFA с CPU‑heartbeat (без зависимости от логов): `scripts/optimization/watch_wfa_queue.sh`.
+По умолчанию watcher ставит `--parallel` равным числу CPU (можно переопределить).
+`run_wfa_queue.py` по умолчанию ставит `--parallel` равным числу CPU (override через флаг).
+`run_wfa_fullcpu.sh` фиксирует `NUMBA_NUM_THREADS=1`, чтобы не раздувать потоки при параллельных прогонах (override через env `NUMBA_NUM_THREADS`).
+Для throughput‑запусков несколькими прогонами одновременно отключайте memory‑map (избегаем гонок за `.cache/consolidated_prices.parquet`):
+`COINT_WFA_NO_MEMORY_MAP=1 bash scripts/optimization/watch_wfa_queue.sh ...`.
 Фильтрация пар WFA: параллелится через `backtest.n_jobs` (backend `threads` по умолчанию; `COINT_FILTER_BACKEND=processes` + spawn для OpenMP‑безопасности) для максимальной загрузки CPU.
 Состояние оптимизации: `docs/optimization_state.md` (обновлять после каждого блока прогонов).
 Шаблон prompt для headless Codex: `scripts/optimization/on_done_codex_prompt.txt` (ключевая строка: "Прогон завершён, продолжай выполнение плана", + headless‑инструкция и запись причины в `docs/optimization_state.md` при ошибке).
@@ -161,14 +166,14 @@ Leader holdout (next run, rollup leader): `docs/optimization_runs_20260116.md`, 
 ```bash
 bash scripts/optimization/watch_wfa_queue.sh \
   --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
-  --parallel 1
+  --parallel "$(nproc)"
 ```
 
 Пример запуска watcher с on-done (headless Codex + лог):
 ```bash
 bash scripts/optimization/watch_wfa_queue.sh \
   --queue artifacts/wfa/aggregate/20260115_ssd_topn_sweep/run_queue.csv \
-  --parallel 1 \
+  --parallel "$(nproc)" \
   --on-done-prompt-file scripts/optimization/on_done_codex_prompt.txt \
   --on-done-log artifacts/wfa/aggregate/20260115_ssd_topn_sweep/codex_on_done.log
 ```

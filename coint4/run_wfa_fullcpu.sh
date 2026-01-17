@@ -13,6 +13,9 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+if [[ -z "${NUMBA_NUM_THREADS:-}" ]]; then
+  export NUMBA_NUM_THREADS=1
+fi
 
 export TMPDIR="${TMPDIR:-/tmp}"
 export JOBLIB_TEMP_FOLDER="${JOBLIB_TEMP_FOLDER:-$TMPDIR/joblib}"
