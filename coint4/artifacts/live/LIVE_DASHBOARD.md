@@ -1,5 +1,5 @@
 # Live Trading Dashboard
-*Last updated: 2026-01-17 20:23:32*
+*Last updated: 2026-01-17 20:43:03*
 
 ## Status: 🟢 HEALTHY
 
@@ -7,7 +7,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Total PnL | $821.12 |
+| Total PnL | $821.86 |
 | Win Rate | 0.3% |
 | Max Drawdown | 1.2% |
 | Current Drawdown | 1.2% |
@@ -19,7 +19,7 @@
 ## Performance
 
 ```
-PnL: +$821.12 ████████
+PnL: +$821.86 ████████
 ```
 
 ## System Health
