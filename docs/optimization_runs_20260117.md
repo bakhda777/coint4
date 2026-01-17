@@ -13,7 +13,7 @@
 
 ### WFA очередь (next5_fast, signal/risk sweeps)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv`.
-- Команда: `COINT_WFA_NO_MEMORY_MAP=1 bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel "$(nproc)"`.
+- Команда: `COINT_WFA_NO_MEMORY_MAP=1 COINT_FILTER_BACKEND=processes bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel "$(nproc)"`.
 - Параллельность: `8` (nproc), Numba/BLAS потоки фиксируются через `run_wfa_fullcpu.sh`.
 - Артефакты: `coint4/artifacts/wfa/runs/20260117_next5_fast/`.
 - Логи: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.watch.log`, `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.log`.
