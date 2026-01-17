@@ -82,6 +82,7 @@ step_3:
 - Метрики (strategy_metrics.csv): total_pnl `821.12`, sharpe_ratio_abs `0.6410`, max_drawdown_abs `-128.32`, total_trades `3406`, total_pairs_traded `197`, win_rate `0.6593`.
 - Фильтрация пар (batch): `coint4/results/filter_reasons_20260117_201752.csv`, `coint4/results/filter_reasons_20260117_201753.csv`, `coint4/results/filter_reasons_20260117_201754.csv` (три файла из параллельного запуска).
 - Примечание: метрики идентичны для всех трех risk вариантов — вероятно, риск-параметры не активируются в этих данных/режимах.
+- В очереди (planned): `signal_sweep_20260117_z0p85_exit0p06_ssd25000`, `signal_sweep_20260117_z0p85_exit0p1_ssd25000`, `signal_sweep_20260117_z0p8_exit0p06_ssd25000` (конфиги в `coint4/configs/_tmp_fast_next10/`).
 
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).
