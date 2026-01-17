@@ -125,7 +125,15 @@ step_3:
 - Прогон 31: `configs/_tmp_fast_next10/pair_sweep_20260117_hl0p1_30_corr0p6_z0p85_exit0p12_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_hl0p1_30_corr0p6_z0p85_exit0p12_ssd25000` (parallel, done `2026-01-17T22:21:05Z`).
 - Метрики (strategy_metrics.csv): total_pnl `547.88`, sharpe_ratio_abs `0.6830`, max_drawdown_abs `-95.32`, total_trades `3104`, total_pairs_traded `180`, win_rate `0.6484`.
 - Фильтрация пар (batch): `coint4/results/filter_reasons_20260117_221723.csv`, `coint4/results/filter_reasons_20260117_222005.csv`, `coint4/results/filter_reasons_20260117_222056.csv`, `coint4/results/filter_reasons_20260117_221549.csv` (четыре файла из параллельного запуска).
-- В очереди (planned): `pair_sweep_20260117_corr0p75_pv0p015_top300_hurst0p48_kpss0p03_z0p85_exit0p12`, `pair_sweep_20260117_corr0p7_pv0p01_top200_kpss0p02_hl0p2_20_z0p85_exit0p12`, `pair_sweep_20260117_ssd4000_corr0p65_pv0p02_top400_z0p85_exit0p12`, `pair_sweep_20260117_corr0p7_hurst0p5_kpss0p02_cross1_z0p85_exit0p12` (конфиги в `coint4/configs/_tmp_fast_next10/`).
+- Прогон 32: `configs/_tmp_fast_next10/pair_sweep_20260117_corr0p75_pv0p015_top300_hurst0p48_kpss0p03_z0p85_exit0p12.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_corr0p75_pv0p015_top300_hurst0p48_kpss0p03_z0p85_exit0p12` (parallel, done `2026-01-17T22:45:49Z`).
+- Метрики (strategy_metrics.csv): total_pnl `95.37`, sharpe_ratio_abs `0.1718`, max_drawdown_abs `-105.85`, total_trades `955`, total_pairs_traded `58`, win_rate `0.6154`.
+- Прогон 33: `configs/_tmp_fast_next10/pair_sweep_20260117_corr0p7_pv0p01_top200_kpss0p02_hl0p2_20_z0p85_exit0p12.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_corr0p7_pv0p01_top200_kpss0p02_hl0p2_20_z0p85_exit0p12` (parallel, done `2026-01-17T22:45:51Z`).
+- Метрики (strategy_metrics.csv): total_pnl `623.38`, sharpe_ratio_abs `0.4579`, max_drawdown_abs `-230.50`, total_trades `4024`, total_pairs_traded `237`, win_rate `0.6264`.
+- Прогон 34: `configs/_tmp_fast_next10/pair_sweep_20260117_ssd4000_corr0p65_pv0p02_top400_z0p85_exit0p12.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_ssd4000_corr0p65_pv0p02_top400_z0p85_exit0p12` (parallel, done `2026-01-17T22:45:50Z`).
+- Метрики (strategy_metrics.csv): total_pnl `61.89`, sharpe_ratio_abs `0.2783`, max_drawdown_abs `-25.44`, total_trades `621`, total_pairs_traded `31`, win_rate `0.5604`.
+- Прогон 35: `configs/_tmp_fast_next10/pair_sweep_20260117_corr0p7_hurst0p5_kpss0p02_cross1_z0p85_exit0p12.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_corr0p7_hurst0p5_kpss0p02_cross1_z0p85_exit0p12` (parallel, done `2026-01-17T22:45:57Z`).
+- Метрики (strategy_metrics.csv): total_pnl `747.15`, sharpe_ratio_abs `0.5444`, max_drawdown_abs `-130.58`, total_trades `4615`, total_pairs_traded `276`, win_rate `0.7253`.
+- Фильтрация пар (batch): `coint4/results/filter_reasons_20260117_224102.csv`, `coint4/results/filter_reasons_20260117_224233.csv`, `coint4/results/filter_reasons_20260117_224245.csv`, `coint4/results/filter_reasons_20260117_224547.csv` (четыре файла из параллельного запуска).
 
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).
