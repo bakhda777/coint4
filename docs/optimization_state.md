@@ -2,7 +2,7 @@
 
 Last updated: 2026-01-17
 
-Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: configs/_tmp_fast_next10/signal_sweep_20260116_z0p75_exit0p08_ssd25000.yaml.
+Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: configs/_tmp_fast_next10/signal_sweep_20260116_z0p85_exit0p04_ssd25000.yaml (planned).
 
 Progress:
 - ssd5000 completed
@@ -41,3 +41,4 @@ After leader holdout DONE:
 
 Notes:
 - 2026-01-17: smoke WFA для проверки логирования команд (config main_2024_smoke.yaml, results artifacts/wfa/runs/logging_smoke_20260117_072821).
+- 2026-01-17: next5_fast completed for signal_sweep_20260116_z0p8_exit0p06_ssd25000 (PnL 771.63, Sharpe 0.586, DD -146.72).

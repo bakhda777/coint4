@@ -19,7 +19,7 @@ SERVER_WORK_DIR=${SERVER_WORK_DIR:-"/opt/coint4/coint4"}
 LOCAL_REPO_DIR=${LOCAL_REPO_DIR:-"/root/coint4"}
 UPDATE_CODE=${UPDATE_CODE:-"1"}
 SYNC_BACK=${SYNC_BACK:-"1"}
-SYNC_PATHS=${SYNC_PATHS:-"coint4/artifacts coint4/docs coint4/results coint4/outputs"}
+SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
 STOP_AFTER=${STOP_AFTER:-"1"}
 SKIP_POWER=${SKIP_POWER:-"0"}
 
