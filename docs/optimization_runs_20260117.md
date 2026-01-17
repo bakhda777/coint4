@@ -67,6 +67,13 @@ step_3:
 - Примечание: попытка с `COINT_FILTER_BACKEND=processes` упала на `PermissionError: [Errno 13] Permission denied` (semlock); перезапуск на threads.
 - Legacy/archived: запуск очереди через `COINT_FILTER_BACKEND=threads bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel 1` остановлен, оставлен только для истории.
 - Статус: `active` (последовательный запуск для анализа между прогонами).
+- Прогон 7: `configs/_tmp_fast_next10/signal_sweep_20260117_z0p9_exit0p08_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260117_z0p9_exit0p08_ssd25000` (parallel, done `2026-01-17T19:21:24Z`).
+- Метрики (strategy_metrics.csv): total_pnl `741.27`, sharpe_ratio_abs `0.5908`, max_drawdown_abs `-146.05`, total_trades `2675`, total_pairs_traded `197`, win_rate `0.6374`.
+- Прогон 8: `configs/_tmp_fast_next10/signal_sweep_20260117_z0p9_exit0p1_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260117_z0p9_exit0p1_ssd25000` (parallel, done `2026-01-17T19:21:51Z`).
+- Метрики (strategy_metrics.csv): total_pnl `742.94`, sharpe_ratio_abs `0.5933`, max_drawdown_abs `-146.08`, total_trades `2675`, total_pairs_traded `197`, win_rate `0.6374`.
+- Прогон 9: `configs/_tmp_fast_next10/signal_sweep_20260117_z0p95_exit0p08_ssd25000.yaml` → `coint4/artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260117_z0p95_exit0p08_ssd25000` (parallel, done `2026-01-17T19:21:25Z`).
+- Метрики (strategy_metrics.csv): total_pnl `685.02`, sharpe_ratio_abs `0.5665`, max_drawdown_abs `-114.16`, total_trades `2157`, total_pairs_traded `197`, win_rate `0.6154`.
+- Фильтрация пар (batch): `coint4/results/filter_reasons_20260117_192115.csv`, `coint4/results/filter_reasons_20260117_192116.csv`, `coint4/results/filter_reasons_20260117_192142.csv` (три файла из параллельного запуска).
 
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).
