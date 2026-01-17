@@ -13,12 +13,13 @@
 
 ### WFA очередь (next5_fast, signal/risk sweeps)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv`.
-- Команда: `COINT_FILTER_BACKEND=processes bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel 1`.
+- Команда: `COINT_FILTER_BACKEND=threads bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel 1`.
 - Параллельность: `1` (последовательно), CPU загружается через `backtest.n_jobs=-1` в конфиге.
 - Конфиги: `coint4/configs/_tmp_fast_next10/*.yaml` (обновлено `backtest.n_jobs: -1`).
 - Артефакты: `coint4/artifacts/wfa/runs/20260117_next5_fast/`.
 - Логи: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.watch.log`, `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.log`.
 - Фильтрация пар: TBD (обновить после завершения по stdout/артефактам).
+- Примечание: попытка с `COINT_FILTER_BACKEND=processes` упала на `PermissionError: [Errno 13] Permission denied` (semlock); перезапуск на threads.
 - Статус: `active` (последовательный запуск для анализа).
 
 ### Smoke WFA (command logging verification)
