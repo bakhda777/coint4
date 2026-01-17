@@ -11,6 +11,15 @@
 
 ## Обновления (2026-01-17)
 
+### WFA очередь (next5_fast, signal/risk sweeps)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv`.
+- Команда: `COINT_WFA_NO_MEMORY_MAP=1 bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv --parallel "$(nproc)"`.
+- Параллельность: `8` (nproc), Numba/BLAS потоки фиксируются через `run_wfa_fullcpu.sh`.
+- Артефакты: `coint4/artifacts/wfa/runs/20260117_next5_fast/`.
+- Логи: `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.watch.log`, `coint4/artifacts/wfa/aggregate/20260117_next5_fast/run_queue.log`.
+- Фильтрация пар: TBD (обновить после завершения по stdout/артефактам).
+- Статус: `active` (перезапуск с лимитом потоков и parallel=nproc).
+
 ### Smoke WFA (command logging verification)
 - Конфиг: `coint4/configs/main_2024_smoke.yaml` (max_steps=1, n_jobs=-1).
 - Команда: `COINT_FILTER_BACKEND=processes ./run_wfa_fullcpu.sh configs/main_2024_smoke.yaml artifacts/wfa/runs/logging_smoke_20260117_072821`.
