@@ -377,10 +377,23 @@ step_3:
 - Параллельность: `1`.
 - Конфиги:
   - `coint4/configs/baseline_20260118/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+- Статус: `planned`.
+
+### WFA очередь (turnover_sweep_20260118, снижение churn)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_turnover_sweep/run_queue.csv`.
+- Цель: снизить turnover через entry/exit + min_hold/cooldown (3 шага WFA).
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
 - Статус: `completed`.
-- Прогон 1: `baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_baseline/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000`.
-- Метрики (strategy_metrics.csv): total_pnl `763.24`, sharpe_ratio_abs `0.5875`, max_drawdown_abs `-88.17`, total_trades `4815`, total_pairs_traded `271`, win_rate `0.6093`, total_costs `189.73`.
-- Фильтрация пар (step 1-5): `coint4/results/filter_reasons_20260118_162619.csv`, `coint4/results/filter_reasons_20260118_162944.csv`, `coint4/results/filter_reasons_20260118_163445.csv`, `coint4/results/filter_reasons_20260118_163814.csv`, `coint4/results/filter_reasons_20260118_164106.csv`.
+- Прогон 1: `turnover_sweep_20260118_entry0p95_exit0p08_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry0p95_exit0p08_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `476.74`, sharpe_ratio_abs `0.5874`, max_drawdown_abs `-123.18`, total_trades `2020`, total_pairs_traded `183`, win_rate `0.6154`, total_costs `81.42`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_165016.csv`, `coint4/results/filter_reasons_20260118_165326.csv`, `coint4/results/filter_reasons_20260118_165817.csv`.
 - Сводка причин отсева (по категориям, rows):
 ```yaml
 step_1:
@@ -407,37 +420,24 @@ step_3:
   hurst_too_high: 1799
   kpss: 1162
   half_life: 36
-step_4:
-  total_rows: 24962
-  pvalue: 6599
-  beta_out_of_range: 4236
-  low_correlation: 12268
-  hurst_too_high: 964
-  kpss: 856
-  half_life: 39
-step_5:
-  total_rows: 24946
-  pvalue: 2180
-  beta_out_of_range: 1346
-  low_correlation: 19607
-  hurst_too_high: 879
-  kpss: 918
-  half_life: 16
 ```
-- Итог: `total_costs` теперь ненулевые (учёт комиссии/слиппеджа прошёл санити чек).
-
-### WFA очередь (turnover_sweep_20260118, снижение churn)
-- Очередь: `coint4/artifacts/wfa/aggregate/20260118_turnover_sweep/run_queue.csv`.
-- Цель: снизить turnover через entry/exit + min_hold/cooldown (3 шага WFA).
-- Параллельность: `1`.
-- Конфиги:
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
-  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
-- Статус: `planned`.
+- Прогон 2: `turnover_sweep_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `481.02`, sharpe_ratio_abs `0.5954`, max_drawdown_abs `-120.81`, total_trades `2020`, total_pairs_traded `183`, win_rate `0.6154`, total_costs `81.42`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_170353.csv`, `coint4/results/filter_reasons_20260118_170710.csv`, `coint4/results/filter_reasons_20260118_171209.csv`.
+- Прогон 3: `turnover_sweep_20260118_entry1p05_exit0p08_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry1p05_exit0p08_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `263.34`, sharpe_ratio_abs `0.3953`, max_drawdown_abs `-98.35`, total_trades `1380`, total_pairs_traded `183`, win_rate `0.5824`, total_costs `54.44`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_171741.csv`, `coint4/results/filter_reasons_20260118_172054.csv`, `coint4/results/filter_reasons_20260118_172550.csv`.
+- Прогон 4: `turnover_sweep_20260118_entry1p05_exit0p1_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry1p05_exit0p1_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `266.94`, sharpe_ratio_abs `0.4007`, max_drawdown_abs `-96.05`, total_trades `1380`, total_pairs_traded `183`, win_rate `0.5824`, total_costs `54.44`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_173118.csv`, `coint4/results/filter_reasons_20260118_173432.csv`, `coint4/results/filter_reasons_20260118_173928.csv`.
+- Прогон 5: `turnover_sweep_20260118_entry1p15_exit0p08_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry1p15_exit0p08_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `184.78`, sharpe_ratio_abs `0.3169`, max_drawdown_abs `-109.30`, total_trades `970`, total_pairs_traded `183`, win_rate `0.5495`, total_costs `38.61`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_174515.csv`, `coint4/results/filter_reasons_20260118_174832.csv`, `coint4/results/filter_reasons_20260118_175337.csv`.
+- Прогон 6: `turnover_sweep_20260118_entry1p15_exit0p1_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_turnover_sweep/turnover_sweep_20260118_entry1p15_exit0p1_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `187.09`, sharpe_ratio_abs `0.3208`, max_drawdown_abs `-107.01`, total_trades `970`, total_pairs_traded `183`, win_rate `0.5495`, total_costs `38.61`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_175912.csv`, `coint4/results/filter_reasons_20260118_180240.csv`, `coint4/results/filter_reasons_20260118_180743.csv`.
+- Примечание: сводка причин отсева для прогонов 2-6 идентична прогону 1 (одинаковый набор фильтров).
+- Итог: лучшая комбинация в блоке — entry `0.95`/exit `0.10` (Sharpe `0.5954`), но Sharpe < 0.6, DD остаётся высоким.
 
 ### WFA очередь (quality_sweep_20260118, качество пар)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260118_quality_sweep/run_queue.csv`.

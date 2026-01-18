@@ -1,6 +1,6 @@
 # WFA run index
 
-Generated at: 2026-01-18 16:43:31Z
+Generated at: 2026-01-18 18:10:04Z
 
 ## Top Sharpe
 - pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000 | sharpe=0.7452 pnl=666.32 dd=-95.32 | artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000

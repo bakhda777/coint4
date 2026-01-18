@@ -7,7 +7,8 @@ Current stage: Sharpe>1 program (см. docs/optimization_plan_20260118.md). В �
 Next steps:
 - Зафиксировать исправление учета `total_costs` для Numba-бэктеста (done).
 - Прогнать baseline WFA (5 шагов) и зафиксировать метрики/фильтрацию (done).
-- Запустить turnover_sweep очередь и затем quality/risk sweep (3-step WFA) для формирования shortlist.
+- Turnover sweep (3-step WFA) завершён, лучшая комбинация entry 0.95 / exit 0.10.
+- Запустить quality_sweep и risk_sweep очереди (3-step WFA) для формирования shortlist.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
