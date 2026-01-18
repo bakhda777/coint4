@@ -169,4 +169,74 @@ remaining_after_stage:
   - `coint4/configs/_tmp_fast_next4_20260118/signal_sweep_20260118_z0p8_exit0p12_ssd25000.yaml`
   - `coint4/configs/_tmp_fast_next4_20260118/pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000.yaml`
   - `coint4/configs/_tmp_fast_next4_20260118/pair_sweep_20260118_pv0p03_top800_kpss0p03_corr0p6_z0p85_exit0p12_ssd25000.yaml`
-- Статус: `planned`.
+- Статус: `completed`.
+- Прогон 1: `signal_sweep_20260118_z0p9_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_next4_fast/signal_sweep_20260118_z0p9_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `776.81`, sharpe_ratio_abs `0.6296`, max_drawdown_abs `-113.19`, total_trades `2675`, total_pairs_traded `197`, win_rate `0.6374`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_104444.csv`, `coint4/results/filter_reasons_20260118_104903.csv`, `coint4/results/filter_reasons_20260118_105424.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24906
+  pvalue: 7829
+  beta_out_of_range: 6518
+  low_correlation: 6063
+  hurst_too_high: 2375
+  kpss: 2049
+  half_life: 72
+step_2:
+  total_rows: 24954
+  low_correlation: 12320
+  pvalue: 5447
+  beta_out_of_range: 4185
+  kpss: 1814
+  hurst_too_high: 1140
+  half_life: 48
+step_3:
+  total_rows: 24943
+  pvalue: 11764
+  beta_out_of_range: 6688
+  low_correlation: 3384
+  hurst_too_high: 1840
+  kpss: 1212
+  half_life: 55
+```
+- Прогон 2: `signal_sweep_20260118_z0p8_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_next4_fast/signal_sweep_20260118_z0p8_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `814.56`, sharpe_ratio_abs `0.6300`, max_drawdown_abs `-110.02`, total_trades `4334`, total_pairs_traded `197`, win_rate `0.6813`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_110039.csv`, `coint4/results/filter_reasons_20260118_110506.csv`, `coint4/results/filter_reasons_20260118_111028.csv`.
+- Сводка причин отсева: идентична прогону 1.
+- Прогон 3: `pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_next4_fast/pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `855.78`, sharpe_ratio_abs `0.6789`, max_drawdown_abs `-95.32`, total_trades `3406`, total_pairs_traded `197`, win_rate `0.6484`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_111646.csv`, `coint4/results/filter_reasons_20260118_112105.csv`, `coint4/results/filter_reasons_20260118_112623.csv`.
+- Сводка причин отсева: идентична прогону 1.
+- Прогон 4: `pair_sweep_20260118_pv0p03_top800_kpss0p03_corr0p6_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_next4_fast/pair_sweep_20260118_pv0p03_top800_kpss0p03_corr0p6_z0p85_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `776.62`, sharpe_ratio_abs `0.5265`, max_drawdown_abs `-193.91`, total_trades `4634`, total_pairs_traded `269`, win_rate `0.6484`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_113141.csv`, `coint4/results/filter_reasons_20260118_113505.csv`, `coint4/results/filter_reasons_20260118_113945.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24877
+  pvalue: 7818
+  low_correlation: 7796
+  beta_out_of_range: 5851
+  hurst_too_high: 1838
+  kpss: 1524
+  half_life: 50
+step_2:
+  total_rows: 24939
+  low_correlation: 15048
+  pvalue: 4432
+  beta_out_of_range: 3405
+  kpss: 1206
+  hurst_too_high: 811
+  half_life: 37
+step_3:
+  total_rows: 24914
+  pvalue: 11802
+  beta_out_of_range: 6271
+  low_correlation: 4493
+  hurst_too_high: 1434
+  kpss: 869
+  half_life: 45
+```
+- Итог: лучшая комбинация в блоке — `pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000` (sharpe `0.6789`, DD `-95.32`), z0p8/z0p9 дают чуть меньший Sharpe и больший DD, pv0p03/top800/kpss0p03 ухудшил DD до `-193.91` при росте числа пар.
+- Примечание: `pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000` повторяет метрики лидера z0p85/exit0p12; вероятно, ослабление `min_correlation` не сработало из-за `backtest.min_correlation_threshold: 0.6`.
