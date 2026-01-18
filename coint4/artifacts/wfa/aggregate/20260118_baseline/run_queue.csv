@@ -1,0 +1,2 @@
+config_path,results_dir,status
+configs/baseline_20260118/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000.yaml,artifacts/wfa/runs/20260118_baseline/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000,planned

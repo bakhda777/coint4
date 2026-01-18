@@ -370,3 +370,45 @@ step_3:
   half_life: 36
 ```
 - Итог: порог 0.65 снижает DD и повышает Sharpe, но уменьшает PnL и число пар/сделок; 0.50 даёт больший охват.
+
+### WFA очередь (baseline_20260118, фиксация базы с учетом costs)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_baseline/run_queue.csv`.
+- Цель: baseline 5-step WFA для z0p85/exit0p12/corr0p65/ssd25000 с фиксацией учёта `total_costs`.
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/baseline_20260118/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+- Статус: `planned`.
+
+### WFA очередь (turnover_sweep_20260118, снижение churn)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_turnover_sweep/run_queue.csv`.
+- Цель: снизить turnover через entry/exit + min_hold/cooldown (3 шага WFA).
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p05_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p08_hold120_cd120_corr0p65_ssd25000.yaml`
+  - `coint4/configs/turnover_sweep_20260118/turnover_sweep_20260118_entry1p15_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
+- Статус: `planned`.
+
+### WFA очередь (quality_sweep_20260118, качество пар)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_quality_sweep/run_queue.csv`.
+- Цель: усилить фильтры качества пар через corr и строгий пресет (3 шага WFA).
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/quality_sweep_20260118/quality_sweep_20260118_corr0p65_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/quality_sweep_20260118/quality_sweep_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/quality_sweep_20260118/quality_sweep_20260118_corr0p75_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/quality_sweep_20260118/quality_sweep_20260118_corr0p70_strict_z0p85_exit0p12_ssd25000.yaml`
+- Статус: `planned`.
+
+### WFA очередь (risk_sweep_20260118, сглаживание риска)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_risk_sweep/run_queue.csv`.
+- Цель: проверить более консервативные risk/kelly/позиции (3 шага WFA).
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/risk_sweep_20260118/risk_sweep_20260118_risk0p012_pos12_margin0p45_kelly0p2_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+  - `coint4/configs/risk_sweep_20260118/risk_sweep_20260118_risk0p01_pos10_margin0p4_kelly0p15_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+  - `coint4/configs/risk_sweep_20260118/risk_sweep_20260118_risk0p008_pos8_margin0p35_kelly0p15_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+- Статус: `planned`.

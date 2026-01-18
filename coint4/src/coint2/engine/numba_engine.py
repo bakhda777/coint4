@@ -26,7 +26,7 @@ class NumbaPairBacktester(BasePairBacktester):
 
         beta, mu, sigma = rolling_ols(y, x, self.rolling_window)
         
-        positions, pnl, cumulative_pnl = calculate_positions_and_pnl_full(
+        positions, pnl, cumulative_pnl, costs = calculate_positions_and_pnl_full(
             y, x,
             rolling_window=self.rolling_window,
             entry_threshold=self.zscore_entry_threshold,
@@ -58,6 +58,12 @@ class NumbaPairBacktester(BasePairBacktester):
         
         for col in ['trades', 'costs', 'commission_costs', 'slippage_costs', 'bid_ask_costs', 'impact_costs']:
             self.results[col] = 0.0
+
+        self.results["costs"] = costs
+        total_cost_pct = self.commission_pct + self.slippage_pct
+        if total_cost_pct > 0:
+            self.results["commission_costs"] = costs * (self.commission_pct / total_cost_pct)
+            self.results["slippage_costs"] = costs * (self.slippage_pct / total_cost_pct)
         
         trades_mask = self.results['position'].diff() != 0
         self.results.loc[trades_mask, 'trades'] = 1.0

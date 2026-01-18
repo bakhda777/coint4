@@ -1,0 +1,142 @@
+data_dir: data_downloaded
+results_dir: results
+data_processing:
+  normalization_method: rolling_zscore
+  fill_method: linear
+  min_history_ratio: 0.8
+  handle_constant: true
+data_filters:
+  clean_window:
+    start_date: '2022-03-01'
+    end_date: '2025-06-30'
+  exclude_symbols: []
+  exclude_reason: На clean window не найдено критичных разрывов; список пустой, держим
+    для явных проблем.
+portfolio:
+  initial_capital: 10000.0
+  risk_per_position_pct: 0.01
+  max_active_positions: 10
+  max_margin_usage: 0.4
+  volatility_based_sizing: true
+  volatility_lookback_hours: 24
+  min_position_size_pct: 0.005
+  max_position_size_pct: 0.02
+  volatility_adjustment_factor: 2.0
+pair_selection:
+  lookback_days: 60
+  coint_pvalue_threshold: 0.05
+  ssd_top_n: 25000
+  min_half_life_days: 0.01
+  max_half_life_days: 60
+  min_mean_crossings: 0
+  min_correlation: 0.65
+  adaptive_quantiles: false
+  bar_minutes: 15
+  liquidity_usd_daily: 500000
+  max_bid_ask_pct: 0.5
+  max_avg_funding_pct: 0.05
+  save_filter_reasons: true
+  max_hurst_exponent: 0.55
+  kpss_pvalue_threshold: 0.05
+  pvalue_top_n: 1000
+  save_std_histogram: true
+  enable_pair_tradeability_filter: false
+  min_volume_usd_24h: 10000
+  min_days_live: 1
+  max_funding_rate_abs: 0.01
+  max_tick_size_pct: 0.01
+  max_half_life_hours: 2400.0
+filter_params:
+  min_beta: 0.001
+  max_beta: 100.0
+  min_half_life_days: 0.01
+  max_half_life_days: 60
+  min_mean_crossings: 0
+  max_hurst_exponent: 0.55
+backtest:
+  timeframe: 15min
+  rolling_window: 96
+  zscore_threshold: 0.85
+  zscore_entry_threshold: 0.85
+  zscore_exit: 0.12
+  stop_loss_multiplier: 3.0
+  time_stop_multiplier: 2.0
+  min_volatility: 0.001
+  fill_limit_pct: 0.1
+  commission_pct: 0.0004
+  slippage_pct: 0.0005
+  slippage_stress_multiplier: 1.0
+  always_model_slippage: true
+  annualizing_factor: 365
+  cooldown_hours: 2
+  wait_for_candle_close: true
+  min_spread_move_sigma: 0.1
+  min_position_hold_minutes: 60
+  anti_churn_cooldown_minutes: 60
+  pair_stop_loss_usd: 75.0
+  pair_stop_loss_zscore: 3.0
+  portfolio_daily_stop_pct: 0.02
+  enable_funding_time_filter: true
+  funding_blackout_minutes: 30
+  funding_reset_hours:
+  - 0
+  - 8
+  - 16
+  enable_macro_event_filter: true
+  macro_blackout_minutes: 30
+  enable_pair_quarantine: false
+  quarantine_pnl_threshold_sigma: 3.0
+  quarantine_drawdown_threshold_pct: 0.08
+  quarantine_period_days: 7
+  quarantine_rolling_window_days: 30
+  enable_realistic_costs: false
+  commission_rate_per_leg: 0.0004
+  slippage_half_spread_multiplier: 2.0
+  funding_cost_enabled: true
+  beta_recalc_frequency_hours: 48
+  beta_window_days_min: 60
+  beta_window_days_max: 120
+  use_ols_beta_sizing: true
+  market_regime_detection: true
+  hurst_window: 720
+  hurst_trending_threshold: 0.5
+  variance_ratio_window: 480
+  variance_ratio_trending_min: 1.2
+  variance_ratio_mean_reverting_max: 0.8
+  structural_break_protection: true
+  cointegration_test_frequency: 2688
+  adf_pvalue_threshold: 0.05
+  exclusion_period_days: 30
+  min_correlation_threshold: 0.65
+  correlation_window: 720
+  regime_check_frequency: 192
+  use_market_regime_cache: true
+  adf_check_frequency: 5376
+  cache_cleanup_frequency: 1000
+  lazy_adf_threshold: 0.1
+  hurst_neutral_band: 0.05
+  vr_neutral_band: 0.2
+  n_jobs: -1
+  use_exponential_weighted_correlation: true
+  ew_correlation_alpha: 0.1
+  use_kelly_sizing: true
+  max_kelly_fraction: 0.15
+  volatility_lookback: 96
+  adaptive_thresholds: true
+  var_confidence: 0.05
+  max_var_multiplier: 3.0
+walk_forward:
+  enabled: true
+  start_date: '2023-10-01'
+  end_date: '2023-12-31'
+  training_period_days: 60
+  testing_period_days: 30
+  step_size_days: 30
+  max_steps: 3
+  min_training_samples: 500
+  refit_frequency: weekly
+  gap_minutes: 15
+max_shards: null
+logging:
+  trade_details: true
+  debug_level: INFO

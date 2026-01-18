@@ -662,7 +662,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    enable_regime_detection: bool,
                                    enable_structural_breaks: bool,
                                    min_volatility: float,
-                                   adaptive_threshold_factor: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                                   adaptive_threshold_factor: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Полная торговая функция с всеми возможностями оригинального алгоритма.
 
@@ -694,11 +694,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     Returns
     -------
     Tuple[np.ndarray, np.ndarray, np.ndarray]
-        positions, pnl_series, cumulative_pnl
+        positions, pnl_series, cumulative_pnl, costs_series
     """
     n = y.size
     positions = np.zeros(n, dtype=np.float32)
     pnl_series = np.zeros(n, dtype=np.float32)
+    costs_series = np.zeros(n, dtype=np.float32)
 
     # Вычисляем rolling статистики
     beta, mu, sigma = rolling_ols(y, x, rolling_window)
@@ -793,6 +794,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             total_cost_pct = commission + slippage
             cost_notional = abs(y[i]) + abs(entry_beta * x[i])
             cost = trade_size * cost_notional * total_cost_pct
+            costs_series[i] = cost
             
             # Если закрываем позицию, рассчитываем PnL от изменения цены
             if position != 0.0 and new_position == 0.0:
@@ -814,7 +816,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     # Вычисляем кумулятивный PnL
     cumulative_pnl = np.cumsum(pnl_series)
 
-    return positions, pnl_series, cumulative_pnl
+    return positions, pnl_series, cumulative_pnl, costs_series
 
 
 # =============================================================================
