@@ -240,3 +240,21 @@ step_3:
 ```
 - Итог: лучшая комбинация в блоке — `pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000` (sharpe `0.6789`, DD `-95.32`), z0p8/z0p9 дают чуть меньший Sharpe и больший DD, pv0p03/top800/kpss0p03 ухудшил DD до `-193.91` при росте числа пар.
 - Примечание: `pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000` повторяет метрики лидера z0p85/exit0p12; вероятно, ослабление `min_correlation` не сработало из-за `backtest.min_correlation_threshold: 0.6`.
+
+### WFA очередь (leader_validation_20260118, проверка лидера)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_leader_validation/run_queue.csv`.
+- Цель: валидация лидера (z0p85/exit0p12/ssd25000) и резерва (z0p8/exit0p12/ssd25000) на 5 шагах WFA с окном `2023-10-01` → `2024-04-30`.
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/leader_validation_20260118/leader_validate_20260118_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/leader_validation_20260118/leader_validate_20260118_z0p8_exit0p12_ssd25000.yaml`
+- Статус: `planned`.
+
+### WFA очередь (corr_ab_20260118, согласование корреляции)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_corr_ab/run_queue.csv`.
+- Цель: сравнить согласованность `pair_selection.min_correlation` и `backtest.min_correlation_threshold` на уровнях 0.50 и 0.65 (3 шага WFA, короткий период).
+- Параллельность: `1`.
+- Конфиги:
+  - `coint4/configs/corr_ab_20260118/corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/corr_ab_20260118/corr_ab_20260118_corr0p65_thr0p65_z0p85_exit0p12_ssd25000.yaml`
+- Статус: `planned`.
