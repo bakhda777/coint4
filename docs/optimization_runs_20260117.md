@@ -481,3 +481,21 @@ step_3:
 - Прогон 3: `shortlist_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_shortlist/shortlist_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `4.9631`, total_pnl `600.39`, max_drawdown_abs `-120.81`, total_trades `3003`, total_pairs_traded `271`, total_costs `115.87`, win_rate `0.5828`.
 - Итог: baseline и corr0.7 дают почти одинаковый Sharpe > 5 с DD ~ -88; turnover-версия снижает Sharpe и увеличивает DD, но уменьшает сделки/издержки.
+
+### WFA очередь (holdout_20260118, 5-step holdout)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_holdout/run_queue.csv`.
+- Цель: holdout 2024-05-01 → 2024-12-31 для top-1/2 (baseline + corr0.7) без подбора.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/holdout_20260118/holdout_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+  - `coint4/configs/holdout_20260118/holdout_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
+- Статус: `planned` (запускать только на 85.198.90.128).
+
+### WFA очередь (stress_20260118, 5-step stress costs)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_stress/run_queue.csv`.
+- Цель: стресс-издержки на shortlist (slippage x2, commission +50%). Funding +50% аппроксимирован через рост комиссий/слиппеджа, т.к. Numba-бэктест не моделирует funding отдельно.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stress_20260118/stress_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000.yaml`
+  - `coint4/configs/stress_20260118/stress_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
+- Статус: `planned` (запускать только на 85.198.90.128).

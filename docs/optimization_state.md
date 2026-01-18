@@ -11,7 +11,10 @@ Next steps:
 - Quality sweep завершён, лучший Sharpe при corr 0.65 (done).
 - Risk sweep завершён, существенных отличий не выявлено (done).
 - Shortlist WFA (5 шагов) завершён на 85.198.90.128; топ Sharpe: baseline `5.7560`, corr0.7 `5.7302`, turnover `4.9631` (см. rollup).
-- Запустить holdout и стресс-издержки для top-1/2 (baseline + corr0.7), затем обновить shortlist.
+- Очереди для следующих шагов подготовлены:
+- Holdout WFA: `coint4/artifacts/wfa/aggregate/20260118_holdout/run_queue.csv` (baseline + corr0.7).
+- Stress costs WFA: `coint4/artifacts/wfa/aggregate/20260118_stress/run_queue.csv` (slippage x2, commission +50%).
+- Запустить обе очереди на 85.198.90.128, затем обновить rollup и docs.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
