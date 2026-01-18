@@ -159,3 +159,14 @@ remaining_after_stage:
   after_kpss: 108
   after_market_microstructure: 108
 ```
+
+### WFA очередь (next4_fast, предложенные прогоны)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260118_next4_fast/run_queue_next4_fast.csv`.
+- Цель: проверить устойчивость лидера (z0p85/exit0p12) на соседних z-порогах и ужесточить фильтры для снижения DD.
+- Параллельность: `1` (каждый прогон использует `backtest.n_jobs: -1` для полной загрузки CPU).
+- Конфиги:
+  - `coint4/configs/_tmp_fast_next4_20260118/signal_sweep_20260118_z0p9_exit0p12_ssd25000.yaml`
+  - `coint4/configs/_tmp_fast_next4_20260118/signal_sweep_20260118_z0p8_exit0p12_ssd25000.yaml`
+  - `coint4/configs/_tmp_fast_next4_20260118/pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000.yaml`
+  - `coint4/configs/_tmp_fast_next4_20260118/pair_sweep_20260118_pv0p03_top800_kpss0p03_corr0p6_z0p85_exit0p12_ssd25000.yaml`
+- Статус: `planned`.
