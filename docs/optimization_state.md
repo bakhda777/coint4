@@ -11,6 +11,7 @@ Next steps:
 - Quality sweep завершён, лучший Sharpe при corr 0.65 (done).
 - Risk sweep завершён, существенных отличий не выявлено (done).
 - Очередь shortlist подготовлена: `coint4/artifacts/wfa/aggregate/20260118_shortlist/run_queue.csv` (corr 0.65 baseline + corr 0.70 + best turnover); запускать 5-step WFA только на 85.198.90.128.
+- Попытка запуска на 85.198.90.128: SSH не ответил (timeout). Нужен доступ/включение сервера.
 - Затем holdout и стресс-издержки для top-1/2.
 
 Legacy context:
