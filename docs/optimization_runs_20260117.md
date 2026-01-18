@@ -489,7 +489,12 @@ step_3:
 - Конфиги:
   - `coint4/configs/holdout_20260118/holdout_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000.yaml`
   - `coint4/configs/holdout_20260118/holdout_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
-- Статус: `planned` (запускать только на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128).
+- Прогон 1: `holdout_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_holdout/holdout_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-3.4066`, total_pnl `-324.10`, max_drawdown_abs `-358.78`, total_trades `8641`, total_pairs_traded `501`, total_costs `256.47`, win_rate `0.4570`.
+- Прогон 2: `holdout_20260118_corr0p7_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_holdout/holdout_20260118_corr0p7_z0p85_exit0p12_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-3.2651`, total_pnl `-306.85`, max_drawdown_abs `-346.38`, total_trades `8497`, total_pairs_traded `490`, total_costs `252.81`, win_rate `0.4570`.
+- Итог: обе holdout-версии дают отрицательный Sharpe и PnL → нужна диагностика режима/фильтров.
 
 ### WFA очередь (stress_20260118, 5-step stress costs)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260118_stress/run_queue.csv`.
@@ -498,4 +503,9 @@ step_3:
 - Конфиги:
   - `coint4/configs/stress_20260118/stress_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000.yaml`
   - `coint4/configs/stress_20260118/stress_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
-- Статус: `planned` (запускать только на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128).
+- Прогон 1: `stress_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_stress/stress_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `4.6636`, total_pnl `616.53`, max_drawdown_abs `-91.36`, total_trades `4815`, total_pairs_traded `271`, total_costs `337.29`, win_rate `0.5629`.
+- Прогон 2: `stress_20260118_corr0p7_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_stress/stress_20260118_corr0p7_z0p85_exit0p12_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `4.5746`, total_pnl `542.81`, max_drawdown_abs `-91.36`, total_trades `4649`, total_pairs_traded `258`, total_costs `319.76`, win_rate `0.5894`.
+- Итог: стресс-издержки снижают Sharpe относительно базового прогона, но остаются > 4 на WFA‑периоде.
