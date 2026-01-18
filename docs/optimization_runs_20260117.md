@@ -468,9 +468,16 @@ step_3:
 ### WFA очередь (shortlist_20260118, 5-step shortlist)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260118_shortlist/run_queue.csv`.
 - Цель: 5-step WFA для shortlist (baseline corr0.65, corr0.70 strict, turnover best) с обновлённым annualization Sharpe.
-- Параллельность: `1`.
+- Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиги:
   - `coint4/configs/shortlist_20260118/shortlist_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000.yaml`
   - `coint4/configs/shortlist_20260118/shortlist_20260118_corr0p7_z0p85_exit0p12_ssd25000.yaml`
   - `coint4/configs/shortlist_20260118/shortlist_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000.yaml`
-- Статус: `planned` (запускать только на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `shortlist_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_shortlist/shortlist_20260118_baseline_z0p85_exit0p12_corr0p65_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `5.7560`, total_pnl `763.24`, max_drawdown_abs `-88.17`, total_trades `4815`, total_pairs_traded `271`, total_costs `189.73`, win_rate `0.6093`.
+- Прогон 2: `shortlist_20260118_corr0p7_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_shortlist/shortlist_20260118_corr0p7_z0p85_exit0p12_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `5.7302`, total_pnl `681.93`, max_drawdown_abs `-88.17`, total_trades `4649`, total_pairs_traded `258`, total_costs `179.86`, win_rate `0.6159`.
+- Прогон 3: `shortlist_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_shortlist/shortlist_20260118_entry0p95_exit0p1_hold120_cd120_corr0p65_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `4.9631`, total_pnl `600.39`, max_drawdown_abs `-120.81`, total_trades `3003`, total_pairs_traded `271`, total_costs `115.87`, win_rate `0.5828`.
+- Итог: baseline и corr0.7 дают почти одинаковый Sharpe > 5 с DD ~ -88; turnover-версия снижает Sharpe и увеличивает DD, но уменьшает сделки/издержки.
