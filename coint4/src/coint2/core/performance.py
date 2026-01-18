@@ -6,7 +6,12 @@ import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 
 
-def sharpe_ratio_on_returns(pnl: pd.Series, capital: float, annualizing_factor: int, risk_free_rate: float = 0.0) -> float:
+def sharpe_ratio_on_returns(
+    pnl: pd.Series,
+    capital: float,
+    annualizing_factor: float,
+    risk_free_rate: float = 0.0,
+) -> float:
     """
     Sharpe по доходностям (PnL / capital).
     """

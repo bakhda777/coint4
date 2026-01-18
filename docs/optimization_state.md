@@ -5,11 +5,13 @@ Last updated: 2026-01-18
 Current stage: Sharpe>1 program (см. docs/optimization_plan_20260118.md). В фокусе проверка учета издержек + baseline WFA (5 шагов) и короткие sweep-блоки для turnover/quality/risk.
 
 Next steps:
-- Зафиксировать исправление учета `total_costs` для Numba-бэктеста (done).
-- Прогнать baseline WFA (5 шагов) и зафиксировать метрики/фильтрацию (done).
-- Turnover sweep (3-step WFA) завершён, лучшая комбинация entry 0.95 / exit 0.10.
-- Quality sweep (3-step WFA) завершён, лучший Sharpe при corr 0.65.
-- Запустить risk_sweep очередь (3-step WFA) для формирования shortlist.
+- Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
+- Baseline WFA (5 шагов) выполнен и зафиксирован (done).
+- Turnover sweep завершён, лучшая комбинация entry 0.95 / exit 0.10 (done).
+- Quality sweep завершён, лучший Sharpe при corr 0.65 (done).
+- Risk sweep завершён, существенных отличий не выявлено (done).
+- Очередь shortlist подготовлена: `coint4/artifacts/wfa/aggregate/20260118_shortlist/run_queue.csv` (corr 0.65 baseline + corr 0.70 + best turnover); запускать 5-step WFA только на 85.198.90.128.
+- Затем holdout и стресс-издержки для top-1/2.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
@@ -50,6 +52,7 @@ After leader holdout DONE:
 3) Decide next stage (risk sweep vs signal grid refinement) based on holdout Sharpe/PnL/DD.
 
 Notes:
+- NOTE: Sharpe в записях/артефактах до фикса annualization (2026-01-18) занижен примерно в √96 раз для 15m; для актуальных значений используйте `coint4/artifacts/wfa/aggregate/rollup/run_index.*`.
 - 2026-01-17: smoke WFA для проверки логирования команд (config main_2024_smoke.yaml, results artifacts/wfa/runs/logging_smoke_20260117_072821).
 - 2026-01-17: next5_fast completed for signal_sweep_20260116_z0p85_exit0p06_ssd25000 (PnL 815.67, Sharpe 0.6345, DD -132.02).
 - 2026-01-17: next5_fast completed for signal_sweep_20260116_z0p85_exit0p08_ssd25000 (PnL 821.12, Sharpe 0.6410, DD -128.32).

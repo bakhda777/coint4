@@ -22,6 +22,14 @@ def _render_summary(entries, top_n: int) -> str:
     lines.append("")
     lines.append(f"Generated at: {timestamp}")
     lines.append("")
+    lines.append("Notes:")
+    lines.append(
+        "- `sharpe_ratio_abs` is recomputed from `equity_curve.csv` with inferred bar frequency (periods/year = 365 * periods/day)."
+    )
+    lines.append(
+        "- `sharpe_ratio_abs_raw` is the value stored in `strategy_metrics.csv` (legacy runs may be under-annualized)."
+    )
+    lines.append("")
 
     metrics_entries = [e for e in entries if e.metrics_present]
     top_sharpe = sorted(
@@ -127,4 +135,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

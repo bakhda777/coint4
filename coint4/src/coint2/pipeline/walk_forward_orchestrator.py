@@ -1786,13 +1786,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 max_position_size_pct=getattr(cfg.portfolio, 'max_position_size_pct', 1.0),
                 num_selected_pairs=1  # For final metrics calculation, use 1 as default
             )
-            # Calculate Sharpe ratio using portfolio percentage returns
-            daily_returns = equity_series.ffill().pct_change(fill_method=None).dropna()
-            sharpe_abs = performance.sharpe_ratio(
-                daily_returns, cfg.backtest.annualizing_factor
-            )
+            equity_returns = equity_series.ffill().pct_change(fill_method=None).dropna()
+            periods_per_year = float(cfg.backtest.annualizing_factor)
+            if bar_minutes and bar_minutes > 0:
+                periods_per_year *= 24 * 60 / bar_minutes
+
+            sharpe_abs = performance.sharpe_ratio(equity_returns, periods_per_year)
             sharpe_on_returns = performance.sharpe_ratio_on_returns(
-                aggregated_pnl, capital_per_pair, cfg.backtest.annualizing_factor
+                aggregated_pnl, capital_per_pair, periods_per_year
             )
             max_dd_abs = performance.max_drawdown(cumulative)
             max_dd_on_equity = performance.max_drawdown_on_equity(equity_series)
@@ -1903,11 +1904,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         except Exception as e:
             logger.warning(f"⚠️ Error cleaning up memory-mapped data: {e}")
 
-    # Calculate and display Sharpe ratio on portfolio returns for verification
     equity_curve = portfolio.equity_curve
-    daily_returns = equity_curve.ffill().pct_change(fill_method=None).dropna()
-    sharpe = performance.sharpe_ratio(daily_returns, cfg.backtest.annualizing_factor)
-    print(f"Correct Sharpe Ratio: {sharpe}")
+    equity_returns = equity_curve.ffill().pct_change(fill_method=None).dropna()
+    periods_per_year = float(cfg.backtest.annualizing_factor)
+    if bar_minutes and bar_minutes > 0:
+        periods_per_year *= 24 * 60 / bar_minutes
+
+    sharpe = performance.sharpe_ratio(equity_returns, periods_per_year)
+    print(f"Annualized Sharpe Ratio: {sharpe}")
 
     return base_metrics
 

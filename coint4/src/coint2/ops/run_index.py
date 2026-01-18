@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
+from statistics import median
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
@@ -21,10 +24,17 @@ class RunIndexEntry:
     status: str
     metrics_present: bool
     sharpe_ratio_abs: Optional[float]
+    sharpe_ratio_abs_raw: Optional[float]
+    sharpe_ratio_on_returns: Optional[float]
     total_pnl: Optional[float]
     max_drawdown_abs: Optional[float]
+    max_drawdown_on_equity: Optional[float]
     total_trades: Optional[float]
     total_pairs_traded: Optional[float]
+    total_costs: Optional[float]
+    total_days: Optional[float]
+    volatility: Optional[float]
+    win_rate: Optional[float]
     best_pair_pnl: Optional[float]
     worst_pair_pnl: Optional[float]
     avg_pnl_per_pair: Optional[float]
@@ -63,6 +73,69 @@ def _load_metrics(metrics_path: Path) -> Dict[str, Optional[float]]:
         for row in reader:
             return {key: _to_float(value) for key, value in row.items()}
     return {}
+
+
+def _compute_sharpe_from_equity_curve(
+    results_dir: Path,
+    *,
+    days_per_year: float = 365.0,
+) -> Optional[float]:
+    equity_path = results_dir / "equity_curve.csv"
+    if not equity_path.exists():
+        return None
+
+    deltas: List[float] = []
+    count = 0
+    mean = 0.0
+    m2 = 0.0
+
+    prev_ts: Optional[datetime] = None
+    prev_equity: Optional[float] = None
+
+    with equity_path.open(newline="") as handle:
+        reader = csv.reader(handle)
+        next(reader, None)  # header
+        for row in reader:
+            if len(row) < 2:
+                continue
+            try:
+                ts = datetime.fromisoformat(row[0].strip())
+                equity = float(row[1])
+            except (ValueError, TypeError):
+                continue
+
+            if prev_ts is not None and prev_equity is not None and prev_equity != 0:
+                ret = (equity - prev_equity) / prev_equity
+                count += 1
+
+                delta_sec = (ts - prev_ts).total_seconds()
+                if delta_sec > 0:
+                    deltas.append(delta_sec)
+
+                diff = ret - mean
+                mean += diff / count
+                m2 += diff * (ret - mean)
+
+            prev_ts = ts
+            prev_equity = equity
+
+    if count < 2:
+        return None
+
+    variance = m2 / (count - 1)
+    std = math.sqrt(variance) if variance > 0 else 0.0
+    if std == 0.0:
+        return 0.0
+
+    if not deltas:
+        return None
+
+    period_seconds = median(deltas)
+    if period_seconds <= 0:
+        return None
+
+    periods_per_year = days_per_year * (86400.0 / period_seconds)
+    return math.sqrt(periods_per_year) * mean / std
 
 
 def _to_float(value: Optional[str]) -> Optional[float]:
@@ -137,10 +210,17 @@ def build_run_index(
             status=queue_info.get("status", ""),
             metrics_present=False,
             sharpe_ratio_abs=None,
+            sharpe_ratio_abs_raw=None,
+            sharpe_ratio_on_returns=None,
             total_pnl=None,
             max_drawdown_abs=None,
+            max_drawdown_on_equity=None,
             total_trades=None,
             total_pairs_traded=None,
+            total_costs=None,
+            total_days=None,
+            volatility=None,
+            win_rate=None,
             best_pair_pnl=None,
             worst_pair_pnl=None,
             avg_pnl_per_pair=None,
@@ -163,10 +243,17 @@ def build_run_index(
                 status="unknown",
                 metrics_present=False,
                 sharpe_ratio_abs=None,
+                sharpe_ratio_abs_raw=None,
+                sharpe_ratio_on_returns=None,
                 total_pnl=None,
                 max_drawdown_abs=None,
+                max_drawdown_on_equity=None,
                 total_trades=None,
                 total_pairs_traded=None,
+                total_costs=None,
+                total_days=None,
+                volatility=None,
+                win_rate=None,
                 best_pair_pnl=None,
                 worst_pair_pnl=None,
                 avg_pnl_per_pair=None,
@@ -175,11 +262,22 @@ def build_run_index(
 
         entry.metrics_present = True
         entry.metrics_path = _relative_path(metrics_path, project_root)
-        entry.sharpe_ratio_abs = metrics.get("sharpe_ratio_abs")
+        entry.sharpe_ratio_abs_raw = metrics.get("sharpe_ratio_abs")
+        entry.sharpe_ratio_on_returns = metrics.get("sharpe_ratio_on_returns")
+
+        computed_sharpe = _compute_sharpe_from_equity_curve(results_path)
+        entry.sharpe_ratio_abs = (
+            computed_sharpe if computed_sharpe is not None else entry.sharpe_ratio_abs_raw
+        )
         entry.total_pnl = metrics.get("total_pnl")
         entry.max_drawdown_abs = metrics.get("max_drawdown_abs")
+        entry.max_drawdown_on_equity = metrics.get("max_drawdown_on_equity")
         entry.total_trades = metrics.get("total_trades")
         entry.total_pairs_traded = metrics.get("total_pairs_traded")
+        entry.total_costs = metrics.get("total_costs")
+        entry.total_days = metrics.get("total_days")
+        entry.volatility = metrics.get("volatility")
+        entry.win_rate = metrics.get("win_rate")
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
         entry.worst_pair_pnl = metrics.get("worst_pair_pnl")
         entry.avg_pnl_per_pair = metrics.get("avg_pnl_per_pair")
@@ -199,10 +297,17 @@ def write_run_index_csv(path: Path, entries: Sequence[RunIndexEntry]) -> None:
         "status",
         "metrics_present",
         "sharpe_ratio_abs",
+        "sharpe_ratio_abs_raw",
+        "sharpe_ratio_on_returns",
         "total_pnl",
         "max_drawdown_abs",
+        "max_drawdown_on_equity",
         "total_trades",
         "total_pairs_traded",
+        "total_costs",
+        "total_days",
+        "volatility",
+        "win_rate",
         "best_pair_pnl",
         "worst_pair_pnl",
         "avg_pnl_per_pair",
@@ -220,4 +325,3 @@ def write_run_index_json(path: Path, entries: Sequence[RunIndexEntry]) -> None:
     payload = [asdict(entry) for entry in entries]
     with path.open("w") as handle:
         json.dump(payload, handle, indent=2, sort_keys=True)
-

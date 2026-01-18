@@ -1,0 +1,18 @@
+++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] date -u +%Y-%m-%dT%H:%M:%SZ
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] start: 2026-01-18T19:04:49Z'
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] echo -n '[run_wfa_fullcpu] os.cpu_count: '
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] ./.venv/bin/python -
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] WORKER_PID_FILE=artifacts/wfa/runs/20260118_risk_sweep/risk_sweep_20260118_risk0p008_pos8_margin0p35_kelly0p15_z0p85_exit0p12_corr0p65_ssd25000/worker.pid
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] CLI_ARGS=(--config "$CONFIG_PATH" --results-dir "$RESULTS_DIR")
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] [[ 0 == \1 ]]
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] WORKER_PID=1053
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] ./.venv/bin/coint2 walk-forward --config configs/risk_sweep_20260118/risk_sweep_20260118_risk0p008_pos8_margin0p35_kelly0p15_z0p85_exit0p12_corr0p65_ssd25000.yaml --results-dir artifacts/wfa/runs/20260118_risk_sweep/risk_sweep_20260118_risk0p008_pos8_margin0p35_kelly0p15_z0p85_exit0p12_corr0p65_ssd25000
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] echo 1053
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] worker_pid=1053'
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] set +e
++ 2026-01-18T19:04:49Z [run_wfa_fullcpu] wait 1053
++ 2026-01-18T19:18:38Z [run_wfa_fullcpu] RC=0
++ 2026-01-18T19:18:38Z [run_wfa_fullcpu] set -e
+++ 2026-01-18T19:18:38Z [run_wfa_fullcpu] date -u +%Y-%m-%dT%H:%M:%SZ
++ 2026-01-18T19:18:38Z [run_wfa_fullcpu] echo '[run_wfa_fullcpu] end: 2026-01-18T19:18:38Z'
++ 2026-01-18T19:18:38Z [run_wfa_fullcpu] exit 0
