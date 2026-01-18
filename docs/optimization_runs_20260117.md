@@ -377,7 +377,54 @@ step_3:
 - Параллельность: `1`.
 - Конфиги:
   - `coint4/configs/baseline_20260118/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000.yaml`
-- Статус: `planned`.
+- Статус: `completed`.
+- Прогон 1: `baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000` → `coint4/artifacts/wfa/runs/20260118_baseline/baseline_20260118_z0p85_exit0p12_corr0p65_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `763.24`, sharpe_ratio_abs `0.5875`, max_drawdown_abs `-88.17`, total_trades `4815`, total_pairs_traded `271`, win_rate `0.6093`, total_costs `189.73`.
+- Фильтрация пар (step 1-5): `coint4/results/filter_reasons_20260118_162619.csv`, `coint4/results/filter_reasons_20260118_162944.csv`, `coint4/results/filter_reasons_20260118_163445.csv`, `coint4/results/filter_reasons_20260118_163814.csv`, `coint4/results/filter_reasons_20260118_164106.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24910
+  pvalue: 6576
+  beta_out_of_range: 5465
+  low_correlation: 8880
+  hurst_too_high: 2093
+  kpss: 1865
+  half_life: 31
+step_2:
+  total_rows: 24964
+  pvalue: 3329
+  beta_out_of_range: 2921
+  low_correlation: 16572
+  hurst_too_high: 851
+  kpss: 1256
+  half_life: 35
+step_3:
+  total_rows: 24943
+  pvalue: 10573
+  beta_out_of_range: 5951
+  low_correlation: 5422
+  hurst_too_high: 1799
+  kpss: 1162
+  half_life: 36
+step_4:
+  total_rows: 24962
+  pvalue: 6599
+  beta_out_of_range: 4236
+  low_correlation: 12268
+  hurst_too_high: 964
+  kpss: 856
+  half_life: 39
+step_5:
+  total_rows: 24946
+  pvalue: 2180
+  beta_out_of_range: 1346
+  low_correlation: 19607
+  hurst_too_high: 879
+  kpss: 918
+  half_life: 16
+```
+- Итог: `total_costs` теперь ненулевые (учёт комиссии/слиппеджа прошёл санити чек).
 
 ### WFA очередь (turnover_sweep_20260118, снижение churn)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260118_turnover_sweep/run_queue.csv`.
