@@ -248,7 +248,58 @@ step_3:
 - Конфиги:
   - `coint4/configs/leader_validation_20260118/leader_validate_20260118_z0p85_exit0p12_ssd25000.yaml`
   - `coint4/configs/leader_validation_20260118/leader_validate_20260118_z0p8_exit0p12_ssd25000.yaml`
-- Статус: `planned`.
+- Статус: `completed`.
+- Прогон 1: `leader_validate_20260118_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_leader_validation/leader_validate_20260118_z0p85_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `1007.18`, sharpe_ratio_abs `0.5745`, max_drawdown_abs `-95.32`, total_trades `5137`, total_pairs_traded `293`, win_rate `0.6291`.
+- Фильтрация пар (step 1-5): `coint4/results/filter_reasons_20260118_133749.csv`, `coint4/results/filter_reasons_20260118_134206.csv`, `coint4/results/filter_reasons_20260118_134718.csv`, `coint4/results/filter_reasons_20260118_135129.csv`, `coint4/results/filter_reasons_20260118_135500.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24906
+  pvalue: 7829
+  beta_out_of_range: 6518
+  low_correlation: 6063
+  hurst_too_high: 2375
+  kpss: 2049
+  half_life: 72
+step_2:
+  total_rows: 24954
+  pvalue: 5447
+  beta_out_of_range: 4185
+  low_correlation: 12320
+  hurst_too_high: 1140
+  kpss: 1814
+  half_life: 48
+step_3:
+  total_rows: 24943
+  pvalue: 11764
+  beta_out_of_range: 6688
+  low_correlation: 3384
+  hurst_too_high: 1840
+  kpss: 1212
+  half_life: 55
+step_4:
+  total_rows: 24958
+  pvalue: 9234
+  beta_out_of_range: 5602
+  low_correlation: 7860
+  hurst_too_high: 1129
+  kpss: 1080
+  half_life: 53
+step_5:
+  total_rows: 24940
+  pvalue: 4057
+  beta_out_of_range: 2489
+  low_correlation: 16093
+  hurst_too_high: 1048
+  kpss: 1237
+  half_life: 16
+```
+- Прогон 2: `leader_validate_20260118_z0p8_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_leader_validation/leader_validate_20260118_z0p8_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `941.02`, sharpe_ratio_abs `0.5238`, max_drawdown_abs `-110.02`, total_trades `6573`, total_pairs_traded `293`, win_rate `0.6225`.
+- Фильтрация пар (step 1-5): `coint4/results/filter_reasons_20260118_140114.csv`, `coint4/results/filter_reasons_20260118_140532.csv`, `coint4/results/filter_reasons_20260118_141049.csv`, `coint4/results/filter_reasons_20260118_141502.csv`, `coint4/results/filter_reasons_20260118_141838.csv`.
+- Сводка причин отсева: идентична прогону 1 (step 1-5).
+- Итог: лидер z0p85 сохраняет преимущество по Sharpe/DD, z0p8 даёт меньший Sharpe при большем числе сделок.
 
 ### WFA очередь (corr_ab_20260118, согласование корреляции)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260118_corr_ab/run_queue.csv`.
@@ -257,4 +308,65 @@ step_3:
 - Конфиги:
   - `coint4/configs/corr_ab_20260118/corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000.yaml`
   - `coint4/configs/corr_ab_20260118/corr_ab_20260118_corr0p65_thr0p65_z0p85_exit0p12_ssd25000.yaml`
-- Статус: `planned`.
+- Статус: `completed`.
+- Прогон 1: `corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_corr_ab/corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `855.78`, sharpe_ratio_abs `0.6789`, max_drawdown_abs `-95.32`, total_trades `3406`, total_pairs_traded `197`, win_rate `0.6484`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_144138.csv`, `coint4/results/filter_reasons_20260118_144556.csv`, `coint4/results/filter_reasons_20260118_145110.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24906
+  pvalue: 7829
+  beta_out_of_range: 6518
+  low_correlation: 6063
+  hurst_too_high: 2375
+  kpss: 2049
+  half_life: 72
+step_2:
+  total_rows: 24954
+  pvalue: 5447
+  beta_out_of_range: 4185
+  low_correlation: 12320
+  hurst_too_high: 1140
+  kpss: 1814
+  half_life: 48
+step_3:
+  total_rows: 24943
+  pvalue: 11764
+  beta_out_of_range: 6688
+  low_correlation: 3384
+  hurst_too_high: 1840
+  kpss: 1212
+  half_life: 55
+```
+- Прогон 2: `corr_ab_20260118_corr0p65_thr0p65_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_corr_ab/corr_ab_20260118_corr0p65_thr0p65_z0p85_exit0p12_ssd25000`.
+- Метрики (strategy_metrics.csv): total_pnl `651.02`, sharpe_ratio_abs `0.7323`, max_drawdown_abs `-88.17`, total_trades `3188`, total_pairs_traded `183`, win_rate `0.6484`.
+- Фильтрация пар (step 1-3): `coint4/results/filter_reasons_20260118_145645.csv`, `coint4/results/filter_reasons_20260118_150000.csv`, `coint4/results/filter_reasons_20260118_150503.csv`.
+- Сводка причин отсева (по категориям, rows):
+```yaml
+step_1:
+  total_rows: 24910
+  pvalue: 6576
+  beta_out_of_range: 5465
+  low_correlation: 8880
+  hurst_too_high: 2093
+  kpss: 1865
+  half_life: 31
+step_2:
+  total_rows: 24964
+  pvalue: 3329
+  beta_out_of_range: 2921
+  low_correlation: 16572
+  hurst_too_high: 851
+  kpss: 1256
+  half_life: 35
+step_3:
+  total_rows: 24943
+  pvalue: 10573
+  beta_out_of_range: 5951
+  low_correlation: 5422
+  hurst_too_high: 1799
+  kpss: 1162
+  half_life: 36
+```
+- Итог: порог 0.65 снижает DD и повышает Sharpe, но уменьшает PnL и число пар/сделок; 0.50 даёт больший охват.
