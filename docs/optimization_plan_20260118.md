@@ -48,5 +48,6 @@
     - Выполнено: stress-издержки для relaxed8_nokpss → Sharpe 2.17, PnL 98.35, pairs 64.
     - Выполнено: holdout relaxed8_nokpss_u250 (expanded universe 250 пар) → Sharpe 4.20, pairs 168.
     - Выполнено: stress-издержки для u250 → Sharpe 2.89, PnL 289.30, pairs 168.
+    - Выполнено: кандидат зафиксирован в `docs/candidate_relaxed8_u250_20260119.md`.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.
