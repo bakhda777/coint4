@@ -1,0 +1,8 @@
+{
+  "holdout_pairs": 501,
+  "intersection_pairs": 13,
+  "jaccard": 0.017127799736495388,
+  "non_overlap_pnl": -370.15202300300007,
+  "overlap_pnl": 48.73440239,
+  "shortlist_pairs": 271
+}

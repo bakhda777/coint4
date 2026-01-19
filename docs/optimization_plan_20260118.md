@@ -10,15 +10,15 @@
 - Holdout не используется для подбора параметров.
 
 ## План (12 шагов, может меняться)
-1. Санити чек метрик: `total_costs` не нулевые при наличии сделок + Sharpe корректно annualized (15m → `365*96`).
-2. Зафиксировать baseline-конфиг и прогнать 5-step WFA + holdout (без тюнинга).
-3. Sweep сигналов на снижение turnover: entry/exit + min_hold + cooldown (малый grid).
-4. Sweep качества пар: corr thresholds (0.65/0.70/0.75) + один строгий пресет фильтров.
-5. Sweep рисков: risk_per_position, max_active_positions, max_margin_usage, max_kelly_fraction.
-6. Отобрать shortlist (3-5 конфигов) по Sharpe/DD/стабильности и достаточной статистике.
-7. Повторная 5-step WFA валидация для shortlist.
-8. Holdout фиксированный для top-1/2.
-9. Стресс-режимы издержек: slippage x2, funding+50%, commission+50% (на shortlist).
-10. Проверка концентрации: нет ли перекоса в 1-2 активах/парах.
-11. Финализация 1-2 кандидатов с лучшей стабильностью.
-12. Paper/live проверка и мониторинг метрик (Sharpe/turnover/DD/концентрация).
+1. Санити чек метрик: `total_costs` не нулевые при наличии сделок + Sharpe корректно annualized (15m → `365*96`). (done)
+2. Зафиксировать baseline-конфиг и прогнать 5-step WFA. (done)
+3. Sweep сигналов на снижение turnover: entry/exit + min_hold + cooldown (малый grid). (done)
+4. Sweep качества пар: corr thresholds (0.65/0.70/0.75) + один строгий пресет фильтров. (done)
+5. Sweep рисков: risk_per_position, max_active_positions, max_margin_usage, max_kelly_fraction. (done)
+6. Отобрать shortlist (3-5 конфигов) по Sharpe/DD/стабильности и достаточной статистике. (done)
+7. Повторная 5-step WFA валидация для shortlist. (done)
+8. Holdout фиксированный для top-1/2 + стресс-издержки. (done; holdout негативный)
+9. Диагностика holdout: шаги, концентрация, overlap пар, фильтры. (done)
+10. Ввести фильтр стабильности пар (пересечение/частота в WFA) + ужесточить pvalue/half-life/hurst + пересмотр universe.
+11. Новый shortlist (3-5 конфигов) → 5-step WFA + holdout (max_steps=5).
+12. Финализация 1-2 кандидатов и paper/live проверка.

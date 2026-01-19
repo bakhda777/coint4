@@ -509,3 +509,10 @@ step_3:
 - Прогон 2: `stress_20260118_corr0p7_z0p85_exit0p12_ssd25000` → `coint4/artifacts/wfa/runs/20260118_stress/stress_20260118_corr0p7_z0p85_exit0p12_ssd25000`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `4.5746`, total_pnl `542.81`, max_drawdown_abs `-91.36`, total_trades `4649`, total_pairs_traded `258`, total_costs `319.76`, win_rate `0.5894`.
 - Итог: стресс-издержки снижают Sharpe относительно базового прогона, но остаются > 4 на WFA‑периоде.
+
+### Holdout diagnostics (20260118)
+- Отчёт: `docs/holdout_diagnostics_20260118.md`.
+- Окно теста фактически 2024-05-02 → 2024-09-28 (ограничение `max_steps=5`).
+- Steps 1-4 отрицательные; самые слабые шаги 2-3.
+- Перекрытие пар с shortlist очень низкое (13/501, Jaccard ~1.7%); пересекающиеся пары дают +48.7 PnL, остальные -370.2.
+- Смещение причин отсева: holdout доминирует pvalue, shortlist доминирует low_correlation.
