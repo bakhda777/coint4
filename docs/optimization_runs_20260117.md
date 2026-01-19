@@ -625,3 +625,12 @@ step_3:
 - Отчёт: `docs/holdout_diagnostics_20260119_relaxed4.md`.
 - Перекрытие пар с WFA минимальное (4 пересечения, Jaccard ~0.0048); убыток формируется в основном вне пересечения.
 - Holdout чаще режется по pvalue, что указывает на развал коинтеграции в 2024H2.
+
+### WFA очередь (stability_relaxed5_20260119, усиление стабильности)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed5/run_queue.csv`.
+- Цель: увеличить устойчивость пар между шагами (window=2/3) при сохранении corr0.45/ssd50000/kpss0.03.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stability_20260119_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w2m1.yaml`
+  - `coint4/configs/stability_20260119_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).
