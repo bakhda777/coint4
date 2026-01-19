@@ -584,4 +584,11 @@ step_3:
   - `coint4/configs/stability_20260119_relaxed4/stability_relaxed4_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_kpss0p05.yaml`
   - `coint4/configs/stability_20260119_relaxed4/stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03.yaml`
   - `coint4/configs/stability_20260119_relaxed4/stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed4_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_kpss0p05` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed4/stability_relaxed4_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_kpss0p05`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.0707`, total_pnl `325.01`, max_drawdown_abs `-158.63`, total_trades `3065`, total_pairs_traded `159`, total_costs `96.16`, win_rate `0.3770`.
+- Прогон 2: `stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed4/stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.0732`, total_pnl `538.74`, max_drawdown_abs `-181.16`, total_trades `5067`, total_pairs_traded `270`, total_costs `167.87`, win_rate `0.5033`.
+- Прогон 3: `stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed4/stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.0920`, total_pnl `554.44`, max_drawdown_abs `-168.23`, total_trades `5147`, total_pairs_traded `272`, total_costs `175.02`, win_rate `0.5232`.
+- Итог: ослабление KPSS сняло бутылочное горлышко; пары 159–272, Sharpe ~3.07–3.09. Лучший по Sharpe/PnL — corr0.45 + ssd50000 + kpss0.03; стоит подтверждать holdout/stress.
