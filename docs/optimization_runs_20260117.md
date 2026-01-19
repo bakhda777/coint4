@@ -714,4 +714,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed6/holdout_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2` → `coint4/artifacts/wfa/runs/20260119_relaxed6_holdout/holdout_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-2.1972`, total_pnl `-267.02`, max_drawdown_abs `-413.50`, total_trades `13268`, total_pairs_traded `779`, total_costs `359.55`, win_rate `0.3245`.
+- Фильтрация (run.log): pvalue отсев ~22–40%, kpss ~13–21%, hurst ~5–8%.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_123006.csv`, `coint4/results/filter_reasons_20260119_123119.csv`, `coint4/results/filter_reasons_20260119_123905.csv`.
+- Итог: holdout сильно отрицательный несмотря на хороший WFA; требуется переоценка устойчивости в 2024H2.
