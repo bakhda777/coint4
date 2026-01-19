@@ -732,4 +732,9 @@ step_3:
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed6_fixed/holdout_relaxed6_fixed_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2.yaml`
 - Источник пар: `coint4/artifacts/universe/20260119_relaxed6_w3m2_fixed/pairs_universe.yaml`.
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed6_fixed_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2` → `coint4/artifacts/wfa/runs/20260119_relaxed6_holdout_fixed/holdout_relaxed6_fixed_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.7672`, total_pnl `24.98`, max_drawdown_abs `-4.68`, total_trades `141`, total_pairs_traded `7`, total_costs `3.19`, win_rate `0.2213`.
+- Фильтрация (run.log): pvalue отсев ~25–43%, kpss ~21–37%, hurst ~5–12%; pair_stability (window=3/min=2) режет до 0–1 пар.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_125706.csv`, `coint4/results/filter_reasons_20260119_125734.csv`, `coint4/results/filter_reasons_20260119_125803.csv`, `coint4/results/filter_reasons_20260119_125830.csv`, `coint4/results/filter_reasons_20260119_125859.csv`.
+- Итог: Sharpe высокий, но статистика слишком мала (7 пар, 141 сделка); фиксированный universe не решает проблему охвата.

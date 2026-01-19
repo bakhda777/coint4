@@ -33,7 +33,7 @@ Next steps:
 - Stability_relaxed6 WFA завершён: Sharpe `5.36`, pairs `303`, PnL `894.35` (pvalue 0.12, kpss 0.05, hurst 0.70).
 - Holdout relaxed6 (w3m2) завершён: Sharpe `-2.20`, PnL `-267.02`, pairs `779`, total_trades `13268`.
 - Диагностика holdout relaxed6 завершена: пересечение пар `6` (Jaccard ~0.0056); см. `docs/holdout_diagnostics_20260119_relaxed6.md`.
-- Запланирован holdout relaxed6 с фиксированным universe (303 пары) для проверки overlap.
+- Holdout relaxed6 fixed universe завершён: Sharpe `3.77`, PnL `24.98`, pairs `7`, total_trades `141`.
 - Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
 
 Legacy context:
