@@ -724,3 +724,12 @@ step_3:
 ### Holdout diagnostics (20260119 relaxed6)
 - Отчёт: `docs/holdout_diagnostics_20260119_relaxed6.md`.
 - Перекрытие пар с WFA минимальное (intersection 6, Jaccard ~0.0056); убыток формируется вне пересечения.
+
+### WFA очередь (relaxed6_holdout_fixed_20260119, фиксированный universe w3m2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed6_holdout_fixed/run_queue.csv`.
+- Цель: повторить holdout relaxed6 с фиксированным universe (303 пары из WFA) для проверки влияния overlap.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed6_fixed/holdout_relaxed6_fixed_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2.yaml`
+- Источник пар: `coint4/artifacts/universe/20260119_relaxed6_w3m2_fixed/pairs_universe.yaml`.
+- Статус: `planned` (готово к запуску на 85.198.90.128).
