@@ -29,4 +29,5 @@
     - Выполнено: диагностика holdout relaxed4 (см. `docs/holdout_diagnostics_20260119_relaxed4.md`).
     - Выполнено: stability_relaxed5 WFA (window=2/3, min_steps=1/2) → лучший Sharpe 5.81 при w3m2.
     - Выполнено: holdout + stress для w3m2 (corr0.45, ssd50000, kpss0.03, window=3/min=2) → holdout Sharpe -1.77, stress Sharpe 4.76.
+    - Выполнено: диагностика holdout w3m2 (см. `docs/holdout_diagnostics_20260119_relaxed5.md`).
 12. Финализация 1-2 кандидатов и paper/live проверка.
