@@ -788,3 +788,11 @@ step_3:
 - Фильтрация (run.log): после KPSS остаётся 2 пары, затем стабильность/фильтры режут до 0 (все пары вырезаны).
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_142542.csv`, `coint4/results/filter_reasons_20260119_142611.csv`, `coint4/results/filter_reasons_20260119_142640.csv`, `coint4/results/filter_reasons_20260119_142709.csv`, `coint4/results/filter_reasons_20260119_142738.csv`.
 - Итог: fixed universe + текущие фильтры дают 0 пар → требуется смягчение фильтров/стабильности перед продолжением.
+
+### WFA очередь (stability_relaxed8_loose_20260119, fixed universe + фильтры мягче)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed8_loose/run_queue.csv`.
+- Цель: смягчить фильтры (pvalue 0.2, kpss 0.1, hurst 0.8, corr 0.4, w2m1) и проверить, дают ли fixed‑пары торговую статистику.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stability_20260119_relaxed8_loose/stability_relaxed8_loose_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss0p1_w2m1_t90_fixed.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
