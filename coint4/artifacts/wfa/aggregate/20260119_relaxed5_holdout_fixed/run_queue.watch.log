@@ -1,0 +1,7 @@
+2026-01-19T12:02:21Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-19T12:02:21Z HEARTBEAT run_pid=1247 run_cpu=0% watcher_cpu=0.3% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-19T12:02:51Z DONE rc=0
+2026-01-19T12:04:28Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-19T12:04:28Z HEARTBEAT run_pid=1076 run_cpu=0% watcher_cpu=0.3% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-19T12:04:58Z HEARTBEAT run_pid=1076 run_cpu=70.1% watcher_cpu=0% worker_pid=1120 worker_cpu=70.1% coint2_procs=1 cpu_total=70.4% idle_seconds=0
+2026-01-19T12:05:28Z HEARTBEAT run_pid=1076 run_cpu=41.2% watcher_cpu=0% worker_pid=1120 worker_cpu=41.2% coint2_procs=1 cpu_total=41.2% idle_seconds=0

@@ -28,6 +28,7 @@ Next steps:
 - Stress relaxed5 (w3m2) завершён: Sharpe `4.76`, PnL `783.53`.
 - Диагностика holdout w3m2 завершена: пересечение пар `16` (Jaccard ~0.0116), доминирует pvalue; см. `docs/holdout_diagnostics_20260119_relaxed5.md`.
 - Подготовлен фиксированный universe из WFA w3m2 (383 пары) для повторного holdout; очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed/run_queue.csv`.
+- Holdout relaxed5 fixed universe (w3m2) завершён: Sharpe `1.25`, PnL `13.94`, pairs `18`, total_trades `352` (низкая статистика).
 - Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
 
 Legacy context:

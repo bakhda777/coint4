@@ -31,4 +31,5 @@
     - Выполнено: holdout + stress для w3m2 (corr0.45, ssd50000, kpss0.03, window=3/min=2) → holdout Sharpe -1.77, stress Sharpe 4.76.
     - Выполнено: диагностика holdout w3m2 (см. `docs/holdout_diagnostics_20260119_relaxed5.md`).
     - Запущено: фиксированный universe из WFA w3m2 (383 пары) → отдельный holdout для проверки устойчивости пар.
+    - Выполнено: holdout fixed universe (w3m2) → Sharpe 1.25, total_pairs_traded 18, total_trades 352, PnL 13.94 (недостаточно статистики).
 12. Финализация 1-2 кандидатов и paper/live проверка.

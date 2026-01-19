@@ -674,4 +674,7 @@ step_3:
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed5_fixed/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
 - Источник пар: `coint4/artifacts/universe/20260119_relaxed5_w3m2_fixed/pairs_universe.yaml`.
-- Статус: `queued` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2` → `coint4/artifacts/wfa/runs/20260119_relaxed5_holdout_fixed/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `1.2471`, total_pnl `13.94`, max_drawdown_abs `-8.34`, total_trades `352`, total_pairs_traded `18`, total_costs `7.16`, win_rate `0.2295`.
+- Итог: Sharpe > 1, но число пар/сделок слишком низкое для критериев стабильности; большая часть фиксированного universe не проходит фильтры в holdout.
