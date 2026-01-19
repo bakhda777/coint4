@@ -45,8 +45,8 @@ Next steps:
 - Holdout relaxed8_nokpss завершён: Sharpe `3.21`, PnL `145.84`, pairs `64`, total_trades `2252`.
 - Stress relaxed8_nokpss holdout завершён: Sharpe `2.17`, PnL `98.35`, pairs `64`, total_trades `2252`, costs `108.65`.
 - Holdout relaxed8_nokpss_u250 завершён: Sharpe `4.20`, PnL `421.60`, pairs `168`, total_trades `6572`.
-- Запланирован stress holdout u250: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_stress_holdout/run_queue.csv`.
-- Далее: стресс-издержки для u250 + финальная проверка концентрации/устойчивости.
+- Stress holdout u250 завершён: Sharpe `2.89`, PnL `289.30`, pairs `168`, total_trades `6572`, costs `309.95`.
+- Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.

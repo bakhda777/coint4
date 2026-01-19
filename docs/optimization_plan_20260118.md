@@ -47,5 +47,6 @@
     - Выполнено: holdout relaxed8_nokpss (fixed universe, train=90d, w2m1) → Sharpe 3.21, PnL 145.84, total_pairs_traded 64, total_trades 2252.
     - Выполнено: stress-издержки для relaxed8_nokpss → Sharpe 2.17, PnL 98.35, pairs 64.
     - Выполнено: holdout relaxed8_nokpss_u250 (expanded universe 250 пар) → Sharpe 4.20, pairs 168.
-    - Следующий шаг: stress-издержки для u250 (queue `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_stress_holdout/run_queue.csv`) и финальная оценка устойчивости.
+    - Выполнено: stress-издержки для u250 → Sharpe 2.89, PnL 289.30, pairs 168.
+    - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.
