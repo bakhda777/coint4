@@ -680,3 +680,12 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~32–47%, kpss ~19–31%, hurst ~4–14%; pair_stability (window=3/min=2) часто режет 6–7 пар до 0–1.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_120517.csv`, `coint4/results/filter_reasons_20260119_120549.csv`, `coint4/results/filter_reasons_20260119_120621.csv`, `coint4/results/filter_reasons_20260119_120650.csv`, `coint4/results/filter_reasons_20260119_120722.csv`.
 - Итог: Sharpe > 1, но число пар/сделок слишком низкое для критериев стабильности; большая часть фиксированного universe не проходит фильтры в holdout.
+
+### WFA очередь (relaxed5_holdout_fixed_w1m1_20260119, фиксированный universe без жёсткой стабильности)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed_w1m1/run_queue.csv`.
+- Цель: снять строгий pair_stability (window=1/min=1) и проверить рост числа пар в holdout при фиксированном universe.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed5_fixed/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w1m1.yaml`
+- Источник пар: `coint4/artifacts/universe/20260119_relaxed5_w3m2_fixed/pairs_universe.yaml`.
+- Статус: `planned` (готово к запуску на 85.198.90.128).

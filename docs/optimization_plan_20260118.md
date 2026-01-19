@@ -32,4 +32,5 @@
     - Выполнено: диагностика holdout w3m2 (см. `docs/holdout_diagnostics_20260119_relaxed5.md`).
     - Запущено: фиксированный universe из WFA w3m2 (383 пары) → отдельный holdout для проверки устойчивости пар.
     - Выполнено: holdout fixed universe (w3m2) → Sharpe 1.25, total_pairs_traded 18, total_trades 352, PnL 13.94 (недостаточно статистики).
+    - Запланировано: holdout fixed universe с pair_stability window=1/min=1 для проверки роста числа пар/сделок.
 12. Финализация 1-2 кандидатов и paper/live проверка.
