@@ -541,4 +541,9 @@ step_3:
 - Конфиги:
   - `coint4/configs/stability_20260119_relaxed/stability_relaxed_20260119_pv0p04_hurst0p55_hl0p02_60_corr0p65_ssd20000.yaml`
   - `coint4/configs/stability_20260119_relaxed/stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000.yaml`
-- Статус: `planned` (запускать только на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128).
+- Прогон 1: `stability_relaxed_20260119_pv0p04_hurst0p55_hl0p02_60_corr0p65_ssd20000` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed/stability_relaxed_20260119_pv0p04_hurst0p55_hl0p02_60_corr0p65_ssd20000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.9899`, total_pnl `148.26`, max_drawdown_abs `-77.76`, total_trades `1592`, total_pairs_traded `78`, total_costs `44.80`, win_rate `0.4355`.
+- Прогон 2: `stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed/stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.5860`, total_pnl `100.02`, max_drawdown_abs `-64.87`, total_trades `815`, total_pairs_traded `41`, total_costs `24.39`, win_rate `0.3478`.
+- Итог: пары выросли (78 в лучшем варианте), но всё ещё ниже порога 100; требуется дополнительное ослабление фильтров/стабильности или увеличение SSD/universe.
