@@ -633,4 +633,25 @@ step_3:
 - Конфиги:
   - `coint4/configs/stability_20260119_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w2m1.yaml`
   - `coint4/configs/stability_20260119_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w2m1` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w2m1`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `3.0706`, total_pnl `550.62`, max_drawdown_abs `-168.23`, total_trades `5193`, total_pairs_traded `275`, total_costs `178.27`, win_rate `0.5232`.
+- Прогон 2: `stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `5.8116`, total_pnl `958.72`, max_drawdown_abs `-188.98`, total_trades `6519`, total_pairs_traded `383`, total_costs `236.95`, win_rate `0.5738`.
+- Итог: window=3/min=2 даёт лучший Sharpe и рост пар; перейти к holdout/stress для w3m2.
+
+### WFA очередь (relaxed5_holdout_20260119, holdout w3m2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout/run_queue.csv`.
+- Цель: holdout 2024-05-01 → 2024-12-31 для w3m2.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed5/holdout_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).
+
+### WFA очередь (relaxed5_stress_20260119, стресс w3m2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_stress/run_queue.csv`.
+- Цель: стресс-издержки (commission 0.0006, slippage 0.0010, stress_multiplier 2.0) для w3m2.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stress_20260119_relaxed5/stress_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
 - Статус: `planned` (запуск на 85.198.90.128).

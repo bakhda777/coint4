@@ -1,6 +1,6 @@
 # WFA run index
 
-Generated at: 2026-01-19 10:20:40Z
+Generated at: 2026-01-19 11:01:33Z
 
 Notes:
 - `sharpe_ratio_abs` is recomputed from `equity_curve.csv` with inferred bar frequency (periods/year = 365 * periods/day).
@@ -24,8 +24,8 @@ Notes:
 - ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000 | sharpe=6.3707 pnl=1205.94 dd=-199.31 | artifacts/wfa/runs/20260115_ssd_topn_sweep_4vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd25000
 - ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000 | sharpe=5.2403 pnl=1154.73 dd=-201.94 | artifacts/wfa/runs/20260115_ssd_topn_sweep_3vals/ssd_topn_20260115_exit0p06_pv0p4_kpss0p05_h0p65_c0p4_hl0p001-100_ssd30000
 - leader_validate_20260118_z0p85_exit0p12_ssd25000 | sharpe=5.6285 pnl=1007.18 dd=-95.32 | artifacts/wfa/runs/20260118_leader_validation/leader_validate_20260118_z0p85_exit0p12_ssd25000
+- stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2 | sharpe=5.8116 pnl=958.72 dd=-188.98 | artifacts/wfa/runs/20260119_stability_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2
 - pair_sweep_20260117_pv0p03_top800_kpss0p03_z0p85_exit0p12_ssd25000 | sharpe=5.2749 pnl=946.25 dd=-193.91 | artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_pv0p03_top800_kpss0p03_z0p85_exit0p12_ssd25000
 - leader_validate_20260118_z0p8_exit0p12_ssd25000 | sharpe=5.1320 pnl=941.02 dd=-110.02 | artifacts/wfa/runs/20260118_leader_validation/leader_validate_20260118_z0p8_exit0p12_ssd25000
 - corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000 | sharpe=6.6518 pnl=855.78 dd=-95.32 | artifacts/wfa/runs/20260118_corr_ab/corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000
 - pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000 | sharpe=6.6518 pnl=855.78 dd=-95.32 | artifacts/wfa/runs/20260118_next4_fast/pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000
-- signal_sweep_20260117_z0p85_exit0p12_ssd25000 | sharpe=6.6518 pnl=855.78 dd=-95.32 | artifacts/wfa/runs/20260117_next5_fast/signal_sweep_20260117_z0p85_exit0p12_ssd25000
