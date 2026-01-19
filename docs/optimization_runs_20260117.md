@@ -646,7 +646,10 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed5/holdout_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2` → `coint4/artifacts/wfa/runs/20260119_relaxed5_holdout/holdout_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-1.7710`, total_pnl `-220.63`, max_drawdown_abs `-419.86`, total_trades `17110`, total_pairs_traded `1018`, total_costs `464.87`, win_rate `0.3689`.
+- Итог: holdout резко отрицательный, несмотря на высокий Sharpe в WFA.
 
 ### WFA очередь (relaxed5_stress_20260119, стресс w3m2)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_stress/run_queue.csv`.
@@ -654,4 +657,7 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stress_20260119_relaxed5/stress_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stress_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2` → `coint4/artifacts/wfa/runs/20260119_relaxed5_stress/stress_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `4.7573`, total_pnl `783.53`, max_drawdown_abs `-214.79`, total_trades `6519`, total_pairs_traded `383`, total_costs `421.25`, win_rate `0.5410`.
+- Итог: стресс-издержки снижают Sharpe, но остаётся высокое значение на WFA.

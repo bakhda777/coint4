@@ -24,7 +24,9 @@ Next steps:
 - Stress relaxed4 завершён: Sharpe `2.386/2.382`, PnL `426/416`.
 - Диагностика holdout relaxed4 завершена: пересечение пар 4 (Jaccard ~0.0048), доминирует pvalue; см. `docs/holdout_diagnostics_20260119_relaxed4.md`.
 - Stability_relaxed5 WFA завершён: w3m2 Sharpe `5.81`, pairs `383`, PnL `958.72` (corr0.45, ssd50000, kpss0.03, window=3/min=2).
-- Далее: запустить holdout + stress для w3m2 (corr0.45, window=3/min=2) и проверить устойчивость в 2024H2.
+- Holdout relaxed5 (w3m2) завершён: Sharpe `-1.77`, PnL `-220.63`, pairs `1018`.
+- Stress relaxed5 (w3m2) завершён: Sharpe `4.76`, PnL `783.53`.
+- Далее: доп. диагностика holdout w3m2 и поиск фильтра, устойчивого в 2024H2 (возможен фиксированный universe/ограничение пар).
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
