@@ -801,3 +801,11 @@ step_3:
 - Фильтрация (run.log): на каждом шаге KPSS режет до 0 пар даже при kpss=0.1.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_143531.csv`, `coint4/results/filter_reasons_20260119_143559.csv`, `coint4/results/filter_reasons_20260119_143628.csv`, `coint4/results/filter_reasons_20260119_143657.csv`, `coint4/results/filter_reasons_20260119_143727.csv`.
 - Итог: KPSS остаётся основным стоп‑фильтром; для fixed‑universe нужен обход/ослабление KPSS.
+
+### WFA очередь (stability_relaxed8_nokpss_20260119, fixed universe без KPSS)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed8_nokpss/run_queue.csv`.
+- Цель: отключить KPSS (kpss=1.0) и проверить, появятся ли торгуемые пары в fixed‑universe.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stability_20260119_relaxed8_nokpss/stability_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
