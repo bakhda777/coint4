@@ -600,7 +600,12 @@ step_3:
 - Конфиги:
   - `coint4/configs/holdout_20260119_relaxed4/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03.yaml`
   - `coint4/configs/holdout_20260119_relaxed4/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_relaxed4_holdout/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-1.3228`, total_pnl `-98.19`, max_drawdown_abs `-218.02`, total_trades `8514`, total_pairs_traded `567`, total_costs `91.45`, win_rate `0.4768`.
+- Прогон 2: `holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_relaxed4_holdout/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-1.0760`, total_pnl `-78.69`, max_drawdown_abs `-202.09`, total_trades `8432`, total_pairs_traded `560`, total_costs `90.23`, win_rate `0.4768`.
+- Итог: holdout снова отрицательный, несмотря на рост числа пар; нужна дополнительная диагностика режима/фильтров.
 
 ### WFA очередь (relaxed4_stress_20260119, стресс-издержки топ‑2)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed4_stress/run_queue.csv`.
@@ -609,4 +614,9 @@ step_3:
 - Конфиги:
   - `coint4/configs/stress_20260119_relaxed4/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03.yaml`
   - `coint4/configs/stress_20260119_relaxed4/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_relaxed4_stress/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.3860`, total_pnl `426.44`, max_drawdown_abs `-176.75`, total_trades `5147`, total_pairs_traded `272`, total_costs `311.15`, win_rate `0.4834`.
+- Прогон 2: `stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_relaxed4_stress/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.3816`, total_pnl `416.13`, max_drawdown_abs `-189.92`, total_trades `5067`, total_pairs_traded `270`, total_costs `298.43`, win_rate `0.4702`.
+- Итог: стресс-издержки уменьшают Sharpe, но остаётся >2 на WFA окне.

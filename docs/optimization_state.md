@@ -20,7 +20,9 @@ Next steps:
 - Stability_relaxed2 WFA завершён: Sharpe `2.13`, total_pairs_traded `52`, total_trades `1010`, PnL `84.13`.
 - Stability_relaxed3 WFA завершён: лучший Sharpe `2.04`, total_pairs_traded `51`; 2 конфига дали 0 пар из-за KPSS фильтра.
 - Stability_relaxed4 WFA завершён: Sharpe `3.07–3.09`, total_pairs_traded `159–272`; лучший вариант corr0.45 + ssd50000 + kpss0.03.
-- Далее: выполнить holdout + стресс-издержки для top‑1/2 relaxed4 (corr0.45/corr0.5) и подтвердить OOS.
+- Holdout relaxed4 завершён: Sharpe `-1.32/-1.08`, PnL `-98.19/-78.69` (corr0.45/corr0.5).
+- Stress relaxed4 завершён: Sharpe `2.386/2.382`, PnL `426/416`.
+- Далее: диагностика holdout (перекрытие пар, фильтры, режимы) и поиск параметров, устойчивых в 2024H2.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
