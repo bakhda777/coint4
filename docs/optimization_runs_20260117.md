@@ -782,4 +782,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stability_20260119_relaxed8/stability_relaxed8_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90_fixed.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed8_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90_fixed` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed8/stability_relaxed8_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90_fixed`.
+- Метрики (strategy_metrics): sharpe_ratio_abs `0.0000`, total_pnl `0.00`, max_drawdown_abs `0.00` (торговых пар 0).
+- Фильтрация (run.log): после KPSS остаётся 2 пары, затем стабильность/фильтры режут до 0 (все пары вырезаны).
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_142542.csv`, `coint4/results/filter_reasons_20260119_142611.csv`, `coint4/results/filter_reasons_20260119_142640.csv`, `coint4/results/filter_reasons_20260119_142709.csv`, `coint4/results/filter_reasons_20260119_142738.csv`.
+- Итог: fixed universe + текущие фильтры дают 0 пар → требуется смягчение фильтров/стабильности перед продолжением.

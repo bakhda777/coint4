@@ -1,0 +1,106 @@
+s1,s2,reason
+BTCUSDC,BTCUSDT,kpss
+ETHUSDC,ETHUSDT,kpss
+BATUSDT,CBKUSDT,kpss
+AGLAUSDT,CSPRUSDT,insufficient_data
+AFCUSDT,BICOUSDT,low_correlation_0.25
+CITYUSDT,COQUSDT,low_correlation_-0.29
+ACSUSDT,AGLDUSDT,kpss
+AFCUSDT,CITYUSDT,low_correlation_0.15
+1INCHUSDT,ACSUSDT,kpss
+APEXUSDT,AVAUSDT,low_correlation_0.31
+APEXUSDC,AVAUSDT,low_correlation_0.30
+AFCUSDT,C98USDT,low_correlation_0.20
+1INCHUSDT,AXSUSDT,hurst_too_high (0.79)
+AAVEUSDT,ERTHAUSDT,low_correlation_0.15
+ACSUSDT,ATOMUSDT,beta_out_of_range (0.00)
+AGLAUSDT,APPUSDT,kpss
+ARKMUSDT,ETHDAI,beta_out_of_range (0.00)
+CRVUSDT,DOTUSDT,low_correlation_0.36
+CRVUSDT,DOTUSDC,low_correlation_0.36
+ADAUSDT,APEUSDC,pvalue_0.467
+COTUSDT,CSPRUSDT,insufficient_data
+CAPSUSDT,CSPRUSDT,insufficient_data
+ADAUSDT,APEUSDT,pvalue_0.469
+ADAUSDC,APEUSDC,pvalue_0.467
+ADAUSDC,APEUSDT,pvalue_0.469
+ADAEUR,APEUSDC,pvalue_0.480
+CBKUSDT,ENJUSDT,kpss
+ADAEUR,APEUSDT,pvalue_0.480
+CBKUSDT,ETCUSDT,low_correlation_-0.30
+AGLAUSDT,ARBUSDT,low_correlation_0.15
+AAVEUSDT,ACSUSDT,beta_out_of_range (10105.68)
+CAKEUSDT,CITYUSDT,low_correlation_0.14
+1INCHUSDT,AAVEUSDT,kpss
+ARKMUSDT,ETHEUR,beta_out_of_range (0.00)
+AXSUSDT,CRVUSDT,low_correlation_0.34
+ADAEUR,ADAUSDC,kpss
+APEXUSDC,DOGEEUR,low_correlation_-0.19
+CHRPUSDT,CITYUSDT,low_correlation_0.07
+ALGOUSDT,APEXUSDC,low_correlation_0.18
+ALGOUSDT,AVAUSDT,pvalue_0.211
+BTTUSDT,ETHDAI,beta_out_of_range (0.00)
+ARTYUSDT,CRVUSDT,kpss
+ALGOUSDT,APEXUSDT,low_correlation_0.19
+BTTUSDT,ETHEUR,beta_out_of_range (0.00)
+C98USDT,CHZUSDT,pvalue_0.453
+CHRPUSDT,ERTHAUSDT,low_correlation_0.30
+BTCDAI,BTCEUR,hurst_too_high (0.73)
+C98USDT,CHZUSDC,pvalue_0.433
+ACSUSDT,CAKEUSDT,beta_out_of_range (0.00)
+APEXUSDT,DOGEEUR,low_correlation_-0.19
+BATUSDT,ETCUSDT,pvalue_0.290
+APEXUSDC,CHRPUSDT,low_correlation_0.01
+AGLDUSDT,APEUSDC,low_correlation_0.26
+DOMEUSDT,DYDXUSDT,low_correlation_0.16
+AAVEUSDT,DMAILUSDT,insufficient_data
+AGLDUSDT,CAPSUSDT,low_correlation_0.43
+AGLDUSDT,APEUSDT,low_correlation_0.26
+CSPRUSDT,DOTUSDC,insufficient_data
+CSPRUSDT,DOTUSDT,insufficient_data
+DAIUSDT,DOTBTC,low_correlation_0.04
+CELOUSDT,CGPTUSDT,pvalue_0.287
+APEXUSDT,CHRPUSDT,low_correlation_0.02
+DOTUSDT,ERTHAUSDT,low_correlation_-0.03
+DOTUSDC,ERTHAUSDT,low_correlation_-0.03
+APEUSDT,ATOMUSDT,kpss
+BABYDOGEUSDT,ETHDAI,low_correlation_0.24
+APEUSDC,ATOMUSDT,kpss
+ARTYUSDT,AXSUSDT,kpss
+BICOUSDT,DUELUSDT,low_correlation_0.10
+ETHDAI,ETHEUR,hurst_too_high (0.76)
+BONKUSDT,ETHDAI,beta_out_of_range (0.00)
+CBKUSDT,CELOUSDT,low_correlation_-0.03
+CHRPUSDT,DMAILUSDT,insufficient_data
+CELOUSDT,ENJUSDT,pvalue_0.150
+BICOUSDT,ETHWUSDT,hurst_too_high (0.71)
+ARKMUSDT,ARUSDT,kpss
+CTCUSDT,ERTHAUSDT,low_correlation_-0.28
+AGIUSDT,COQUSDT,low_correlation_0.41
+ARTYUSDT,DOTUSDT,kpss
+BATUSDT,CELOUSDT,pvalue_0.194
+CITYUSDT,CPOOLUSDT,insufficient_data
+CTCUSDT,DMAILUSDT,insufficient_data
+AVAUSDT,CELOUSDT,kpss
+AXLUSDT,DOTUSDC,hurst_too_high (0.96)
+APEUSDT,DYDXUSDT,low_correlation_0.41
+AXLUSDT,DOTUSDT,hurst_too_high (0.96)
+APEUSDC,DYDXUSDT,low_correlation_0.41
+AFGUSDT,AKIUSDT,insufficient_data
+DMAILUSDT,EGOUSDT,insufficient_data
+BTTUSDT,ETHUSDC,beta_out_of_range (0.00)
+CHZUSDC,COMPUSDT,pvalue_0.345
+CITYUSDT,ENJUSDT,low_correlation_0.07
+AXLUSDT,AXSUSDT,pvalue_0.140
+CHZUSDT,COMPUSDT,pvalue_0.372
+CAPSUSDT,DOTUSDC,pvalue_0.382
+CAPSUSDT,DOTUSDT,pvalue_0.383
+AFGUSDT,BNBUSDT,insufficient_data
+APEUSDC,CRVUSDT,kpss
+APEUSDT,CRVUSDT,kpss
+DGBUSDT,ETHDAI,beta_out_of_range (0.00)
+CRVUSDT,DOMEUSDT,beta_out_of_range (187.06)
+CGPTUSDT,ENJUSDT,pvalue_0.461
+AVAUSDT,DMAILUSDT,insufficient_data
+DOGEEUR,FETUSDT,pvalue_0.318
+ANKRUSDT,DOGEEUR,kpss
