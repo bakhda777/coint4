@@ -877,3 +877,13 @@ step_3:
 - Фильтрация (run.log): после KPSS 76–139 пар; pair stability режет до 52–93 (window=2, min_steps=1).
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_162055.csv`, `coint4/results/filter_reasons_20260119_162129.csv`, `coint4/results/filter_reasons_20260119_162203.csv`, `coint4/results/filter_reasons_20260119_162237.csv`, `coint4/results/filter_reasons_20260119_162311.csv`.
 - Итог: стресс снижает Sharpe/PnL, но остаётся > 1; концентрация по PnL умеренная (top‑5 пар ~61% PnL) → пригодно для финальной валидации.
+
+### WFA очередь (relaxed8_nokpss_u250_turnover_stress_20260119, снижение churn)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_turnover_stress/run_queue.csv`.
+- Цель: снизить turnover/издержки при сохранении Sharpe>1 (повышение entry, понижение exit, увеличение hold/cooldown).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p05_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p0_exit0p06_hold180_cd180.yaml`
+- Статус: `planned`.
