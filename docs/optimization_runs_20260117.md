@@ -567,4 +567,11 @@ step_3:
   - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000_st1.yaml`
   - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_st1.yaml`
   - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_st1.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed3_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000_st1` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed3/stability_relaxed3_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000_st1`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.0432`, total_pnl `80.68`, max_drawdown_abs `-74.42`, total_trades `989`, total_pairs_traded `51`, total_costs `29.07`, win_rate `0.3804`.
+- Прогон 2: `stability_relaxed3_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_st1` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed3/stability_relaxed3_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_st1`.
+- Метрики: 0 сделок/0 пар (KPSS фильтр занулил пары после Hurst; см. run.log).
+- Прогон 3: `stability_relaxed3_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_st1` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed3/stability_relaxed3_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_st1`.
+- Метрики: 0 сделок/0 пар (KPSS фильтр занулил пары после Hurst; см. run.log).
+- Итог: window=1/min=1 не дал роста пар; при более мягких конфигх KPSS-фильтр стал бутылочным горлышком.
