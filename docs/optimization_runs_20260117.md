@@ -592,3 +592,21 @@ step_3:
 - Прогон 3: `stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed4/stability_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `3.0920`, total_pnl `554.44`, max_drawdown_abs `-168.23`, total_trades `5147`, total_pairs_traded `272`, total_costs `175.02`, win_rate `0.5232`.
 - Итог: ослабление KPSS сняло бутылочное горлышко; пары 159–272, Sharpe ~3.07–3.09. Лучший по Sharpe/PnL — corr0.45 + ssd50000 + kpss0.03; стоит подтверждать holdout/stress.
+
+### WFA очередь (relaxed4_holdout_20260119, holdout топ‑2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed4_holdout/run_queue.csv`.
+- Цель: holdout 2024-05-01 → 2024-12-31 для top‑1/2 relaxed4.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/holdout_20260119_relaxed4/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03.yaml`
+  - `coint4/configs/holdout_20260119_relaxed4/holdout_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).
+
+### WFA очередь (relaxed4_stress_20260119, стресс-издержки топ‑2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed4_stress/run_queue.csv`.
+- Цель: стресс-издержки (commission 0.0006, slippage 0.0010, stress_multiplier 2.0) для top‑1/2 relaxed4 на WFA окне.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stress_20260119_relaxed4/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03.yaml`
+  - `coint4/configs/stress_20260119_relaxed4/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).

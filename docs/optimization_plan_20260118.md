@@ -25,4 +25,5 @@
     - Выполнено: stability_relaxed3_20260119 (window=1/min=1, corr 0.55→0.5, pv 0.06→0.08, ssd 30000→50000) → 1 конфиг с 51 парой, 2 конфига обнулились по KPSS.
     - Выполнено: stability_relaxed4_20260119 (KPSS 0.03–0.05) → пары 159–272, Sharpe ~3.07–3.09.
 11. Новый shortlist (3-5 конфигов) → 5-step WFA + holdout (max_steps=5).
+    - План: holdout + stress для top‑1/2 relaxed4 (corr0.45/corr0.5, ssd50000, kpss0.03).
 12. Финализация 1-2 кандидатов и paper/live проверка.
