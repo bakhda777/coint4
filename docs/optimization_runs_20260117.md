@@ -775,3 +775,11 @@ step_3:
   - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/UNIVERSE_REPORT.md`
   - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/universe_metrics.csv`
   - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/REJECTION_BREAKDOWN.yaml`
+
+### WFA очередь (stability_relaxed8_20260119, fixed universe + train=90d)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed8/run_queue.csv`.
+- Цель: проверить fixed universe (110 пар) в pre‑holdout WFA при train=90d.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stability_20260119_relaxed8/stability_relaxed8_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90_fixed.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
