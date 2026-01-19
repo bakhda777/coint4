@@ -36,6 +36,7 @@ Next steps:
 - Holdout relaxed6 fixed universe завершён: Sharpe `3.77`, PnL `24.98`, pairs `7`, total_trades `141`.
 - Stability_relaxed7 WFA завершён: Sharpe `5.25`, pairs `177`, PnL `914.61` (train=90d).
 - Holdout relaxed7 (train=90d) завершён: Sharpe `-0.20`, PnL `-20.95`, pairs `339`, total_trades `6509`.
+- Собран новый universe (relaxed8 строгий, 110 пар) для пред‑holdout периода: `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
 - Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
 
 Legacy context:

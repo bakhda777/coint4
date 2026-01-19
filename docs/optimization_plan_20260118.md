@@ -39,4 +39,5 @@
     - Выполнено: holdout relaxed6 с фиксированным universe (303 пары) → Sharpe 3.77, total_pairs_traded 7, total_trades 141.
     - Выполнено: stability_relaxed7 WFA с train=90d при relaxed6 фильтрах → Sharpe 5.25, pairs 177.
     - Выполнено: holdout relaxed7 (train=90d) на 2024-05-01 → 2024-12-31 → Sharpe -0.20, PnL -20.95.
+    - Выполнено: universe strict pre‑holdout (2023-07-01 → 2024-04-30) → 110 пар, см. `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
 12. Финализация 1-2 кандидатов и paper/live проверка.

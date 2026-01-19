@@ -764,3 +764,14 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~24–37%, kpss ~11–21%, hurst ~6.7–9.9%.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_132542.csv`, `coint4/results/filter_reasons_20260119_132844.csv`, `coint4/results/filter_reasons_20260119_133203.csv`, `coint4/results/filter_reasons_20260119_133442.csv`, `coint4/results/filter_reasons_20260119_133736.csv`.
 - Итог: holdout остаётся отрицательным при хорошем WFA; требуется пересмотр подхода к universe/фильтрам для 2024H2.
+
+### Universe build (relaxed8_strict_preholdout_20260119)
+- Период: `2023-07-01` → `2024-04-30` (пред‑holdout окно).
+- Критерии: `configs/criteria_strict.yaml` (pvalue 0.05, hl 5–200, hurst 0.2–0.6, min_cross 10, beta_drift 0.15).
+- Символы: `artifacts/universe/SYMBOLS_20250824.txt`, limit_symbols `200`, top_n `200`, diversify_by_base `true`, max_per_base `3`.
+- Результат: selected pairs `110` из tested `5356`.
+- Артефакты:
+  - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`
+  - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/UNIVERSE_REPORT.md`
+  - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/universe_metrics.csv`
+  - `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/REJECTION_BREAKDOWN.yaml`
