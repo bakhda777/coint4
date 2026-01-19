@@ -808,4 +808,16 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stability_20260119_relaxed8_nokpss/stability_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed.yaml`
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed8_nokpss/stability_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `1.8550`, total_pnl `104.11`, max_drawdown_abs `-60.19`, total_trades `1242`, total_pairs_traded `35`, total_costs `60.23`, win_rate `0.4967`.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_144355.csv`, `coint4/results/filter_reasons_20260119_144426.csv`, `coint4/results/filter_reasons_20260119_144457.csv`, `coint4/results/filter_reasons_20260119_144529.csv`, `coint4/results/filter_reasons_20260119_144600.csv`.
+- Итог: без KPSS появляются сделки и Sharpe > 1, но число пар (`35`) ниже порога стабильности → требуется валидация на holdout.
+
+### WFA очередь (relaxed8_nokpss_holdout_20260119, holdout w2m1 train=90d)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_holdout/run_queue.csv`.
+- Цель: holdout 2024-05-01 → 2024-12-31 для relaxed8_nokpss (fixed universe, kpss=1.0).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed.yaml`
 - Статус: `planned` (готово к запуску на 85.198.90.128).

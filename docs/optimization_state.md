@@ -39,7 +39,8 @@ Next steps:
 - Собран новый universe (relaxed8 строгий, 110 пар) для пред‑holdout периода: `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
 - WFA relaxed8 fixed universe завершён: 0 торгуемых пар, Sharpe `0.00` (фильтры режут до нуля).
 - WFA relaxed8_loose завершён: 0 торгуемых пар (KPSS режет до нуля даже при kpss=0.1).
-- Запланирован WFA relaxed8_nokpss (kpss=1.0) для проверки, даёт ли fixed‑universe торгуемые пары.
+- WFA relaxed8_nokpss завершён: Sharpe `1.86`, pairs `35`, PnL `104.11` (kpss=1.0).
+- Запланирован holdout relaxed8_nokpss для проверки устойчивости.
 - Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
 
 Legacy context:
@@ -82,6 +83,7 @@ After leader holdout DONE:
 
 Notes:
 - NOTE: Sharpe в записях/артефактах до фикса annualization (2026-01-18) занижен примерно в √96 раз для 15m; для актуальных значений используйте `coint4/artifacts/wfa/aggregate/rollup/run_index.*`.
+- 2026-01-19: normalized_backtester Sharpe приведён к annualization 365*96 и учитывает нулевые доходности (см. `coint4/src/coint2/core/numba_kernels_v2.py`).
 - 2026-01-18: shortlist WFA completed на 85.198.90.128, артефакты синхронизированы, сервер выключен.
 - 2026-01-18: holdout + stress WFA завершены на 85.198.90.128, артефакты синхронизированы, сервер выключен.
 - 2026-01-17: smoke WFA для проверки логирования команд (config main_2024_smoke.yaml, results artifacts/wfa/runs/logging_smoke_20260117_072821).

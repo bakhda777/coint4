@@ -280,7 +280,7 @@ def calculate_max_drawdown_correct(equity_curve: np.ndarray) -> float:
 @nb.njit(fastmath=False, cache=True)
 def calculate_sharpe_ratio_correct(
     pnl_pct: np.ndarray,
-    periods_per_year: int = 252 * 96  # Для 15-минутных баров
+    periods_per_year: int = 365 * 96  # Для 15-минутных баров (crypto 24/7)
 ) -> float:
     """
     Правильный расчет Sharpe ratio.
@@ -292,15 +292,14 @@ def calculate_sharpe_ratio_correct(
     Returns:
         Sharpe ratio (аннуализированный)
     """
-    # Убираем нулевые значения И NaN
+    # Убираем NaN, нули сохраняем (нулевая доходность тоже часть ряда)
     valid_pnl = pnl_pct[~np.isnan(pnl_pct)]
-    non_zero_pnl = valid_pnl[valid_pnl != 0]
     
-    if len(non_zero_pnl) < 2:
+    if len(valid_pnl) < 2:
         return 0.0
     
-    mean_return = np.mean(non_zero_pnl)
-    std_return = np.std(non_zero_pnl)
+    mean_return = np.mean(valid_pnl)
+    std_return = np.std(valid_pnl)
     
     # Проверяем на NaN в статистиках
     if np.isnan(mean_return) or np.isnan(std_return) or std_return < 1e-8:

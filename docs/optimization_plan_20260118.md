@@ -42,5 +42,6 @@
     - Выполнено: universe strict pre‑holdout (2023-07-01 → 2024-04-30) → 110 пар, см. `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
     - Выполнено: WFA relaxed8 fixed universe (train=90d) → 0 торгуемых пар, Sharpe 0.00 (фильтры режут до нуля).
     - Выполнено: WFA relaxed8_loose (pvalue 0.2, kpss 0.1, hurst 0.8, corr 0.4, w2m1) → 0 торгуемых пар, KPSS режет до нуля.
-    - Запланировано: WFA relaxed8_nokpss (kpss=1.0) для проверки появления торговых пар.
+    - Выполнено: WFA relaxed8_nokpss (kpss=1.0) → Sharpe 1.86, total_pairs_traded 35, total_trades 1242.
+    - Запланирован holdout relaxed8_nokpss (fixed universe, train=90d, w2m1).
 12. Финализация 1-2 кандидатов и paper/live проверка.
