@@ -688,4 +688,9 @@ step_3:
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed5_fixed/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w1m1.yaml`
 - Источник пар: `coint4/artifacts/universe/20260119_relaxed5_w3m2_fixed/pairs_universe.yaml`.
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w1m1` → `coint4/artifacts/wfa/runs/20260119_relaxed5_holdout_fixed_w1m1/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w1m1`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-0.0188`, total_pnl `-0.20`, max_drawdown_abs `-11.73`, total_trades `253`, total_pairs_traded `11`, total_costs `3.47`, win_rate `0.1885`.
+- Фильтрация (run.log): pvalue отсев ~32–47%, kpss ~19–31%, hurst ~4–14%; pair_stability (window=1/min=1) всё ещё режет до 0–2 пар.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_121535.csv`, `coint4/results/filter_reasons_20260119_121607.csv`, `coint4/results/filter_reasons_20260119_121637.csv`, `coint4/results/filter_reasons_20260119_121709.csv`, `coint4/results/filter_reasons_20260119_121742.csv`.
+- Итог: отключение жёсткой стабильности не улучшило статистику; holdout остаётся отрицательным и с малым числом пар.
