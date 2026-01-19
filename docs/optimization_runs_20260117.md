@@ -738,3 +738,11 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~25–43%, kpss ~21–37%, hurst ~5–12%; pair_stability (window=3/min=2) режет до 0–1 пар.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_125706.csv`, `coint4/results/filter_reasons_20260119_125734.csv`, `coint4/results/filter_reasons_20260119_125803.csv`, `coint4/results/filter_reasons_20260119_125830.csv`, `coint4/results/filter_reasons_20260119_125859.csv`.
 - Итог: Sharpe высокий, но статистика слишком мала (7 пар, 141 сделка); фиксированный universe не решает проблему охвата.
+
+### WFA очередь (stability_relaxed7_20260119, train=90d)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed7/run_queue.csv`.
+- Цель: увеличить окно обучения до 90 дней при relaxed6 фильтрах (pvalue 0.12, kpss 0.05, hurst 0.70) и проверить устойчивость.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stability_20260119_relaxed7/stability_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
