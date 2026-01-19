@@ -37,11 +37,14 @@ Next steps:
 - Stability_relaxed7 WFA завершён: Sharpe `5.25`, pairs `177`, PnL `914.61` (train=90d).
 - Holdout relaxed7 (train=90d) завершён: Sharpe `-0.20`, PnL `-20.95`, pairs `339`, total_trades `6509`.
 - Собран новый universe (relaxed8 строгий, 110 пар) для пред‑holdout периода: `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
+- Собран expanded universe (relaxed8 strict pre‑holdout v2, 250 пар) с limit_symbols=300: `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml`.
+- Подготовлен более мягкий criteria-файл для возможного следующего расширения universe: `coint4/configs/criteria_relaxed8_nokpss_universe.yaml`.
 - WFA relaxed8 fixed universe завершён: 0 торгуемых пар, Sharpe `0.00` (фильтры режут до нуля).
 - WFA relaxed8_loose завершён: 0 торгуемых пар (KPSS режет до нуля даже при kpss=0.1).
 - WFA relaxed8_nokpss завершён: Sharpe `1.86`, pairs `35`, PnL `104.11` (kpss=1.0).
 - Holdout relaxed8_nokpss завершён: Sharpe `3.21`, PnL `145.84`, pairs `64`, total_trades `2252`.
 - Stress relaxed8_nokpss holdout завершён: Sharpe `2.17`, PnL `98.35`, pairs `64`, total_trades `2252`, costs `108.65`.
+- Запланирован holdout relaxed8_nokpss_u250 на expanded universe: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_holdout/run_queue.csv`.
 - Далее: увеличить число устойчивых пар (pair_stability 1/1 либо расширить fixed universe) при сохранении Sharpe>1.
 
 Legacy context:

@@ -1,0 +1,6 @@
+# Relaxed criteria for expanding pre-holdout universe (relaxed8_nokpss).
+coint_pvalue_max: 0.2
+hl_min: 5
+hl_max: 300
+min_cross: 8
+beta_drift_max: 0.2

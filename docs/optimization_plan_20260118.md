@@ -40,10 +40,12 @@
     - Выполнено: stability_relaxed7 WFA с train=90d при relaxed6 фильтрах → Sharpe 5.25, pairs 177.
     - Выполнено: holdout relaxed7 (train=90d) на 2024-05-01 → 2024-12-31 → Sharpe -0.20, PnL -20.95.
     - Выполнено: universe strict pre‑holdout (2023-07-01 → 2024-04-30) → 110 пар, см. `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout/pairs_universe.yaml`.
+    - Выполнено: universe strict pre‑holdout v2 (limit_symbols=300) → 250 пар, см. `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml`.
     - Выполнено: WFA relaxed8 fixed universe (train=90d) → 0 торгуемых пар, Sharpe 0.00 (фильтры режут до нуля).
     - Выполнено: WFA relaxed8_loose (pvalue 0.2, kpss 0.1, hurst 0.8, corr 0.4, w2m1) → 0 торгуемых пар, KPSS режет до нуля.
     - Выполнено: WFA relaxed8_nokpss (kpss=1.0) → Sharpe 1.86, total_pairs_traded 35, total_trades 1242.
     - Выполнено: holdout relaxed8_nokpss (fixed universe, train=90d, w2m1) → Sharpe 3.21, PnL 145.84, total_pairs_traded 64, total_trades 2252.
     - Выполнено: stress-издержки для relaxed8_nokpss → Sharpe 2.17, PnL 98.35, pairs 64.
+    - Запланирован: holdout relaxed8_nokpss_u250 (expanded universe 250 пар) → проверка роста числа пар.
     - Следующий шаг: увеличить число пар (pair_stability 1/1 либо более широкий universe) и повторить holdout.
 12. Финализация 1-2 кандидатов и paper/live проверка.
