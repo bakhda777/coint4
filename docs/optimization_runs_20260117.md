@@ -516,3 +516,13 @@ step_3:
 - Steps 1-4 отрицательные; самые слабые шаги 2-3.
 - Перекрытие пар с shortlist очень низкое (13/501, Jaccard ~1.7%); пересекающиеся пары дают +48.7 PnL, остальные -370.2.
 - Смещение причин отсева: holdout доминирует pvalue, shortlist доминирует low_correlation.
+
+### WFA очередь (stability_20260119, shortlist with stability filter)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_shortlist/run_queue.csv`.
+- Цель: проверить устойчивость пар через окно шагов (pair_stability_window=3, min_steps=2) и ужесточить pvalue/half-life/hurst + tradeability фильтры.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stability_20260119/stability_20260119_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd15000.yaml`
+  - `coint4/configs/stability_20260119/stability_20260119_pv0p02_hurst0p48_hl0p05_30_corr0p7_ssd12000.yaml`
+  - `coint4/configs/stability_20260119/stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000.yaml`
+- Статус: `planned` (запускать только на 85.198.90.128).

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from collections import Counter
 from pathlib import Path
 from typing import Tuple, List
 import time
@@ -1199,6 +1200,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     pair_count_data = []
     trade_stats = []
     all_trades_log = []
+    pair_history: list[list[tuple[str, str]]] = []
 
     portfolio = Portfolio(
         initial_capital=cfg.portfolio.initial_capital,
@@ -1432,6 +1434,32 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 parallel_backend=filter_backend,
                                 # Параметры commission_pct и slippage_pct удалены
                             )
+                            current_pair_keys = [(s1, s2) for s1, s2, *_ in filtered_pairs]
+                            stability_window = int(getattr(cfg.pair_selection, "pair_stability_window_steps", 0) or 0)
+                            stability_min = int(getattr(cfg.pair_selection, "pair_stability_min_steps", 0) or 0)
+                            if stability_window and stability_min:
+                                if pair_history:
+                                    history_window = pair_history[-stability_window:]
+                                    counts = Counter(pair for step in history_window for pair in step)
+                                    stable_pairs = {pair for pair, count in counts.items() if count >= stability_min}
+                                    before_count = len(filtered_pairs)
+                                    filtered_pairs = [
+                                        pair for pair in filtered_pairs if (pair[0], pair[1]) in stable_pairs
+                                    ]
+                                    logger.info(
+                                        "  Pair stability filter: %d → %d (window=%d, min_steps=%d)",
+                                        before_count,
+                                        len(filtered_pairs),
+                                        stability_window,
+                                        stability_min,
+                                    )
+                                else:
+                                    logger.info(
+                                        "  Pair stability filter: history empty, skip (window=%d, min_steps=%d)",
+                                        stability_window,
+                                        stability_min,
+                                    )
+                            pair_history.append(current_pair_keys)
                             logger.info(
                                 f"  Фильтрация: {len(pairs_for_filter)} → {len(filtered_pairs)} пар"
                             )

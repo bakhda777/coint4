@@ -19,6 +19,6 @@
 7. Повторная 5-step WFA валидация для shortlist. (done)
 8. Holdout фиксированный для top-1/2 + стресс-издержки. (done; holdout негативный)
 9. Диагностика holdout: шаги, концентрация, overlap пар, фильтры. (done)
-10. Ввести фильтр стабильности пар (пересечение/частота в WFA) + ужесточить pvalue/half-life/hurst + пересмотр universe.
+10. Ввести фильтр стабильности пар (pair_stability_window_steps/min_steps) + ужесточить pvalue/half-life/hurst + пересмотр universe.
 11. Новый shortlist (3-5 конфигов) → 5-step WFA + holdout (max_steps=5).
 12. Финализация 1-2 кандидатов и paper/live проверка.

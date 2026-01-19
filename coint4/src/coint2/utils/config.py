@@ -30,6 +30,10 @@ class PairSelectionConfig(BaseModel):
     kpss_pvalue_threshold: float | None = None
     pvalue_top_n: int | None = None
     save_std_histogram: bool | None = None
+
+    # Pair stability across WFA steps (optional).
+    pair_stability_window_steps: int | None = None
+    pair_stability_min_steps: int | None = None
     
     # NEW: Pair tradeability filter parameters
     enable_pair_tradeability_filter: bool = True
@@ -48,6 +52,24 @@ class PairSelectionConfig(BaseModel):
                 raise ValueError(
                     "`min_abs_spread_mult` must be specified in the config when `cost_filter` is true"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _check_pair_stability(self):  # type: ignore
+        window = self.pair_stability_window_steps
+        minimum = self.pair_stability_min_steps
+        if window is None and minimum is None:
+            return self
+        if window is None or minimum is None:
+            raise ValueError(
+                "`pair_stability_window_steps` and `pair_stability_min_steps` must be set together"
+            )
+        if window < 1:
+            raise ValueError("`pair_stability_window_steps` must be >= 1")
+        if minimum < 1:
+            raise ValueError("`pair_stability_min_steps` must be >= 1")
+        if minimum > window:
+            raise ValueError("`pair_stability_min_steps` must be <= `pair_stability_window_steps`")
         return self
 
 
