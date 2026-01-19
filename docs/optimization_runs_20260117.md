@@ -694,3 +694,11 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~32–47%, kpss ~19–31%, hurst ~4–14%; pair_stability (window=1/min=1) всё ещё режет до 0–2 пар.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_121535.csv`, `coint4/results/filter_reasons_20260119_121607.csv`, `coint4/results/filter_reasons_20260119_121637.csv`, `coint4/results/filter_reasons_20260119_121709.csv`, `coint4/results/filter_reasons_20260119_121742.csv`.
 - Итог: отключение жёсткой стабильности не улучшило статистику; holdout остаётся отрицательным и с малым числом пар.
+
+### WFA очередь (stability_relaxed6_20260119, ослабление pvalue/kpss/hurst)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed6/run_queue.csv`.
+- Цель: слегка ослабить cointegration фильтры (pvalue 0.12, kpss 0.05, hurst 0.70) и проверить рост числа пар при сохранении Sharpe.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stability_20260119_relaxed6/stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
