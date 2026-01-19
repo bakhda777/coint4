@@ -833,4 +833,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stress_20260119_relaxed8_nokpss/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_stress_holdout/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed`.
+- Метрики (strategy_metrics): sharpe_ratio_abs `2.1692`, total_pnl `98.35`, max_drawdown_abs `-44.29`, total_trades `2252`, total_pairs_traded `64`, total_costs `108.65`, win_rate `0.5232`.
+- Фильтрация (run.log): после KPSS остаётся 25–51 пар; pair stability в шагах 2–5 режет до 21–34 (window=2, min_steps=1).
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_152305.csv`, `coint4/results/filter_reasons_20260119_152338.csv`, `coint4/results/filter_reasons_20260119_152411.csv`, `coint4/results/filter_reasons_20260119_152444.csv`, `coint4/results/filter_reasons_20260119_152518.csv`.
+- Итог: стресс снижает Sharpe/PnL, но остаётся > 1; концентрация по PnL высокая (top‑5 пар ~71% суммарного PnL) → нужен рост числа устойчивых пар.

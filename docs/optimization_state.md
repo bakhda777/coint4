@@ -41,7 +41,8 @@ Next steps:
 - WFA relaxed8_loose завершён: 0 торгуемых пар (KPSS режет до нуля даже при kpss=0.1).
 - WFA relaxed8_nokpss завершён: Sharpe `1.86`, pairs `35`, PnL `104.11` (kpss=1.0).
 - Holdout relaxed8_nokpss завершён: Sharpe `3.21`, PnL `145.84`, pairs `64`, total_trades `2252`.
-- Далее: stress-издержки для relaxed8_nokpss (queue `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_stress_holdout/run_queue.csv`) + проверка стабильности пар (цель ≥100 пар).
+- Stress relaxed8_nokpss holdout завершён: Sharpe `2.17`, PnL `98.35`, pairs `64`, total_trades `2252`, costs `108.65`.
+- Далее: увеличить число устойчивых пар (pair_stability 1/1 либо расширить fixed universe) при сохранении Sharpe>1.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
