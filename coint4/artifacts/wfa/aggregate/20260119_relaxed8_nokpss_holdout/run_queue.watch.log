@@ -1,0 +1,5 @@
+2026-01-19T15:02:15Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_holdout/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-19T15:02:15Z HEARTBEAT run_pid=1205 run_cpu=0% watcher_cpu=0.3% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-19T15:02:45Z HEARTBEAT run_pid=1205 run_cpu=77.2% watcher_cpu=0% worker_pid=1249 worker_cpu=77.2% coint2_procs=1 cpu_total=77.5% idle_seconds=0
+2026-01-19T15:03:16Z HEARTBEAT run_pid=1205 run_cpu=47.2% watcher_cpu=0% worker_pid=1249 worker_cpu=47.2% coint2_procs=1 cpu_total=47.3% idle_seconds=0
+2026-01-19T15:03:46Z HEARTBEAT run_pid=1205 run_cpu=38.8% watcher_cpu=0% worker_pid=1249 worker_cpu=38.8% coint2_procs=1 cpu_total=38.8% idle_seconds=0

@@ -40,8 +40,8 @@ Next steps:
 - WFA relaxed8 fixed universe завершён: 0 торгуемых пар, Sharpe `0.00` (фильтры режут до нуля).
 - WFA relaxed8_loose завершён: 0 торгуемых пар (KPSS режет до нуля даже при kpss=0.1).
 - WFA relaxed8_nokpss завершён: Sharpe `1.86`, pairs `35`, PnL `104.11` (kpss=1.0).
-- Запланирован holdout relaxed8_nokpss для проверки устойчивости.
-- Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
+- Holdout relaxed8_nokpss завершён: Sharpe `3.21`, PnL `145.84`, pairs `64`, total_trades `2252`.
+- Далее: стресс-издержки для relaxed8_nokpss + проверка стабильности пар (цель ≥100 пар).
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.

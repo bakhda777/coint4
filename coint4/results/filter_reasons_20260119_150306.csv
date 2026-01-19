@@ -1,0 +1,64 @@
+s1,s2,reason
+BTCUSDC,BTCUSDT,hurst_too_high (0.99)
+AGLAUSDT,CSPRUSDT,hurst_too_high (0.88)
+CITYUSDT,COQUSDT,beta_out_of_range (208487.61)
+ACSUSDT,AGLDUSDT,hurst_too_high (0.95)
+1INCHUSDT,ACSUSDT,beta_out_of_range (159.57)
+AEGUSDT,DOMEUSDT,beta_out_of_range (397.34)
+AAVEUSDT,ERTHAUSDT,beta_out_of_range (24225.14)
+ACSUSDT,ATOMUSDT,beta_out_of_range (0.00)
+ARKMUSDT,ETHDAI,pvalue_0.284
+CRVUSDT,DOTUSDT,hurst_too_high (0.94)
+AEGUSDT,BABYDOGEUSDT,beta_out_of_range (100489168.29)
+COTUSDT,CSPRUSDT,low_correlation_-0.77
+CAPSUSDT,CSPRUSDT,history
+CBKUSDT,ETCUSDT,hurst_too_high (0.88)
+AEGUSDT,CGPTUSDT,history
+AAVEUSDT,ACSUSDT,beta_out_of_range (34051.45)
+CAKEUSDT,CITYUSDT,pvalue_0.254
+ARKMUSDT,ETHEUR,pvalue_0.304
+AXSUSDT,CRVUSDT,hurst_too_high (0.98)
+CHRPUSDT,CITYUSDT,hurst_too_high (0.84)
+ALGOUSDT,APEXUSDC,hurst_too_high (0.82)
+BTTUSDT,ETHDAI,beta_out_of_range (0.00)
+ARTYUSDT,CRVUSDT,hurst_too_high (0.90)
+ALGOUSDT,APEXUSDT,hurst_too_high (0.97)
+BTTUSDT,ETHEUR,beta_out_of_range (0.00)
+CHRPUSDT,ERTHAUSDT,hurst_too_high (0.91)
+AXSUSDT,DOTUSDT,hurst_too_high (0.83)
+AXSUSDT,DOTUSDC,hurst_too_high (0.83)
+ACSUSDT,CAKEUSDT,beta_out_of_range (0.00)
+BATUSDT,ETCUSDT,hurst_too_high (0.86)
+DOMEUSDT,DYDXUSDT,beta_out_of_range (0.00)
+AAVEUSDT,DMAILUSDT,beta_out_of_range (108.81)
+AGLDUSDT,CAPSUSDT,pvalue_0.283
+CSPRUSDT,DOTUSDC,history
+CSPRUSDT,DOTUSDT,history
+DAIUSDT,DOTBTC,low_correlation_-0.03
+DOTUSDT,ERTHAUSDT,beta_out_of_range (1675.96)
+DOTUSDC,ERTHAUSDT,beta_out_of_range (1677.12)
+APEUSDT,ATOMUSDT,hurst_too_high (0.83)
+BABYDOGEUSDT,ETHDAI,beta_out_of_range (0.00)
+APEUSDC,ATOMUSDT,hurst_too_high (0.85)
+ARTYUSDT,AXSUSDT,hurst_too_high (0.98)
+ETHDAI,ETHEUR,hurst_too_high (0.97)
+BONKUSDT,ETHDAI,beta_out_of_range (0.00)
+CELOUSDT,ENJUSDT,hurst_too_high (0.91)
+ARKMUSDT,ARUSDT,hurst_too_high (0.83)
+CTCUSDT,ERTHAUSDT,beta_out_of_range (203.95)
+AGIUSDT,COQUSDT,beta_out_of_range (101285.45)
+ARTYUSDT,DOTUSDT,hurst_too_high (0.90)
+CITYUSDT,CPOOLUSDT,pvalue_0.325
+AVAUSDT,CELOUSDT,hurst_too_high (0.95)
+APEUSDT,DYDXUSDT,hurst_too_high (0.95)
+APEUSDC,DYDXUSDT,hurst_too_high (0.97)
+AFGUSDT,AKIUSDT,hurst_too_high (0.82)
+BTTUSDT,ETHUSDC,beta_out_of_range (0.00)
+CHZUSDC,COMPUSDT,hurst_too_high (0.80)
+CITYUSDT,ENJUSDT,pvalue_0.438
+AFGUSDT,BNBUSDT,low_correlation_-0.86
+APEUSDT,CRVUSDT,hurst_too_high (0.97)
+DGBUSDT,ETHDAI,beta_out_of_range (0.00)
+CRVUSDT,DOMEUSDT,beta_out_of_range (845.79)
+CGPTUSDT,ENJUSDT,hurst_too_high (0.93)
+AVAUSDT,DMAILUSDT,hurst_too_high (0.99)
