@@ -17,8 +17,8 @@ Next steps:
 - Добавлен фильтр стабильности пар (pair_stability_window_steps/min_steps) в WFA.
 - Stability shortlist (20260119) завершён: Sharpe 2.41–5.92, но total_pairs_traded 4–34 (ниже порога 100).
 - Stability_relaxed WFA завершён: Sharpe `3.99/2.59`, total_pairs_traded `78/41` (ещё ниже порога 100).
-- Stability_relaxed2 WFA запланирован: corr0.55, pv0.06, ssd_top_n 30000, max_hurst 0.6, liquidity 300k, min_volume 250k, backtest min_correlation 0.55.
-- Далее: выполнить stability_relaxed2 WFA на 85.198.90.128 и проверить `total_pairs_traded >= 100`; если нет — рассмотреть window=1/min=1 или увеличение universe/ssd_top_n=40000.
+- Stability_relaxed2 WFA завершён: Sharpe `2.13`, total_pairs_traded `52`, total_trades `1010`, PnL `84.13`.
+- Далее: ещё ослабить фильтры (например, window=1/min=1 и/или `ssd_top_n=40000`, `min_correlation=0.5`) либо расширить universe и повторить shortlist.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.

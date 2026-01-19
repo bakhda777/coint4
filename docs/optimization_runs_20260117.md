@@ -554,4 +554,7 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиги:
   - `coint4/configs/stability_20260119_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000.yaml`
-- Статус: `planned` (запуск на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.1286`, total_pnl `84.13`, max_drawdown_abs `-74.42`, total_trades `1010`, total_pairs_traded `52`, total_costs `31.36`, win_rate `0.4022`.
+- Итог: число пар всё ещё ниже порога 100; требуется дальнейшее ослабление фильтров (например, window=1/min=1 или рост `ssd_top_n`/universe).

@@ -1,0 +1,2 @@
+/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_stability_relaxed2/run_queue.csv: queued 1 run(s)
+ - planned: configs/stability_20260119_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000.yaml -> artifacts/wfa/runs/20260119_stability_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000
