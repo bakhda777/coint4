@@ -33,5 +33,5 @@
     - Запущено: фиксированный universe из WFA w3m2 (383 пары) → отдельный holdout для проверки устойчивости пар.
     - Выполнено: holdout fixed universe (w3m2) → Sharpe 1.25, total_pairs_traded 18, total_trades 352, PnL 13.94 (недостаточно статистики).
     - Выполнено: holdout fixed universe с pair_stability window=1/min=1 → Sharpe -0.02, total_pairs_traded 11, total_trades 253, PnL -0.20.
-    - Запланировано: stability_relaxed6 WFA с pvalue 0.12 / kpss 0.05 / hurst 0.70 для увеличения числа пар.
+    - Выполнено: stability_relaxed6 WFA с pvalue 0.12 / kpss 0.05 / hurst 0.70 → Sharpe 5.36, pairs 303.
 12. Финализация 1-2 кандидатов и paper/live проверка.

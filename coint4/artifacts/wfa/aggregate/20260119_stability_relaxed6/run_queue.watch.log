@@ -1,0 +1,4 @@
+2026-01-19T12:24:29Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_stability_relaxed6/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-19T12:24:29Z HEARTBEAT run_pid=1077 run_cpu=0% watcher_cpu=0.2% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-19T12:25:00Z HEARTBEAT run_pid=1077 run_cpu=71.9% watcher_cpu=0% worker_pid=1121 worker_cpu=71.9% coint2_procs=1 cpu_total=72.2% idle_seconds=0
+2026-01-19T12:25:30Z HEARTBEAT run_pid=1077 run_cpu=33.2% watcher_cpu=0% worker_pid=1121 worker_cpu=33.2% coint2_procs=1 cpu_total=33.3% idle_seconds=0

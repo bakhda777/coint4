@@ -30,7 +30,7 @@ Next steps:
 - Подготовлен фиксированный universe из WFA w3m2 (383 пары) для повторного holdout; очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed/run_queue.csv`.
 - Holdout relaxed5 fixed universe (w3m2) завершён: Sharpe `1.25`, PnL `13.94`, pairs `18`, total_trades `352` (низкая статистика).
 - Holdout fixed universe (window=1/min=1) завершён: Sharpe `-0.02`, PnL `-0.20`, pairs `11`, total_trades `253`.
-- Запланирован stability_relaxed6 WFA: pvalue 0.12, kpss 0.05, hurst 0.70 (ожидаем рост числа пар).
+- Stability_relaxed6 WFA завершён: Sharpe `5.36`, pairs `303`, PnL `894.35` (pvalue 0.12, kpss 0.05, hurst 0.70).
 - Далее: искать фильтр/универсум, устойчивый в 2024H2 (фиксированный universe/ограничение пар).
 
 Legacy context:

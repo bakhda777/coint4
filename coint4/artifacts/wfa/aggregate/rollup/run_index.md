@@ -1,6 +1,6 @@
 # WFA run index
 
-Generated at: 2026-01-19 12:19:38Z
+Generated at: 2026-01-19 12:33:34Z
 
 Notes:
 - `sharpe_ratio_abs` is recomputed from `equity_curve.csv` with inferred bar frequency (periods/year = 365 * periods/day).
@@ -27,5 +27,5 @@ Notes:
 - stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2 | sharpe=5.8116 pnl=958.72 dd=-188.98 | artifacts/wfa/runs/20260119_stability_relaxed5/stability_relaxed5_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2
 - pair_sweep_20260117_pv0p03_top800_kpss0p03_z0p85_exit0p12_ssd25000 | sharpe=5.2749 pnl=946.25 dd=-193.91 | artifacts/wfa/runs/20260117_next5_fast/pair_sweep_20260117_pv0p03_top800_kpss0p03_z0p85_exit0p12_ssd25000
 - leader_validate_20260118_z0p8_exit0p12_ssd25000 | sharpe=5.1320 pnl=941.02 dd=-110.02 | artifacts/wfa/runs/20260118_leader_validation/leader_validate_20260118_z0p8_exit0p12_ssd25000
+- stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2 | sharpe=5.3588 pnl=894.35 dd=-123.46 | artifacts/wfa/runs/20260119_stability_relaxed6/stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2
 - corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000 | sharpe=6.6518 pnl=855.78 dd=-95.32 | artifacts/wfa/runs/20260118_corr_ab/corr_ab_20260118_corr0p50_thr0p50_z0p85_exit0p12_ssd25000
-- pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000 | sharpe=6.6518 pnl=855.78 dd=-95.32 | artifacts/wfa/runs/20260118_next4_fast/pair_sweep_20260118_corr0p5_z0p85_exit0p12_ssd25000

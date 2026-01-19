@@ -701,4 +701,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stability_20260119_relaxed6/stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed6/stability_relaxed6_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `5.3588`, total_pnl `894.35`, max_drawdown_abs `-123.46`, total_trades `5193`, total_pairs_traded `303`, total_costs `183.24`, win_rate `0.5109`.
+- Фильтрация (run.log): pvalue отсев ~11–34%, kpss ~9–17%, hurst ~2.7–5.4%.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_122615.csv`, `coint4/results/filter_reasons_20260119_122727.csv`, `coint4/results/filter_reasons_20260119_122849.csv`.
+- Итог: Sharpe остаётся высоким, число пар > 300; можно перейти к holdout/стресс для этой конфигурации.
