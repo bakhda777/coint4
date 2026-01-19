@@ -37,5 +37,5 @@
     - Выполнено: holdout relaxed6 (w3m2) на 2024-05-01 → 2024-12-31 → Sharpe -2.20, PnL -267.02.
     - Выполнено: диагностика holdout relaxed6 (см. `docs/holdout_diagnostics_20260119_relaxed6.md`).
     - Выполнено: holdout relaxed6 с фиксированным universe (303 пары) → Sharpe 3.77, total_pairs_traded 7, total_trades 141.
-    - Запланировано: stability_relaxed7 WFA с train=90d при relaxed6 фильтрах.
+    - Выполнено: stability_relaxed7 WFA с train=90d при relaxed6 фильтрах → Sharpe 5.25, pairs 177.
 12. Финализация 1-2 кандидатов и paper/live проверка.
