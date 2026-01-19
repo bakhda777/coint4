@@ -1,6 +1,6 @@
 # WFA run index
 
-Generated at: 2026-01-19 14:29:46Z
+Generated at: 2026-01-19 14:39:11Z
 
 Notes:
 - `sharpe_ratio_abs` is recomputed from `equity_curve.csv` with inferred bar frequency (periods/year = 365 * periods/day).

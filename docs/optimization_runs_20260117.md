@@ -795,4 +795,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/stability_20260119_relaxed8_loose/stability_relaxed8_loose_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss0p1_w2m1_t90_fixed.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `stability_relaxed8_loose_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss0p1_w2m1_t90_fixed` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed8_loose/stability_relaxed8_loose_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss0p1_w2m1_t90_fixed`.
+- Метрики (strategy_metrics): sharpe_ratio_abs `0.0000`, total_pnl `0.00`, max_drawdown_abs `0.00` (торговых пар 0).
+- Фильтрация (run.log): на каждом шаге KPSS режет до 0 пар даже при kpss=0.1.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_143531.csv`, `coint4/results/filter_reasons_20260119_143559.csv`, `coint4/results/filter_reasons_20260119_143628.csv`, `coint4/results/filter_reasons_20260119_143657.csv`, `coint4/results/filter_reasons_20260119_143727.csv`.
+- Итог: KPSS остаётся основным стоп‑фильтром; для fixed‑universe нужен обход/ослабление KPSS.
