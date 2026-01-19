@@ -34,6 +34,9 @@ class PairSelectionConfig(BaseModel):
     # Pair stability across WFA steps (optional).
     pair_stability_window_steps: int | None = None
     pair_stability_min_steps: int | None = None
+
+    # Optional cap on number of pairs to trade per WFA step.
+    max_pairs: int | None = None
     
     # NEW: Pair tradeability filter parameters
     enable_pair_tradeability_filter: bool = True

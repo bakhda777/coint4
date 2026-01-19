@@ -1474,6 +1474,21 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             # Сортируем пары по стандартному отклонению спреда (больше = потенциально более прибыльно)
             quality_sorted_pairs = sorted(pairs, key=lambda x: abs(x[4]), reverse=True)  # x[4] = std
             active_pairs = quality_sorted_pairs  # Берем ВСЕ отфильтрованные пары
+            max_pairs = int(getattr(cfg.pair_selection, "max_pairs", 0) or 0)
+            if max_pairs > 0 and len(active_pairs) > max_pairs:
+                active_pairs = active_pairs[:max_pairs]
+                logger.info(
+                    "  Ограничение max_pairs=%d: %d → %d",
+                    max_pairs,
+                    len(quality_sorted_pairs),
+                    len(active_pairs),
+                )
+            elif max_pairs > 0:
+                logger.info(
+                    "  Ограничение max_pairs=%d: %d пар (лимит не достигнут)",
+                    max_pairs,
+                    len(active_pairs),
+                )
             logger.info("  Топ-3 пары по волатильности спреда:")
             for i, (s1, s2, beta, mean, std, metrics) in enumerate(active_pairs[:3], 1):
                 logger.info(f"    {i}. {s1}-{s2}: beta={beta:.4f}, std={std:.4f}")

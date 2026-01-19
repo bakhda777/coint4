@@ -887,3 +887,14 @@ step_3:
   - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p05_exit0p08_hold120_cd120.yaml`
   - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p0_exit0p06_hold180_cd180.yaml`
 - Статус: `planned`.
+
+### WFA очередь (relaxed8_nokpss_u250_topk_20260119, ограничение пар)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_topk/run_queue.csv`.
+- Цель: снизить turnover/издержки через ограничение числа пар (max_pairs=10/20) на holdout + stress.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10.yaml`
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20.yaml`
+- Статус: `planned`.
