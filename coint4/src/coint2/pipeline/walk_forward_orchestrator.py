@@ -1438,7 +1438,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                             stability_window = int(getattr(cfg.pair_selection, "pair_stability_window_steps", 0) or 0)
                             stability_min = int(getattr(cfg.pair_selection, "pair_stability_min_steps", 0) or 0)
                             if stability_window and stability_min:
-                                if pair_history:
+                                history_steps = len(pair_history)
+                                if history_steps >= stability_min:
                                     history_window = pair_history[-stability_window:]
                                     counts = Counter(pair for step in history_window for pair in step)
                                     stable_pairs = {pair for pair, count in counts.items() if count >= stability_min}
@@ -1447,16 +1448,17 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                         pair for pair in filtered_pairs if (pair[0], pair[1]) in stable_pairs
                                     ]
                                     logger.info(
-                                        "  Pair stability filter: %d → %d (window=%d, min_steps=%d)",
+                                        "  Pair stability filter: %d → %d (window=%d, min_steps=%d, history=%d)",
                                         before_count,
                                         len(filtered_pairs),
                                         stability_window,
                                         stability_min,
+                                        history_steps,
                                     )
                                 else:
                                     logger.info(
-                                        "  Pair stability filter: history empty, skip (window=%d, min_steps=%d)",
-                                        stability_window,
+                                        "  Pair stability filter: insufficient history (%d < %d), skip",
+                                        history_steps,
                                         stability_min,
                                     )
                             pair_history.append(current_pair_keys)

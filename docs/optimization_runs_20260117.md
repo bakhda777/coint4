@@ -533,3 +533,12 @@ step_3:
 - Прогон 3: `stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000` → `coint4/artifacts/wfa/runs/20260119_stability_shortlist/stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `2.4103`, total_pnl `27.83`, max_drawdown_abs `-29.48`, total_trades `378`, total_pairs_traded `21`, total_costs `13.50`, win_rate `0.6129`.
 - Итог: фильтр стабильности + ужесточённые пороги сильно сокращают число пар/сделок; критерии `total_pairs_traded >= 100` не выполняются. Нужна корректировка порогов (ослабить стабильность/фильтры).
+
+### WFA очередь (stability_relaxed_20260119, shortlist relaxed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed/run_queue.csv`.
+- Цель: увеличить число пар до >=100 при сохранении стабильности (window=2/min=1), ослабив пороги.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stability_20260119_relaxed/stability_relaxed_20260119_pv0p04_hurst0p55_hl0p02_60_corr0p65_ssd20000.yaml`
+  - `coint4/configs/stability_20260119_relaxed/stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000.yaml`
+- Статус: `planned` (запускать только на 85.198.90.128).
