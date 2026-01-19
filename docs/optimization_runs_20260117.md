@@ -666,3 +666,12 @@ step_3:
 - Отчёт: `docs/holdout_diagnostics_20260119_relaxed5.md`.
 - Пересечение пар с WFA низкое (16 пересечений, Jaccard ~0.0116); убыток формируется вне пересечения.
 - Holdout доминируется pvalue → подтверждает нестабильность коинтеграции в 2024H2.
+
+### WFA очередь (relaxed5_holdout_fixed_20260119, фиксированный universe w3m2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed5_holdout_fixed/run_queue.csv`.
+- Цель: повторить holdout w3m2 с фиксированным universe (383 пары из WFA) для проверки устойчивости пар.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed5_fixed/holdout_relaxed5_fixed_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p45_ssd50000_kpss0p03_w3m2.yaml`
+- Источник пар: `coint4/artifacts/universe/20260119_relaxed5_w3m2_fixed/pairs_universe.yaml`.
+- Статус: `queued` (готово к запуску на 85.198.90.128).
