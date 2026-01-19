@@ -751,3 +751,11 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~18–39%, kpss ~9–17%, hurst ~3.8–6.9%.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_130951.csv`, `coint4/results/filter_reasons_20260119_131139.csv`, `coint4/results/filter_reasons_20260119_131324.csv`, `coint4/results/filter_reasons_20260119_131503.csv`, `coint4/results/filter_reasons_20260119_131640.csv`.
 - Итог: Sharpe остаётся высоким при уменьшении числа пар; следующий шаг — holdout с train=90d.
+
+### WFA очередь (relaxed7_holdout_20260119, holdout w3m2 train=90d)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed7_holdout/run_queue.csv`.
+- Цель: holdout 2024-05-01 → 2024-12-31 для relaxed7 (train=90d).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/holdout_20260119_relaxed7/holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
