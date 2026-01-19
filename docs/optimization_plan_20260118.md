@@ -35,4 +35,5 @@
     - Выполнено: holdout fixed universe с pair_stability window=1/min=1 → Sharpe -0.02, total_pairs_traded 11, total_trades 253, PnL -0.20.
     - Выполнено: stability_relaxed6 WFA с pvalue 0.12 / kpss 0.05 / hurst 0.70 → Sharpe 5.36, pairs 303.
     - Выполнено: holdout relaxed6 (w3m2) на 2024-05-01 → 2024-12-31 → Sharpe -2.20, PnL -267.02.
+    - Выполнено: диагностика holdout relaxed6 (см. `docs/holdout_diagnostics_20260119_relaxed6.md`).
 12. Финализация 1-2 кандидатов и paper/live проверка.

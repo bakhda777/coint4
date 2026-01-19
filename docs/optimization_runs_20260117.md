@@ -720,3 +720,7 @@ step_3:
 - Фильтрация (run.log): pvalue отсев ~22–40%, kpss ~13–21%, hurst ~5–8%.
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_123006.csv`, `coint4/results/filter_reasons_20260119_123119.csv`, `coint4/results/filter_reasons_20260119_123905.csv`.
 - Итог: holdout сильно отрицательный несмотря на хороший WFA; требуется переоценка устойчивости в 2024H2.
+
+### Holdout diagnostics (20260119 relaxed6)
+- Отчёт: `docs/holdout_diagnostics_20260119_relaxed6.md`.
+- Перекрытие пар с WFA минимальное (intersection 6, Jaccard ~0.0056); убыток формируется вне пересечения.
