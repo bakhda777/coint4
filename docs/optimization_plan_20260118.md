@@ -26,4 +26,5 @@
     - Выполнено: stability_relaxed4_20260119 (KPSS 0.03–0.05) → пары 159–272, Sharpe ~3.07–3.09.
 11. Новый shortlist (3-5 конфигов) → 5-step WFA + holdout (max_steps=5).
     - Выполнено: holdout + stress для top‑1/2 relaxed4 (corr0.45/corr0.5, ssd50000, kpss0.03) → holdout отрицательный, стресс Sharpe ~2.38.
+    - Выполнено: диагностика holdout relaxed4 (см. `docs/holdout_diagnostics_20260119_relaxed4.md`).
 12. Финализация 1-2 кандидатов и paper/live проверка.

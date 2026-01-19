@@ -620,3 +620,8 @@ step_3:
 - Прогон 2: `stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03` → `coint4/artifacts/wfa/runs/20260119_relaxed4_stress/stress_relaxed4_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_kpss0p03`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `2.3816`, total_pnl `416.13`, max_drawdown_abs `-189.92`, total_trades `5067`, total_pairs_traded `270`, total_costs `298.43`, win_rate `0.4702`.
 - Итог: стресс-издержки уменьшают Sharpe, но остаётся >2 на WFA окне.
+
+### Holdout diagnostics (20260119 relaxed4)
+- Отчёт: `docs/holdout_diagnostics_20260119_relaxed4.md`.
+- Перекрытие пар с WFA минимальное (4 пересечения, Jaccard ~0.0048); убыток формируется в основном вне пересечения.
+- Holdout чаще режется по pvalue, что указывает на развал коинтеграции в 2024H2.

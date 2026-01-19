@@ -1,0 +1,18 @@
+{
+  "holdout_corr0p45": {
+    "holdout_pairs": 567,
+    "intersection_pairs": 4,
+    "jaccard": 0.004790419161676647,
+    "non_overlap_pnl": -148.5307256717001,
+    "overlap_pnl": -3.1843418066,
+    "shortlist_pairs": 272
+  },
+  "holdout_corr0p5": {
+    "holdout_pairs": 560,
+    "intersection_pairs": 4,
+    "jaccard": 0.004842615012106538,
+    "non_overlap_pnl": -130.17718655969998,
+    "overlap_pnl": -3.1843418066,
+    "shortlist_pairs": 270
+  }
+}
