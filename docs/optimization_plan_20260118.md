@@ -44,5 +44,5 @@
     - Выполнено: WFA relaxed8_loose (pvalue 0.2, kpss 0.1, hurst 0.8, corr 0.4, w2m1) → 0 торгуемых пар, KPSS режет до нуля.
     - Выполнено: WFA relaxed8_nokpss (kpss=1.0) → Sharpe 1.86, total_pairs_traded 35, total_trades 1242.
     - Выполнено: holdout relaxed8_nokpss (fixed universe, train=90d, w2m1) → Sharpe 3.21, PnL 145.84, total_pairs_traded 64, total_trades 2252.
-    - Следующий шаг: stress-издержки для relaxed8_nokpss.
+    - Следующий шаг: stress-издержки для relaxed8_nokpss (queue `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_stress_holdout/run_queue.csv`).
 12. Финализация 1-2 кандидатов и paper/live проверка.

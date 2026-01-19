@@ -826,3 +826,11 @@ step_3:
 - Фильтрация (run.log): после KPSS остаётся 25–51 пар; pair stability в шагах 2–5 режет до 21–34 (window=2, min_steps=1).
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_150306.csv`, `coint4/results/filter_reasons_20260119_150339.csv`, `coint4/results/filter_reasons_20260119_150413.csv`, `coint4/results/filter_reasons_20260119_150446.csv`, `coint4/results/filter_reasons_20260119_150521.csv`.
 - Итог: holdout подтверждён, Sharpe > 3 и положительный PnL; число пар выросло до 64, но всё ещё ниже желаемого порога стабильности.
+
+### WFA очередь (relaxed8_nokpss_stress_holdout_20260119, stress costs)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_stress_holdout/run_queue.csv`.
+- Цель: стресс-издержки для relaxed8_nokpss holdout (commission 0.0006, slippage 0.0010, slippage_stress_multiplier 2.0).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stress_20260119_relaxed8_nokpss/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
