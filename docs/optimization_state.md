@@ -48,7 +48,7 @@ Next steps:
 - Stress holdout u250 завершён: Sharpe `2.89`, PnL `289.30`, pairs `168`, total_trades `6572`, costs `309.95`.
 - Итоговый кандидат: `docs/candidate_relaxed8_u250_20260119.md`.
 - Запланирован turnover stress grid (u250) для снижения числа сделок: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_turnover_stress/run_queue.csv`.
-- Запланирован top-k лимит пар (max_pairs=10/20) для holdout + stress u250: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_topk/run_queue.csv`.
+- Top-k лимит пар (max_pairs=10/20) выполнен для u250 holdout + stress: top10 Sharpe `2.74/2.08`, trades `798`; top20 Sharpe `4.56/3.65`, trades `1693`, costs `46.37/82.43` (holdout/stress).
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

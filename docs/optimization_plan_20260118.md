@@ -50,6 +50,6 @@
     - Выполнено: stress-издержки для u250 → Sharpe 2.89, PnL 289.30, pairs 168.
     - Выполнено: кандидат зафиксирован в `docs/candidate_relaxed8_u250_20260119.md`.
     - Запланировано: turnover stress grid (u250) для снижения числа сделок.
-    - Запланировано: top-k ограничение пар (max_pairs=10/20) для u250 holdout + stress, очередь `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_topk/run_queue.csv`.
+    - Выполнено: top-k ограничение пар (max_pairs=10/20) для u250 holdout + stress → top20 Sharpe `4.56/3.65`, trades `1693`; top10 Sharpe `2.74/2.08`, trades `798`.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.

@@ -897,4 +897,14 @@ step_3:
   - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20.yaml`
   - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10.yaml`
   - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20.yaml`
-- Статус: `planned`.
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_u250_topk/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10`.
+  - Метрики: sharpe_ratio_abs `2.7421`, total_pnl `75.78`, max_drawdown_abs `-27.63`, total_trades `798`, total_pairs_traded `26`, total_costs `23.61`.
+- Прогон 2: `holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_u250_topk/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20`.
+  - Метрики: sharpe_ratio_abs `4.5614`, total_pnl `178.29`, max_drawdown_abs `-32.09`, total_trades `1693`, total_pairs_traded `53`, total_costs `46.37`.
+- Прогон 3: `stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top10`.
+  - Метрики: sharpe_ratio_abs `2.0825`, total_pnl `57.42`, max_drawdown_abs `-31.75`, total_trades `798`, total_pairs_traded `26`, total_costs `41.97`.
+- Прогон 4: `stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_u250_topk/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20`.
+  - Метрики: sharpe_ratio_abs `3.6497`, total_pnl `142.23`, max_drawdown_abs `-37.60`, total_trades `1693`, total_pairs_traded `53`, total_costs `82.43`.
+- Фильтрация (run.log): файлы причин отсева `coint4/results/filter_reasons_20260119_221818.csv`, `coint4/results/filter_reasons_20260119_221856.csv`, `coint4/results/filter_reasons_20260119_221857.csv`, `coint4/results/filter_reasons_20260119_221934.csv`, `coint4/results/filter_reasons_20260119_221935.csv`, `coint4/results/filter_reasons_20260119_222011.csv`, `coint4/results/filter_reasons_20260119_222012.csv`, `coint4/results/filter_reasons_20260119_222013.csv`, `coint4/results/filter_reasons_20260119_222049.csv`, `coint4/results/filter_reasons_20260119_222051.csv`.
+- Итог: сделки снижены в 3.9–8.2 раза (1693/798 vs 6572), Sharpe остаётся > 1 даже в стресс‑режиме; топ‑20 выглядит балансом между Sharpe и turnover.
