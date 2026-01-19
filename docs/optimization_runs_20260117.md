@@ -758,4 +758,9 @@ step_3:
 - Параллельность: `8` (nproc на 85.198.90.128).
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed7/holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90.yaml`
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90` → `coint4/artifacts/wfa/runs/20260119_relaxed7_holdout/holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `-0.2010`, total_pnl `-20.95`, max_drawdown_abs `-172.98`, total_trades `6509`, total_pairs_traded `339`, total_costs `240.36`, win_rate `0.4130`.
+- Фильтрация (run.log): pvalue отсев ~24–37%, kpss ~11–21%, hurst ~6.7–9.9%.
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_132542.csv`, `coint4/results/filter_reasons_20260119_132844.csv`, `coint4/results/filter_reasons_20260119_133203.csv`, `coint4/results/filter_reasons_20260119_133442.csv`, `coint4/results/filter_reasons_20260119_133736.csv`.
+- Итог: holdout остаётся отрицательным при хорошем WFA; требуется пересмотр подхода к universe/фильтрам для 2024H2.

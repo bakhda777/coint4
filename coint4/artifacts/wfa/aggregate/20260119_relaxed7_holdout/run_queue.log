@@ -1,0 +1,2 @@
+/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_relaxed7_holdout/run_queue.csv: queued 1 run(s)
+ - planned: configs/holdout_20260119_relaxed7/holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90.yaml -> artifacts/wfa/runs/20260119_relaxed7_holdout/holdout_relaxed7_20260119_pv0p12_hurst0p7_hl0p02_60_corr0p45_ssd50000_kpss0p05_w3m2_t90
