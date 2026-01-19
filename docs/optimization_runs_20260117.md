@@ -558,3 +558,13 @@ step_3:
 - Прогон 1: `stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `2.1286`, total_pnl `84.13`, max_drawdown_abs `-74.42`, total_trades `1010`, total_pairs_traded `52`, total_costs `31.36`, win_rate `0.4022`.
 - Итог: число пар всё ещё ниже порога 100; требуется дальнейшее ослабление фильтров (например, window=1/min=1 или рост `ssd_top_n`/universe).
+
+### WFA очередь (stability_relaxed3_20260119, window=1/min=1)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed3/run_queue.csv`.
+- Цель: поднять `total_pairs_traded >= 100` за счёт window=1/min=1 и расширенных порогов corr/pvalue/ssd; проверить градиент ослабления.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000_st1.yaml`
+  - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p07_hurst0p62_hl0p02_60_corr0p5_ssd40000_st1.yaml`
+  - `coint4/configs/stability_20260119_relaxed3/stability_relaxed3_20260119_pv0p08_hurst0p65_hl0p02_60_corr0p5_ssd50000_st1.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).

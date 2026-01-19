@@ -22,5 +22,6 @@
 10. Ввести фильтр стабильности пар (pair_stability_window_steps/min_steps) + ужесточить pvalue/half-life/hurst + пересмотр universe.
     - Если `total_pairs_traded < 100`, ослабить стабильность (window=2/min=1) и/или увеличить `ssd_top_n`.
     - Выполнено: stability_relaxed2_20260119 (corr0.55, pv0.06, ssd30000, max_hurst0.6, liquidity 300k, min_volume 250k, backtest min_correlation=0.55) → total_pairs_traded 52.
+    - План: stability_relaxed3_20260119 (window=1/min=1, corr 0.55→0.5, pv 0.06→0.08, ssd 30000→50000).
 11. Новый shortlist (3-5 конфигов) → 5-step WFA + holdout (max_steps=5).
 12. Финализация 1-2 кандидатов и paper/live проверка.
