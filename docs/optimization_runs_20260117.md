@@ -525,4 +525,11 @@ step_3:
   - `coint4/configs/stability_20260119/stability_20260119_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd15000.yaml`
   - `coint4/configs/stability_20260119/stability_20260119_pv0p02_hurst0p48_hl0p05_30_corr0p7_ssd12000.yaml`
   - `coint4/configs/stability_20260119/stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000.yaml`
-- Статус: `planned` (запускать только на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128).
+- Прогон 1: `stability_20260119_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd15000` → `coint4/artifacts/wfa/runs/20260119_stability_shortlist/stability_20260119_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd15000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `5.9245`, total_pnl `76.90`, max_drawdown_abs `-26.90`, total_trades `597`, total_pairs_traded `34`, total_costs `18.64`, win_rate `0.6452`.
+- Прогон 2: `stability_20260119_pv0p02_hurst0p48_hl0p05_30_corr0p7_ssd12000` → `coint4/artifacts/wfa/runs/20260119_stability_shortlist/stability_20260119_pv0p02_hurst0p48_hl0p05_30_corr0p7_ssd12000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `4.2141`, total_pnl `16.68`, max_drawdown_abs `-7.54`, total_trades `79`, total_pairs_traded `4`, total_costs `3.72`, win_rate `0.3871`.
+- Прогон 3: `stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000` → `coint4/artifacts/wfa/runs/20260119_stability_shortlist/stability_20260119_liquid_pv0p03_hurst0p5_hl0p05_40_corr0p65_ssd10000`.
+- Метрики (rollup recomputed): sharpe_ratio_abs `2.4103`, total_pnl `27.83`, max_drawdown_abs `-29.48`, total_trades `378`, total_pairs_traded `21`, total_costs `13.50`, win_rate `0.6129`.
+- Итог: фильтр стабильности + ужесточённые пороги сильно сокращают число пар/сделок; критерии `total_pairs_traded >= 100` не выполняются. Нужна корректировка порогов (ослабить стабильность/фильтры).

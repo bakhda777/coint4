@@ -1,0 +1,30 @@
+2026-01-19T06:48:54Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260119_stability_shortlist/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-19T06:48:54Z HEARTBEAT run_pid=1092 run_cpu=0% watcher_cpu=0% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-19T06:49:24Z HEARTBEAT run_pid=1092 run_cpu=112% watcher_cpu=0% worker_pid=1161 worker_cpu=112% coint2_procs=3 cpu_total=335.0% idle_seconds=0
+2026-01-19T06:49:55Z HEARTBEAT run_pid=1092 run_cpu=136% watcher_cpu=0% worker_pid=1161 worker_cpu=136% coint2_procs=3 cpu_total=410.0% idle_seconds=0
+2026-01-19T06:50:25Z HEARTBEAT run_pid=1092 run_cpu=143% watcher_cpu=0% worker_pid=1161 worker_cpu=143% coint2_procs=3 cpu_total=432.0% idle_seconds=0
+2026-01-19T06:50:55Z HEARTBEAT run_pid=1092 run_cpu=147% watcher_cpu=0% worker_pid=1161 worker_cpu=147% coint2_procs=3 cpu_total=444.0% idle_seconds=0
+2026-01-19T06:51:25Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=447.0% idle_seconds=0
+2026-01-19T06:51:55Z HEARTBEAT run_pid=1092 run_cpu=149% watcher_cpu=0% worker_pid=1161 worker_cpu=149% coint2_procs=3 cpu_total=445.0% idle_seconds=0
+2026-01-19T06:52:25Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=446.0% idle_seconds=0
+2026-01-19T06:52:55Z HEARTBEAT run_pid=1092 run_cpu=146% watcher_cpu=0% worker_pid=1161 worker_cpu=146% coint2_procs=3 cpu_total=446.0% idle_seconds=0
+2026-01-19T06:53:26Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=447.0% idle_seconds=0
+2026-01-19T06:53:56Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=447.0% idle_seconds=0
+2026-01-19T06:54:26Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=448.0% idle_seconds=0
+2026-01-19T06:54:56Z HEARTBEAT run_pid=1092 run_cpu=147% watcher_cpu=0% worker_pid=1161 worker_cpu=147% coint2_procs=3 cpu_total=450.0% idle_seconds=0
+2026-01-19T06:55:26Z HEARTBEAT run_pid=1092 run_cpu=146% watcher_cpu=0% worker_pid=1161 worker_cpu=146% coint2_procs=3 cpu_total=451.0% idle_seconds=0
+2026-01-19T06:55:56Z HEARTBEAT run_pid=1092 run_cpu=146% watcher_cpu=0% worker_pid=1161 worker_cpu=146% coint2_procs=3 cpu_total=452.0% idle_seconds=0
+2026-01-19T06:56:26Z HEARTBEAT run_pid=1092 run_cpu=147% watcher_cpu=0% worker_pid=1161 worker_cpu=147% coint2_procs=3 cpu_total=452.0% idle_seconds=0
+2026-01-19T06:56:57Z HEARTBEAT run_pid=1092 run_cpu=148% watcher_cpu=0% worker_pid=1161 worker_cpu=148% coint2_procs=3 cpu_total=453.0% idle_seconds=0
+2026-01-19T06:57:27Z HEARTBEAT run_pid=1092 run_cpu=149% watcher_cpu=0% worker_pid=1161 worker_cpu=149% coint2_procs=3 cpu_total=454.0% idle_seconds=0
+2026-01-19T06:57:57Z HEARTBEAT run_pid=1092 run_cpu=150% watcher_cpu=0% worker_pid=1161 worker_cpu=150% coint2_procs=3 cpu_total=455.0% idle_seconds=0
+2026-01-19T06:58:27Z HEARTBEAT run_pid=1092 run_cpu=151% watcher_cpu=0% worker_pid=1161 worker_cpu=151% coint2_procs=3 cpu_total=455.0% idle_seconds=0
+2026-01-19T06:58:57Z HEARTBEAT run_pid=1092 run_cpu=151% watcher_cpu=0% worker_pid=1161 worker_cpu=151% coint2_procs=3 cpu_total=454.0% idle_seconds=0
+2026-01-19T06:59:27Z HEARTBEAT run_pid=1092 run_cpu=151% watcher_cpu=0% worker_pid=1161 worker_cpu=151% coint2_procs=1 cpu_total=151.0% idle_seconds=0
+2026-01-19T06:59:57Z HEARTBEAT run_pid=1092 run_cpu=153% watcher_cpu=0% worker_pid=1161 worker_cpu=153% coint2_procs=1 cpu_total=153.0% idle_seconds=0
+2026-01-19T07:00:28Z HEARTBEAT run_pid=1092 run_cpu=154% watcher_cpu=0% worker_pid=1161 worker_cpu=154% coint2_procs=1 cpu_total=154.0% idle_seconds=0
+2026-01-19T07:00:58Z HEARTBEAT run_pid=1092 run_cpu=155% watcher_cpu=0% worker_pid=1161 worker_cpu=155% coint2_procs=1 cpu_total=155.0% idle_seconds=0
+2026-01-19T07:01:28Z HEARTBEAT run_pid=1092 run_cpu=156% watcher_cpu=0% worker_pid=1161 worker_cpu=156% coint2_procs=1 cpu_total=156.0% idle_seconds=0
+2026-01-19T07:01:58Z HEARTBEAT run_pid=1092 run_cpu=156% watcher_cpu=0% worker_pid=1161 worker_cpu=156% coint2_procs=1 cpu_total=156.0% idle_seconds=0
+2026-01-19T07:02:28Z HEARTBEAT run_pid=1092 run_cpu=157% watcher_cpu=0% worker_pid=1161 worker_cpu=157% coint2_procs=1 cpu_total=157.0% idle_seconds=0
+2026-01-19T07:02:58Z DONE rc=0

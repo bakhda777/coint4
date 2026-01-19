@@ -15,8 +15,8 @@ Next steps:
 - Stress costs WFA завершён: Sharpe `4.66/4.57`, PnL `616/543` (baseline/corr0.7).
 - Диагностика holdout завершена: см. `docs/holdout_diagnostics_20260118.md` + CSV в `coint4/results/holdout_20260118_*`.
 - Добавлен фильтр стабильности пар (pair_stability_window_steps/min_steps) в WFA.
-- Подготовлена очередь stability shortlist: `coint4/artifacts/wfa/aggregate/20260119_stability_shortlist/run_queue.csv`.
-- Далее: запустить очередь на 85.198.90.128, затем выбрать top-1/2 для holdout.
+- Stability shortlist (20260119) завершён: Sharpe 2.41–5.92, но total_pairs_traded 4–34 (ниже порога 100).
+- Далее: ослабить стабильность/фильтры (например, window=2/min=1, pvalue 0.04–0.05, ssd_top_n 20000) и перезапустить shortlist.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.
