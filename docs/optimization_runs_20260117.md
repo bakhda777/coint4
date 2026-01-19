@@ -858,4 +858,9 @@ step_3:
 - Конфиг:
   - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250.yaml`
 - Источник пар: `coint4/artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml`.
-- Статус: `planned` (готово к запуску на 85.198.90.128).
+- Статус: `completed` (запуск на 85.198.90.128, очередь обновлена).
+- Прогон 1: `holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250` → `coint4/artifacts/wfa/runs/20260119_relaxed8_nokpss_u250_holdout/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250`.
+- Метрики (strategy_metrics): sharpe_ratio_abs `4.2025`, total_pnl `421.60`, max_drawdown_abs `-72.64`, total_trades `6572`, total_pairs_traded `168`, total_costs `174.35`, win_rate `0.6225`.
+- Фильтрация (run.log): после KPSS 76–139 пар; pair stability режет до 52–93 (window=2, min_steps=1).
+- Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_160121.csv`, `coint4/results/filter_reasons_20260119_160156.csv`, `coint4/results/filter_reasons_20260119_160230.csv`, `coint4/results/filter_reasons_20260119_160304.csv`, `coint4/results/filter_reasons_20260119_160338.csv`.
+- Итог: цель достигнута (pairs ≥ 100) и Sharpe > 1; концентрация снизилась (top‑5 пар ~43% PnL).

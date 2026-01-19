@@ -46,6 +46,6 @@
     - Выполнено: WFA relaxed8_nokpss (kpss=1.0) → Sharpe 1.86, total_pairs_traded 35, total_trades 1242.
     - Выполнено: holdout relaxed8_nokpss (fixed universe, train=90d, w2m1) → Sharpe 3.21, PnL 145.84, total_pairs_traded 64, total_trades 2252.
     - Выполнено: stress-издержки для relaxed8_nokpss → Sharpe 2.17, PnL 98.35, pairs 64.
-    - Запланирован: holdout relaxed8_nokpss_u250 (expanded universe 250 пар) → проверка роста числа пар.
-    - Следующий шаг: увеличить число пар (pair_stability 1/1 либо более широкий universe) и повторить holdout.
+    - Выполнено: holdout relaxed8_nokpss_u250 (expanded universe 250 пар) → Sharpe 4.20, pairs 168.
+    - Следующий шаг: стресс-издержки для u250 и финальная оценка устойчивости.
 12. Финализация 1-2 кандидатов и paper/live проверка.
