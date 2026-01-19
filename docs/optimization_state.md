@@ -45,6 +45,7 @@ Next steps:
 - Holdout relaxed8_nokpss завершён: Sharpe `3.21`, PnL `145.84`, pairs `64`, total_trades `2252`.
 - Stress relaxed8_nokpss holdout завершён: Sharpe `2.17`, PnL `98.35`, pairs `64`, total_trades `2252`, costs `108.65`.
 - Holdout relaxed8_nokpss_u250 завершён: Sharpe `4.20`, PnL `421.60`, pairs `168`, total_trades `6572`.
+- Запланирован stress holdout u250: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_stress_holdout/run_queue.csv`.
 - Далее: стресс-издержки для u250 + финальная проверка концентрации/устойчивости.
 
 Legacy context:

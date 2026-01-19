@@ -864,3 +864,11 @@ step_3:
 - Фильтрация (run.log): после KPSS 76–139 пар; pair stability режет до 52–93 (window=2, min_steps=1).
 - Файлы причин фильтрации: `coint4/results/filter_reasons_20260119_160121.csv`, `coint4/results/filter_reasons_20260119_160156.csv`, `coint4/results/filter_reasons_20260119_160230.csv`, `coint4/results/filter_reasons_20260119_160304.csv`, `coint4/results/filter_reasons_20260119_160338.csv`.
 - Итог: цель достигнута (pairs ≥ 100) и Sharpe > 1; концентрация снизилась (top‑5 пар ~43% PnL).
+
+### WFA очередь (relaxed8_nokpss_u250_stress_holdout_20260119, stress costs)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_stress_holdout/run_queue.csv`.
+- Цель: стресс-издержки для relaxed8_nokpss_u250 (commission 0.0006, slippage 0.0010, slippage_stress_multiplier 2.0).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиг:
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250/stress_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250.yaml`
+- Статус: `planned` (готово к запуску на 85.198.90.128).
