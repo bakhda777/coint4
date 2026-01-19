@@ -547,3 +547,11 @@ step_3:
 - Прогон 2: `stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000` → `coint4/artifacts/wfa/runs/20260119_stability_relaxed/stability_relaxed_20260119_pv0p05_hurst0p55_hl0p02_60_corr0p6_ssd25000`.
 - Метрики (rollup recomputed): sharpe_ratio_abs `2.5860`, total_pnl `100.02`, max_drawdown_abs `-64.87`, total_trades `815`, total_pairs_traded `41`, total_costs `24.39`, win_rate `0.3478`.
 - Итог: пары выросли (78 в лучшем варианте), но всё ещё ниже порога 100; требуется дополнительное ослабление фильтров/стабильности или увеличение SSD/universe.
+
+### WFA очередь (stability_relaxed2_20260119, ещё более мягкие фильтры)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_stability_relaxed2/run_queue.csv`.
+- Цель: довести `total_pairs_traded >= 100` при сохранении pair_stability (window=2/min=1); ослабить corr/pvalue/hurst и увеличить `ssd_top_n`.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги:
+  - `coint4/configs/stability_20260119_relaxed2/stability_relaxed2_20260119_pv0p06_hurst0p6_hl0p02_60_corr0p55_ssd30000.yaml`
+- Статус: `planned` (запуск на 85.198.90.128).
