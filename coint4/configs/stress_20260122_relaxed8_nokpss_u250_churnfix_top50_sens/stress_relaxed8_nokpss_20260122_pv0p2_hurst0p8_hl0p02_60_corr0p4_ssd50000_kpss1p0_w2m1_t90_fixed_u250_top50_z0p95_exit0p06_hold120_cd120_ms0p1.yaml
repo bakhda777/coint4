@@ -66,16 +66,16 @@ backtest:
   time_stop_multiplier: 2.0
   min_volatility: 0.001
   fill_limit_pct: 0.1
-  commission_pct: 0.0004
-  slippage_pct: 0.0005
-  slippage_stress_multiplier: 1.0
+  commission_pct: 0.0006
+  slippage_pct: 0.001
+  slippage_stress_multiplier: 2.0
   always_model_slippage: true
   annualizing_factor: 365
-  cooldown_hours: 3.5
+  cooldown_hours: 2
   wait_for_candle_close: true
   min_spread_move_sigma: 0.1
-  min_position_hold_minutes: 210
-  anti_churn_cooldown_minutes: 210
+  min_position_hold_minutes: 120
+  anti_churn_cooldown_minutes: 120
   pair_stop_loss_usd: 75.0
   pair_stop_loss_zscore: 3.0
   portfolio_daily_stop_pct: 0.02
@@ -93,7 +93,7 @@ backtest:
   quarantine_period_days: 7
   quarantine_rolling_window_days: 30
   enable_realistic_costs: false
-  commission_rate_per_leg: 0.0004
+  commission_rate_per_leg: 0.0006
   slippage_half_spread_multiplier: 2.0
   funding_cost_enabled: true
   beta_recalc_frequency_hours: 48

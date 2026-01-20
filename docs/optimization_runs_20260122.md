@@ -176,7 +176,7 @@
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
 - Цель: проверить устойчивость вокруг базовых параметров top50.
-- Конфиги: 6 вариантов × holdout/stress (12 прогонов).
+- Конфиги: 6 вариантов × holdout/stress (12 прогонов), включая hold120/hold240 (cooldown_hours целое).
 - Статус: `planned`.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_basecap3 (base cap)
