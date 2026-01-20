@@ -63,3 +63,8 @@
 
 Выводы:
 - Даже при no-adapt и entry 0.75 сделки отсутствуют; см. diag-логи в run.log (z_score превышает порог, но позиций нет).
+
+### Queue: relaxed8_nokpss_u250_churnfix_sanity_v2 (current-bar signals)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
+- Цель: проверить сделки после выравнивания Numba-сигналов по текущему бару.
+- Статус: `queued`.

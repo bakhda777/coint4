@@ -59,6 +59,7 @@ Next steps:
 - Очередь churnfix micro-grid (u250) подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (результаты 0 сделок из-за адаптивных порогов).
 - Churnfix v2 (после фикса адаптивных порогов) завершён: 0 сделок в holdout/stress, требуется диагностика порогов/volatility (`coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`).
 - Sanity no-adapt завершён: 0 сделок даже при entry 0.75 (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`).
+- Sanity v2 queued после правки сигналов по текущему бару: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

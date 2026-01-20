@@ -58,5 +58,6 @@
     - 2026-01-20: Numba-движок теперь учитывает cooldown/min_hold/min_spread_move/stop-loss и выход по |z|<=z_exit; портфельная симуляция использует позиции. Очередь churnfix micro-grid: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (0 сделок, слишком консервативные адаптивные пороги).
     - 2026-01-20: адаптивные пороги Numba переопределены под base-волатильность; повторный прогон `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv` завершён, сделки всё ещё = 0.
     - 2026-01-20: sanity-queue без adaptive/regime/breaks (entry 0.95/0.75) завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`.
+    - 2026-01-20: sanity v2 queued после выравнивания сигналов по текущему бару: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.
