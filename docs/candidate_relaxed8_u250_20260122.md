@@ -25,6 +25,7 @@ Stress holdout (z0.95 / exit 0.06 / hold 180 / cd 180 / ms 0.1):
 - z0.90/exit0.08 дает выше Sharpe, но больше turnover.
 - maxpos10 ухудшает Sharpe/PnL.
 - Turnover все еще высокий (20k+), нужен контроль концентрации по парам.
+- Концентрация PnL (top10/top20): holdout ~39%/56%, stress ~48%/69%; отрицательных пар 158/169.
 
 ## Decision
 - Новый основной кандидат: z0.95 / exit 0.06 / hold 180 / cd 180 / ms 0.1.
