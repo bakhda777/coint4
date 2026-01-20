@@ -130,3 +130,15 @@
 Выводы:
 - Лучший баланс Sharpe/PnL/turnover: z0p95/exit0p06/hold180/cd180/ms0p1 (меньше сделок при сопоставимом PnL).
 - Top Sharpe у z0p90/exit0p08, но выше turnover; maxpos10 ухудшает метрики.
+
+### Queue: relaxed8_nokpss_u250_churnfix_topk (pair cap sweep)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_topk/run_queue.csv`.
+- Цель: проверить концентрацию прибыли на топ‑20/50 пар при текущем лучшем профиле.
+- Конфиги: top20/top50 × holdout/stress (4 прогона).
+- Статус: `planned`.
+
+### Queue: relaxed8_nokpss_u250_churnfix_msgrid (min_spread_move/hold grid)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_msgrid/run_queue.csv`.
+- Цель: проверить min_spread_move_sigma 0.2/0.3 и увеличение min_hold/cooldown до 180/240.
+- Конфиги: 4 варианта × holdout/stress (8 прогонов).
+- Статус: `planned`.
