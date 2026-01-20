@@ -929,3 +929,16 @@ step_3:
 - Прогон 6 (stress z1.0/0.06/180/180): sharpe_ratio_abs `2.7944`, total_pnl `97.95`, max_drawdown_abs `-35.48`, total_trades `805`, total_pairs_traded `53`, total_costs `41.22`.
 - Фильтрация (run.log): `coint4/results/filter_reasons_20260120_051037.csv`, `coint4/results/filter_reasons_20260120_051040.csv`, `coint4/results/filter_reasons_20260120_051041.csv`, `coint4/results/filter_reasons_20260120_051126.csv`, `coint4/results/filter_reasons_20260120_051127.csv`, `coint4/results/filter_reasons_20260120_051128.csv`, `coint4/results/filter_reasons_20260120_051130.csv`, `coint4/results/filter_reasons_20260120_051210.csv`, `coint4/results/filter_reasons_20260120_051214.csv`, `coint4/results/filter_reasons_20260120_051215.csv`, `coint4/results/filter_reasons_20260120_051218.csv`, `coint4/results/filter_reasons_20260120_051256.csv`, `coint4/results/filter_reasons_20260120_051259.csv`, `coint4/results/filter_reasons_20260120_051300.csv`, `coint4/results/filter_reasons_20260120_051304.csv`, `coint4/results/filter_reasons_20260120_051341.csv`, `coint4/results/filter_reasons_20260120_051343.csv`, `coint4/results/filter_reasons_20260120_051344.csv`, `coint4/results/filter_reasons_20260120_051347.csv`, `coint4/results/filter_reasons_20260120_051348.csv`.
 - Итог: лучший баланс — z1.05/0.08/120/120 (trades 630, stress Sharpe 3.44); turnover снижен дополнительно без потери Sharpe < 3.
+
+### WFA очередь (relaxed8_nokpss_u250_turnover_full_20260120, baseline u250 + turnover)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260120_relaxed8_nokpss_u250_turnover_full/run_queue.csv`.
+- Цель: проверить turnover-настройки на baseline u250 без max_pairs (сравнить Sharpe/PnL при снижении churn).
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги (holdout + stress):
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_turnover/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_turnover/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z1p05_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_turnover/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z1p0_exit0p06_hold180_cd180.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p05_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_turnover/stress_relaxed8_nokpss_u250_z1p0_exit0p06_hold180_cd180.yaml`
+- Статус: `planned`.

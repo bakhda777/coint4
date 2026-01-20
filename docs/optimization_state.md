@@ -50,6 +50,7 @@ Next steps:
 - Запланирован turnover stress grid (u250) для снижения числа сделок: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_turnover_stress/run_queue.csv`.
 - Top-k лимит пар (max_pairs=10/20) выполнен для u250 holdout + stress: top10 Sharpe `2.74/2.08`, trades `798`; top20 Sharpe `4.56/3.65`, trades `1693`, costs `46.37/82.43` (holdout/stress).
 - Turnover grid поверх top20 завершён: лучший вариант z1.05/exit0.08/hold120/cd120 → holdout Sharpe `3.85`, stress Sharpe `3.44`, trades `630`, costs `18.04/32.07`.
+- Запланирован baseline u250 turnover grid (без max_pairs) для holdout + stress: `coint4/artifacts/wfa/aggregate/20260120_relaxed8_nokpss_u250_turnover_full/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
