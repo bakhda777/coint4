@@ -184,6 +184,12 @@
 - На альтернативном периоде торгуется всего ~46–47 пар, поэтому top50 и full дают идентичные метрики.
 - top20 слегка снижает Sharpe/PnL, но слабо влияет на turnover.
 
+### Queue: relaxed8_nokpss_u250_churnfix_alt_top50_sens (alt holdout sensitivity)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`.
+- Цель: подтвердить два лучших top50 варианта (z1.00/exit0.06 и z0.95/exit0.08) на альтернативном периоде.
+- Конфиги: 2 варианта × holdout/stress (4 прогона).
+- Статус: `planned`.
+
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
 - Цель: проверить устойчивость вокруг базовых параметров top50.

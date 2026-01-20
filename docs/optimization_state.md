@@ -1,6 +1,6 @@
 # Optimization state
 
-Last updated: 2026-01-20
+Last updated: 2026-01-23
 
 Current stage: Sharpe>1 program (см. docs/optimization_plan_20260118.md). Базовые WFA/sweep завершены, shortlist WFA выполнен; далее holdout + стресс-издержки для топ-1/2.
 
@@ -73,6 +73,7 @@ Next steps:
 - Новый лучший компромисс: top50/z1.00/exit0.06/hold180/cd180/ms0.1 → Sharpe 9.01/7.64, PnL 1115/946, trades 11414.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
 - Следующий шаг: подтвердить z1.00 на альтернативном holdout или зафиксировать z0.95/exit0.08 как PnL‑вариант.
+- Запланирован alt-holdout top50 (z1.00/exit0.06 и z0.95/exit0.08) → `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
