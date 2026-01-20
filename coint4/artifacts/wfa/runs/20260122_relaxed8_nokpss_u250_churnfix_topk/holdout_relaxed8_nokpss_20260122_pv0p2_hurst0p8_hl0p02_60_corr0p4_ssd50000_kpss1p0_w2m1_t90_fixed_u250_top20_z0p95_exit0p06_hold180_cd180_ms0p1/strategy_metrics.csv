@@ -1,0 +1,2 @@
+sharpe_ratio_abs,sharpe_ratio_on_returns,max_drawdown_abs,max_drawdown_on_equity,total_pnl,total_days,avg_daily_pnl,volatility,win_rate,max_single_gain,max_single_loss,total_trades,total_pairs_traded,total_costs,avg_trades_per_pair,win_rate_trades,best_pair_pnl,worst_pair_pnl,avg_pnl_per_pair
+7.740628086151974,7.6620846204938955,-57.42361949713086,-0.0053143046791481125,897.9219187576145,151.0,5.946502773229235,15.651559184268079,0.6225165562913907,118.52968019712716,-27.08005187593517,4841,53.0,135.54919123649597,48.41,0.008889274557445332,161.36252,-28.736202,8.989503

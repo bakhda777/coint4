@@ -65,9 +65,11 @@ Next steps:
 - Найдено: min_spread_move_sigma блокировал входы из-за NaN в last_flat_spread при fastmath; исправлено через last_flat_valid.
 - Sanity v4 завершён: сделки восстановились, но turnover очень высокий (26k+), stress Sharpe отрицательный (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`).
 - Churnfix v3 (holdout+stress) завершён: Sharpe 5.0–8.0, PnL 583–1072, trades 20k–28k.
-- Лучший компромисс: z0.95/exit0.06/hold180/cd180/ms0.1 → holdout Sharpe 7.00, stress Sharpe 5.84, PnL 1069/893, trades 20236.
+- Churnfix top‑k завершён: top20 Sharpe 7.74/6.84, PnL 898/793, trades 4841; top50 Sharpe 7.63/6.43, PnL 1083/914, trades 11823 (holdout/stress).
+- Churnfix msgrid завершён: ms0p2/ms0p3 на hold180 дают метрики близкие к ms0p1; hold240 снижает Sharpe/PNL.
+- Новый лучший компромисс: top50/z0.95/exit0.06/hold180/cd180/ms0.1 → Sharpe 7.63/6.43, PnL 1082/914, trades 11823.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
-- Следующий шаг: подтвердить кандидата (например, через top‑k/концентрацию или более жёсткий min_spread_move_sigma).
+- Следующий шаг: подтвердить кандидата на альтернативных периодах/режимах или оценить top20 при цели максимизации Sharpe.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

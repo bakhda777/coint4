@@ -135,10 +135,32 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_topk/run_queue.csv`.
 - Цель: проверить концентрацию прибыли на топ‑20/50 пар при текущем лучшем профиле.
 - Конфиги: top20/top50 × holdout/stress (4 прогона).
-- Статус: `planned`.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top20/z0p95/exit0p06/hold180/cd180/ms0p1 | 7.74 | 897.92 | 4841 | 53 | 6.84 | 793.03 | 4841 | 53 |
+| top50/z0p95/exit0p06/hold180/cd180/ms0p1 | 7.63 | 1082.62 | 11823 | 120 | 6.43 | 914.21 | 11823 | 120 |
+
+Выводы:
+- top20 даёт максимальный Sharpe и резкое снижение сделок/пар, но заметно ниже PnL.
+- top50 сохраняет высокий PnL при ~40% меньшем turnover vs full‑universe и Sharpe выше базового churnfix‑кандидата.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_msgrid (min_spread_move/hold grid)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_msgrid/run_queue.csv`.
 - Цель: проверить min_spread_move_sigma 0.2/0.3 и увеличение min_hold/cooldown до 180/240.
 - Конфиги: 4 варианта × holdout/stress (8 прогонов).
-- Статус: `planned`.
+- Статус: `completed` (8 прогонов).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| z0p95/exit0p06/hold180/cd180/ms0p2 | 6.97 | 1051.30 | 20175 | 168 | 5.79 | 874.10 | 20175 | 168 |
+| z0p95/exit0p06/hold180/cd180/ms0p3 | 6.95 | 1025.94 | 20109 | 168 | 5.75 | 848.88 | 20109 | 168 |
+| z0p95/exit0p06/hold240/cd240/ms0p2 | 4.95 | 799.66 | 18048 | 168 | 3.92 | 631.44 | 18048 | 168 |
+| z0p95/exit0p06/hold240/cd240/ms0p3 | 4.98 | 801.50 | 17996 | 168 | 3.95 | 634.61 | 17996 | 168 |
+
+Выводы:
+- ms0p2/ms0p3 при hold180 почти не улучшают Sharpe/PNL vs ms0p1 и оставляют turnover высоким.
+- hold240 снижает сделки, но ухудшает Sharpe/PNL — не лучший кандидат.
