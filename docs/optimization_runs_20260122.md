@@ -230,6 +230,12 @@
 - Стабильность по шагам (holdout, daily_pnl срезы): min/median Sharpe = -1.56/5.91.
 - Концентрация (gross PnL, holdout): top10/top20 = 47%/67%; отрицательных пар 53/145 (почти как ms0p1).
 
+### Queue: relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top30_top40 (OOS 2023H2, top30/top40)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260124_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top30_top40/run_queue.csv`.
+- Цель: проверить компромисс turnover vs PnL между top20 и top50 для z1.00/exit0.06/ms0p1.
+- Конфиги: top30/top40 × holdout/stress (4 прогона).
+- Статус: `planned` (4 прогона).
+
 ### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50 (OOS 2025H1)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50/run_queue.csv`.
 - Цель: независимый OOS‑период 2025-01-01 → 2025-06-30 (WFA 3 шага).
@@ -260,6 +266,12 @@
 Выводы:
 - Стабильность по шагам (holdout, daily_pnl срезы): min/median Sharpe = -3.67/-3.24.
 - Концентрация (gross PnL, holdout): top10/top20 = 50%/68%; отрицательных пар 68/141 (на уровне ms0p1).
+
+### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top30_top40 (OOS 2025H1, top30/top40)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260124_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top30_top40/run_queue.csv`.
+- Цель: проверить компромисс turnover vs PnL между top20 и top50 для z1.00/exit0.06/ms0p1.
+- Конфиги: top30/top40 × holdout/stress (4 прогона).
+- Статус: `planned` (4 прогона).
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
