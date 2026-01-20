@@ -24,6 +24,23 @@ Stress holdout (u250):
 - Costs: 309.95
 - Win rate: 0.5828
 
+## Top20 + turnover (max_pairs=20)
+Holdout (z1.05 / exit 0.08 / hold 120 / cd 120):
+- Sharpe: 3.8534
+- PnL: 128.71
+- Max DD: -21.51
+- Trades: 630
+- Pairs traded: 53
+- Costs: 18.04
+
+Stress (z1.05 / exit 0.08 / hold 120 / cd 120):
+- Sharpe: 3.4392
+- PnL: 114.68
+- Max DD: -23.52
+- Trades: 630
+- Pairs traded: 53
+- Costs: 32.07
+
 ## Concentration (by pair PnL)
 Holdout:
 - Top 1 share: 0.1562
@@ -36,5 +53,6 @@ Stress holdout:
 - Top 10 share: 0.8871
 
 ## Decision
-- Passes Sharpe > 1 and pairs >= 100 in both holdout and stress.
+- Baseline u250 passes Sharpe > 1 and pairs >= 100 in both holdout and stress.
 - Concentration rises under stress (top 10 ~88.7% of PnL). Consider adding concentration limits or risk caps before paper/live.
+- Recommendation: switch to top20 + turnover (z1.05/0.08/120/120) as the main candidate; Sharpe > 3 with trades down to 630 (~4.17/day), pairs 53.
