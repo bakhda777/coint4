@@ -662,7 +662,11 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    enable_regime_detection: bool,
                                    enable_structural_breaks: bool,
                                    min_volatility: float,
-                                   adaptive_threshold_factor: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                   adaptive_threshold_factor: float,
+                                   cooldown_periods: int = 0,
+                                   min_hold_periods: int = 0,
+                                   stop_loss_zscore: float = 0.0,
+                                   min_spread_move_sigma: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Полная торговая функция с всеми возможностями оригинального алгоритма.
 
@@ -690,16 +694,36 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         Минимальная волатильность
     adaptive_threshold_factor : float
         Фактор адаптивности порогов
+    cooldown_periods : int
+        Период охлаждения после выхода (в барах)
+    min_hold_periods : int
+        Минимальная длительность удержания позиции (в барах)
+    stop_loss_zscore : float
+        Stop-loss по z-score
+    min_spread_move_sigma : float
+        Минимальный сдвиг спреда от последней плоскости (в сигмах)
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray, np.ndarray]
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
         positions, pnl_series, cumulative_pnl, costs_series
     """
     n = y.size
     positions = np.zeros(n, dtype=np.float32)
     pnl_series = np.zeros(n, dtype=np.float32)
     costs_series = np.zeros(n, dtype=np.float32)
+
+    # Guard params (avoid negative values / disable features cleanly)
+    if max_holding_period <= 0:
+        max_holding_period = 2147483647  # effectively disabled
+    if cooldown_periods < 0:
+        cooldown_periods = 0
+    if min_hold_periods < 0:
+        min_hold_periods = 0
+    if stop_loss_zscore < 0.0:
+        stop_loss_zscore = 0.0
+    if min_spread_move_sigma < 0.0:
+        min_spread_move_sigma = 0.0
 
     # Вычисляем rolling статистики
     beta, mu, sigma = rolling_ols(y, x, rolling_window)
@@ -709,6 +733,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     entry_spread = 0.0  # Добавляем переменную для хранения спреда при входе
     entry_beta = 1.0    # Бета на момент входа (для консистентного PnL)
     total_pnl = 0.0
+    cooldown_until = 0  # bar index; entries allowed when i >= cooldown_until
+    last_flat_spread = np.nan
 
     # Определяем рыночный режим (если включено)
     regime_factor = 1.0
@@ -762,6 +788,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             z_curr = 0.0
             adaptive_entry = entry_threshold
             adaptive_exit = exit_threshold
+            prev_spread = 0.0
+            current_vol = min_volatility
 
         new_position = position
 
@@ -771,21 +799,34 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 
         # Логика выхода из позиции
         elif position != 0.0:
-            if (position > 0 and z_curr <= adaptive_exit) or (position < 0 and z_curr >= -adaptive_exit):
-                new_position = 0.0
+            # Stop-loss по z-score (override min_hold)
+            if stop_loss_zscore > 0.0:
+                if (position > 0.0 and z_curr <= -stop_loss_zscore) or (position < 0.0 and z_curr >= stop_loss_zscore):
+                    new_position = 0.0
+
+            # Exit band around 0 (aligned with BasePairBacktester: abs(z) <= z_exit)
+            if new_position == position:
+                if (i - entry_bar) >= min_hold_periods and abs(z_curr) <= abs(adaptive_exit):
+                    new_position = 0.0
 
         # Вход в позицию только если нет текущей позиции
         elif position == 0.0:
-            if z_curr > adaptive_entry:
-                new_position = -1.0  # Short spread
-                entry_bar = i
-                entry_beta = beta_signal
-                entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
-            elif z_curr < -adaptive_entry:
-                new_position = 1.0   # Long spread
-                entry_bar = i
-                entry_beta = beta_signal
-                entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
+            can_enter = i >= cooldown_until
+            if can_enter and min_spread_move_sigma > 0.0 and not np.isnan(last_flat_spread):
+                if abs(prev_spread - last_flat_spread) < (min_spread_move_sigma * current_vol):
+                    can_enter = False
+
+            if can_enter:
+                if z_curr > adaptive_entry:
+                    new_position = -1.0  # Short spread
+                    entry_bar = i
+                    entry_beta = beta_signal
+                    entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
+                elif z_curr < -adaptive_entry:
+                    new_position = 1.0   # Long spread
+                    entry_bar = i
+                    entry_beta = beta_signal
+                    entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
 
         # Расчет PnL при изменении позиции
         if new_position != position:
@@ -805,6 +846,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                 # Общий PnL = прибыль от цены минус комиссии
                 pnl_series[i] = price_pnl - cost
                 total_pnl += price_pnl - cost
+                cooldown_until = i + cooldown_periods + 1
+                last_flat_spread = y[i] - beta_signal * x[i]
             else:
                 # При входе в позицию или изменении размера - только комиссия
                 pnl_series[i] = -cost

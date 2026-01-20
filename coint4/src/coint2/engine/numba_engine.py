@@ -25,6 +25,35 @@ class NumbaPairBacktester(BasePairBacktester):
         x = self.pair_data.iloc[:, 1].values.astype(np.float32)
 
         beta, mu, sigma = rolling_ols(y, x, self.rolling_window)
+
+        bar_minutes = 15
+        if isinstance(self.pair_data.index, pd.DatetimeIndex) and len(self.pair_data.index) > 1:
+            deltas = self.pair_data.index.to_series().diff().dropna()
+            if not deltas.empty:
+                median_seconds = deltas.dt.total_seconds().median()
+                if median_seconds and median_seconds > 0:
+                    bar_minutes = int(round(median_seconds / 60))
+
+        min_hold_periods = 0
+        if getattr(self, "min_position_hold_minutes", 0) > 0 and bar_minutes > 0:
+            min_hold_periods = int(np.ceil(self.min_position_hold_minutes / bar_minutes))
+
+        cooldown_periods = int(getattr(self, "cooldown_periods", 0) or 0)
+        if getattr(self, "anti_churn_cooldown_minutes", 0) > 0 and bar_minutes > 0:
+            anti_churn_periods = int(np.ceil(self.anti_churn_cooldown_minutes / bar_minutes))
+            if anti_churn_periods > cooldown_periods:
+                cooldown_periods = anti_churn_periods
+
+        max_holding_period = 99999
+        if getattr(self, "time_stop_multiplier", None) is not None and getattr(self, "half_life", None) is not None:
+            try:
+                time_stop_days = float(self.half_life) * float(self.time_stop_multiplier)
+                if time_stop_days > 0 and bar_minutes > 0:
+                    max_holding_period = int(np.ceil(time_stop_days * 1440 / bar_minutes))
+                    if max_holding_period < 1:
+                        max_holding_period = 1
+            except (TypeError, ValueError):
+                pass
         
         positions, pnl, cumulative_pnl, costs = calculate_positions_and_pnl_full(
             y, x,
@@ -33,11 +62,15 @@ class NumbaPairBacktester(BasePairBacktester):
             exit_threshold=self.z_exit,
             commission=self.commission_pct,
             slippage=self.slippage_pct,
-            max_holding_period=99999,
+            max_holding_period=max_holding_period,
             enable_regime_detection=self.market_regime_detection,
             enable_structural_breaks=self.structural_break_protection,
             min_volatility=self.min_volatility,
-            adaptive_threshold_factor=1.0 if self.adaptive_thresholds else 0.0
+            adaptive_threshold_factor=1.0 if self.adaptive_thresholds else 0.0,
+            cooldown_periods=cooldown_periods,
+            min_hold_periods=min_hold_periods,
+            stop_loss_zscore=float(getattr(self, "pair_stop_loss_zscore", 0.0) or 0.0),
+            min_spread_move_sigma=float(getattr(self, "min_spread_move_sigma", 0.0) or 0.0),
         )
 
         spread = y - beta * x

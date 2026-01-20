@@ -129,8 +129,37 @@ class FullNumbaPairBacktester(BasePairBacktester):
         # Быстрый rolling OLS
         beta, mu, sigma = rolling_ols(y, x, self.rolling_window)
         
+        bar_minutes = 15
+        if isinstance(self.pair_data.index, pd.DatetimeIndex) and len(self.pair_data.index) > 1:
+            deltas = self.pair_data.index.to_series().diff().dropna()
+            if not deltas.empty:
+                median_seconds = deltas.dt.total_seconds().median()
+                if median_seconds and median_seconds > 0:
+                    bar_minutes = int(round(median_seconds / 60))
+
+        min_hold_periods = 0
+        if getattr(self, "min_position_hold_minutes", 0) > 0 and bar_minutes > 0:
+            min_hold_periods = int(np.ceil(self.min_position_hold_minutes / bar_minutes))
+
+        cooldown_periods = int(getattr(self, "cooldown_periods", 0) or 0)
+        if getattr(self, "anti_churn_cooldown_minutes", 0) > 0 and bar_minutes > 0:
+            anti_churn_periods = int(np.ceil(self.anti_churn_cooldown_minutes / bar_minutes))
+            if anti_churn_periods > cooldown_periods:
+                cooldown_periods = anti_churn_periods
+
+        max_holding_period = getattr(self, "max_holding_period", 100)
+        if getattr(self, "time_stop_multiplier", None) is not None and getattr(self, "half_life", None) is not None:
+            try:
+                time_stop_days = float(self.half_life) * float(self.time_stop_multiplier)
+                if time_stop_days > 0 and bar_minutes > 0:
+                    max_holding_period = int(np.ceil(time_stop_days * 1440 / bar_minutes))
+                    if max_holding_period < 1:
+                        max_holding_period = 1
+            except (TypeError, ValueError):
+                pass
+
         # Полный расчет позиций и PnL с всеми функциями
-        positions, pnl_series, cumulative_pnl = calculate_positions_and_pnl_full(
+        positions, pnl_series, cumulative_pnl, _costs_series = calculate_positions_and_pnl_full(
             y=y,
             x=x,
             rolling_window=self.rolling_window,
@@ -138,11 +167,15 @@ class FullNumbaPairBacktester(BasePairBacktester):
             exit_threshold=self.z_exit,
             commission=self.commission_pct,
             slippage=self.slippage_pct,
-            max_holding_period=getattr(self, 'max_holding_period', 100),
+            max_holding_period=max_holding_period,
             enable_regime_detection=getattr(self, 'market_regime_detection', True),
             enable_structural_breaks=getattr(self, 'structural_break_protection', True),
             min_volatility=getattr(self, 'min_volatility', 0.001),
-            adaptive_threshold_factor=getattr(self, 'adaptive_threshold_factor', 1.0)
+            adaptive_threshold_factor=getattr(self, 'adaptive_threshold_factor', 1.0),
+            cooldown_periods=cooldown_periods,
+            min_hold_periods=min_hold_periods,
+            stop_loss_zscore=float(getattr(self, "pair_stop_loss_zscore", 0.0) or 0.0),
+            min_spread_move_sigma=float(getattr(self, "min_spread_move_sigma", 0.0) or 0.0),
         )
         
         # Calculate spread and z_scores for compatibility

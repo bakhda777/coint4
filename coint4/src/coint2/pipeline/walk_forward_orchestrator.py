@@ -151,7 +151,7 @@ def _init_worker_global_price(consolidated_path: str) -> None:
     if GLOBAL_PRICE is None:
         initialize_global_price_data(consolidated_path)
 
-def _simulate_realistic_portfolio(all_pnls, cfg):
+def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=None):
     """
     КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Полноценная симуляция портфеля с реалистичным управлением позициями.
 
@@ -164,6 +164,8 @@ def _simulate_realistic_portfolio(all_pnls, cfg):
     Args:
         all_pnls: Список PnL серий от всех пар
         cfg: Конфигурация с параметрами портфеля
+        all_positions: Список серий позиций (опционально)
+        all_scores: Список серий сигналов/скоринга (опционально, например z-score)
 
     Returns:
         pd.Series: Реалистичный PnL портфеля с учетом лимитов позиций
@@ -176,8 +178,21 @@ def _simulate_realistic_portfolio(all_pnls, cfg):
     # Создаем DataFrame со всеми PnL сериями
     pnl_df = pd.concat({f'pair_{i}': pnl.fillna(0) for i, pnl in enumerate(all_pnls)}, axis=1)
 
-    # Создаем DataFrame с сигналами (позиция активна если PnL != 0)
-    signals_df = pd.concat({f'pair_{i}': (pnl != 0).astype(int) for i, pnl in enumerate(all_pnls)}, axis=1)
+    positions_df = None
+    if all_positions:
+        positions_df = pd.concat({f'pair_{i}': pos.fillna(0) for i, pos in enumerate(all_positions)}, axis=1)
+
+    scores_df = None
+    if all_scores:
+        scores_df = pd.concat({f'pair_{i}': score for i, score in enumerate(all_scores)}, axis=1)
+
+    # Создаем DataFrame с сигналами
+    if positions_df is not None:
+        signals_df = (positions_df != 0).astype(int)
+        entry_signals_df = (positions_df.shift(1).fillna(0) == 0) & (positions_df != 0)
+    else:
+        signals_df = pd.concat({f'pair_{i}': (pnl != 0).astype(int) for i, pnl in enumerate(all_pnls)}, axis=1)
+        entry_signals_df = signals_df
 
     # Инициализируем портфель
     max_positions = cfg.portfolio.max_active_positions
@@ -189,32 +204,41 @@ def _simulate_realistic_portfolio(all_pnls, cfg):
     # Симулируем торговлю по каждому временному шагу
     for timestamp in pnl_df.index:
         current_signals = signals_df.loc[timestamp]
+        current_entries = entry_signals_df.loc[timestamp]
         current_pnls = pnl_df.loc[timestamp]
 
-        # 1. Закрываем позиции, которые больше не активны
+        # 1. Отмечаем позиции на закрытие (по позиции, а не по PnL)
         positions_to_close = []
-        for pair_name in list(active_positions.keys()):
-            if current_signals[pair_name] == 0:  # Сигнал исчез
-                positions_to_close.append(pair_name)
+        if positions_df is not None:
+            current_positions = positions_df.loc[timestamp]
+            for pair_name in list(active_positions.keys()):
+                if current_positions[pair_name] == 0:
+                    positions_to_close.append(pair_name)
+        else:
+            for pair_name in list(active_positions.keys()):
+                if current_signals[pair_name] == 0:
+                    positions_to_close.append(pair_name)
 
-        for pair_name in positions_to_close:
-            del active_positions[pair_name]
-
-        # 2. Ищем новые сигналы для открытия позиций
+        # 2. Ищем новые сигналы для открытия позиций (только на входе)
         new_signals = []
         for pair_name in current_signals.index:
-            if current_signals[pair_name] == 1 and pair_name not in active_positions:
-                # Новый сигнал от пары, которая не в портфеле
-                new_signals.append((pair_name, abs(current_pnls[pair_name])))
+            if current_entries[pair_name] and pair_name not in active_positions:
+                if scores_df is not None and pair_name in scores_df.columns:
+                    strength = abs(scores_df.loc[timestamp, pair_name])
+                else:
+                    strength = abs(current_pnls[pair_name])
+                new_signals.append((pair_name, strength))
 
-        # 3. Сортируем новые сигналы по силе (абсолютный PnL)
+        # 3. Сортируем новые сигналы по силе
         new_signals.sort(key=lambda x: x[1], reverse=True)
 
-        # 4. Открываем новые позиции в пределах лимита
-        available_slots = max_positions - len(active_positions)
-        for i, (pair_name, signal_strength) in enumerate(new_signals):
+        # 4. Открываем новые позиции в пределах лимита (учитываем закрывающиеся)
+        available_slots = max_positions - (len(active_positions) - len(positions_to_close))
+        if available_slots < 0:
+            available_slots = 0
+        for i, (pair_name, _strength) in enumerate(new_signals):
             if i >= available_slots:
-                break  # Достигли лимита позиций
+                break
             active_positions[pair_name] = timestamp
 
         # 5. Рассчитываем PnL портфеля на этом шаге
@@ -223,6 +247,11 @@ def _simulate_realistic_portfolio(all_pnls, cfg):
             step_pnl += current_pnls[pair_name]
 
         portfolio_pnl[timestamp] = step_pnl
+
+        # 6. Закрываем позиции после учета PnL на текущем баре
+        for pair_name in positions_to_close:
+            if pair_name in active_positions:
+                del active_positions[pair_name]
 
     # Диагностика
     total_signals = signals_df.sum(axis=1)
@@ -377,10 +406,12 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             trades = results.get("trades", pd.Series())
             positions = results.get("position", pd.Series(dtype=float))
             costs = results.get("costs", pd.Series())
+            z_scores = results.get("z_score", pd.Series(dtype=float))
         else:
             trades = results.get("trades", pd.Series())
             positions = results.get("position", pd.Series(dtype=float))
             costs = results.get("costs", pd.Series())
+            z_scores = results.get("z_score", pd.Series(dtype=float))
         
         # Vectorized calculation of actual trade count
         if not positions.empty:
@@ -435,6 +466,8 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             'pnl_series': pnl_series,
             'trades_log': trades_log,
             'trade_stat': trade_stat,
+            'positions': positions,
+            'z_scores': z_scores,
             'success': True
         }
         
@@ -460,6 +493,8 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
                 'max_daily_loss': 0.0,
                 'error': str(e)
             },
+            'positions': pd.Series(dtype=float),
+            'z_scores': pd.Series(dtype=float),
             'success': False,
             'error': str(e)
         }
@@ -1637,7 +1672,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 total_trades_count = int(np.sum(trade_counts))
 
                 all_pnl_series = [result['pnl_series'] for result in successful_results]
-                step_pnl = _simulate_realistic_portfolio(all_pnl_series, cfg)
+                all_positions = [result.get('positions', pd.Series(dtype=float)) for result in successful_results]
+                all_scores = [result.get('z_scores', pd.Series(dtype=float)) for result in successful_results]
+                step_pnl = _simulate_realistic_portfolio(
+                    all_pnl_series,
+                    cfg,
+                    all_positions=all_positions,
+                    all_scores=all_scores,
+                )
                 total_step_pnl = step_pnl.sum()
 
                 # Aggregate other data
