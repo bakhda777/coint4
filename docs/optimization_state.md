@@ -74,7 +74,11 @@ Next steps:
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
 - Канонический конфиг: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml` (PnL‑альтернатива рядом).
 - Alt-holdout top50 sens завершён: z1.00/exit0.06 Sharpe 8.65/7.48, PnL 1049/907; z0.95/exit0.08 чуть ниже (см. `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`).
-- Запланированы новые OOS‑периоды: 2023-05 → 2023-12 (5 шагов) и 2025-01 → 2025-06 (3 шага) для топ‑2 кандидатов.
+- OOS 2023-05 → 2023-12: лучше z0.95/exit0.08 (Sharpe 4.24/2.94, PnL 810/561); z1.00 проседает.
+- OOS 2025-01 → 2025-06: лучше z1.00/exit0.06 (Sharpe 3.83/2.61, PnL 400/271).
+- По шагам WFA (daily_pnl срезы) есть отрицательные минимумы на обоих OOS периодах; детали в `docs/optimization_runs_20260122.md`.
+- Концентрация на новых OOS умеренная: top10 ≈ 44–50%, top20 ≈ 63–68%; отрицательных пар 50–69 из 141–145.
+- Запланирован churngrid: min_spread_move_sigma 0.15/0.20 для top50 z1.00 (holdout+stress).
 - Следующий шаг: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
