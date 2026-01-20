@@ -92,7 +92,7 @@ backtest:
   quarantine_drawdown_threshold_pct: 0.08
   quarantine_period_days: 7
   quarantine_rolling_window_days: 30
-  enable_realistic_costs: false
+  enable_realistic_costs: true
   commission_rate_per_leg: 0.0004
   slippage_half_spread_multiplier: 2.0
   funding_cost_enabled: true
