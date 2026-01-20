@@ -53,7 +53,8 @@ Next steps:
 - Baseline u250 turnover grid завершён: лучший вариант z0.95/exit0.08/hold120/cd120 → holdout Sharpe `4.52`, stress Sharpe `3.70`, PnL `447.87/366.56`, trades `3936`.
 - Candidate sweep по риск-параметрам завершён: метрики почти не меняются, max_active_positions даёт минимальные отличия; оставляем baseline z0.95/0.08/120/120.
 - Sharpe annualization: WFA использует `annualizing_factor * (24*60/bar_minutes)`; base_engine приведён к динамическому periods_per_year по шагу данных.
-- Запланирован micro-grid u250 (entry/exit/hold/cd + max_pairs 50/100/150): `coint4/artifacts/wfa/aggregate/20260121_relaxed8_nokpss_u250_search/run_queue.csv`.
+- Micro-grid u250 (entry/exit/hold/cd + max_pairs 50/100/150) завершён: лучший min‑Sharpe у z0.95/exit0.06/hold120/cd120 (4.54/3.73); exit0.10 практически идентичен. Очередь: `coint4/artifacts/wfa/aggregate/20260121_relaxed8_nokpss_u250_search/run_queue.csv`.
+- Кандидат обновлён: `docs/candidate_relaxed8_u250_20260121.md`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
