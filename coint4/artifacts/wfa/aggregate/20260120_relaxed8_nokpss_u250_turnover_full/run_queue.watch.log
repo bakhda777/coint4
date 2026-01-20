@@ -1,0 +1,4 @@
+2026-01-20T05:29:02Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260120_relaxed8_nokpss_u250_turnover_full/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-20T05:29:02Z HEARTBEAT run_pid=1078 run_cpu=0% watcher_cpu=0.2% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-20T05:29:32Z HEARTBEAT run_pid=1078 run_cpu=85.2% watcher_cpu=0% worker_pid=1183 worker_cpu=85.2% coint2_procs=6 cpu_total=520.7% idle_seconds=0
+2026-01-20T05:30:04Z HEARTBEAT run_pid=1078 run_cpu=38.7% watcher_cpu=0% worker_pid=1183 worker_cpu=38.7% coint2_procs=6 cpu_total=240.1% idle_seconds=0
