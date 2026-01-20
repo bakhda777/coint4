@@ -950,3 +950,22 @@ step_3:
 - Прогон 6 (stress z1.0/0.06/180/180): sharpe_ratio_abs `3.4491`, total_pnl `335.24`, max_drawdown_abs `-64.64`, total_trades `3102`, total_pairs_traded `168`, total_costs `151.78`.
 - Фильтрация (run.log): `coint4/results/filter_reasons_20260120_053013.csv`, `coint4/results/filter_reasons_20260120_053014.csv`, `coint4/results/filter_reasons_20260120_053015.csv`, `coint4/results/filter_reasons_20260120_053106.csv`, `coint4/results/filter_reasons_20260120_053107.csv`, `coint4/results/filter_reasons_20260120_053108.csv`, `coint4/results/filter_reasons_20260120_053110.csv`, `coint4/results/filter_reasons_20260120_053155.csv`, `coint4/results/filter_reasons_20260120_053156.csv`, `coint4/results/filter_reasons_20260120_053158.csv`, `coint4/results/filter_reasons_20260120_053159.csv`, `coint4/results/filter_reasons_20260120_053200.csv`, `coint4/results/filter_reasons_20260120_053243.csv`, `coint4/results/filter_reasons_20260120_053245.csv`, `coint4/results/filter_reasons_20260120_053246.csv`, `coint4/results/filter_reasons_20260120_053247.csv`, `coint4/results/filter_reasons_20260120_053249.csv`, `coint4/results/filter_reasons_20260120_053333.csv`, `coint4/results/filter_reasons_20260120_053334.csv`, `coint4/results/filter_reasons_20260120_053335.csv`, `coint4/results/filter_reasons_20260120_053337.csv`, `coint4/results/filter_reasons_20260120_053339.csv`.
 - Итог: лучший баланс — z0.95/0.08/120/120 (Sharpe 4.52/3.70, PnL 447.9/366.6) при снижении сделок до 3936 (−40% vs baseline).
+
+### WFA очередь (relaxed8_nokpss_u250_candidate_sweep_20260120, риск-параметры)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260120_relaxed8_nokpss_u250_candidate_sweep/run_queue.csv`.
+- Цель: проверить перспективного кандидата (baseline z0.95/0.08/120/120) на чувствительность к risk_per_position, max_active_positions, max_kelly_fraction.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги (holdout + stress, одиночные изменения):
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_risk0p01.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_risk0p02.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_maxpos10.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_maxpos20.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_kelly0p2.yaml`
+  - `coint4/configs/holdout_20260120_relaxed8_nokpss_u250_candidate/holdout_relaxed8_nokpss_20260120_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_z0p95_exit0p08_hold120_cd120_kelly0p3.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_risk0p01.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_risk0p02.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos10.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_kelly0p2.yaml`
+  - `coint4/configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_kelly0p3.yaml`
+- Статус: `planned`.
