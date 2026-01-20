@@ -53,6 +53,6 @@
     - Выполнено: top-k ограничение пар (max_pairs=10/20) для u250 holdout + stress → top20 Sharpe `4.56/3.65`, trades `1693`; top10 Sharpe `2.74/2.08`, trades `798`.
     - Выполнено: turnover grid поверх top20 (entry/exit + hold/cooldown) → лучший z1.05/0.08/120/120, holdout Sharpe `3.85`, stress Sharpe `3.44`, trades `630`.
     - Выполнено: turnover grid для baseline u250 без max_pairs → лучший z0.95/0.08/120/120, holdout Sharpe `4.52`, stress Sharpe `3.70`, PnL `447.87/366.56`, trades `3936`.
-    - Запланировано: candidate sweep по риск-параметрам (risk_per_position, max_active_positions, max_kelly_fraction) для baseline z0.95/0.08/120/120, очередь `coint4/artifacts/wfa/aggregate/20260120_relaxed8_nokpss_u250_candidate_sweep/run_queue.csv`.
+    - Выполнено: candidate sweep по риск-параметрам (risk_per_position, max_active_positions, max_kelly_fraction) → метрики почти без изменений; остаёмся на baseline z0.95/0.08/120/120.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.

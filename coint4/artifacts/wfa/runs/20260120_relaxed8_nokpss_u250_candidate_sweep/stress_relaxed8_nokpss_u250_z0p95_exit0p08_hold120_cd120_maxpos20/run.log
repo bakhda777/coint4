@@ -1,0 +1,1429 @@
+[run_wfa_queue] 2026-01-20T05:54:25Z cmd: /opt/coint4/coint4/run_wfa_fullcpu.sh configs/stress_20260120_relaxed8_nokpss_u250_candidate/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20.yaml artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20
+[run_wfa_fullcpu] start: 2026-01-20T05:54:25Z
+[run_wfa_fullcpu] os.cpu_count: 8
+[run_wfa_fullcpu] worker_pid=3659
+2026-01-20 05:54:29,286 - coint2.core.memory_optimization - INFO - ✅ BLAS threading limits set to 1 via threadpoolctl
+2026-01-20 05:54:29,286 - coint2.core.memory_optimization - INFO - 🔧 Controlled libraries: openblas, openmp
+2026-01-20 05:54:29,286 - coint2.core.memory_optimization - INFO - 🧵 Process threads: 2 → 2
+2026-01-20 05:54:29,286 - coint2.core.memory_optimization - INFO - 📝 Set 11 environment variables
+2026-01-20 05:54:29,635 - INFO - ✅ Параметры конфигурации валидны
+2026-01-20 05:54:29,635 - INFO - 📝 Некоторые параметры были скорректированы:
+2026-01-20 05:54:29,793 - INFO - 🔒 WFA: фиксированный universe из artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml (250 пар)
+2026-01-20 05:54:29,793 - INFO -   Шаг 1: тренировка 2024-02-01-2024-04-30, тест 2024-05-01-2024-05-31
+2026-01-20 05:54:29,793 - INFO -   Шаг 2: тренировка 2024-03-02-2024-05-30, тест 2024-05-31-2024-06-30
+2026-01-20 05:54:29,793 - INFO -   Шаг 3: тренировка 2024-04-01-2024-06-29, тест 2024-06-30-2024-07-30
+2026-01-20 05:54:29,793 - INFO -   Шаг 4: тренировка 2024-05-01-2024-07-29, тест 2024-07-30-2024-08-29
+2026-01-20 05:54:29,793 - INFO -   Шаг 5: тренировка 2024-05-31-2024-08-28, тест 2024-08-29-2024-09-28
+2026-01-20 05:54:29,793 - INFO -   Шаг 6: тренировка 2024-06-30-2024-09-27, тест 2024-09-28-2024-10-28
+2026-01-20 05:54:29,793 - INFO -   Шаг 7: тренировка 2024-07-30-2024-10-27, тест 2024-10-28-2024-11-27
+2026-01-20 05:54:29,793 - INFO -   Шаг 8: тренировка 2024-08-29-2024-11-26, тест 2024-11-27-2024-12-27
+2026-01-20 05:54:29,793 - INFO -   Шаг 9: тренировка 2024-09-28-2024-12-26, тест 2024-12-27-2025-01-26
+2026-01-20 05:54:29,793 - INFO - 📈 Запланировано 9 walk-forward шагов
+2026-01-20 05:54:29,793 - INFO - ⛔ Ограничение WFA шагов: 9 → 5
+2026-01-20 05:54:29,794 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 1: 0 дней. Рекомендуется минимум 1 день.
+2026-01-20 05:54:29,794 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 2: 0 дней. Рекомендуется минимум 1 день.
+2026-01-20 05:54:29,794 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 3: 0 дней. Рекомендуется минимум 1 день.
+2026-01-20 05:54:29,794 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 4: 0 дней. Рекомендуется минимум 1 день.
+2026-01-20 05:54:29,794 - WARNING - ⚠️ Маленький буфер между training и testing в шаге 5: 0 дней. Рекомендуется минимум 1 день.
+2026-01-20 05:54:29,794 - INFO - ✅ Шаги успешно запланированы:
+2026-01-20 05:54:29,794 - INFO -    Шаг 1: тренировка 2024-02-01-2024-04-30, тест 2024-05-01-2024-05-31
+2026-01-20 05:54:29,794 - INFO -    Шаг 2: тренировка 2024-03-02-2024-05-30, тест 2024-05-31-2024-06-30
+2026-01-20 05:54:29,794 - INFO -    Шаг 3: тренировка 2024-04-01-2024-06-29, тест 2024-06-30-2024-07-30
+2026-01-20 05:54:29,794 - INFO -    Шаг 4: тренировка 2024-05-01-2024-07-29, тест 2024-07-30-2024-08-29
+2026-01-20 05:54:29,794 - INFO -    Шаг 5: тренировка 2024-05-31-2024-08-28, тест 2024-08-29-2024-09-28
+2026-01-20 05:54:29,794 - INFO - 🗂️ Consolidating price data for memory-mapped access...
+2026-01-20 05:54:29,794 - INFO - 📊 Consolidating data range: 2024-01-27 → 2024-10-03
+2026-01-20 05:54:29,794 - coint2.core.memory_optimization - INFO - 🔄 Consolidating price data from data_downloaded to .cache/consolidated_prices.parquet
+2026-01-20 05:54:29,794 - INFO - ⇢ loading raw data for consolidation — start
+2026-01-20 05:54:30,710 - INFO - ⇠ loading raw data for consolidation — done in 0.92s
+2026-01-20 05:54:30,710 - INFO - ⇢ pivoting data to wide format — start
+2026-01-20 05:54:37,859 - INFO - ⇠ pivoting data to wide format — done in 7.15s
+2026-01-20 05:54:37,946 - coint2.core.memory_optimization - INFO - 📊 Consolidated data: 24001 rows × 493 symbols
+2026-01-20 05:54:37,947 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB
+2026-01-20 05:54:37,947 - INFO - ⇢ writing consolidated Parquet file — start
+2026-01-20 05:54:38,293 - INFO - ⇠ writing consolidated Parquet file — done in 0.35s
+2026-01-20 05:54:38,293 - coint2.core.memory_optimization - INFO - ✅ Successfully consolidated data to .cache/consolidated_prices.parquet
+2026-01-20 05:54:38,334 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:54:38,334 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:54:38,335 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:54:38,336 - ERROR - ⇠ loading memory-mapped data — failed after 0.00s: Error creating dataset. Could not read schema from '.cache/consolidated_prices.parquet'. Is this a 'parquet' file?: Could not open Parquet input source '.cache/consolidated_prices.parquet': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+2026-01-20 05:54:38,336 - coint2.core.memory_optimization - ERROR - ❌ Error initializing global price data: Error creating dataset. Could not read schema from '.cache/consolidated_prices.parquet'. Is this a 'parquet' file?: Could not open Parquet input source '.cache/consolidated_prices.parquet': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+Traceback (most recent call last):
+  File "/opt/coint4/coint4/src/coint2/core/memory_optimization.py", line 166, in initialize_global_price_data
+    dataset = ds.dataset(consolidated_path, format="parquet", memory_map=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: dataset() got an unexpected keyword argument 'memory_map'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/coint4/coint4/src/coint2/core/memory_optimization.py", line 169, in initialize_global_price_data
+    dataset = ds.dataset(consolidated_path, format="parquet")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/.venv/lib/python3.12/site-packages/pyarrow/dataset.py", line 790, in dataset
+    return _filesystem_dataset(source, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/.venv/lib/python3.12/site-packages/pyarrow/dataset.py", line 482, in _filesystem_dataset
+    return factory.finish(schema)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "pyarrow/_dataset.pyx", line 3226, in pyarrow._dataset.DatasetFactory.finish
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 92, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Error creating dataset. Could not read schema from '.cache/consolidated_prices.parquet'. Is this a 'parquet' file?: Could not open Parquet input source '.cache/consolidated_prices.parquet': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+2026-01-20 05:54:38,337 - INFO - ✅ Memory-mapped data initialized successfully
+2026-01-20 05:54:38,338 - INFO - ⇢ Walk-forward steps — starting 5 items
+2026-01-20 05:54:38,339 - INFO - 📈 Инициализация equity кривой с первой тестовой даты: 2024-05-01 00:00:00
+2026-01-20 05:54:38,339 - INFO - 🔍 WF-шаг 1/5: Валидация временных окон...
+2026-01-20 05:54:38,339 - INFO - ⇢ WF-шаг 1/5: training 2024-02-01-2024-04-30, testing 2024-05-01-2024-05-31 — start
+2026-01-20 05:54:38,339 - INFO - ⇢ loading step data — start
+2026-01-20 05:54:38,608 - INFO - ⇠ loading step data — done in 0.27s
+2026-01-20 05:54:41,574 - INFO - 📊 WF-шаг 1/5: Границы данных:
+2026-01-20 05:54:41,574 - INFO -    Training: 2024-02-01 00:00:00 → 2024-04-30 23:45:00 (8,640 строк × 403 символов)
+2026-01-20 05:54:41,574 - INFO -    Testing:  2024-05-01 00:00:00 → 2024-05-31 00:00:00 (2,881 строк × 403 символов)
+2026-01-20 05:54:41,574 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-20 05:54:41,631 - INFO - ⇢ normalizing training data — start
+2026-01-20 05:54:41,685 - INFO -   Символы с NaN значениями: 72
+2026-01-20 05:54:41,685 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-20 05:54:41,734 - INFO - Символы с недостаточной историей: 67 из 403
+2026-01-20 05:54:42,557 - INFO - Символы с NaN после нормализации: 336
+2026-01-20 05:54:42,567 - INFO - Удалено 549 начальных строк с NaN от rolling расчетов
+2026-01-20 05:54:42,571 - INFO - Итоговое количество символов после нормализации: 336 из 403
+2026-01-20 05:54:42,571 - INFO -   Статистика нормализации:
+2026-01-20 05:54:42,571 - INFO -     Исходные символы: 403
+2026-01-20 05:54:42,571 - INFO -     Недостаточная история: 67
+2026-01-20 05:54:42,572 - INFO -     Постоянная цена: 0
+2026-01-20 05:54:42,572 - INFO -     NaN после нормализации: 336
+2026-01-20 05:54:42,572 - INFO -     Итоговые символы: 336 (83.4%)
+2026-01-20 05:54:42,572 - INFO -   После нормализации: 336 символов (потеряно 67)
+2026-01-20 05:54:42,572 - INFO -   Отброшено много символов: 67 из 403
+2026-01-20 05:54:42,572 - INFO - ⇠ normalizing training data — done in 0.94s
+2026-01-20 05:54:42,572 - INFO -   Фиксированный universe: 250 пар (отфильтровано 0 недоступных)
+2026-01-20 05:54:42,572 - INFO - ⇢ filtering pairs by cointegration and half-life — start
+2026-01-20 05:54:42,572 - INFO - [ФИЛЬТР] Параллельная фильтрация: processes (8 workers)
+⚙️  Загрузка данных за период: 2024-01-27 -> 2024-10-03
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 9788769 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+⚙️  Загрузка данных за период: 2024-02-01 -> 2024-05-31
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 4205229 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После проверки данных: 250 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра корреляции (>0.4): 242 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра beta: 204 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра mean crossings: 204 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра half-life: 204 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра коинтеграции: 198 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра Hurst: 139 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра KPSS: 139 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] После фильтра market microstructure: 135 пар
+2026-01-20 05:55:16,119 - INFO - [ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):
+2026-01-20 05:55:16,119 - INFO -   1. SSD → Коинтеграция: 250 → 198 пар
+2026-01-20 05:55:16,119 - INFO -   2. Коинтеграция → Beta: 198 → 204 пар
+2026-01-20 05:55:16,119 - INFO -   3. Beta → Half-life: 204 → 204 пар
+2026-01-20 05:55:16,119 - INFO -   4. Half-life → Mean crossings: 204 → 204 пар
+2026-01-20 05:55:16,119 - INFO -   5. Mean crossings → Hurst: 204 → 139 пар
+2026-01-20 05:55:16,119 - INFO -   6. Hurst → KPSS: 139 → 139 пар
+2026-01-20 05:55:16,120 - INFO -   7. KPSS → Market microstructure: 139 → 135 пар
+2026-01-20 05:55:16,120 - INFO - [ФИЛЬТР] Причины отсева:
+2026-01-20 05:55:16,120 - INFO -   • hurst: 59 пар (23.6%)
+2026-01-20 05:55:16,120 - INFO -   • beta: 38 пар (15.2%)
+2026-01-20 05:55:16,120 - INFO -   • low_correlation: 8 пар (3.2%)
+2026-01-20 05:55:16,120 - INFO -   • pvalue: 6 пар (2.4%)
+2026-01-20 05:55:16,120 - INFO -   • history: 4 пар (1.6%)
+2026-01-20 05:55:16,120 - INFO - [ФИЛЬТР] Итого: 250 → 135 пар (54.0% прошли все фильтры)
+2026-01-20 05:55:16,128 - INFO - Причины отсева сохранены в results/filter_reasons_20260120_055516.csv
+2026-01-20 05:55:16,128 - INFO -   Pair stability filter: insufficient history (0 < 1), skip
+2026-01-20 05:55:16,129 - INFO -   Фильтрация: 250 → 135 пар
+2026-01-20 05:55:16,129 - INFO - ⇠ filtering pairs by cointegration and half-life — done in 33.56s
+2026-01-20 05:55:16,129 - INFO - ⇠ WF-шаг 1/5: training 2024-02-01-2024-04-30, testing 2024-05-01-2024-05-31 — done in 37.79s
+2026-01-20 05:55:16,129 - INFO -   Топ-3 пары по волатильности спреда:
+2026-01-20 05:55:16,129 - INFO -     1. BTCDAI-BTCEUR: beta=1.0799, std=663.3878
+2026-01-20 05:55:16,129 - INFO -     2. COMPUSDT-GTAIUSDT: beta=13.3410, std=4.9977
+2026-01-20 05:55:16,129 - INFO -     3. ETHUSDC-ETHUSDT: beta=1.0017, std=1.8914
+2026-01-20 05:55:16,129 - INFO -   Всего пар для торговли: 135 (ограничение 20 применяется к одновременно открытым позициям)
+2026-01-20 05:55:16,130 - INFO -   💰 Проверка расчета капитала: equity=$10,000.00, кандидатных_пар=135, max_позиций=20
+2026-01-20 05:55:16,130 - INFO -   🎯 Target concurrency: 20 (ожидаемое одновременное число позиций)
+2026-01-20 05:55:16,134 - INFO -   📊 Детали расчета капитала:
+2026-01-20 05:55:16,134 - INFO -      • Базовый капитал на пару: $500.00 (equity / target_concurrency)
+2026-01-20 05:55:16,134 - INFO -      • Риск-капитал: $150.00 (1.5% от equity)
+2026-01-20 05:55:16,134 - INFO -      • Макс. размер позиции: $200.00 (2.0% от equity)
+2026-01-20 05:55:16,134 - INFO -      • Итоговый капитал на пару: $150.00
+2026-01-20 05:55:16,135 - INFO - ⇢ WF-шаг 1/5 backtests — starting 135 items
+2026-01-20 05:55:16,135 - INFO - 🚀 WF-шаг 1/5: Начинаем бэктесты для 135 пар...
+2026-01-20 05:55:16,135 - INFO - 🚀 WF-шаг 1/5: Запускаем параллельную обработку 135 пар на 8 ядрах...
+2026-01-20 05:55:16,135 - INFO -   📊 Большой набор пар (135), ожидаемое время: ~5 мин
+2026-01-20 05:55:16,135 - INFO -   🔄 Прогресс будет отображаться каждые 13 пар
+2026-01-20 05:55:16,135 - INFO - 🚀 WF-шаг 1/5: Режим параллельности: процессы
+2026-01-20 05:55:16,234 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,240 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,240 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,305 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,311 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,311 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,378 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,383 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,383 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,461 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,463 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,463 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,575 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,577 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,577 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,708 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,721 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,721 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,842 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:16,843 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:16,843 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:16,987 - INFO - ⇠ loading memory-mapped data — done in 0.68s
+2026-01-20 05:55:17,030 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:17,032 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:17,033 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:17,061 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,061 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:17,062 - INFO - ⇠ loading memory-mapped data — done in 0.82s
+2026-01-20 05:55:17,133 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,133 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:17,152 - INFO - ⇠ loading memory-mapped data — done in 0.77s
+2026-01-20 05:55:17,259 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,260 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:17,395 - INFO - ⇠ loading memory-mapped data — done in 0.93s
+2026-01-20 05:55:17,466 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,466 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:17,470 - INFO - ⇠ loading memory-mapped data — done in 0.89s
+2026-01-20 05:55:17,542 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,542 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:17,662 - INFO - ⇠ loading memory-mapped data — done in 0.82s
+2026-01-20 05:55:17,756 - INFO - ⇠ loading memory-mapped data — done in 1.04s
+2026-01-20 05:55:17,841 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:17,841 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:18,031 - INFO - ⇠ loading memory-mapped data — done in 1.00s
+2026-01-20 05:55:18,239 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHUSDC-ETHUSDT
+2026-01-20 05:55:18,249 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для COMPUSDT-GTAIUSDT
+2026-01-20 05:55:18,311 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-GTAIUSDT
+2026-01-20 05:55:18,366 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-KDAUSDT
+2026-01-20 05:55:18,375 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCDAI-BTCEUR
+2026-01-20 05:55:18,423 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-KASTAUSDT
+2026-01-20 05:55:18,476 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-GENEUSDT
+2026-01-20 05:55:18,527 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDT
+2026-01-20 05:55:18,571 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-GTAIUSDT
+2026-01-20 05:55:18,586 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GALFTUSDT
+2026-01-20 05:55:18,656 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-DUELUSDT
+2026-01-20 05:55:18,666 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-KDAUSDT
+2026-01-20 05:55:18,697 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для KCSUSDT-KDAUSDT
+2026-01-20 05:55:18,705 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETCUSDT-JUVUSDT
+2026-01-20 05:55:18,710 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-JUVUSDT
+2026-01-20 05:55:18,713 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-ENJUSDT
+2026-01-20 05:55:18,764 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-GRTUSDT
+2026-01-20 05:55:18,768 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-GTAIUSDT
+2026-01-20 05:55:18,784 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-KDAUSDT
+2026-01-20 05:55:18,788 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:18,788 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:18,813 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:18,813 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:18,814 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KUBUSDT
+2026-01-20 05:55:18,818 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-KUBUSDT
+2026-01-20 05:55:18,821 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HNTUSDT-INTERUSDT
+2026-01-20 05:55:18,841 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-GSWIFTUSDT
+2026-01-20 05:55:18,848 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CYBERUSDT-FIDAUSDT
+2026-01-20 05:55:18,866 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KUBUSDT
+2026-01-20 05:55:18,867 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-HVHUSDT
+2026-01-20 05:55:18,872 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-FTTUSDT
+2026-01-20 05:55:18,891 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-JUVUSDT
+2026-01-20 05:55:18,897 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА FLOWUSDT-HVHUSDT:
+2026-01-20 05:55:18,897 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:55:18,897 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:55:18,898 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 5.6862
+2026-01-20 05:55:18,898 - coint2.engine.numba_engine - INFO -    Позиций != 0: 0
+2026-01-20 05:55:18,898 - coint2.engine.numba_engine - INFO -    Изменений позиций: 1
+2026-01-20 05:55:18,898 - coint2.engine.numba_engine - INFO -    PnL сумма: 0.0000
+2026-01-20 05:55:18,899 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [1.4231215  1.170881   0.91543454 0.7576492  0.87377423 0.73298055
+ 0.4843788  0.43646535 0.9170312  0.68358904]
+2026-01-20 05:55:18,899 - coint2.engine.numba_engine - INFO -    Превышают порог: 1428
+2026-01-20 05:55:18,900 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-FTTUSDT
+2026-01-20 05:55:18,939 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FITFIUSDT
+2026-01-20 05:55:18,947 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-HBARUSDT
+2026-01-20 05:55:18,948 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-CHZUSDC
+2026-01-20 05:55:18,950 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-GODSUSDT
+2026-01-20 05:55:18,951 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-CITYUSDT
+2026-01-20 05:55:18,956 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDT-KASTAUSDT
+2026-01-20 05:55:18,998 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDT
+2026-01-20 05:55:19,001 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDT-AVAUSDT
+2026-01-20 05:55:19,015 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FLOWUSDT
+2026-01-20 05:55:19,019 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-KCALUSDT
+2026-01-20 05:55:19,027 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-JSTUSDT
+2026-01-20 05:55:19,028 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAKEUSDT-FIDAUSDT
+2026-01-20 05:55:19,035 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDC-AVAUSDT
+2026-01-20 05:55:19,059 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-HFTUSDC
+2026-01-20 05:55:19,064 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-ANKRUSDT
+2026-01-20 05:55:19,066 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-JUVUSDT
+2026-01-20 05:55:19,088 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KDAUSDT
+2026-01-20 05:55:19,095 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-HVHUSDT
+2026-01-20 05:55:19,097 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-FILUSDT
+2026-01-20 05:55:19,106 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-KSMUSDT
+2026-01-20 05:55:19,111 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FIDAUSDT-KAVAUSDT
+2026-01-20 05:55:19,112 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXLUSDT-FILUSDT
+2026-01-20 05:55:19,122 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-BICOUSDT
+2026-01-20 05:55:19,131 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА GALFTUSDT-HVHUSDT:
+2026-01-20 05:55:19,131 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:55:19,131 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:55:19,132 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 10.4103
+2026-01-20 05:55:19,132 - coint2.engine.numba_engine - INFO -    Позиций != 0: 6
+2026-01-20 05:55:19,132 - coint2.engine.numba_engine - INFO -    Изменений позиций: 13
+2026-01-20 05:55:19,139 - coint2.engine.numba_engine - INFO -    PnL сумма: -7.6277
+2026-01-20 05:55:19,140 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [0.25753918 0.2817404  0.27650234 0.2711627  0.27138817 0.27258173
+ 0.2671839  0.3034511  0.28870547 0.27344045]
+2026-01-20 05:55:19,140 - coint2.engine.numba_engine - INFO -    Превышают порог: 1407
+2026-01-20 05:55:19,162 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-GODSUSDT
+2026-01-20 05:55:19,174 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CGPTUSDT-FILUSDT
+2026-01-20 05:55:19,179 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAPSUSDT-KUBUSDT
+2026-01-20 05:55:19,182 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-APEUSDC
+2026-01-20 05:55:19,187 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-DMAILUSDT
+2026-01-20 05:55:19,188 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CGPTUSDT-FILUSDC
+2026-01-20 05:55:19,182 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-C98USDT
+2026-01-20 05:55:19,212 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-KUBUSDT
+2026-01-20 05:55:19,236 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KUBUSDT
+2026-01-20 05:55:19,254 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-FILUSDC
+2026-01-20 05:55:19,255 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-KASTAUSDT
+2026-01-20 05:55:19,263 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-KAVAUSDT
+2026-01-20 05:55:19,265 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для INSPUSDT-KSMUSDT
+2026-01-20 05:55:19,265 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-KASTAUSDT
+2026-01-20 05:55:19,273 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDT-GODSUSDT
+2026-01-20 05:55:19,309 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ENJUSDT-GTAIUSDT
+2026-01-20 05:55:19,317 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-FILUSDT
+2026-01-20 05:55:19,318 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXSUSDT-KUBUSDT
+2026-01-20 05:55:19,326 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AVAUSDT-FITFIUSDT
+2026-01-20 05:55:19,327 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KUBUSDT
+2026-01-20 05:55:19,329 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-FILUSDT
+2026-01-20 05:55:19,353 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDC
+2026-01-20 05:55:19,361 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KUBUSDT
+2026-01-20 05:55:19,380 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FIDAUSDT-HOOKUSDT
+2026-01-20 05:55:19,382 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-CHZUSDT
+2026-01-20 05:55:19,385 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDC
+2026-01-20 05:55:19,387 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DYDXUSDT-KCALUSDT
+2026-01-20 05:55:19,405 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 1INCHUSDT-KUBUSDT
+2026-01-20 05:55:19,413 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CRVUSDT-HFTUSDC
+2026-01-20 05:55:19,426 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KDAUSDT
+2026-01-20 05:55:19,431 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-HFTUSDT
+2026-01-20 05:55:19,433 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-KAVAUSDT
+2026-01-20 05:55:19,437 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KDAUSDT
+2026-01-20 05:55:19,448 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-KCALUSDT
+2026-01-20 05:55:19,452 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFGUSDT-FXSUSDT
+2026-01-20 05:55:19,460 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GODSUSDT-KSMUSDT
+2026-01-20 05:55:19,471 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDC
+2026-01-20 05:55:19,471 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AVAUSDT-FLOWUSDT
+2026-01-20 05:55:19,473 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KDAUSDT
+2026-01-20 05:55:19,479 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KDAUSDT
+2026-01-20 05:55:19,481 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDC
+2026-01-20 05:55:19,489 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 1INCHUSDT-AXSUSDT
+2026-01-20 05:55:19,494 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-HOOKUSDT
+2026-01-20 05:55:19,499 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-FILUSDC
+2026-01-20 05:55:19,518 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-GTAIUSDT
+2026-01-20 05:55:19,523 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 5IREUSDT-FXSUSDT
+2026-01-20 05:55:19,526 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 1INCHUSDT-ICXUSDT
+2026-01-20 05:55:19,528 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-INSPUSDT
+2026-01-20 05:55:19,533 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHRPUSDT-DMAILUSDT
+2026-01-20 05:55:19,542 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-ARBUSDC
+2026-01-20 05:55:19,545 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-ADAUSDC
+2026-01-20 05:55:19,546 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDT
+2026-01-20 05:55:19,566 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DGBUSDT-JUVUSDT
+2026-01-20 05:55:19,569 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAPSUSDT-GTAIUSDT
+2026-01-20 05:55:19,572 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXLUSDT-FILUSDC
+2026-01-20 05:55:19,580 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDT
+2026-01-20 05:55:19,586 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KCALUSDT
+2026-01-20 05:55:19,589 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOMEUSDT-GODSUSDT
+2026-01-20 05:55:19,592 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-FLOWUSDT
+2026-01-20 05:55:19,596 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KUBUSDT
+2026-01-20 05:55:19,606 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KAVAUSDT
+2026-01-20 05:55:19,635 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-CGPTUSDT
+2026-01-20 05:55:19,639 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-CBKUSDT
+2026-01-20 05:55:19,661 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-JUVUSDT
+2026-01-20 05:55:19,685 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-ICXUSDT
+2026-01-20 05:55:19,696 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-APPUSDT
+2026-01-20 05:55:19,733 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDT
+2026-01-20 05:55:19,736 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-ETHWUSDT
+2026-01-20 05:55:19,772 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для JSTUSDT-JUVUSDT
+2026-01-20 05:55:19,808 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-HOOKUSDT
+2026-01-20 05:55:19,810 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ENJUSDT-FILUSDC
+2026-01-20 05:55:19,841 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-HOOKUSDT
+2026-01-20 05:55:19,864 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-FLOWUSDT
+2026-01-20 05:55:19,874 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KDAUSDT
+2026-01-20 05:55:19,925 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-KCALUSDT
+2026-01-20 05:55:19,939 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAPSUSDT-FTTUSDT
+2026-01-20 05:55:19,985 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDT
+2026-01-20 05:55:20,024 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-JUVUSDT
+2026-01-20 05:55:20,039 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDC
+2026-01-20 05:55:20,097 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-GTAIUSDT
+2026-01-20 05:55:20,154 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-ARBUSDT
+2026-01-20 05:55:20,210 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-IZIUSDT
+2026-01-20 05:55:20,263 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-ICXUSDT
+2026-01-20 05:55:20,519 - INFO -   ⏱️ Параллельная обработка завершена за 4.4с (30.8 пар/с)
+2026-01-20 05:55:20,613 - coint2.pipeline.walk_forward_orchestrator - INFO - 🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: 135 пар, лимит 20 позиций
+2026-01-20 05:55:21,690 - coint2.pipeline.walk_forward_orchestrator - INFO -    📈 Макс. одновременных сигналов: 22
+2026-01-20 05:55:21,690 - coint2.pipeline.walk_forward_orchestrator - INFO -    📊 Средн. сигналов за период: 0.7
+2026-01-20 05:55:21,690 - coint2.pipeline.walk_forward_orchestrator - INFO -    🎯 Финальных активных позиций: 0
+2026-01-20 05:55:21,692 - coint2.pipeline.walk_forward_orchestrator - INFO -    ⚡ Утилизация лимита позиций: 3.7%
+2026-01-20 05:55:21,692 - INFO - ⇠ WF-шаг 1/5 backtests — completed 135 items in 5.56s (24.3 items/s)
+2026-01-20 05:55:21,692 - INFO -   ✅ Обработка завершена: 135 успешно, 0 с ошибками
+2026-01-20 05:55:21,692 - INFO -   📊 Успешность: 100.0%, прибыльность: 55.6%, сделок/пара: 7.9
+2026-01-20 05:55:21,692 - INFO -   ✅ Завершены бэктесты для 135 пар
+2026-01-20 05:55:21,692 - INFO -   📊 Всего обработано пар в этом шаге: 135
+2026-01-20 05:55:21,693 - INFO -   📈 Результаты шага: 75/135 прибыльных пар, 1070 сделок
+2026-01-20 05:55:21,693 - INFO -   💰 P&L шага: $+65.44
+2026-01-20 05:55:21,693 - INFO -   ⇢ Обновление капитала и дневного P&L...
+2026-01-20 05:55:23,179 - INFO -   💼 Шаг P&L: $+65.44, Накопленный капитал: $10,065.44
+2026-01-20 05:55:23,179 - INFO - ------------------------------------------------------------
+2026-01-20 05:55:23,179 - INFO -   Walk-forward steps: 1 / 5 (20.0%) | 0.0 items/s | ETA: 179.4s
+2026-01-20 05:55:23,179 - INFO - 🔍 WF-шаг 2/5: Валидация временных окон...
+2026-01-20 05:55:23,179 - INFO - ⇢ WF-шаг 2/5: training 2024-03-02-2024-05-30, testing 2024-05-31-2024-06-30 — start
+2026-01-20 05:55:23,179 - INFO - ⇢ loading step data — start
+2026-01-20 05:55:23,545 - INFO - ⇠ loading step data — done in 0.37s
+2026-01-20 05:55:26,648 - INFO - 📊 WF-шаг 2/5: Границы данных:
+2026-01-20 05:55:26,648 - INFO -    Training: 2024-03-02 00:00:00 → 2024-05-30 23:45:00 (8,640 строк × 432 символов)
+2026-01-20 05:55:26,648 - INFO -    Testing:  2024-05-31 00:00:00 → 2024-06-30 00:00:00 (2,881 строк × 432 символов)
+2026-01-20 05:55:26,648 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-20 05:55:26,708 - INFO - ⇢ normalizing training data — start
+2026-01-20 05:55:26,765 - INFO -   Символы с NaN значениями: 86
+2026-01-20 05:55:26,765 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-20 05:55:26,794 - INFO - Символы с недостаточной историей: 77 из 432
+2026-01-20 05:55:27,643 - INFO - Символы с NaN после нормализации: 355
+2026-01-20 05:55:27,653 - INFO - Удалено 1673 начальных строк с NaN от rolling расчетов
+2026-01-20 05:55:27,657 - INFO - Итоговое количество символов после нормализации: 355 из 432
+2026-01-20 05:55:27,657 - INFO -   Статистика нормализации:
+2026-01-20 05:55:27,657 - INFO -     Исходные символы: 432
+2026-01-20 05:55:27,657 - INFO -     Недостаточная история: 77
+2026-01-20 05:55:27,657 - INFO -     Постоянная цена: 0
+2026-01-20 05:55:27,657 - INFO -     NaN после нормализации: 355
+2026-01-20 05:55:27,657 - INFO -     Итоговые символы: 355 (82.2%)
+2026-01-20 05:55:27,657 - INFO -   После нормализации: 355 символов (потеряно 77)
+2026-01-20 05:55:27,657 - INFO -   Отброшено много символов: 77 из 432
+2026-01-20 05:55:27,657 - INFO - ⇠ normalizing training data — done in 0.95s
+2026-01-20 05:55:27,658 - INFO -   Фиксированный universe: 250 пар (отфильтровано 0 недоступных)
+2026-01-20 05:55:27,658 - INFO - ⇢ filtering pairs by cointegration and half-life — start
+2026-01-20 05:55:27,658 - INFO - [ФИЛЬТР] Параллельная фильтрация: processes (8 workers)
+⚙️  Загрузка данных за период: 2024-03-02 -> 2024-06-30
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 4429881 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После проверки данных: 250 пар
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После фильтра корреляции (>0.4): 231 пар
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После фильтра beta: 194 пар
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После фильтра mean crossings: 194 пар
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После фильтра half-life: 194 пар
+2026-01-20 05:55:58,947 - INFO - [ФИЛЬТР] После фильтра коинтеграции: 165 пар
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] После фильтра Hurst: 115 пар
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] После фильтра KPSS: 115 пар
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] После фильтра market microstructure: 115 пар
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):
+2026-01-20 05:55:58,948 - INFO -   1. SSD → Коинтеграция: 250 → 165 пар
+2026-01-20 05:55:58,948 - INFO -   2. Коинтеграция → Beta: 165 → 194 пар
+2026-01-20 05:55:58,948 - INFO -   3. Beta → Half-life: 194 → 194 пар
+2026-01-20 05:55:58,948 - INFO -   4. Half-life → Mean crossings: 194 → 194 пар
+2026-01-20 05:55:58,948 - INFO -   5. Mean crossings → Hurst: 194 → 115 пар
+2026-01-20 05:55:58,948 - INFO -   6. Hurst → KPSS: 115 → 115 пар
+2026-01-20 05:55:58,948 - INFO -   7. KPSS → Market microstructure: 115 → 115 пар
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] Причины отсева:
+2026-01-20 05:55:58,948 - INFO -   • hurst: 50 пар (20.0%)
+2026-01-20 05:55:58,948 - INFO -   • beta: 37 пар (14.8%)
+2026-01-20 05:55:58,948 - INFO -   • pvalue: 29 пар (11.6%)
+2026-01-20 05:55:58,948 - INFO -   • low_correlation: 19 пар (7.6%)
+2026-01-20 05:55:58,948 - INFO - [ФИЛЬТР] Итого: 250 → 115 пар (46.0% прошли все фильтры)
+2026-01-20 05:55:58,955 - INFO - Причины отсева сохранены в results/filter_reasons_20260120_055558.csv
+2026-01-20 05:55:58,956 - INFO -   Pair stability filter: 115 → 87 (window=2, min_steps=1, history=1)
+2026-01-20 05:55:58,956 - INFO -   Фильтрация: 250 → 87 пар
+2026-01-20 05:55:58,956 - INFO - ⇠ filtering pairs by cointegration and half-life — done in 31.30s
+2026-01-20 05:55:58,956 - INFO - ⇠ WF-шаг 2/5: training 2024-03-02-2024-05-30, testing 2024-05-31-2024-06-30 — done in 35.78s
+2026-01-20 05:55:58,957 - INFO -   Топ-3 пары по волатильности спреда:
+2026-01-20 05:55:58,957 - INFO -     1. BTCDAI-BTCEUR: beta=1.1387, std=658.9744
+2026-01-20 05:55:58,957 - INFO -     2. ETHUSDC-ETHUSDT: beta=1.0013, std=2.1640
+2026-01-20 05:55:58,961 - INFO -     3. CYBERUSDT-FIDAUSDT: beta=18.0281, std=1.0583
+2026-01-20 05:55:58,961 - INFO -   Всего пар для торговли: 87 (ограничение 20 применяется к одновременно открытым позициям)
+2026-01-20 05:55:58,961 - INFO -   💰 Проверка расчета капитала: equity=$10,065.44, кандидатных_пар=87, max_позиций=20
+2026-01-20 05:55:58,962 - INFO -   🎯 Target concurrency: 20 (ожидаемое одновременное число позиций)
+2026-01-20 05:55:58,962 - INFO -   📊 Детали расчета капитала:
+2026-01-20 05:55:58,962 - INFO -      • Базовый капитал на пару: $503.27 (equity / target_concurrency)
+2026-01-20 05:55:58,962 - INFO -      • Риск-капитал: $150.98 (1.5% от equity)
+2026-01-20 05:55:58,962 - INFO -      • Макс. размер позиции: $201.31 (2.0% от equity)
+2026-01-20 05:55:58,962 - INFO -      • Итоговый капитал на пару: $150.98
+2026-01-20 05:55:58,962 - INFO - ⇢ WF-шаг 2/5 backtests — starting 87 items
+2026-01-20 05:55:58,963 - INFO - 🚀 WF-шаг 2/5: Начинаем бэктесты для 87 пар...
+2026-01-20 05:55:58,963 - INFO - 🚀 WF-шаг 2/5: Запускаем параллельную обработку 87 пар на 8 ядрах...
+2026-01-20 05:55:58,963 - INFO -   📊 Большой набор пар (87), ожидаемое время: ~3 мин
+2026-01-20 05:55:58,963 - INFO -   🔄 Прогресс будет отображаться каждые 8 пар
+2026-01-20 05:55:58,963 - INFO - 🚀 WF-шаг 2/5: Режим параллельности: процессы
+2026-01-20 05:55:59,064 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,069 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,069 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,142 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,147 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,147 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,232 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,237 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,237 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,349 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,364 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,364 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,505 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,517 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,517 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,668 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,669 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,669 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,824 - INFO - ⇠ loading memory-mapped data — done in 0.68s
+2026-01-20 05:55:59,824 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,835 - INFO - ⇠ loading memory-mapped data — done in 0.77s
+2026-01-20 05:55:59,836 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,836 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,900 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:59,900 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:59,898 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:55:59,909 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:55:59,953 - INFO - ⇠ loading memory-mapped data — done in 0.72s
+2026-01-20 05:55:59,995 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:55:59,996 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:55:59,997 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:55:59,999 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCDAI-BTCEUR
+2026-01-20 05:56:00,006 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHUSDC-ETHUSDT
+2026-01-20 05:56:00,022 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,023 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,108 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CYBERUSDT-FIDAUSDT
+2026-01-20 05:56:00,155 - INFO - ⇠ loading memory-mapped data — done in 0.79s
+2026-01-20 05:56:00,231 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,231 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,326 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HNTUSDT-INTERUSDT
+2026-01-20 05:56:00,404 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-GODSUSDT
+2026-01-20 05:56:00,396 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-KDAUSDT
+2026-01-20 05:56:00,408 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-GRTUSDT
+2026-01-20 05:56:00,421 - INFO - ⇠ loading memory-mapped data — done in 0.75s
+2026-01-20 05:56:00,439 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-CITYUSDT
+2026-01-20 05:56:00,464 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,464 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,470 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-HFTUSDC
+2026-01-20 05:56:00,503 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-ICXUSDT
+2026-01-20 05:56:00,513 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-C98USDT
+2026-01-20 05:56:00,522 - INFO - ⇠ loading memory-mapped data — done in 1.01s
+2026-01-20 05:56:00,519 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-JUVUSDT
+2026-01-20 05:56:00,523 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-KASTAUSDT
+2026-01-20 05:56:00,533 - INFO - ⇠ loading memory-mapped data — done in 0.70s
+2026-01-20 05:56:00,540 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-FILUSDT
+2026-01-20 05:56:00,567 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KUBUSDT
+2026-01-20 05:56:00,595 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-KCALUSDT
+2026-01-20 05:56:00,606 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,607 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,608 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDT
+2026-01-20 05:56:00,614 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-HVHUSDT
+2026-01-20 05:56:00,621 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDC
+2026-01-20 05:56:00,623 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,623 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,648 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА FLOWUSDT-HVHUSDT:
+2026-01-20 05:56:00,655 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:56:00,655 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:56:00,655 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 16.6024
+2026-01-20 05:56:00,656 - coint2.engine.numba_engine - INFO -    Позиций != 0: 6
+2026-01-20 05:56:00,656 - coint2.engine.numba_engine - INFO -    Изменений позиций: 13
+2026-01-20 05:56:00,656 - coint2.engine.numba_engine - INFO -    PnL сумма: 0.2563
+2026-01-20 05:56:00,656 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [-1.3505305 -1.7185029 -1.4328145 -1.3039925 -1.6309805 -1.5539491
+ -1.4519924 -1.5030717 -1.0084609 -1.3187553]
+2026-01-20 05:56:00,657 - coint2.engine.numba_engine - INFO -    Превышают порог: 1475
+2026-01-20 05:56:00,657 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-JSTUSDT
+2026-01-20 05:56:00,667 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-GTAIUSDT
+2026-01-20 05:56:00,672 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DYDXUSDT-KCALUSDT
+2026-01-20 05:56:00,681 - INFO - ⇠ loading memory-mapped data — done in 0.68s
+2026-01-20 05:56:00,691 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDT-KASTAUSDT
+2026-01-20 05:56:00,693 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-KAVAUSDT
+2026-01-20 05:56:00,700 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDT
+2026-01-20 05:56:00,707 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KCALUSDT
+2026-01-20 05:56:00,723 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:00,723 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:00,734 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KDAUSDT
+2026-01-20 05:56:00,740 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-JUVUSDT
+2026-01-20 05:56:00,776 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-GTAIUSDT
+2026-01-20 05:56:00,780 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-FILUSDC
+2026-01-20 05:56:00,783 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FIDAUSDT-KAVAUSDT
+2026-01-20 05:56:00,785 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXLUSDT-FILUSDC
+2026-01-20 05:56:00,800 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-KASTAUSDT
+2026-01-20 05:56:00,848 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAKEUSDT-FIDAUSDT
+2026-01-20 05:56:00,853 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-ETHWUSDT
+2026-01-20 05:56:00,858 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 1INCHUSDT-KUBUSDT
+2026-01-20 05:56:00,858 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-KSMUSDT
+2026-01-20 05:56:00,865 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CGPTUSDT-FILUSDT
+2026-01-20 05:56:00,865 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-HFTUSDT
+2026-01-20 05:56:00,874 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXLUSDT-FILUSDT
+2026-01-20 05:56:00,899 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FITFIUSDT
+2026-01-20 05:56:00,932 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AVAUSDT-FITFIUSDT
+2026-01-20 05:56:00,936 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-DUELUSDT
+2026-01-20 05:56:00,937 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KDAUSDT
+2026-01-20 05:56:00,940 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-BICOUSDT
+2026-01-20 05:56:00,942 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-GENEUSDT
+2026-01-20 05:56:00,944 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KDAUSDT
+2026-01-20 05:56:00,944 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-DMAILUSDT
+2026-01-20 05:56:00,993 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLDUSDT-KUBUSDT
+2026-01-20 05:56:01,009 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FIDAUSDT-HOOKUSDT
+2026-01-20 05:56:01,021 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ENJUSDT-GTAIUSDT
+2026-01-20 05:56:01,024 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDT
+2026-01-20 05:56:01,034 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-FILUSDT
+2026-01-20 05:56:01,045 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для 1INCHUSDT-AXSUSDT
+2026-01-20 05:56:01,052 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-CGPTUSDT
+2026-01-20 05:56:01,075 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KDAUSDT
+2026-01-20 05:56:01,091 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AVAUSDT-FLOWUSDT
+2026-01-20 05:56:01,095 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDC
+2026-01-20 05:56:01,118 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDT
+2026-01-20 05:56:01,119 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDC
+2026-01-20 05:56:01,119 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KUBUSDT
+2026-01-20 05:56:01,126 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FLOWUSDT
+2026-01-20 05:56:01,139 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KUBUSDT
+2026-01-20 05:56:01,150 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-ENJUSDT
+2026-01-20 05:56:01,161 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-KCALUSDT
+2026-01-20 05:56:01,192 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDC
+2026-01-20 05:56:01,194 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KAVAUSDT
+2026-01-20 05:56:01,197 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DGBUSDT-JUVUSDT
+2026-01-20 05:56:01,201 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CGPTUSDT-FILUSDC
+2026-01-20 05:56:01,201 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CRVUSDT-HFTUSDC
+2026-01-20 05:56:01,209 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-KAVAUSDT
+2026-01-20 05:56:01,243 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDT
+2026-01-20 05:56:01,262 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KDAUSDT
+2026-01-20 05:56:01,280 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-ADAUSDC
+2026-01-20 05:56:01,283 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-APPUSDT
+2026-01-20 05:56:01,283 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KDAUSDT
+2026-01-20 05:56:01,320 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KUBUSDT
+2026-01-20 05:56:01,326 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-FLOWUSDT
+2026-01-20 05:56:01,368 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-HOOKUSDT
+2026-01-20 05:56:01,370 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-FLOWUSDT
+2026-01-20 05:56:01,393 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-HOOKUSDT
+2026-01-20 05:56:01,406 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KUBUSDT
+2026-01-20 05:56:01,400 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-KASTAUSDT
+2026-01-20 05:56:01,494 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-JUVUSDT
+2026-01-20 05:56:01,526 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-HOOKUSDT
+2026-01-20 05:56:01,613 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHRPUSDT-DMAILUSDT
+2026-01-20 05:56:01,692 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOMEUSDT-GODSUSDT
+2026-01-20 05:56:01,930 - INFO -   ⏱️ Параллельная обработка завершена за 3.0с (29.3 пар/с)
+2026-01-20 05:56:02,004 - coint2.pipeline.walk_forward_orchestrator - INFO - 🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: 87 пар, лимит 20 позиций
+2026-01-20 05:56:03,229 - coint2.pipeline.walk_forward_orchestrator - INFO -    📈 Макс. одновременных сигналов: 54
+2026-01-20 05:56:03,229 - coint2.pipeline.walk_forward_orchestrator - INFO -    📊 Средн. сигналов за период: 0.6
+2026-01-20 05:56:03,229 - coint2.pipeline.walk_forward_orchestrator - INFO -    🎯 Финальных активных позиций: 0
+2026-01-20 05:56:03,230 - coint2.pipeline.walk_forward_orchestrator - INFO -    ⚡ Утилизация лимита позиций: 3.0%
+2026-01-20 05:56:03,231 - INFO - ⇠ WF-шаг 2/5 backtests — completed 87 items in 4.27s (20.4 items/s)
+2026-01-20 05:56:03,231 - INFO -   ✅ Обработка завершена: 87 успешно, 0 с ошибками
+2026-01-20 05:56:03,231 - INFO -   📊 Успешность: 100.0%, прибыльность: 56.3%, сделок/пара: 10.5
+2026-01-20 05:56:03,231 - INFO -   ✅ Завершены бэктесты для 87 пар
+2026-01-20 05:56:03,231 - INFO -   📊 Всего обработано пар в этом шаге: 87
+2026-01-20 05:56:03,231 - INFO -   📈 Результаты шага: 49/87 прибыльных пар, 913 сделок
+2026-01-20 05:56:03,231 - INFO -   💰 P&L шага: $+21.87
+2026-01-20 05:56:03,232 - INFO -   ⇢ Обновление капитала и дневного P&L...
+2026-01-20 05:56:04,507 - INFO -   💼 Шаг P&L: $+21.87, Накопленный капитал: $10,087.30
+2026-01-20 05:56:04,507 - INFO - ------------------------------------------------------------
+2026-01-20 05:56:04,507 - INFO -   Walk-forward steps: 2 / 5 (40.0%) | 0.0 items/s | ETA: 129.3s
+2026-01-20 05:56:04,508 - INFO - 🔍 WF-шаг 3/5: Валидация временных окон...
+2026-01-20 05:56:04,508 - INFO - ⇢ WF-шаг 3/5: training 2024-04-01-2024-06-29, testing 2024-06-30-2024-07-30 — start
+2026-01-20 05:56:04,508 - INFO - ⇢ loading step data — start
+2026-01-20 05:56:04,871 - INFO - ⇠ loading step data — done in 0.36s
+2026-01-20 05:56:08,513 - INFO - 📊 WF-шаг 3/5: Границы данных:
+2026-01-20 05:56:08,514 - INFO -    Training: 2024-04-01 00:00:00 → 2024-06-29 23:45:00 (8,640 строк × 451 символов)
+2026-01-20 05:56:08,514 - INFO -    Testing:  2024-06-30 00:00:00 → 2024-07-30 00:00:00 (2,881 строк × 451 символов)
+2026-01-20 05:56:08,514 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-20 05:56:08,573 - INFO - ⇢ normalizing training data — start
+2026-01-20 05:56:08,632 - INFO -   Символы с NaN значениями: 91
+2026-01-20 05:56:08,633 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-20 05:56:08,667 - INFO - Символы с недостаточной историей: 75 из 451
+2026-01-20 05:56:09,570 - INFO - Символы с NaN после нормализации: 376
+2026-01-20 05:56:09,580 - INFO - Удалено 1959 начальных строк с NaN от rolling расчетов
+2026-01-20 05:56:09,583 - INFO - Итоговое количество символов после нормализации: 376 из 451
+2026-01-20 05:56:09,585 - INFO -   Статистика нормализации:
+2026-01-20 05:56:09,585 - INFO -     Исходные символы: 451
+2026-01-20 05:56:09,585 - INFO -     Недостаточная история: 75
+2026-01-20 05:56:09,585 - INFO -     Постоянная цена: 0
+2026-01-20 05:56:09,586 - INFO -     NaN после нормализации: 376
+2026-01-20 05:56:09,586 - INFO -     Итоговые символы: 376 (83.4%)
+2026-01-20 05:56:09,586 - INFO -   После нормализации: 376 символов (потеряно 75)
+2026-01-20 05:56:09,586 - INFO -   Отброшено много символов: 75 из 451
+2026-01-20 05:56:09,586 - INFO - ⇠ normalizing training data — done in 1.01s
+2026-01-20 05:56:09,586 - INFO -   Фиксированный universe: 250 пар (отфильтровано 0 недоступных)
+2026-01-20 05:56:09,586 - INFO - ⇢ filtering pairs by cointegration and half-life — start
+2026-01-20 05:56:09,587 - INFO - [ФИЛЬТР] Параллельная фильтрация: processes (8 workers)
+⚙️  Загрузка данных за период: 2024-04-01 -> 2024-07-30
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 4689651 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После проверки данных: 250 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра корреляции (>0.4): 224 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра beta: 198 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра mean crossings: 198 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра half-life: 198 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра коинтеграции: 140 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра Hurst: 113 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра KPSS: 113 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] После фильтра market microstructure: 113 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):
+2026-01-20 05:56:40,533 - INFO -   1. SSD → Коинтеграция: 250 → 140 пар
+2026-01-20 05:56:40,533 - INFO -   2. Коинтеграция → Beta: 140 → 198 пар
+2026-01-20 05:56:40,533 - INFO -   3. Beta → Half-life: 198 → 198 пар
+2026-01-20 05:56:40,533 - INFO -   4. Half-life → Mean crossings: 198 → 198 пар
+2026-01-20 05:56:40,533 - INFO -   5. Mean crossings → Hurst: 198 → 113 пар
+2026-01-20 05:56:40,533 - INFO -   6. Hurst → KPSS: 113 → 113 пар
+2026-01-20 05:56:40,533 - INFO -   7. KPSS → Market microstructure: 113 → 113 пар
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] Причины отсева:
+2026-01-20 05:56:40,533 - INFO -   • pvalue: 58 пар (23.2%)
+2026-01-20 05:56:40,533 - INFO -   • hurst: 27 пар (10.8%)
+2026-01-20 05:56:40,533 - INFO -   • low_correlation: 26 пар (10.4%)
+2026-01-20 05:56:40,533 - INFO -   • beta: 26 пар (10.4%)
+2026-01-20 05:56:40,533 - INFO - [ФИЛЬТР] Итого: 250 → 113 пар (45.2% прошли все фильтры)
+2026-01-20 05:56:40,535 - INFO - Причины отсева сохранены в results/filter_reasons_20260120_055640.csv
+2026-01-20 05:56:40,544 - INFO -   Pair stability filter: 113 → 93 (window=2, min_steps=1, history=2)
+2026-01-20 05:56:40,544 - INFO -   Фильтрация: 250 → 93 пар
+2026-01-20 05:56:40,544 - INFO - ⇠ filtering pairs by cointegration and half-life — done in 30.96s
+2026-01-20 05:56:40,544 - INFO - ⇠ WF-шаг 3/5: training 2024-04-01-2024-06-29, testing 2024-06-30-2024-07-30 — done in 36.04s
+2026-01-20 05:56:40,544 - INFO -   Топ-3 пары по волатильности спреда:
+2026-01-20 05:56:40,544 - INFO -     1. BTCDAI-BTCEUR: beta=1.1442, std=520.0727
+2026-01-20 05:56:40,544 - INFO -     2. ETHDAI-ETHEUR: beta=1.1177, std=26.8390
+2026-01-20 05:56:40,544 - INFO -     3. AAVEUSDT-GALFTUSDT: beta=13.9468, std=10.8089
+2026-01-20 05:56:40,544 - INFO -   Всего пар для торговли: 93 (ограничение 20 применяется к одновременно открытым позициям)
+2026-01-20 05:56:40,545 - INFO -   💰 Проверка расчета капитала: equity=$10,087.30, кандидатных_пар=93, max_позиций=20
+2026-01-20 05:56:40,545 - INFO -   🎯 Target concurrency: 20 (ожидаемое одновременное число позиций)
+2026-01-20 05:56:40,545 - INFO -   📊 Детали расчета капитала:
+2026-01-20 05:56:40,545 - INFO -      • Базовый капитал на пару: $504.37 (equity / target_concurrency)
+2026-01-20 05:56:40,545 - INFO -      • Риск-капитал: $151.31 (1.5% от equity)
+2026-01-20 05:56:40,545 - INFO -      • Макс. размер позиции: $201.75 (2.0% от equity)
+2026-01-20 05:56:40,545 - INFO -      • Итоговый капитал на пару: $151.31
+2026-01-20 05:56:40,545 - INFO - ⇢ WF-шаг 3/5 backtests — starting 93 items
+2026-01-20 05:56:40,545 - INFO - 🚀 WF-шаг 3/5: Начинаем бэктесты для 93 пар...
+2026-01-20 05:56:40,545 - INFO - 🚀 WF-шаг 3/5: Запускаем параллельную обработку 93 пар на 8 ядрах...
+2026-01-20 05:56:40,545 - INFO -   📊 Большой набор пар (93), ожидаемое время: ~4 мин
+2026-01-20 05:56:40,546 - INFO -   🔄 Прогресс будет отображаться каждые 9 пар
+2026-01-20 05:56:40,546 - INFO - 🚀 WF-шаг 3/5: Режим параллельности: процессы
+2026-01-20 05:56:40,693 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:40,705 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:40,705 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:40,830 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:40,832 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:40,832 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:40,960 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:40,961 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:40,961 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,085 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:41,093 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:41,093 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,219 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:41,221 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:41,221 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,326 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:41,339 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:41,339 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,447 - INFO - ⇠ loading memory-mapped data — done in 0.74s
+2026-01-20 05:56:41,482 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:41,483 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:41,483 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,537 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:41,537 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:41,597 - INFO - ⇠ loading memory-mapped data — done in 0.77s
+2026-01-20 05:56:41,639 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:56:41,641 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:56:41,642 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:56:41,651 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCDAI-BTCEUR
+2026-01-20 05:56:41,656 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:41,656 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:41,729 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHDAI-ETHEUR
+2026-01-20 05:56:41,841 - INFO - ⇠ loading memory-mapped data — done in 0.88s
+2026-01-20 05:56:41,848 - INFO - ⇠ loading memory-mapped data — done in 0.75s
+2026-01-20 05:56:41,895 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:41,896 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:41,899 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:41,900 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:41,956 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-JUVUSDT
+2026-01-20 05:56:41,988 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AAVEUSDT-GALFTUSDT
+2026-01-20 05:56:41,997 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETCUSDT-JUVUSDT
+2026-01-20 05:56:42,014 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-KUBUSDT
+2026-01-20 05:56:42,051 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-JUVUSDT
+2026-01-20 05:56:42,052 - INFO - ⇠ loading memory-mapped data — done in 0.83s
+2026-01-20 05:56:42,069 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-KSMUSDT
+2026-01-20 05:56:42,084 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:42,084 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:42,125 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-IZIUSDT
+2026-01-20 05:56:42,133 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-KUBUSDT
+2026-01-20 05:56:42,142 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHUSDC-ETHUSDT
+2026-01-20 05:56:42,185 - INFO - ⇠ loading memory-mapped data — done in 0.84s
+2026-01-20 05:56:42,204 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDT-HFTUSDC
+2026-01-20 05:56:42,219 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-CITYUSDT
+2026-01-20 05:56:42,234 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:42,234 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:42,228 - WARNING - ❌ Ошибка обработки пары AAVEUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:42,283 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXSUSDT-KUBUSDT
+2026-01-20 05:56:42,289 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-KASTAUSDT
+2026-01-20 05:56:42,289 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-ICXUSDT
+2026-01-20 05:56:42,298 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-HVHUSDT
+2026-01-20 05:56:42,311 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-FTTUSDT
+2026-01-20 05:56:42,330 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА GALFTUSDT-HVHUSDT:
+2026-01-20 05:56:42,330 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:56:42,331 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:56:42,334 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 22.1101
+2026-01-20 05:56:42,334 - coint2.engine.numba_engine - INFO -    Позиций != 0: 26
+2026-01-20 05:56:42,334 - coint2.engine.numba_engine - INFO -    Изменений позиций: 53
+2026-01-20 05:56:42,335 - coint2.engine.numba_engine - INFO -    PnL сумма: 4.7133
+2026-01-20 05:56:42,336 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [1.0149729  0.89775175 0.88267124 0.7178458  0.70639974 0.05912989
+ 0.25585455 0.2545332  0.11229683 0.16204534]
+2026-01-20 05:56:42,336 - coint2.engine.numba_engine - INFO -    Превышают порог: 1200
+2026-01-20 05:56:42,340 - INFO - ⇠ loading memory-mapped data — done in 0.86s
+2026-01-20 05:56:42,366 - INFO - ⇠ loading memory-mapped data — done in 0.72s
+2026-01-20 05:56:42,366 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDT-HFTUSDT
+2026-01-20 05:56:42,373 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDC-AVAUSDT
+2026-01-20 05:56:42,379 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAKEUSDT-FIDAUSDT
+2026-01-20 05:56:42,392 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-FILUSDC
+2026-01-20 05:56:42,396 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:42,396 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:42,422 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-GODSUSDT
+2026-01-20 05:56:42,416 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:56:42,423 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:56:42,437 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-KAVAUSDT
+2026-01-20 05:56:42,446 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-GENEUSDT
+2026-01-20 05:56:42,453 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KUBUSDT
+2026-01-20 05:56:42,457 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-FTTUSDT
+2026-01-20 05:56:42,470 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDT
+2026-01-20 05:56:42,476 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDT-AVAUSDT
+2026-01-20 05:56:42,485 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HNTUSDT-INTERUSDT
+2026-01-20 05:56:42,517 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-FILUSDT
+2026-01-20 05:56:42,528 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-DMAILUSDT
+2026-01-20 05:56:42,544 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-JUVUSDT
+2026-01-20 05:56:42,550 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXLUSDT-FILUSDT
+2026-01-20 05:56:42,550 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-JSTUSDT
+2026-01-20 05:56:42,555 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-HBARUSDT
+2026-01-20 05:56:42,607 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDT
+2026-01-20 05:56:42,614 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-APEUSDC
+2026-01-20 05:56:42,628 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-IZIUSDT
+2026-01-20 05:56:42,626 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDC
+2026-01-20 05:56:42,640 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BICOUSDT-ETHWUSDT
+2026-01-20 05:56:42,666 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-KASTAUSDT
+2026-01-20 05:56:42,688 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-ENJUSDT
+2026-01-20 05:56:42,690 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-CBKUSDT
+2026-01-20 05:56:42,699 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-IZIUSDT
+2026-01-20 05:56:42,705 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KDAUSDT
+2026-01-20 05:56:42,716 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-GRTUSDT
+2026-01-20 05:56:42,738 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDC
+2026-01-20 05:56:42,755 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDC
+2026-01-20 05:56:42,758 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KDAUSDT
+2026-01-20 05:56:42,762 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KAVAUSDT
+2026-01-20 05:56:42,756 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-GRTUSDT
+2026-01-20 05:56:42,784 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-APEUSDT
+2026-01-20 05:56:42,791 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-ANKRUSDT
+2026-01-20 05:56:42,825 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CRVUSDT-HFTUSDC
+2026-01-20 05:56:42,826 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KDAUSDT
+2026-01-20 05:56:42,832 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARKMUSDT-ARUSDT
+2026-01-20 05:56:42,840 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-KASTAUSDT
+2026-01-20 05:56:42,849 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-CGPTUSDT
+2026-01-20 05:56:42,860 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-KUBUSDT
+2026-01-20 05:56:42,868 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GALFTUSDT
+2026-01-20 05:56:42,892 - WARNING - ❌ Ошибка обработки пары DMAILUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:42,900 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-ARBUSDT
+2026-01-20 05:56:42,915 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-GALFTUSDT
+2026-01-20 05:56:42,929 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KUBUSDT
+2026-01-20 05:56:42,933 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-FLOWUSDT
+2026-01-20 05:56:42,931 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-GODSUSDT
+2026-01-20 05:56:42,945 - WARNING - ❌ Ошибка обработки пары CTCUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:42,952 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDT
+2026-01-20 05:56:42,979 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDT-GODSUSDT
+2026-01-20 05:56:42,995 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAPSUSDT-GTAIUSDT
+2026-01-20 05:56:43,014 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FITFIUSDT
+2026-01-20 05:56:43,018 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CSPRUSDT-KDAUSDT
+2026-01-20 05:56:43,019 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KDAUSDT
+2026-01-20 05:56:43,042 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CRVUSDT-HFTUSDT
+2026-01-20 05:56:43,068 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-CHZUSDC
+2026-01-20 05:56:43,094 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-ARBUSDC
+2026-01-20 05:56:43,100 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-HOOKUSDT
+2026-01-20 05:56:43,109 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-ICXUSDT
+2026-01-20 05:56:43,114 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KUBUSDT
+2026-01-20 05:56:43,125 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDC
+2026-01-20 05:56:43,154 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDT
+2026-01-20 05:56:43,169 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KCALUSDT
+2026-01-20 05:56:43,188 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KUBUSDT
+2026-01-20 05:56:43,219 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDT
+2026-01-20 05:56:43,244 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOMEUSDT-GODSUSDT
+2026-01-20 05:56:43,248 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-APEUSDC
+2026-01-20 05:56:43,270 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-APPUSDT
+2026-01-20 05:56:43,290 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KUBUSDT
+2026-01-20 05:56:43,331 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-FLOWUSDT
+2026-01-20 05:56:43,338 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFGUSDT-FXSUSDT
+2026-01-20 05:56:43,339 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOGEUSDC-JUVUSDT
+2026-01-20 05:56:43,389 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-AGLDUSDT
+2026-01-20 05:56:43,391 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для JSTUSDT-JUVUSDT
+2026-01-20 05:56:43,438 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-FLOWUSDT
+2026-01-20 05:56:43,608 - INFO -   ⏱️ Параллельная обработка завершена за 3.1с (30.4 пар/с)
+2026-01-20 05:56:43,735 - coint2.pipeline.walk_forward_orchestrator - INFO - 🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: 90 пар, лимит 20 позиций
+2026-01-20 05:56:45,005 - coint2.pipeline.walk_forward_orchestrator - INFO -    📈 Макс. одновременных сигналов: 13
+2026-01-20 05:56:45,005 - coint2.pipeline.walk_forward_orchestrator - INFO -    📊 Средн. сигналов за период: 0.5
+2026-01-20 05:56:45,005 - coint2.pipeline.walk_forward_orchestrator - INFO -    🎯 Финальных активных позиций: 0
+2026-01-20 05:56:45,007 - coint2.pipeline.walk_forward_orchestrator - INFO -    ⚡ Утилизация лимита позиций: 2.7%
+2026-01-20 05:56:45,007 - WARNING -   ⚠️ Ошибка обработки пары AAVEUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:45,007 - WARNING -   ⚠️ Ошибка обработки пары DMAILUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:45,007 - WARNING -   ⚠️ Ошибка обработки пары CTCUSDT-GALFTUSDT: division by zero
+2026-01-20 05:56:45,008 - INFO - ⇠ WF-шаг 3/5 backtests — completed 93 items in 4.46s (20.8 items/s)
+2026-01-20 05:56:45,008 - INFO -   ✅ Обработка завершена: 90 успешно, 3 с ошибками
+2026-01-20 05:56:45,008 - INFO -   📊 Успешность: 96.8%, прибыльность: 56.7%, сделок/пара: 8.8
+2026-01-20 05:56:45,008 - INFO -   ✅ Завершены бэктесты для 93 пар
+2026-01-20 05:56:45,008 - INFO -   📊 Всего обработано пар в этом шаге: 93
+2026-01-20 05:56:45,008 - INFO -   📈 Результаты шага: 51/93 прибыльных пар, 792 сделок
+2026-01-20 05:56:45,008 - INFO -   💰 P&L шага: $+64.17
+2026-01-20 05:56:45,008 - INFO -   ⇢ Обновление капитала и дневного P&L...
+2026-01-20 05:56:46,563 - INFO -   💼 Шаг P&L: $+64.17, Накопленный капитал: $10,151.47
+2026-01-20 05:56:46,563 - INFO - ------------------------------------------------------------
+2026-01-20 05:56:46,563 - INFO -   Walk-forward steps: 3 / 5 (60.0%) | 0.0 items/s | ETA: 85.5s
+2026-01-20 05:56:46,563 - INFO - 🔍 WF-шаг 4/5: Валидация временных окон...
+2026-01-20 05:56:46,564 - INFO - ⇢ WF-шаг 4/5: training 2024-05-01-2024-07-29, testing 2024-07-30-2024-08-29 — start
+2026-01-20 05:56:46,564 - INFO - ⇢ loading step data — start
+2026-01-20 05:56:46,958 - INFO - ⇠ loading step data — done in 0.39s
+2026-01-20 05:56:50,467 - INFO - 📊 WF-шаг 4/5: Границы данных:
+2026-01-20 05:56:50,467 - INFO -    Training: 2024-05-01 00:00:00 → 2024-07-29 23:45:00 (8,640 строк × 475 символов)
+2026-01-20 05:56:50,467 - INFO -    Testing:  2024-07-30 00:00:00 → 2024-08-29 00:00:00 (2,881 строк × 475 символов)
+2026-01-20 05:56:50,467 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-20 05:56:50,531 - INFO - ⇢ normalizing training data — start
+2026-01-20 05:56:50,591 - INFO -   Символы с NaN значениями: 89
+2026-01-20 05:56:50,591 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-20 05:56:50,624 - INFO - Символы с недостаточной историей: 75 из 475
+2026-01-20 05:56:51,558 - INFO - Символы с NaN после нормализации: 400
+2026-01-20 05:56:51,570 - INFO - Удалено 1863 начальных строк с NaN от rolling расчетов
+2026-01-20 05:56:51,574 - INFO - Итоговое количество символов после нормализации: 400 из 475
+2026-01-20 05:56:51,574 - INFO -   Статистика нормализации:
+2026-01-20 05:56:51,574 - INFO -     Исходные символы: 475
+2026-01-20 05:56:51,574 - INFO -     Недостаточная история: 75
+2026-01-20 05:56:51,575 - INFO -     Постоянная цена: 0
+2026-01-20 05:56:51,575 - INFO -     NaN после нормализации: 400
+2026-01-20 05:56:51,575 - INFO -     Итоговые символы: 400 (84.2%)
+2026-01-20 05:56:51,575 - INFO -   После нормализации: 400 символов (потеряно 75)
+2026-01-20 05:56:51,575 - INFO -   Отброшено много символов: 75 из 475
+2026-01-20 05:56:51,575 - INFO - ⇠ normalizing training data — done in 1.04s
+2026-01-20 05:56:51,575 - INFO -   Фиксированный universe: 250 пар (отфильтровано 0 недоступных)
+2026-01-20 05:56:51,575 - INFO - ⇢ filtering pairs by cointegration and half-life — start
+2026-01-20 05:56:51,576 - INFO - [ФИЛЬТР] Параллельная фильтрация: processes (8 workers)
+⚙️  Загрузка данных за период: 2024-05-01 -> 2024-08-29
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 4931437 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После проверки данных: 250 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра корреляции (>0.4): 217 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра beta: 190 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра mean crossings: 190 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра half-life: 190 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра коинтеграции: 102 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра Hurst: 76 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра KPSS: 76 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] После фильтра market microstructure: 76 пар
+2026-01-20 05:57:25,041 - INFO - [ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):
+2026-01-20 05:57:25,041 - INFO -   1. SSD → Коинтеграция: 250 → 102 пар
+2026-01-20 05:57:25,041 - INFO -   2. Коинтеграция → Beta: 102 → 190 пар
+2026-01-20 05:57:25,041 - INFO -   3. Beta → Half-life: 190 → 190 пар
+2026-01-20 05:57:25,042 - INFO -   4. Half-life → Mean crossings: 190 → 190 пар
+2026-01-20 05:57:25,042 - INFO -   5. Mean crossings → Hurst: 190 → 76 пар
+2026-01-20 05:57:25,042 - INFO -   6. Hurst → KPSS: 76 → 76 пар
+2026-01-20 05:57:25,042 - INFO -   7. KPSS → Market microstructure: 76 → 76 пар
+2026-01-20 05:57:25,042 - INFO - [ФИЛЬТР] Причины отсева:
+2026-01-20 05:57:25,042 - INFO -   • pvalue: 88 пар (35.2%)
+2026-01-20 05:57:25,042 - INFO -   • low_correlation: 33 пар (13.2%)
+2026-01-20 05:57:25,042 - INFO -   • beta: 27 пар (10.8%)
+2026-01-20 05:57:25,042 - INFO -   • hurst: 26 пар (10.4%)
+2026-01-20 05:57:25,042 - INFO - [ФИЛЬТР] Итого: 250 → 76 пар (30.4% прошли все фильтры)
+2026-01-20 05:57:25,043 - INFO - Причины отсева сохранены в results/filter_reasons_20260120_055725.csv
+2026-01-20 05:57:25,052 - INFO -   Pair stability filter: 76 → 66 (window=2, min_steps=1, history=3)
+2026-01-20 05:57:25,052 - INFO -   Фильтрация: 250 → 66 пар
+2026-01-20 05:57:25,052 - INFO - ⇠ filtering pairs by cointegration and half-life — done in 33.48s
+2026-01-20 05:57:25,052 - INFO - ⇠ WF-шаг 4/5: training 2024-05-01-2024-07-29, testing 2024-07-30-2024-08-29 — done in 38.49s
+2026-01-20 05:57:25,052 - INFO -   Топ-3 пары по волатильности спреда:
+2026-01-20 05:57:25,052 - INFO -     1. BTCDAI-BTCEUR: beta=1.0982, std=452.6966
+2026-01-20 05:57:25,052 - INFO -     2. BTCUSDC-BTCUSDT: beta=1.0003, std=30.5203
+2026-01-20 05:57:25,052 - INFO -     3. ETHDAI-ETHEUR: beta=1.0858, std=24.7639
+2026-01-20 05:57:25,053 - INFO -   Всего пар для торговли: 66 (ограничение 20 применяется к одновременно открытым позициям)
+2026-01-20 05:57:25,053 - INFO -   💰 Проверка расчета капитала: equity=$10,151.47, кандидатных_пар=66, max_позиций=20
+2026-01-20 05:57:25,053 - INFO -   🎯 Target concurrency: 20 (ожидаемое одновременное число позиций)
+2026-01-20 05:57:25,053 - INFO -   📊 Детали расчета капитала:
+2026-01-20 05:57:25,053 - INFO -      • Базовый капитал на пару: $507.57 (equity / target_concurrency)
+2026-01-20 05:57:25,053 - INFO -      • Риск-капитал: $152.27 (1.5% от equity)
+2026-01-20 05:57:25,053 - INFO -      • Макс. размер позиции: $203.03 (2.0% от equity)
+2026-01-20 05:57:25,053 - INFO -      • Итоговый капитал на пару: $152.27
+2026-01-20 05:57:25,053 - INFO - ⇢ WF-шаг 4/5 backtests — starting 66 items
+2026-01-20 05:57:25,053 - INFO - 🚀 WF-шаг 4/5: Начинаем бэктесты для 66 пар...
+2026-01-20 05:57:25,054 - INFO - 🚀 WF-шаг 4/5: Запускаем параллельную обработку 66 пар на 8 ядрах...
+2026-01-20 05:57:25,054 - INFO -   📊 Большой набор пар (66), ожидаемое время: ~3 мин
+2026-01-20 05:57:25,054 - INFO -   🔄 Прогресс будет отображаться каждые 6 пар
+2026-01-20 05:57:25,054 - INFO - 🚀 WF-шаг 4/5: Режим параллельности: процессы
+2026-01-20 05:57:25,151 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,157 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,157 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,236 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,237 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,237 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,334 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,342 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,342 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,406 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,418 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,418 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,517 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,522 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,523 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,615 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,622 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,622 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,714 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,722 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,722 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,812 - INFO - ⇠ loading memory-mapped data — done in 0.66s
+2026-01-20 05:57:25,831 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:57:25,832 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:57:25,832 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:57:25,866 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:25,867 - INFO - ⇠ loading memory-mapped data — done in 0.63s
+2026-01-20 05:57:25,867 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:25,884 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:25,884 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:25,914 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCDAI-BTCEUR
+2026-01-20 05:57:25,917 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCUSDC-BTCUSDT
+2026-01-20 05:57:25,965 - INFO - ⇠ loading memory-mapped data — done in 0.62s
+2026-01-20 05:57:26,018 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,018 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,026 - INFO - ⇠ loading memory-mapped data — done in 0.61s
+2026-01-20 05:57:26,068 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,068 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,085 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHDAI-ETHEUR
+2026-01-20 05:57:26,117 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AXSUSDT-KUBUSDT
+2026-01-20 05:57:26,123 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-GRTUSDT
+2026-01-20 05:57:26,133 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETCUSDT-JUVUSDT
+2026-01-20 05:57:26,147 - INFO - ⇠ loading memory-mapped data — done in 0.53s
+2026-01-20 05:57:26,149 - INFO - ⇠ loading memory-mapped data — done in 0.63s
+2026-01-20 05:57:26,163 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,163 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,164 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,164 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,165 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDT-AVAUSDT
+2026-01-20 05:57:26,176 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-GRTUSDT
+2026-01-20 05:57:26,183 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CYBERUSDT-GALFTUSDT
+2026-01-20 05:57:26,192 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHUSDC-ETHUSDT
+2026-01-20 05:57:26,198 - INFO - ⇠ loading memory-mapped data — done in 0.37s
+2026-01-20 05:57:26,213 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,214 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,215 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-GALFTUSDT
+2026-01-20 05:57:26,219 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GALFTUSDT
+2026-01-20 05:57:26,234 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-FTTUSDT
+2026-01-20 05:57:26,241 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ATOMUSDT-KDAUSDT
+2026-01-20 05:57:26,253 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-ENJUSDT
+2026-01-20 05:57:26,261 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FITFIUSDT
+2026-01-20 05:57:26,276 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KDAUSDT
+2026-01-20 05:57:26,280 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-JUVUSDT
+2026-01-20 05:57:26,289 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CITYUSDT-KASTAUSDT
+2026-01-20 05:57:26,299 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-KAVAUSDT
+2026-01-20 05:57:26,303 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KDAUSDT
+2026-01-20 05:57:26,305 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-GALFTUSDT
+2026-01-20 05:57:26,306 - INFO - ⇠ loading memory-mapped data — done in 0.58s
+2026-01-20 05:57:26,309 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-KUBUSDT
+2026-01-20 05:57:26,309 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDC-AVAUSDT
+2026-01-20 05:57:26,316 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDT-KUBUSDT
+2026-01-20 05:57:26,321 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HVHUSDT-IZIUSDT
+2026-01-20 05:57:26,325 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-HVHUSDT
+2026-01-20 05:57:26,332 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-IZIUSDT
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА HVHUSDT-IZIUSDT:
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 9.8724
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO -    Позиций != 0: 6
+2026-01-20 05:57:26,333 - coint2.engine.numba_engine - INFO -    Изменений позиций: 13
+2026-01-20 05:57:26,334 - coint2.engine.numba_engine - INFO -    PnL сумма: -2.8186
+2026-01-20 05:57:26,334 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDT-HFTUSDT
+2026-01-20 05:57:26,334 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [0.3340584  0.3309326  0.33118665 0.33129734 0.33378372 0.257196
+ 0.3575887  0.22092195 0.40368348 0.38499627]
+2026-01-20 05:57:26,334 - coint2.engine.numba_engine - INFO -    Превышают порог: 1389
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА FLOWUSDT-HVHUSDT:
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 6.9579
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    Позиций != 0: 1
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    Изменений позиций: 3
+2026-01-20 05:57:26,337 - coint2.engine.numba_engine - INFO -    PnL сумма: 0.4502
+2026-01-20 05:57:26,338 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [-0.8493914  -1.3388989  -0.14289144  0.9125507   1.4988666   2.415785
+  0.8939715   1.4904214   0.71968883  0.58437705]
+2026-01-20 05:57:26,338 - coint2.engine.numba_engine - INFO -    Превышают порог: 1355
+2026-01-20 05:57:26,338 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KUBUSDT
+2026-01-20 05:57:26,341 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:57:26,342 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:57:26,346 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-HOOKUSDT
+2026-01-20 05:57:26,349 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDT
+2026-01-20 05:57:26,354 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-JUVUSDT
+2026-01-20 05:57:26,356 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-KAVAUSDT
+2026-01-20 05:57:26,359 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-KSMUSDT
+2026-01-20 05:57:26,360 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDT
+2026-01-20 05:57:26,372 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KUBUSDT
+2026-01-20 05:57:26,375 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KDAUSDT
+2026-01-20 05:57:26,376 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-APEXUSDC
+2026-01-20 05:57:26,380 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOTUSDC-FTTUSDT
+2026-01-20 05:57:26,383 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDC
+2026-01-20 05:57:26,385 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-ADAUSDC
+2026-01-20 05:57:26,394 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AGLAUSDT-APPUSDT
+2026-01-20 05:57:26,397 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDC-KDAUSDT
+2026-01-20 05:57:26,399 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-CBKUSDT
+2026-01-20 05:57:26,403 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEUSDC-HFTUSDC
+2026-01-20 05:57:26,405 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HFTUSDT-KUBUSDT
+2026-01-20 05:57:26,407 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-ICXUSDT
+2026-01-20 05:57:26,416 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DGBUSDT-JUVUSDT
+2026-01-20 05:57:26,419 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для EGOUSDT-GALFTUSDT
+2026-01-20 05:57:26,421 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHRPUSDT-GALFTUSDT
+2026-01-20 05:57:26,427 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-HOOKUSDT
+2026-01-20 05:57:26,442 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CSPRUSDT-KDAUSDT
+2026-01-20 05:57:26,447 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-KASTAUSDT
+2026-01-20 05:57:26,449 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KUBUSDT
+2026-01-20 05:57:26,449 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-JUVUSDT
+2026-01-20 05:57:26,484 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-IZIUSDT
+2026-01-20 05:57:26,503 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-JUVUSDT
+2026-01-20 05:57:26,516 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-HOOKUSDT
+2026-01-20 05:57:26,528 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-GENEUSDT
+2026-01-20 05:57:26,545 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для IZIUSDT-KAVAUSDT
+2026-01-20 05:57:26,551 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-CGPTUSDT
+2026-01-20 05:57:26,576 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FLOWUSDT
+2026-01-20 05:57:26,600 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOGEUSDC-JUVUSDT
+2026-01-20 05:57:26,626 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFGUSDT-FXSUSDT
+2026-01-20 05:57:26,651 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ERTHAUSDT-FLOWUSDT
+2026-01-20 05:57:26,749 - INFO -   ⏱️ Параллельная обработка завершена за 1.7с (38.9 пар/с)
+2026-01-20 05:57:26,774 - coint2.pipeline.walk_forward_orchestrator - INFO - 🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: 66 пар, лимит 20 позиций
+2026-01-20 05:57:27,403 - coint2.pipeline.walk_forward_orchestrator - INFO -    📈 Макс. одновременных сигналов: 25
+2026-01-20 05:57:27,403 - coint2.pipeline.walk_forward_orchestrator - INFO -    📊 Средн. сигналов за период: 0.5
+2026-01-20 05:57:27,403 - coint2.pipeline.walk_forward_orchestrator - INFO -    🎯 Финальных активных позиций: 0
+2026-01-20 05:57:27,404 - coint2.pipeline.walk_forward_orchestrator - INFO -    ⚡ Утилизация лимита позиций: 2.4%
+2026-01-20 05:57:27,405 - INFO - ⇠ WF-шаг 4/5 backtests — completed 66 items in 2.35s (28.1 items/s)
+2026-01-20 05:57:27,405 - INFO -   ✅ Обработка завершена: 66 успешно, 0 с ошибками
+2026-01-20 05:57:27,405 - INFO -   📊 Успешность: 100.0%, прибыльность: 54.5%, сделок/пара: 10.7
+2026-01-20 05:57:27,405 - INFO -   ✅ Завершены бэктесты для 66 пар
+2026-01-20 05:57:27,405 - INFO -   📊 Всего обработано пар в этом шаге: 66
+2026-01-20 05:57:27,405 - INFO -   📈 Результаты шага: 36/66 прибыльных пар, 708 сделок
+2026-01-20 05:57:27,405 - INFO -   💰 P&L шага: $+72.68
+2026-01-20 05:57:27,406 - INFO -   ⇢ Обновление капитала и дневного P&L...
+2026-01-20 05:57:28,905 - INFO -   💼 Шаг P&L: $+72.68, Накопленный капитал: $10,224.15
+2026-01-20 05:57:28,905 - INFO - ------------------------------------------------------------
+2026-01-20 05:57:28,905 - INFO -   Walk-forward steps: 4 / 5 (80.0%) | 0.0 items/s | ETA: 42.6s
+2026-01-20 05:57:28,905 - INFO - 🔍 WF-шаг 5/5: Валидация временных окон...
+2026-01-20 05:57:28,906 - INFO - ⇢ WF-шаг 5/5: training 2024-05-31-2024-08-28, testing 2024-08-29-2024-09-28 — start
+2026-01-20 05:57:28,906 - INFO - ⇢ loading step data — start
+2026-01-20 05:57:29,319 - INFO - ⇠ loading step data — done in 0.41s
+2026-01-20 05:57:33,243 - INFO - 📊 WF-шаг 5/5: Границы данных:
+2026-01-20 05:57:33,243 - INFO -    Training: 2024-05-31 00:00:00 → 2024-08-28 23:45:00 (8,640 строк × 492 символов)
+2026-01-20 05:57:33,243 - INFO -    Testing:  2024-08-29 00:00:00 → 2024-09-28 00:00:00 (2,881 строк × 492 символов)
+2026-01-20 05:57:33,243 - INFO -    Временной разрыв: 0 days 00:15:00
+2026-01-20 05:57:33,311 - INFO - ⇢ normalizing training data — start
+2026-01-20 05:57:33,372 - INFO -   Символы с NaN значениями: 90
+2026-01-20 05:57:33,372 - INFO -   Применяем метод нормализации: rolling_zscore
+2026-01-20 05:57:33,404 - INFO - Символы с недостаточной историей: 73 из 492
+2026-01-20 05:57:34,446 - INFO - Символы с NaN после нормализации: 419
+2026-01-20 05:57:34,459 - INFO - Удалено 1661 начальных строк с NaN от rolling расчетов
+2026-01-20 05:57:34,463 - INFO - Итоговое количество символов после нормализации: 419 из 492
+2026-01-20 05:57:34,466 - INFO -   Статистика нормализации:
+2026-01-20 05:57:34,467 - INFO -     Исходные символы: 492
+2026-01-20 05:57:34,467 - INFO -     Недостаточная история: 73
+2026-01-20 05:57:34,467 - INFO -     Постоянная цена: 0
+2026-01-20 05:57:34,467 - INFO -     NaN после нормализации: 419
+2026-01-20 05:57:34,467 - INFO -     Итоговые символы: 419 (85.2%)
+2026-01-20 05:57:34,467 - INFO -   После нормализации: 419 символов (потеряно 73)
+2026-01-20 05:57:34,467 - INFO -   Отброшено много символов: 73 из 492
+2026-01-20 05:57:34,467 - INFO - ⇠ normalizing training data — done in 1.16s
+2026-01-20 05:57:34,468 - INFO -   Фиксированный universe: 250 пар (отфильтровано 0 недоступных)
+2026-01-20 05:57:34,468 - INFO - ⇢ filtering pairs by cointegration and half-life — start
+2026-01-20 05:57:34,468 - INFO - [ФИЛЬТР] Параллельная фильтрация: processes (8 workers)
+⚙️  Загрузка данных за период: 2024-05-31 -> 2024-09-28
+📂 Найдено 43 parquet файлов для обработки.
+📊 Схема данных: Schema({'timestamp': Int64, 'open': Float64, 'high': Float64, 'low': Float64, 'close': Float64, 'volume': Float64, 'turnover': String, 'ts_ms': Int64, 'symbol': String})
+✅ Загружено 5190250 записей с помощью Polars.
+📊 Типы данных в pandas: timestamp       datetime64[us]
+symbol                  object
+close                  float64
+timestamp_ms             int64
+dtype: object
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После проверки данных: 250 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра корреляции (>0.4): 211 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра beta: 180 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра mean crossings: 180 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра half-life: 180 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра коинтеграции: 102 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра Hurst: 77 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра KPSS: 77 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] После фильтра market microstructure: 77 пар
+2026-01-20 05:58:08,411 - INFO - [ФИЛЬТР] Статистика фильтрации (оптимизированный порядок):
+2026-01-20 05:58:08,412 - INFO -   1. SSD → Коинтеграция: 250 → 102 пар
+2026-01-20 05:58:08,412 - INFO -   2. Коинтеграция → Beta: 102 → 180 пар
+2026-01-20 05:58:08,412 - INFO -   3. Beta → Half-life: 180 → 180 пар
+2026-01-20 05:58:08,412 - INFO -   4. Half-life → Mean crossings: 180 → 180 пар
+2026-01-20 05:58:08,412 - INFO -   5. Mean crossings → Hurst: 180 → 77 пар
+2026-01-20 05:58:08,412 - INFO -   6. Hurst → KPSS: 77 → 77 пар
+2026-01-20 05:58:08,412 - INFO -   7. KPSS → Market microstructure: 77 → 77 пар
+2026-01-20 05:58:08,412 - INFO - [ФИЛЬТР] Причины отсева:
+2026-01-20 05:58:08,412 - INFO -   • pvalue: 78 пар (31.2%)
+2026-01-20 05:58:08,412 - INFO -   • low_correlation: 39 пар (15.6%)
+2026-01-20 05:58:08,412 - INFO -   • beta: 31 пар (12.4%)
+2026-01-20 05:58:08,412 - INFO -   • hurst: 25 пар (10.0%)
+2026-01-20 05:58:08,412 - INFO - [ФИЛЬТР] Итого: 250 → 77 пар (30.8% прошли все фильтры)
+2026-01-20 05:58:08,414 - INFO - Причины отсева сохранены в results/filter_reasons_20260120_055808.csv
+2026-01-20 05:58:08,419 - INFO -   Pair stability filter: 77 → 52 (window=2, min_steps=1, history=4)
+2026-01-20 05:58:08,419 - INFO -   Фильтрация: 250 → 52 пар
+2026-01-20 05:58:08,419 - INFO - ⇠ filtering pairs by cointegration and half-life — done in 33.95s
+2026-01-20 05:58:08,419 - INFO - ⇠ WF-шаг 5/5: training 2024-05-31-2024-08-28, testing 2024-08-29-2024-09-28 — done in 39.51s
+2026-01-20 05:58:08,419 - INFO -   Топ-3 пары по волатильности спреда:
+2026-01-20 05:58:08,419 - INFO -     1. BTCDAI-BTCEUR: beta=1.0139, std=689.5404
+2026-01-20 05:58:08,419 - INFO -     2. ETHDAI-ETHEUR: beta=1.0258, std=27.1640
+2026-01-20 05:58:08,420 - INFO -     3. INJUSDT-KSMUSDT: beta=0.6715, std=2.1131
+2026-01-20 05:58:08,420 - INFO -   Всего пар для торговли: 52 (ограничение 20 применяется к одновременно открытым позициям)
+2026-01-20 05:58:08,420 - INFO -   💰 Проверка расчета капитала: equity=$10,224.15, кандидатных_пар=52, max_позиций=20
+2026-01-20 05:58:08,420 - INFO -   🎯 Target concurrency: 20 (ожидаемое одновременное число позиций)
+2026-01-20 05:58:08,420 - INFO -   📊 Детали расчета капитала:
+2026-01-20 05:58:08,420 - INFO -      • Базовый капитал на пару: $511.21 (equity / target_concurrency)
+2026-01-20 05:58:08,420 - INFO -      • Риск-капитал: $153.36 (1.5% от equity)
+2026-01-20 05:58:08,420 - INFO -      • Макс. размер позиции: $204.48 (2.0% от equity)
+2026-01-20 05:58:08,420 - INFO -      • Итоговый капитал на пару: $153.36
+2026-01-20 05:58:08,420 - INFO - ⇢ WF-шаг 5/5 backtests — starting 52 items
+2026-01-20 05:58:08,420 - INFO - 🚀 WF-шаг 5/5: Начинаем бэктесты для 52 пар...
+2026-01-20 05:58:08,421 - INFO - 🚀 WF-шаг 5/5: Запускаем параллельную обработку 52 пар на 8 ядрах...
+2026-01-20 05:58:08,421 - INFO -   📊 Большой набор пар (52), ожидаемое время: ~2 мин
+2026-01-20 05:58:08,421 - INFO -   🔄 Прогресс будет отображаться каждые 5 пар
+2026-01-20 05:58:08,421 - INFO - 🚀 WF-шаг 5/5: Режим параллельности: процессы
+2026-01-20 05:58:08,531 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:08,532 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:08,532 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:08,599 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:08,608 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:08,608 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:08,708 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:08,709 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:08,709 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:08,782 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:08,783 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:08,783 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:08,890 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:08,892 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:08,892 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:08,991 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:09,000 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:09,000 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:09,099 - INFO - ⇠ loading memory-mapped data — done in 0.49s
+2026-01-20 05:58:09,110 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:09,117 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,117 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,117 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:09,118 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:09,130 - INFO - ⇠ loading memory-mapped data — done in 0.60s
+2026-01-20 05:58:09,156 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,156 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,185 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETHDAI-ETHEUR
+2026-01-20 05:58:09,190 - coint2.core.memory_optimization - INFO - 🔄 Initializing memory-mapped price data from .cache/consolidated_prices.parquet
+2026-01-20 05:58:09,191 - INFO - ⇢ loading memory-mapped data — start
+2026-01-20 05:58:09,191 - coint2.core.memory_optimization - WARNING - ⚠️ memory_map не поддерживается в текущей версии pyarrow, fallback без mmap
+2026-01-20 05:58:09,193 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BTCDAI-BTCEUR
+2026-01-20 05:58:09,273 - INFO - ⇠ loading memory-mapped data — done in 0.56s
+2026-01-20 05:58:09,325 - INFO - ⇠ loading memory-mapped data — done in 0.54s
+2026-01-20 05:58:09,336 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,336 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,373 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,373 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,412 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GALFTUSDT-HVHUSDT
+2026-01-20 05:58:09,413 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ETCUSDT-JUVUSDT
+2026-01-20 05:58:09,421 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для INJUSDT-KSMUSDT
+2026-01-20 05:58:09,445 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА GALFTUSDT-HVHUSDT:
+2026-01-20 05:58:09,445 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:58:09,445 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:58:09,445 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 53.8784
+2026-01-20 05:58:09,445 - coint2.engine.numba_engine - INFO -    Позиций != 0: 7
+2026-01-20 05:58:09,446 - coint2.engine.numba_engine - INFO -    Изменений позиций: 15
+2026-01-20 05:58:09,446 - coint2.engine.numba_engine - INFO -    PnL сумма: -4.3486
+2026-01-20 05:58:09,450 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [-0.7682896  -0.6592879  -0.5004639  -0.558713   -0.51350254 -0.48972172
+ -0.42940226 -0.43437722 -0.41184348 -0.39054438]
+2026-01-20 05:58:09,451 - coint2.engine.numba_engine - INFO -    Превышают порог: 1343
+2026-01-20 05:58:09,454 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FTTUSDT-KCSUSDT
+2026-01-20 05:58:09,505 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CBKUSDT-ENJUSDT
+2026-01-20 05:58:09,517 - INFO - ⇠ loading memory-mapped data — done in 0.63s
+2026-01-20 05:58:09,531 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-GENEUSDT
+2026-01-20 05:58:09,542 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDC
+2026-01-20 05:58:09,562 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KDAUSDT
+2026-01-20 05:58:09,581 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,581 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,603 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-HVHUSDT
+2026-01-20 05:58:09,614 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-CHZUSDT
+2026-01-20 05:58:09,623 - INFO - ⇠ loading memory-mapped data — done in 0.62s
+2026-01-20 05:58:09,626 - coint2.engine.numba_engine - INFO - 🔍 ДИАГНОСТИКА FLOWUSDT-HVHUSDT:
+2026-01-20 05:58:09,626 - coint2.engine.numba_engine - INFO -    entry_threshold: 0.95
+2026-01-20 05:58:09,626 - coint2.engine.numba_engine - INFO -    exit_threshold: 0.08
+2026-01-20 05:58:09,626 - coint2.engine.numba_engine - INFO -    Макс |z_score|: 4.7010
+2026-01-20 05:58:09,627 - coint2.engine.numba_engine - INFO -    Позиций != 0: 4
+2026-01-20 05:58:09,627 - coint2.engine.numba_engine - INFO -    Изменений позиций: 9
+2026-01-20 05:58:09,629 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для HOOKUSDT-KAVAUSDT
+2026-01-20 05:58:09,627 - coint2.engine.numba_engine - INFO -    PnL сумма: 1.7326
+2026-01-20 05:58:09,631 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для APEXUSDC-AVAUSDT
+2026-01-20 05:58:09,632 - coint2.engine.numba_engine - INFO -    Первые 10 z_scores: [1.3149515 2.1420898 2.8071206 1.6895965 1.5170032 0.6591689 1.1773024
+ 0.9560649 0.7745351 0.7264485]
+2026-01-20 05:58:09,632 - coint2.engine.numba_engine - INFO -    Превышают порог: 1395
+2026-01-20 05:58:09,641 - INFO - ⇠ loading memory-mapped data — done in 0.45s
+2026-01-20 05:58:09,648 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-KAVAUSDT
+2026-01-20 05:58:09,657 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDT-KUBUSDT
+2026-01-20 05:58:09,677 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,677 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,677 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FITFIUSDT-JUVUSDT
+2026-01-20 05:58:09,682 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-CRVUSDT
+2026-01-20 05:58:09,701 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,701 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,707 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-CBKUSDT
+2026-01-20 05:58:09,711 - INFO - ⇠ loading memory-mapped data — done in 0.59s
+2026-01-20 05:58:09,715 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDT
+2026-01-20 05:58:09,726 - coint2.core.memory_optimization - INFO - 📊 Loaded 24001 rows × 493 symbols
+2026-01-20 05:58:09,726 - coint2.core.memory_optimization - INFO - 💾 Memory usage: 47.5 MB (memory-mapped)
+2026-01-20 05:58:09,733 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDC-JUVUSDT
+2026-01-20 05:58:09,749 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FILUSDT-JUVUSDT
+2026-01-20 05:58:09,753 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CTCUSDT-GALFTUSDT
+2026-01-20 05:58:09,754 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DMAILUSDT-GMTUSDT
+2026-01-20 05:58:09,757 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DOGEUSDC-JUVUSDT
+2026-01-20 05:58:09,761 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAKEUSDT-CITYUSDT
+2026-01-20 05:58:09,785 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-CGPTUSDT
+2026-01-20 05:58:09,804 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-ADAUSDC
+2026-01-20 05:58:09,809 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAEUR-KUBUSDT
+2026-01-20 05:58:09,816 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для DGBUSDT-JUVUSDT
+2026-01-20 05:58:09,828 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ADAUSDC-KUBUSDT
+2026-01-20 05:58:09,836 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KDAUSDT
+2026-01-20 05:58:09,838 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDC-FILUSDT
+2026-01-20 05:58:09,860 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFCUSDT-CITYUSDT
+2026-01-20 05:58:09,861 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHRPUSDT-GALFTUSDT
+2026-01-20 05:58:09,869 - WARNING - ❌ Ошибка обработки пары AFCUSDT-CITYUSDT: division by zero
+2026-01-20 05:58:09,875 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHZUSDT-FILUSDC
+2026-01-20 05:58:09,877 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-HOOKUSDT
+2026-01-20 05:58:09,880 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ALGOUSDT-GALFTUSDT
+2026-01-20 05:58:09,897 - WARNING - ❌ Ошибка обработки пары CAKEUSDT-CITYUSDT: division by zero
+2026-01-20 05:58:09,906 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для BATUSDT-JUVUSDT
+2026-01-20 05:58:09,908 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GODSUSDT-INJUSDT
+2026-01-20 05:58:09,911 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ARTYUSDT-KUBUSDT
+2026-01-20 05:58:09,911 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDT-HOOKUSDT
+2026-01-20 05:58:09,932 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для ACSUSDT-ICXUSDT
+2026-01-20 05:58:09,933 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GENEUSDT-KUBUSDT
+2026-01-20 05:58:09,934 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CHRPUSDT-ERTHAUSDT
+2026-01-20 05:58:09,957 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для C98USDT-CHZUSDC
+2026-01-20 05:58:09,961 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для FLOWUSDT-JUVUSDT
+2026-01-20 05:58:09,981 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CGPTUSDT-GRTUSDT
+2026-01-20 05:58:09,986 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CELOUSDT-FITFIUSDT
+2026-01-20 05:58:10,016 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для CAPSUSDT-GTAIUSDT
+2026-01-20 05:58:10,017 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для GMTUSDC-HOOKUSDT
+2026-01-20 05:58:10,052 - coint2.engine.numba_engine - INFO - Запуск Numba-оптимизированного бэктеста для AFGUSDT-FXSUSDT
+2026-01-20 05:58:10,157 - INFO -   ⏱️ Параллельная обработка завершена за 1.7с (29.9 пар/с)
+2026-01-20 05:58:10,177 - coint2.pipeline.walk_forward_orchestrator - INFO - 🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: 50 пар, лимит 20 позиций
+2026-01-20 05:58:10,768 - coint2.pipeline.walk_forward_orchestrator - INFO -    📈 Макс. одновременных сигналов: 9
+2026-01-20 05:58:10,768 - coint2.pipeline.walk_forward_orchestrator - INFO -    📊 Средн. сигналов за период: 0.3
+2026-01-20 05:58:10,768 - coint2.pipeline.walk_forward_orchestrator - INFO -    🎯 Финальных активных позиций: 0
+2026-01-20 05:58:10,769 - coint2.pipeline.walk_forward_orchestrator - INFO -    ⚡ Утилизация лимита позиций: 1.6%
+2026-01-20 05:58:10,770 - WARNING -   ⚠️ Ошибка обработки пары AFCUSDT-CITYUSDT: division by zero
+2026-01-20 05:58:10,770 - WARNING -   ⚠️ Ошибка обработки пары CAKEUSDT-CITYUSDT: division by zero
+2026-01-20 05:58:10,770 - INFO - ⇠ WF-шаг 5/5 backtests — completed 52 items in 2.35s (22.1 items/s)
+2026-01-20 05:58:10,770 - INFO -   ✅ Обработка завершена: 50 успешно, 2 с ошибками
+2026-01-20 05:58:10,770 - INFO -   📊 Успешность: 96.2%, прибыльность: 60.0%, сделок/пара: 9.1
+2026-01-20 05:58:10,770 - INFO -   ✅ Завершены бэктесты для 52 пар
+2026-01-20 05:58:10,770 - INFO -   📊 Всего обработано пар в этом шаге: 52
+2026-01-20 05:58:10,771 - INFO -   📈 Результаты шага: 30/52 прибыльных пар, 453 сделок
+2026-01-20 05:58:10,771 - INFO -   💰 P&L шага: $+143.16
+2026-01-20 05:58:10,771 - INFO -   ⇢ Обновление капитала и дневного P&L...
+2026-01-20 05:58:12,524 - INFO -   💼 Шаг P&L: $+143.16, Накопленный капитал: $10,367.31
+2026-01-20 05:58:12,524 - INFO - ------------------------------------------------------------
+2026-01-20 05:58:12,524 - INFO -   Walk-forward steps: 5 / 5 (100.0%) | 0.0 items/s | ETA: 0.0s
+2026-01-20 05:58:12,524 - INFO - ⇠ Walk-forward steps — completed 5 items in 214.19s (0.0 items/s)
+2026-01-20 05:58:12,525 - INFO - ================================================================================
+2026-01-20 05:58:12,525 - INFO - 🏁 Walk-forward анализ завершен!
+2026-01-20 05:58:12,525 - INFO - ⏱️ Обработано 5 шагов за 4.1 секунд
+2026-01-20 05:58:12,525 - INFO - 📊 Всего обработано пар за весь анализ: 433
+2026-01-20 05:58:12,525 - INFO - 💰 Финальный капитал: $10,367.31 (было $10,000.00)
+2026-01-20 05:58:12,525 - INFO - 📈 Общая доходность: +3.67% ($+367.31)
+2026-01-20 05:58:12,525 - INFO - 📊 Всего сделок: 0
+2026-01-20 05:58:12,525 - INFO - ================================================================================
+2026-01-20 05:58:12,525 - INFO - ✓ Завершены все 5 WF-шагов
+2026-01-20 05:58:12,525 - INFO - ⇢ Обработка финальных результатов и расчет метрик...
+2026-01-20 05:58:12,525 - INFO - ⇢ processing final results — start
+2026-01-20 05:58:12,525 - INFO -   ⇢ Агрегация данных P&L за 14405 торговых дней
+2026-01-20 05:58:12,565 - INFO -   ⇢ Расчет базовых метрик производительности...
+2026-01-20 05:58:12,565 - INFO -     📊 Данные для анализа: 14405 записей P&L, 14401 точек equity
+2026-01-20 05:58:12,568 - INFO -   ⇢ Расчет расширенных метрик (волатильность, Calmar ratio, и др.)...
+2026-01-20 05:58:12,569 - INFO -   ✅ Расширенные метрики рассчитаны: 6 показателей
+2026-01-20 05:58:12,569 - INFO -   ⇢ Анализ статистики по 433 парам...
+2026-01-20 05:58:12,573 - INFO - ✅ Рассчитаны метрики производительности (19 показателей)
+2026-01-20 05:58:12,573 - INFO -   💰 Общий P&L: $+367.31
+2026-01-20 05:58:12,573 - INFO -   📊 Sharpe Ratio: 3.700
+2026-01-20 05:58:12,573 - INFO -   📉 Максимальная просадка: -6552.48%
+2026-01-20 05:58:12,573 - INFO -   🔄 Всего сделок: 3936
+2026-01-20 05:58:12,573 - INFO -   📈 Торгуемых пар: 168
+2026-01-20 05:58:12,573 - INFO -   💸 Общие издержки: $191.75
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: total_pnl
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: sharpe_ratio_abs
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: max_drawdown_pct
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: total_trades
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: total_pairs_traded
+2026-01-20 05:58:12,574 - coint2.metrics - INFO - Metric: total_costs
+2026-01-20 05:58:12,575 - INFO - ⇠ processing final results — done in 0.05s
+2026-01-20 05:58:12,575 - INFO - ⇢ Создание отчетов и сохранение результатов...
+2026-01-20 05:58:12,575 - INFO - ⇢ generating reports — start
+2026-01-20 05:58:12,575 - INFO -   ⇢ Создание отчета о производительности...
+2026-01-20 05:58:19,801 - INFO -   ✓ Отчет о производительности создан
+2026-01-20 05:58:19,802 - INFO -   ⇢ Сохранение данных в CSV файлы...
+2026-01-20 05:58:19,804 - INFO - 📋 Метрики сохранены: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20/strategy_metrics.csv
+2026-01-20 05:58:19,805 - INFO - 📈 Дневные P&L сохранены: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20/daily_pnl.csv (151 записей)
+2026-01-20 05:58:19,858 - INFO - 💹 Кривая капитала сохранена: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20/equity_curve.csv (14401 точек)
+2026-01-20 05:58:19,866 - INFO - 📋 Статистика сделок сохранена: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20/trade_statistics.csv (433 записей)
+2026-01-20 05:58:19,866 - INFO - 🎉 Walk-Forward анализ полностью завершен!
+2026-01-20 05:58:19,866 - INFO - 📊 Все отчеты и данные сохранены в: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20
+2026-01-20 05:58:19,866 - INFO - 💼 Итоговый капитал: $10,367.31
+2026-01-20 05:58:19,866 - INFO - ⏱️  Общее время выполнения: 11.4 секунд
+2026-01-20 05:58:19,867 - INFO - ⇠ generating reports — done in 7.29s
+2026-01-20 05:58:19,867 - coint2.core.memory_optimization - INFO - 📊 No global price data to clean up
+2026-01-20 05:58:19,867 - coint2.core.memory_optimization - INFO - 📊 No global rolling stats to clean up
+2026-01-20 05:58:19,867 - INFO - 🧹 Memory-mapped data cleaned up
+2026-01-20 05:58:19,869 - INFO - ⇠ run_walk_forward_analysis — done in 230.60s
+📊 Отчет сохранен: artifacts/wfa/runs/20260120_relaxed8_nokpss_u250_candidate_sweep/stress_relaxed8_nokpss_u250_z0p95_exit0p08_hold120_cd120_maxpos20/CointegrationStrategy_performance_report.png
+🎯 ============================================================
+📊 ИТОГИ ТОРГОВОЙ СТРАТЕГИИ
+🎯 ============================================================
+
+💰 ФИНАНСОВЫЕ РЕЗУЛЬТАТЫ:
+   • Общий P&L:                          367
+   • Максимальная просадка:              -66
+   • Средний дневной P&L:                  2
+
+📈 МЕТРИКИ РИСКА:
+   • Коэффициент Шарпа:               3.7005
+   • Волатильность P&L:                11.73
+   • Процент прибыльных дней:         62.91%
+
+🔄 ТОРГОВАЯ АКТИВНОСТЬ:
+   • Всего торговых дней:                151
+   • Всего сделок:                     3,936
+   • Торгуемых пар:                      168
+   • Сделок на пару:                     9.1
+   • Успешность сделок:               0.17%
+
+💸 РАСХОДЫ И ЭКСТРЕМУМЫ:
+   • Общие расходы:                      192
+   • Максимальная прибыль:                71
+   • Максимальный убыток:                -38
+   • Лучшая пара (P&L):                   56
+   • Худшая пара (P&L):                  -30
+
+📊 ОЦЕНКА СТРАТЕГИИ:
+   ✅ ОТЛИЧНАЯ стратегия! Высокий Шарп и положительный результат
+
+🎯 ============================================================
+
+Annualized Sharpe Ratio: 3.700492265773492
+[run_wfa_fullcpu] end: 2026-01-20T05:58:21Z
