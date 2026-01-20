@@ -146,6 +146,8 @@
 Выводы:
 - top20 даёт максимальный Sharpe и резкое снижение сделок/пар, но заметно ниже PnL.
 - top50 сохраняет высокий PnL при ~40% меньшем turnover vs full‑universe и Sharpe выше базового churnfix‑кандидата.
+- Концентрация PnL (gross): top10/top20 ~59%/82% (holdout), ~68%/94% (stress); отрицательных пар 39/43 из 120.
+- Базовые активы (gross, PnL 50/50 на base): топ‑5 holdout BTC~12%, ETH~10%, JUV~9%, KUB~6%, KASTA~6%; stress BTC~14%, ETH~10%, JUV~10%, KASTA~7%, KUB~7%.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_msgrid (min_spread_move/hold grid)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_msgrid/run_queue.csv`.
@@ -164,3 +166,21 @@
 Выводы:
 - ms0p2/ms0p3 при hold180 почти не улучшают Sharpe/PNL vs ms0p1 и оставляют turnover высоким.
 - hold240 снижает сделки, но ухудшает Sharpe/PNL — не лучший кандидат.
+
+### Queue: relaxed8_nokpss_u250_churnfix_alt (alt holdout 2022-09-01 → 2023-04-30)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_alt/run_queue.csv`.
+- Цель: проверить top20/top50/full на альтернативном периоде (WFA ≤ 5 шагов).
+- Конфиги: top20/top50/full × holdout/stress (6 прогонов).
+- Статус: `planned`.
+
+### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
+- Цель: проверить устойчивость вокруг базовых параметров top50.
+- Конфиги: 6 вариантов × holdout/stress (12 прогонов).
+- Статус: `planned`.
+
+### Queue: relaxed8_nokpss_u250_churnfix_top50_basecap3 (base cap)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_basecap3/run_queue.csv`.
+- Цель: ограничить концентрацию по базовым активам (max_per_base=3 в pairs_universe).
+- Конфиги: top50 × holdout/stress (2 прогона).
+- Статус: `planned`.

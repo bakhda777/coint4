@@ -69,7 +69,8 @@ Next steps:
 - Churnfix msgrid завершён: ms0p2/ms0p3 на hold180 дают метрики близкие к ms0p1; hold240 снижает Sharpe/PNL.
 - Новый лучший компромисс: top50/z0.95/exit0.06/hold180/cd180/ms0.1 → Sharpe 7.63/6.43, PnL 1082/914, trades 11823.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
-- Следующий шаг: подтвердить кандидата на альтернативных периодах/режимах или оценить top20 при цели максимизации Sharpe.
+- Следующий шаг: подтвердить кандидата на альтернативных периодах/режимах и провести sensitivity по entry/exit/hold/cd.
+- Запланированы очереди: alt holdout (top20/top50/full), top50 sensitivity grid, top50 basecap3 (см. `docs/optimization_runs_20260122.md`).
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

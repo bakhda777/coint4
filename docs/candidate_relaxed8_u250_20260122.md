@@ -21,10 +21,15 @@ Stress holdout (top50 / z0.95 / exit 0.06 / hold 180 / cd 180 / ms 0.1):
 - Pairs traded: 120
 - Costs: 600.24
 
+## Sanity checks
+- Sharpe пересчитан из `equity_curve.csv`: 15m ≈ 7.63, daily ≈ 7.85 (holdout), 15m ≈ 6.43, daily ≈ 6.69 (stress).
+- `total_costs` > 0 (holdout 337.64, stress 600.24), издержки учитываются.
+
 ## Tradeoff notes
 - top20 даёт ещё выше Sharpe, но снижает PnL относительно top50.
 - Turnover снижен до 11.8k при сопоставимом PnL и улучшенном Sharpe.
-- Концентрация PnL (top10/top20): holdout ~59%/82%, stress ~68%/94%; отрицательных пар 39/43 из 120.
+- Концентрация PnL (gross, из `trade_statistics.csv`): top10/top20 ~59%/82% (holdout), ~68%/94% (stress); отрицательных пар 39/43 из 120.
+- Концентрация по базовым активам (gross, PnL делится 50/50 на base): топ‑5 holdout BTC~12.3%, ETH~9.9%, JUV~8.7%, KUB~6.0%, KASTA~5.8%; stress BTC~14.0%, ETH~10.4%, JUV~9.7%, KASTA~6.7%, KUB~6.6%.
 
 ## Decision
 - Новый основной кандидат: top50 / z0.95 / exit 0.06 / hold 180 / cd 180 / ms 0.1.
