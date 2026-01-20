@@ -767,45 +767,33 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             positions[i] = position
             continue
 
-        # CRITICAL FIX: Используем данные предыдущего бара и предыдущие статистики
+        # Use current bar stats for signal generation (aligns with base_engine logic)
         beta_signal = beta[i]
-        if i > rolling_window:
-            beta_signal = beta[i - 1]
-            mu_prev = mu[i - 1]
-            sigma_prev = sigma[i - 1]
-            if np.isnan(beta_signal) or np.isnan(mu_prev) or np.isnan(sigma_prev):
-                positions[i] = position
-                continue
+        mu_curr = mu[i]
+        sigma_curr = sigma[i]
+        current_spread = y[i] - beta_signal * x[i]
 
-            prev_spread = y[i - 1] - beta_signal * x[i - 1]
+        # Проверяем минимальную волатильность
+        current_vol = max(sigma_curr, min_volatility)
 
-            # Проверяем минимальную волатильность
-            current_vol = max(sigma_prev, min_volatility)
+        # Адаптивные пороги
+        adaptive_entry = calculate_adaptive_threshold(
+            entry_threshold, current_vol, base_sigma, adaptive_max_multiplier
+        )
+        adaptive_exit = calculate_adaptive_threshold(
+            exit_threshold, current_vol, base_sigma, adaptive_max_multiplier
+        )
 
-            # Адаптивные пороги
-            adaptive_entry = calculate_adaptive_threshold(
-                entry_threshold, current_vol, base_sigma, adaptive_max_multiplier
-            )
-            adaptive_exit = calculate_adaptive_threshold(
-                exit_threshold, current_vol, base_sigma, adaptive_max_multiplier
-            )
+        # Применяем режимный фактор
+        adaptive_entry *= regime_factor
+        adaptive_exit *= regime_factor
 
-            # Применяем режимный фактор
-            adaptive_entry *= regime_factor
-            adaptive_exit *= regime_factor
+        # Если есть структурные сдвиги, увеличиваем пороги
+        if has_structural_break:
+            adaptive_entry *= 1.5
+            adaptive_exit *= 1.2
 
-            # Если есть структурные сдвиги, увеличиваем пороги
-            if has_structural_break:
-                adaptive_entry *= 1.5
-                adaptive_exit *= 1.2
-
-            z_curr = (prev_spread - mu_prev) / current_vol
-        else:
-            z_curr = 0.0
-            adaptive_entry = entry_threshold
-            adaptive_exit = exit_threshold
-            prev_spread = 0.0
-            current_vol = min_volatility
+        z_curr = (current_spread - mu_curr) / current_vol
 
         new_position = position
 
@@ -829,7 +817,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         elif position == 0.0:
             can_enter = i >= cooldown_until
             if can_enter and min_spread_move_sigma > 0.0 and not np.isnan(last_flat_spread):
-                if abs(prev_spread - last_flat_spread) < (min_spread_move_sigma * current_vol):
+                if abs(current_spread - last_flat_spread) < (min_spread_move_sigma * current_vol):
                     can_enter = False
 
             if can_enter:
@@ -837,12 +825,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                     new_position = -1.0  # Short spread
                     entry_bar = i
                     entry_beta = beta_signal
-                    entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
+                    entry_spread = current_spread  # Сохраняем спред при входе
                 elif z_curr < -adaptive_entry:
                     new_position = 1.0   # Long spread
                     entry_bar = i
                     entry_beta = beta_signal
-                    entry_spread = y[i] - entry_beta * x[i]  # Сохраняем спред при входе
+                    entry_spread = current_spread  # Сохраняем спред при входе
 
         # Расчет PnL при изменении позиции
         if new_position != position:
@@ -863,7 +851,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                 pnl_series[i] = price_pnl - cost
                 total_pnl += price_pnl - cost
                 cooldown_until = i + cooldown_periods + 1
-                last_flat_spread = y[i] - beta_signal * x[i]
+                last_flat_spread = current_spread
             else:
                 # При входе в позицию или изменении размера - только комиссия
                 pnl_series[i] = -cost
