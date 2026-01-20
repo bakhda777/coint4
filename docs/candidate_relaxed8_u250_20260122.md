@@ -6,6 +6,10 @@
 - Holdout period: 2024-05-01 -> 2024-12-31 (train=90d, w2m1)
 - Обновление: churnfix top‑k + sensitivity (z/exit/hold/cd).
 
+## Canonical configs
+- Primary: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml`
+- PnL alt: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z0p95_exit0p08_hold180_cd180_ms0p1.yaml`
+
 ## Metrics (top50_sens winner)
 Holdout (top50 / z1.00 / exit 0.06 / hold 180 / cd 180 / ms 0.1):
 - Sharpe: 9.0140
@@ -33,4 +37,4 @@ Stress holdout (top50 / z1.00 / exit 0.06 / hold 180 / cd 180 / ms 0.1):
 
 ## Decision
 - Новый основной кандидат: top50 / z1.00 / exit 0.06 / hold 180 / cd 180 / ms 0.1.
-- Следующий шаг: подтвердить z1.00 на альтернативном holdout‑периоде или зафиксировать z0.95/exit0.08 как PnL‑вариант.
+- Альтернативный holdout подтверждён: z1.00/exit0.06 даёт Sharpe 8.65/7.48 и PnL 1049/907 (holdout/stress); z0.95/exit0.08 чуть слабее.

@@ -72,7 +72,9 @@ Next steps:
 - Basecap3 завершён: Sharpe 4.87/3.80, PnL 674/526, pairs 71 — слишком жёстко.
 - Новый лучший компромисс: top50/z1.00/exit0.06/hold180/cd180/ms0.1 → Sharpe 9.01/7.64, PnL 1115/946, trades 11414.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
+- Канонический конфиг: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml` (PnL‑альтернатива рядом).
 - Alt-holdout top50 sens завершён: z1.00/exit0.06 Sharpe 8.65/7.48, PnL 1049/907; z0.95/exit0.08 чуть ниже (см. `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`).
+- Запланированы новые OOS‑периоды: 2023-05 → 2023-12 (5 шагов) и 2025-01 → 2025-06 (3 шага) для топ‑2 кандидатов.
 - Следующий шаг: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

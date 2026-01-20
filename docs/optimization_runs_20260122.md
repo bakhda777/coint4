@@ -199,6 +199,18 @@
 Выводы:
 - На альтернативном периоде z1.00/exit0.06 сохраняет преимущество по Sharpe и чуть лучше PnL при меньшем числе сделок.
 
+### Queue: relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50 (OOS 2023H2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50/run_queue.csv`.
+- Цель: независимый OOS‑период 2023-05-01 → 2023-12-31 (WFA 5 шагов).
+- Конфиги: top50 × (z1.00/exit0.06, z0.95/exit0.08) × holdout/stress (4 прогона).
+- Статус: `planned`.
+
+### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50 (OOS 2025H1)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50/run_queue.csv`.
+- Цель: независимый OOS‑период 2025-01-01 → 2025-06-30 (WFA 3 шага).
+- Конфиги: top50 × (z1.00/exit0.06, z0.95/exit0.08) × holdout/stress (4 прогона).
+- Статус: `planned`.
+
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
 - Цель: проверить устойчивость вокруг базовых параметров top50.
