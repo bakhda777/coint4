@@ -648,6 +648,9 @@ def calculate_adaptive_threshold(base_threshold: float, volatility: float,
 
 @nb.njit(fastmath=True, cache=True)
 def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
+                                   beta: np.ndarray,
+                                   mu: np.ndarray,
+                                   sigma: np.ndarray,
                                    rolling_window: int,
                                    entry_threshold: float,
                                    exit_threshold: float,
@@ -670,6 +673,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     ----------
     y, x : np.ndarray
         Ценовые ряды
+    beta, mu, sigma : np.ndarray
+        Предрасчитанные rolling-статистики (с тем же rolling_window)
     rolling_window : int
         Размер окна для rolling статистик
     entry_threshold : float
@@ -723,14 +728,13 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     if min_spread_move_sigma < 0.0:
         min_spread_move_sigma = 0.0
 
-    # Вычисляем rolling статистики
-    beta, mu, sigma = rolling_ols(y, x, rolling_window)
+    min_sigma = 1e-6  # Align with base_engine z-score guard.
 
     base_sigma = min_volatility
     sigma_sum = 0.0
     sigma_count = 0
     for i in range(rolling_window, n):
-        if not np.isnan(sigma[i]):
+        if not np.isnan(sigma[i]) and sigma[i] >= min_sigma:
             sigma_sum += sigma[i]
             sigma_count += 1
     if sigma_count > 0:
@@ -763,7 +767,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             adaptive_max_multiplier = 1.0
 
     for i in range(rolling_window, n):
-        if np.isnan(beta[i]) or np.isnan(mu[i]) or np.isnan(sigma[i]):
+        if np.isnan(beta[i]) or np.isnan(mu[i]) or np.isnan(sigma[i]) or sigma[i] < min_sigma:
             positions[i] = position
             continue
 
@@ -773,8 +777,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         sigma_curr = sigma[i]
         current_spread = y[i] - beta_signal * x[i]
 
-        # Проверяем минимальную волатильность
-        current_vol = max(sigma_curr, min_volatility)
+        # Текущая волатильность (std спреда)
+        current_vol = sigma_curr
 
         # Адаптивные пороги
         adaptive_entry = calculate_adaptive_threshold(
@@ -905,8 +909,10 @@ def _warmup_advanced_functions():
     calculate_adaptive_threshold(2.0, 1.0, 0.1, 1.0)
 
     # Прогрев полной торговой функции
+    beta, mu, sigma = rolling_ols(test_y, test_x, 10)
     calculate_positions_and_pnl_full(
         test_y, test_x,
+        beta, mu, sigma,
         rolling_window=10,
         entry_threshold=2.0,
         exit_threshold=0.5,

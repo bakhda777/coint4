@@ -162,6 +162,9 @@ class FullNumbaPairBacktester(BasePairBacktester):
         positions, pnl_series, cumulative_pnl, _costs_series = calculate_positions_and_pnl_full(
             y=y,
             x=x,
+            beta=beta,
+            mu=mu,
+            sigma=sigma,
             rolling_window=self.rolling_window,
             entry_threshold=self.z_threshold,
             exit_threshold=self.z_exit,
@@ -201,7 +204,7 @@ class FullNumbaPairBacktester(BasePairBacktester):
                     spread_window = spread[i-self.rolling_window+1:i+1]
                     spread_mean = np.mean(spread_window)
                     spread_std = np.std(spread_window)
-                    if spread_std > 0.001:
+                    if spread_std > 1e-6:
                         z_scores[i] = (spread[i] - spread_mean) / spread_std
                 
                 # Mark trade points where position changes
@@ -210,9 +213,9 @@ class FullNumbaPairBacktester(BasePairBacktester):
         else:
             # Используем rolling beta (старое поведение)
             for i in range(self.rolling_window, len(y)):
-                if not np.isnan(beta[i]) and not np.isnan(mu[i]) and not np.isnan(sigma[i]):
+                if not np.isnan(beta[i]) and not np.isnan(mu[i]) and not np.isnan(sigma[i]) and sigma[i] >= 1e-6:
                     spread[i] = y[i] - beta[i] * x[i]
-                    z_scores[i] = (spread[i] - mu[i]) / max(sigma[i], 0.001)
+                    z_scores[i] = (spread[i] - mu[i]) / sigma[i]
                     
                     # Mark trade points where position changes
                     if i > 0 and positions[i] != positions[i-1]:

@@ -57,6 +57,7 @@ class NumbaPairBacktester(BasePairBacktester):
         
         positions, pnl, cumulative_pnl, costs = calculate_positions_and_pnl_full(
             y, x,
+            beta, mu, sigma,
             rolling_window=self.rolling_window,
             entry_threshold=self.zscore_entry_threshold,
             exit_threshold=self.z_exit,
@@ -76,7 +77,7 @@ class NumbaPairBacktester(BasePairBacktester):
 
         spread = y - beta * x
         z_scores = np.full_like(spread, np.nan)
-        valid_sigma = sigma > 1e-12
+        valid_sigma = sigma > 1e-6
         z_scores[valid_sigma] = (spread[valid_sigma] - mu[valid_sigma]) / sigma[valid_sigma]
 
         self.results = pd.DataFrame({

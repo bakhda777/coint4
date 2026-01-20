@@ -59,7 +59,9 @@ Next steps:
 - Очередь churnfix micro-grid (u250) подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (результаты 0 сделок из-за адаптивных порогов).
 - Churnfix v2 (после фикса адаптивных порогов) завершён: 0 сделок в holdout/stress, требуется диагностика порогов/volatility (`coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`).
 - Sanity no-adapt завершён: 0 сделок даже при entry 0.75 (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`).
-- Sanity v2 queued после правки сигналов по текущему бару: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
+- Sanity v2 (current-bar signals) завершён: 0 сделок, Sharpe 0.00 (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`).
+- Numba выравнен с базовой логикой по std (guard 1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma напрямую.
+- Sanity v3 запланирован для проверки выравнивания: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

@@ -67,4 +67,20 @@
 ### Queue: relaxed8_nokpss_u250_churnfix_sanity_v2 (current-bar signals)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
 - Цель: проверить сделки после выравнивания Numba-сигналов по текущему бару.
-- Статус: `queued`.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| z0p75/exit0p06/hold120/cd120/ms0p1/noadapt | 0.00 | 0.00 | 0 | 168 | 0.00 | 0.00 | 0 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p1/noadapt | 0.00 | 0.00 | 0 | 168 | 0.00 | 0.00 | 0 | 168 |
+
+Выводы:
+- Сделки всё ещё отсутствуют; диагностический `z_score` превышает порог, но позиции не открываются.
+- Гипотеза смещается к рассинхрону между z-score (выходные метрики) и торговой логикой Numba (min_volatility clamp и порог std).
+- План: привести Numba к базовой логике по std (guard 1e-6, без clamp в z-score) и прогнать sanity v3.
+
+### Queue: relaxed8_nokpss_u250_churnfix_sanity_v3 (sigma guard alignment)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
+- Цель: sanity-проверка после выравнивания расчёта z-score в Numba (std guard + без clamp) и передачи beta/mu/sigma.
+- Статус: `planned`.
