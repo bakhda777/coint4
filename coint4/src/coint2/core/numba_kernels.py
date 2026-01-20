@@ -748,7 +748,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     entry_beta = 1.0    # Бета на момент входа (для консистентного PnL)
     total_pnl = 0.0
     cooldown_until = 0  # bar index; entries allowed when i >= cooldown_until
-    last_flat_spread = np.nan
+    last_flat_spread = 0.0
+    last_flat_valid = False
 
     # Определяем рыночный режим (если включено)
     regime_factor = 1.0
@@ -820,7 +821,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         # Вход в позицию только если нет текущей позиции
         elif position == 0.0:
             can_enter = i >= cooldown_until
-            if can_enter and min_spread_move_sigma > 0.0 and not np.isnan(last_flat_spread):
+            if can_enter and min_spread_move_sigma > 0.0 and last_flat_valid:
                 if abs(current_spread - last_flat_spread) < (min_spread_move_sigma * current_vol):
                     can_enter = False
 
@@ -856,6 +857,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                 total_pnl += price_pnl - cost
                 cooldown_until = i + cooldown_periods + 1
                 last_flat_spread = current_spread
+                last_flat_valid = True
             else:
                 # При входе в позицию или изменении размера - только комиссия
                 pnl_series[i] = -cost

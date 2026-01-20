@@ -61,7 +61,9 @@ Next steps:
 - Sanity no-adapt завершён: 0 сделок даже при entry 0.75 (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`).
 - Sanity v2 (current-bar signals) завершён: 0 сделок, Sharpe 0.00 (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`).
 - Numba выравнен с базовой логикой по std (guard 1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma напрямую.
-- Sanity v3 запланирован для проверки выравнивания: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
+- Sanity v3 завершён: 0 сделок (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`).
+- Найдено: min_spread_move_sigma блокировал входы из-за NaN в last_flat_spread при fastmath; исправлено через last_flat_valid.
+- Sanity v4 запланирован для проверки фикса: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

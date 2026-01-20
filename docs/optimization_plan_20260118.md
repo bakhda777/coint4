@@ -59,6 +59,7 @@
     - 2026-01-20: адаптивные пороги Numba переопределены под base-волатильность; повторный прогон `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv` завершён, сделки всё ещё = 0.
     - 2026-01-20: sanity-queue без adaptive/regime/breaks (entry 0.95/0.75) завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`.
     - 2026-01-20: sanity v2 (current-bar signals) завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
-    - 2026-01-22: Numba выравнен по std guard (1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma; sanity v3 запланирован: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
+    - 2026-01-22: Numba выравнен по std guard (1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma; sanity v3 завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
+    - 2026-01-22: исправлен баг min_spread_move_sigma (NaN + fastmath блокировал входы через last_flat_spread); sanity v4 запланирован: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.

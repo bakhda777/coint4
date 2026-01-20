@@ -83,4 +83,19 @@
 ### Queue: relaxed8_nokpss_u250_churnfix_sanity_v3 (sigma guard alignment)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
 - Цель: sanity-проверка после выравнивания расчёта z-score в Numba (std guard + без clamp) и передачи beta/mu/sigma.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| z0p75/exit0p06/hold120/cd120/ms0p1/noadapt | 0.00 | 0.00 | 0 | 168 | 0.00 | 0.00 | 0 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p1/noadapt | 0.00 | 0.00 | 0 | 168 | 0.00 | 0.00 | 0 | 168 |
+
+Выводы:
+- Диагностика локально показала, что min_spread_move_sigma блокирует все входы из-за NaN в last_flat_spread при fastmath: diff считался 0, и can_enter всегда становился False.
+- Исправление: заменить NaN sentinel на флаг last_flat_valid (без арифметики с NaN).
+
+### Queue: relaxed8_nokpss_u250_churnfix_sanity_v4 (min_spread_move fix)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`.
+- Цель: sanity-проверка после фикса min_spread_move_sigma (last_flat_valid).
 - Статус: `planned`.
