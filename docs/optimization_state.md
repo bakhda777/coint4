@@ -72,9 +72,8 @@ Next steps:
 - Basecap3 завершён: Sharpe 4.87/3.80, PnL 674/526, pairs 71 — слишком жёстко.
 - Новый лучший компромисс: top50/z1.00/exit0.06/hold180/cd180/ms0.1 → Sharpe 9.01/7.64, PnL 1115/946, trades 11414.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
-- Следующий шаг: подтвердить z1.00 на альтернативном holdout или зафиксировать z0.95/exit0.08 как PnL‑вариант.
-- Запланирован alt-holdout top50 (z1.00/exit0.06 и z0.95/exit0.08) → `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`.
-- Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
+- Alt-holdout top50 sens завершён: z1.00/exit0.06 Sharpe 8.65/7.48, PnL 1049/907; z0.95/exit0.08 чуть ниже (см. `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`).
+- Следующий шаг: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.

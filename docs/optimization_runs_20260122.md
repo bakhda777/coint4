@@ -188,7 +188,16 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`.
 - Цель: подтвердить два лучших top50 варианта (z1.00/exit0.06 и z0.95/exit0.08) на альтернативном периоде.
 - Конфиги: 2 варианта × holdout/stress (4 прогона).
-- Статус: `planned`.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/z0p95/exit0p08/hold180/cd180/ms0p1 | 8.60 | 1038.45 | 3977 | 47 | 7.33 | 884.34 | 3977 | 47 |
+| top50/z1p00/exit0p06/hold180/cd180/ms0p1 | 8.65 | 1049.23 | 3666 | 47 | 7.48 | 906.77 | 3666 | 47 |
+
+Выводы:
+- На альтернативном периоде z1.00/exit0.06 сохраняет преимущество по Sharpe и чуть лучше PnL при меньшем числе сделок.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
