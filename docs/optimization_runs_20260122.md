@@ -258,7 +258,16 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_top50_churngrid/run_queue.csv`.
 - Цель: проверить снижение churn через min_spread_move_sigma для базового кандидата z1.00/exit0.06.
 - Конфиги: ms0.15/ms0.2 × holdout/stress (4 прогона).
-- Статус: `planned`.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p15 | 8.95 | 1107.52 | 11400 | 120 | 7.58 | 939.51 | 11400 | 120 |
+| top50/ms0p2 | 9.09 | 1135.26 | 11384 | 120 | 7.73 | 966.13 | 11384 | 120 |
+
+Выводы:
+- ms0p2 даёт небольшое улучшение Sharpe/PNL при схожем turnover; кандидат можно сдвинуть на ms0p2.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_basecap3 (base cap)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_basecap3/run_queue.csv`.

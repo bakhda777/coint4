@@ -70,6 +70,13 @@ bash scripts/run_pipeline.sh
 - `results/strategy_metrics.csv` (walk-forward), а также `results/daily_pnl.csv` и `results/equity_curve.csv`
 - Для фиксированного universe: `artifacts/wfa/runs/20260114_110612_main_2024_wfa_fixed_top200_step5/strategy_metrics.csv`
 
+### Sanity: Sharpe consistency
+Проверяет, что `strategy_metrics.csv` соответствует пересчету из `equity_curve.csv`:
+```bash
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/check_sharpe_consistency.py \
+  --queue artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50/run_queue.csv
+```
+
 ## Структура тестов
 
 Актуальная структура (см. также `tests/README.md`):
