@@ -216,6 +216,12 @@
 - Стабильность по шагам (holdout, daily_pnl срезы): z0.95 min/median Sharpe = -1.85/6.12; z1.00 = -1.72/5.60.
 - Концентрация (gross PnL, holdout): top10/top20 = 47%/67% (z1.00) и 45%/63% (z0.95); отрицательных пар 54/145 и 50/145. Top базы: z1.00 → GODS/KCAL/KDA/CHZ/JST, z0.95 → GODS/KCAL/KDA/FTT/ENJ.
 
+### Queue: relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50_ms0p2 (OOS 2023H2, ms0p2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50_ms0p2/run_queue.csv`.
+- Цель: перепроверить OOS 2023H2 для ms0p2 кандидата (holdout+stress).
+- Конфиги: z1.00/exit0.06/ms0p2 × holdout/stress (2 прогона).
+- Статус: `planned`.
+
 ### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50 (OOS 2025H1)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50/run_queue.csv`.
 - Цель: независимый OOS‑период 2025-01-01 → 2025-06-30 (WFA 3 шага).
@@ -232,6 +238,12 @@
 - В OOS 2025H1 лучше выглядит z1.00/exit0.06 (Sharpe/PNL выше при меньшем turnover).
 - Стабильность по шагам (holdout, daily_pnl срезы): z0.95 min/median Sharpe = -5.10/0.09; z1.00 = -2.61/-2.21.
 - Концентрация (gross PnL, holdout): top10/top20 = 50%/68% (z1.00) и 44%/64% (z0.95); отрицательных пар 69/141. Top базы: z1.00 → ADA/ETH/CBK/FIL/CHZ, z0.95 → ADA/ETH/CBK/GTAI/CHZ.
+
+### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50_ms0p2 (OOS 2025H1, ms0p2)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50_ms0p2/run_queue.csv`.
+- Цель: перепроверить OOS 2025H1 для ms0p2 кандидата (holdout+stress).
+- Конфиги: z1.00/exit0.06/ms0p2 × holdout/stress (2 прогона).
+- Статус: `planned`.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
