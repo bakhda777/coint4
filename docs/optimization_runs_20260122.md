@@ -234,7 +234,15 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260124_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top30_top40/run_queue.csv`.
 - Цель: проверить компромисс turnover vs PnL между top20 и top50 для z1.00/exit0.06/ms0p1.
 - Конфиги: top30/top40 × holdout/stress (4 прогона).
-- Статус: `planned` (4 прогона).
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top30/z1p00/exit0p06/hold180/cd180/ms0p1 | 2.74 | 575.45 | 6391 | 68 | 1.66 | 348.20 | 6391 | 68 |
+| top40/z1p00/exit0p06/hold180/cd180/ms0p1 | 2.63 | 556.48 | 6878 | 69 | 1.55 | 326.34 | 6878 | 69 |
+Выводы:
+- top30 доминирует top40 по Sharpe/PNL при меньшем turnover; топ‑50 всё ещё лучше по Sharpe/PNL.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50 (OOS 2025H1)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50/run_queue.csv`.
@@ -271,7 +279,15 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260124_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top30_top40/run_queue.csv`.
 - Цель: проверить компромисс turnover vs PnL между top20 и top50 для z1.00/exit0.06/ms0p1.
 - Конфиги: top30/top40 × holdout/stress (4 прогона).
-- Статус: `planned` (4 прогона).
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top30/z1p00/exit0p06/hold180/cd180/ms0p1 | 2.49 | 249.86 | 4416 | 55 | 1.37 | 136.25 | 4416 | 55 |
+| top40/z1p00/exit0p06/hold180/cd180/ms0p1 | 2.15 | 179.01 | 5781 | 72 | 0.65 | 53.23 | 5781 | 72 |
+Выводы:
+- top30 снова лучше top40, но заметно уступает топ‑50 по Sharpe/PNL при снижении turnover ~34%.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.

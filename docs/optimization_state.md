@@ -76,6 +76,7 @@ Next steps:
 - Alt-holdout top50 sens завершён: z1.00/exit0.06 Sharpe 8.65/7.48, PnL 1049/907; z0.95/exit0.08 чуть ниже (см. `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`).
 - OOS 2023-05 → 2023-12: лучше z0.95/exit0.08 (Sharpe 4.24/2.94, PnL 810/561); z1.00 ниже (2.63/1.55, PnL 556/326).
 - OOS 2025-01 → 2025-06: лучше z1.00/exit0.06 (Sharpe 3.83/2.61, PnL 400/271); z0.95 ниже.
+- OOS top30/top40 (z1.00/ms0p1): top30 лучше top40, но уступает top50 по Sharpe/PNL; turnover снижается ~34% (2025H1), поэтому оставляем top50 как primary.
 - По шагам WFA (daily_pnl срезы) есть отрицательные минимумы на обоих OOS периодах; детали в `docs/optimization_runs_20260122.md`.
 - Концентрация на новых OOS умеренная: top10 ≈ 44–50%, top20 ≈ 63–68%; отрицательных пар 50–69 из 141–145.
 - Churngrid min_spread_move_sigma завершён: ms0p2 лучше ms0p15 в базовом holdout, но OOS 2025H1 для ms0p2 хуже (Sharpe 2.66/1.44, PnL 278/149), поэтому оставляем ms0p1 как primary.
