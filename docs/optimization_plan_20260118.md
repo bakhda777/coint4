@@ -56,6 +56,7 @@
     - Выполнено: candidate sweep по риск-параметрам (risk_per_position, max_active_positions, max_kelly_fraction) → метрики почти без изменений; остаёмся на baseline z0.95/0.08/120/120.
     - Выполнено: micro-grid u250 (entry/exit/hold/cd + max_pairs 50/100/150), лучший min‑Sharpe у z0.95/exit0.06/hold120/cd120 (4.54/3.73); очередь `coint4/artifacts/wfa/aggregate/20260121_relaxed8_nokpss_u250_search/run_queue.csv`.
     - 2026-01-20: Numba-движок теперь учитывает cooldown/min_hold/min_spread_move/stop-loss и выход по |z|<=z_exit; портфельная симуляция использует позиции. Очередь churnfix micro-grid: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (0 сделок, слишком консервативные адаптивные пороги).
-    - 2026-01-20: адаптивные пороги Numba переопределены под base-волатильность; повторный прогон: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`.
+    - 2026-01-20: адаптивные пороги Numba переопределены под base-волатильность; повторный прогон `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv` завершён, сделки всё ещё = 0.
+    - 2026-01-20: подготовлен sanity-queue без adaptive/regime/breaks (entry 0.95/0.75): `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.

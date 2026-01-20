@@ -57,7 +57,8 @@ Next steps:
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260121.md`.
 - Numba: включены cooldown/min_hold/min_spread_move/stop-loss + выход по |z|<=z_exit; портфельная симуляция использует позиции вместо PnL-сигналов.
 - Очередь churnfix micro-grid (u250) подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (результаты 0 сделок из-за адаптивных порогов).
-- Churnfix v2 (после фикса адаптивных порогов) queued: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`.
+- Churnfix v2 (после фикса адаптивных порогов) завершён: 0 сделок в holdout/stress, требуется диагностика порогов/volatility (`coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`).
+- Sanity no-adapt очередь подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
