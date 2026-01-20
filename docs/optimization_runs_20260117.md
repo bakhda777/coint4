@@ -908,3 +908,16 @@ step_3:
   - Метрики: sharpe_ratio_abs `3.6497`, total_pnl `142.23`, max_drawdown_abs `-37.60`, total_trades `1693`, total_pairs_traded `53`, total_costs `82.43`.
 - Фильтрация (run.log): файлы причин отсева `coint4/results/filter_reasons_20260119_221818.csv`, `coint4/results/filter_reasons_20260119_221856.csv`, `coint4/results/filter_reasons_20260119_221857.csv`, `coint4/results/filter_reasons_20260119_221934.csv`, `coint4/results/filter_reasons_20260119_221935.csv`, `coint4/results/filter_reasons_20260119_222011.csv`, `coint4/results/filter_reasons_20260119_222012.csv`, `coint4/results/filter_reasons_20260119_222013.csv`, `coint4/results/filter_reasons_20260119_222049.csv`, `coint4/results/filter_reasons_20260119_222051.csv`.
 - Итог: сделки снижены в 3.9–8.2 раза (1693/798 vs 6572), Sharpe остаётся > 1 даже в стресс‑режиме; топ‑20 выглядит балансом между Sharpe и turnover.
+
+### WFA очередь (relaxed8_nokpss_u250_topk_turnover_20260119, top20 + turnover)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260119_relaxed8_nokpss_u250_topk_turnover/run_queue.csv`.
+- Цель: дополнительно снизить сделки/издержки с max_pairs=20 за счёт entry/exit + hold/cooldown.
+- Параллельность: `8` (nproc на 85.198.90.128).
+- Конфиги (holdout + stress):
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk_turnover/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z0p95_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk_turnover/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z1p05_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/holdout_20260119_relaxed8_nokpss_u250_topk_turnover/holdout_relaxed8_nokpss_20260119_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z1p0_exit0p06_hold180_cd180.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk_turnover/stress_relaxed8_nokpss_u250_top20_z0p95_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk_turnover/stress_relaxed8_nokpss_u250_top20_z1p05_exit0p08_hold120_cd120.yaml`
+  - `coint4/configs/stress_20260119_relaxed8_nokpss_u250_topk_turnover/stress_relaxed8_nokpss_u250_top20_z1p0_exit0p06_hold180_cd180.yaml`
+- Статус: `planned`.
