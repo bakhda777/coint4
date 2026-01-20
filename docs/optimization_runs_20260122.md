@@ -220,7 +220,15 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20230501_20231231_top50_ms0p2/run_queue.csv`.
 - Цель: перепроверить OOS 2023H2 для ms0p2 кандидата (holdout+stress).
 - Конфиги: z1.00/exit0.06/ms0p2 × holdout/stress (2 прогона).
-- Статус: `planned`.
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/z1p00/exit0p06/ms0p2 | 2.83 | 597.57 | 6871 | 69 | 1.74 | 367.13 | 6871 | 69 |
+Выводы:
+- Стабильность по шагам (holdout, daily_pnl срезы): min/median Sharpe = -1.56/5.91.
+- Концентрация (gross PnL, holdout): top10/top20 = 47%/67%; отрицательных пар 53/145 (почти как ms0p1).
 
 ### Queue: relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50 (OOS 2025H1)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50/run_queue.csv`.
@@ -243,7 +251,15 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_oos20250101_20250630_top50_ms0p2/run_queue.csv`.
 - Цель: перепроверить OOS 2025H1 для ms0p2 кандидата (holdout+stress).
 - Конфиги: z1.00/exit0.06/ms0p2 × holdout/stress (2 прогона).
-- Статус: `planned`.
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/z1p00/exit0p06/ms0p2 | 2.66 | 278.02 | 6694 | 79 | 1.44 | 149.29 | 6694 | 79 |
+Выводы:
+- Стабильность по шагам (holdout, daily_pnl срезы): min/median Sharpe = -3.67/-3.24.
+- Концентрация (gross PnL, holdout): top10/top20 = 50%/68%; отрицательных пар 68/141 (на уровне ms0p1).
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.

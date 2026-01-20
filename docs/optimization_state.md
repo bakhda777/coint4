@@ -70,15 +70,20 @@ Next steps:
 - Alt holdout (2022-09-01 → 2023-04-30) завершён: top50/full идентичны (≈47 пар), Sharpe 7.96/6.72, PnL 941/794; top20 чуть хуже.
 - Sensitivity top50 завершён: лучший Sharpe у z1.00/exit0.06 (9.01/7.64) при PnL 1115/946; z0.95/exit0.08 даёт максимум PnL (1180/997).
 - Basecap3 завершён: Sharpe 4.87/3.80, PnL 674/526, pairs 71 — слишком жёстко.
-- Новый лучший компромисс: top50/z1.00/exit0.06/hold180/cd180/ms0.2 → Sharpe 9.09/7.73, PnL 1135/966, trades 11384.
+- Новый лучший компромисс (robust): top50/z1.00/exit0.06/hold180/cd180/ms0.1 → Sharpe 9.01/7.64, PnL 1115/946, trades 11414.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
-- Канонический конфиг: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (PnL‑альтернатива рядом).
+- Канонический конфиг: `coint4/configs/candidate_20260123_relaxed8_nokpss_u250_top50/candidate_relaxed8_nokpss_20260123_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml` (PnL‑альтернатива рядом).
 - Alt-holdout top50 sens завершён: z1.00/exit0.06 Sharpe 8.65/7.48, PnL 1049/907; z0.95/exit0.08 чуть ниже (см. `coint4/artifacts/wfa/aggregate/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/run_queue.csv`).
-- OOS 2023-05 → 2023-12: лучше z0.95/exit0.08 (Sharpe 4.24/2.94, PnL 810/561); z1.00 проседает.
-- OOS 2025-01 → 2025-06: лучше z1.00/exit0.06 (Sharpe 3.83/2.61, PnL 400/271).
+- OOS 2023-05 → 2023-12: лучше z0.95/exit0.08 (Sharpe 4.24/2.94, PnL 810/561); z1.00 ниже (2.63/1.55, PnL 556/326).
+- OOS 2025-01 → 2025-06: лучше z1.00/exit0.06 (Sharpe 3.83/2.61, PnL 400/271); z0.95 ниже.
 - По шагам WFA (daily_pnl срезы) есть отрицательные минимумы на обоих OOS периодах; детали в `docs/optimization_runs_20260122.md`.
 - Концентрация на новых OOS умеренная: top10 ≈ 44–50%, top20 ≈ 63–68%; отрицательных пар 50–69 из 141–145.
-- Churngrid min_spread_move_sigma завершён: ms0p2 чуть лучше ms0p15 (Sharpe 9.09/7.73, PnL 1135/966) при схожем turnover.
+- Churngrid min_spread_move_sigma завершён: ms0p2 лучше ms0p15 в базовом holdout, но OOS 2025H1 для ms0p2 хуже (Sharpe 2.66/1.44, PnL 278/149), поэтому оставляем ms0p1 как primary.
+- Decision matrix (summary):
+  - Primary (z1.00/ms0p1): лучший на OOS 2025H1, сильный базовый holdout, стабильнее ms0p2.
+  - PnL alt (z0.95/exit0.08): лучший на OOS 2023H2, но слабее на 2025H1.
+- Sharpe sanity: скрипт `scripts/optimization/check_sharpe_consistency.py` прошёл для ключевых очередей (32 прогона).
+- Base cap: текущий pairs_universe уже max_per_base=4; basecap3 ухудшал метрики, поэтому отдельный cap 5/8 не даёт нового эффекта.
 - Следующий шаг: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
