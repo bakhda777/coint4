@@ -1,6 +1,6 @@
 # Optimization state
 
-Last updated: 2026-01-19
+Last updated: 2026-01-21
 
 Current stage: Sharpe>1 program (см. docs/optimization_plan_20260118.md). Базовые WFA/sweep завершены, shortlist WFA выполнен; далее holdout + стресс-издержки для топ-1/2.
 
@@ -52,6 +52,8 @@ Next steps:
 - Turnover grid поверх top20 завершён: лучший вариант z1.05/exit0.08/hold120/cd120 → holdout Sharpe `3.85`, stress Sharpe `3.44`, trades `630`, costs `18.04/32.07`.
 - Baseline u250 turnover grid завершён: лучший вариант z0.95/exit0.08/hold120/cd120 → holdout Sharpe `4.52`, stress Sharpe `3.70`, PnL `447.87/366.56`, trades `3936`.
 - Candidate sweep по риск-параметрам завершён: метрики почти не меняются, max_active_positions даёт минимальные отличия; оставляем baseline z0.95/0.08/120/120.
+- Sharpe annualization: WFA использует `annualizing_factor * (24*60/bar_minutes)`; base_engine приведён к динамическому periods_per_year по шагу данных.
+- Запланирован micro-grid u250 (entry/exit/hold/cd + max_pairs 50/100/150): `coint4/artifacts/wfa/aggregate/20260121_relaxed8_nokpss_u250_search/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

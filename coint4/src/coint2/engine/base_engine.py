@@ -2358,7 +2358,15 @@ class BasePairBacktester:
             # Fallback to original method if no capital history
             returns = pnl / self.capital_at_risk
             
-        sharpe = performance.sharpe_ratio(returns, self.annualizing_factor)
+        periods_per_year = float(self.annualizing_factor)
+        if isinstance(pnl.index, pd.DatetimeIndex) and len(pnl.index) > 1:
+            deltas = pnl.index.to_series().diff().dropna()
+            if not deltas.empty:
+                median_delta = deltas.dt.total_seconds().median()
+                if median_delta and median_delta > 0:
+                    periods_per_year = self.annualizing_factor * (86400.0 / median_delta)
+
+        sharpe = performance.sharpe_ratio(returns, periods_per_year)
         
         # Calculate new metrics
         win_rate_val = performance.win_rate(pnl)
