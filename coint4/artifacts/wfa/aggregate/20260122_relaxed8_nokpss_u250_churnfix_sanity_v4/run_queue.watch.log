@@ -1,0 +1,9 @@
+2026-01-20T12:20:08Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-20T12:20:08Z HEARTBEAT run_pid=1208 run_cpu=0% watcher_cpu=0.3% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-20T12:20:38Z HEARTBEAT run_pid=1208 run_cpu=110% watcher_cpu=0% worker_pid=1302 worker_cpu=110% coint2_procs=4 cpu_total=445.0% idle_seconds=0
+2026-01-20T12:21:08Z HEARTBEAT run_pid=1208 run_cpu=113% watcher_cpu=0% worker_pid=1302 worker_cpu=113% coint2_procs=4 cpu_total=451.0% idle_seconds=0
+2026-01-20T12:21:39Z HEARTBEAT run_pid=1208 run_cpu=61.6% watcher_cpu=0% worker_pid=1302 worker_cpu=61.6% coint2_procs=36 cpu_total=1056.9% idle_seconds=0
+2026-01-20T12:22:10Z HEARTBEAT run_pid=1208 run_cpu=70.8% watcher_cpu=0% worker_pid=1302 worker_cpu=70.8% coint2_procs=4 cpu_total=282.8% idle_seconds=0
+2026-01-20T12:22:40Z HEARTBEAT run_pid=1208 run_cpu=80.7% watcher_cpu=0% worker_pid=1302 worker_cpu=80.7% coint2_procs=4 cpu_total=322.2% idle_seconds=0
+2026-01-20T12:23:10Z HEARTBEAT run_pid=1208 run_cpu=87.2% watcher_cpu=0% worker_pid=1302 worker_cpu=87.2% coint2_procs=4 cpu_total=348.8% idle_seconds=0
+2026-01-20T12:23:40Z DONE rc=0

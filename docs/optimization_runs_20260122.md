@@ -98,4 +98,19 @@
 ### Queue: relaxed8_nokpss_u250_churnfix_sanity_v4 (min_spread_move fix)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`.
 - Цель: sanity-проверка после фикса min_spread_move_sigma (last_flat_valid).
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| z0p75/exit0p06/hold120/cd120/ms0p1/noadapt | -0.88 | -138.77 | 27164 | 168 | -1.83 | -286.48 | 27164 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p1/noadapt | 0.53 | 78.85 | 26517 | 168 | -0.45 | -72.02 | 26517 | 168 |
+
+Выводы:
+- Сделки восстановились, но turnover слишком высокий (26k+), Sharpe в стресс‑издержках отрицательный.
+- Нужен повтор churnfix‑grid с рабочей логикой min_spread_move_sigma и адаптивными порогами.
+
+### Queue: relaxed8_nokpss_u250_churnfix_v3 (min_spread_move fix)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v3/run_queue.csv`.
+- Цель: повтор churnfix‑grid (holdout + stress) после фикса min_spread_move_sigma.
 - Статус: `planned`.

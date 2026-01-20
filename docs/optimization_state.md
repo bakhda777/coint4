@@ -63,7 +63,8 @@ Next steps:
 - Numba выравнен с базовой логикой по std (guard 1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma напрямую.
 - Sanity v3 завершён: 0 сделок (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`).
 - Найдено: min_spread_move_sigma блокировал входы из-за NaN в last_flat_spread при fastmath; исправлено через last_flat_valid.
-- Sanity v4 запланирован для проверки фикса: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`.
+- Sanity v4 завершён: сделки восстановились, но turnover очень высокий (26k+), stress Sharpe отрицательный (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`).
+- Следующий шаг: перезапустить churnfix grid (holdout+stress) с рабочим min_spread_move_sigma.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
