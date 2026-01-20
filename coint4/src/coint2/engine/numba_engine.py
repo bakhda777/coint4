@@ -67,6 +67,7 @@ class NumbaPairBacktester(BasePairBacktester):
             enable_structural_breaks=self.structural_break_protection,
             min_volatility=self.min_volatility,
             adaptive_threshold_factor=1.0 if self.adaptive_thresholds else 0.0,
+            max_var_multiplier=self.max_var_multiplier,
             cooldown_periods=cooldown_periods,
             min_hold_periods=min_hold_periods,
             stop_loss_zscore=float(getattr(self, "pair_stop_loss_zscore", 0.0) or 0.0),

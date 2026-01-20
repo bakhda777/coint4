@@ -627,24 +627,19 @@ def check_structural_breaks(y: np.ndarray, x: np.ndarray, min_correlation: float
 
 @nb.njit(fastmath=True, cache=True)
 def calculate_adaptive_threshold(base_threshold: float, volatility: float,
-                               min_vol: float, adaptive_factor: float) -> float:
-    """Вычисляет адаптивный порог на основе волатильности."""
-    if volatility < min_vol:
-        volatility = min_vol
+                               base_vol: float, max_multiplier: float) -> float:
+    """Вычисляет адаптивный порог на основе отношения волатильностей."""
+    if base_vol <= 0.0:
+        return base_threshold
 
-    # Нормализуем волатильность
-    vol_ratio = volatility / min_vol
+    vol_ratio = volatility / base_vol
+    if vol_ratio < 1.0:
+        vol_ratio = 1.0
 
-    # Адаптивный множитель
-    adaptive_multiplier = 1.0 + adaptive_factor * (vol_ratio - 1.0)
+    if max_multiplier > 0.0 and vol_ratio > max_multiplier:
+        vol_ratio = max_multiplier
 
-    # Ограничиваем разумными пределами
-    if adaptive_multiplier < 0.5:
-        adaptive_multiplier = 0.5
-    elif adaptive_multiplier > 3.0:
-        adaptive_multiplier = 3.0
-
-    return base_threshold * adaptive_multiplier
+    return base_threshold * vol_ratio
 
 
 # =============================================================================
@@ -663,6 +658,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    enable_structural_breaks: bool,
                                    min_volatility: float,
                                    adaptive_threshold_factor: float,
+                                   max_var_multiplier: float = 3.0,
                                    cooldown_periods: int = 0,
                                    min_hold_periods: int = 0,
                                    stop_loss_zscore: float = 0.0,
@@ -694,6 +690,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         Минимальная волатильность
     adaptive_threshold_factor : float
         Фактор адаптивности порогов
+    max_var_multiplier : float
+        Максимальный множитель для адаптивных порогов
     cooldown_periods : int
         Период охлаждения после выхода (в барах)
     min_hold_periods : int
@@ -728,6 +726,18 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     # Вычисляем rolling статистики
     beta, mu, sigma = rolling_ols(y, x, rolling_window)
 
+    base_sigma = min_volatility
+    sigma_sum = 0.0
+    sigma_count = 0
+    for i in range(rolling_window, n):
+        if not np.isnan(sigma[i]):
+            sigma_sum += sigma[i]
+            sigma_count += 1
+    if sigma_count > 0:
+        base_sigma = sigma_sum / sigma_count
+    if base_sigma < min_volatility:
+        base_sigma = min_volatility
+
     position = 0.0
     entry_bar = 0
     entry_spread = 0.0  # Добавляем переменную для хранения спреда при входе
@@ -745,6 +755,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     has_structural_break = False
     if enable_structural_breaks and n > 200:
         has_structural_break = check_structural_breaks(y, x, 0.3)
+
+    adaptive_max_multiplier = 1.0
+    if adaptive_threshold_factor > 0.0:
+        adaptive_max_multiplier = max_var_multiplier
+        if adaptive_max_multiplier < 1.0:
+            adaptive_max_multiplier = 1.0
 
     for i in range(rolling_window, n):
         if np.isnan(beta[i]) or np.isnan(mu[i]) or np.isnan(sigma[i]):
@@ -768,10 +784,10 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 
             # Адаптивные пороги
             adaptive_entry = calculate_adaptive_threshold(
-                entry_threshold, current_vol, min_volatility, adaptive_threshold_factor
+                entry_threshold, current_vol, base_sigma, adaptive_max_multiplier
             )
             adaptive_exit = calculate_adaptive_threshold(
-                exit_threshold, current_vol, min_volatility, adaptive_threshold_factor
+                exit_threshold, current_vol, base_sigma, adaptive_max_multiplier
             )
 
             # Применяем режимный фактор

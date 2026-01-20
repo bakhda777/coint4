@@ -172,6 +172,7 @@ class FullNumbaPairBacktester(BasePairBacktester):
             enable_structural_breaks=getattr(self, 'structural_break_protection', True),
             min_volatility=getattr(self, 'min_volatility', 0.001),
             adaptive_threshold_factor=getattr(self, 'adaptive_threshold_factor', 1.0),
+            max_var_multiplier=getattr(self, 'max_var_multiplier', 3.0),
             cooldown_periods=cooldown_periods,
             min_hold_periods=min_hold_periods,
             stop_loss_zscore=float(getattr(self, "pair_stop_loss_zscore", 0.0) or 0.0),

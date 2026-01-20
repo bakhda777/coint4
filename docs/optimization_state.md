@@ -56,7 +56,8 @@ Next steps:
 - Micro-grid u250 (entry/exit/hold/cd + max_pairs 50/100/150) завершён: лучший min‑Sharpe у z0.95/exit0.06/hold120/cd120 (4.54/3.73); exit0.10 практически идентичен. Очередь: `coint4/artifacts/wfa/aggregate/20260121_relaxed8_nokpss_u250_search/run_queue.csv`.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260121.md`.
 - Numba: включены cooldown/min_hold/min_spread_move/stop-loss + выход по |z|<=z_exit; портфельная симуляция использует позиции вместо PnL-сигналов.
-- Очередь churnfix micro-grid (u250) подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv`.
+- Очередь churnfix micro-grid (u250) подготовлена: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix/run_queue.csv` (результаты 0 сделок из-за адаптивных порогов).
+- Churnfix v2 (после фикса адаптивных порогов) queued: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v2/run_queue.csv`.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
