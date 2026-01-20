@@ -1,0 +1,14 @@
+2026-01-20T12:26:59Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v3/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-20T12:26:59Z HEARTBEAT run_pid=1100 run_cpu=0% watcher_cpu=0% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-20T12:27:30Z HEARTBEAT run_pid=1100 run_cpu=99.3% watcher_cpu=0% worker_pid=1239 worker_cpu=99.3% coint2_procs=8 cpu_total=791.1% idle_seconds=0
+2026-01-20T12:28:00Z HEARTBEAT run_pid=1100 run_cpu=89.1% watcher_cpu=0% worker_pid=1239 worker_cpu=89.1% coint2_procs=8 cpu_total=717.3% idle_seconds=0
+2026-01-20T12:28:31Z HEARTBEAT run_pid=1100 run_cpu=87.7% watcher_cpu=0% worker_pid=1239 worker_cpu=87.7% coint2_procs=8 cpu_total=706.4% idle_seconds=0
+2026-01-20T12:29:01Z HEARTBEAT run_pid=1100 run_cpu=86.9% watcher_cpu=0% worker_pid=1239 worker_cpu=86.9% coint2_procs=8 cpu_total=700.5% idle_seconds=0
+2026-01-20T12:29:32Z HEARTBEAT run_pid=1100 run_cpu=86.3% watcher_cpu=0% worker_pid=1239 worker_cpu=86.3% coint2_procs=8 cpu_total=698.1% idle_seconds=0
+2026-01-20T12:30:02Z HEARTBEAT run_pid=1100 run_cpu=99.4% watcher_cpu=0% worker_pid=5554 worker_cpu=99.4% coint2_procs=8 cpu_total=797.7% idle_seconds=0
+2026-01-20T12:30:34Z HEARTBEAT run_pid=1100 run_cpu=84.9% watcher_cpu=0% worker_pid=5554 worker_cpu=84.9% coint2_procs=64 cpu_total=1505.6% idle_seconds=0
+2026-01-20T12:31:05Z HEARTBEAT run_pid=1100 run_cpu=84.6% watcher_cpu=0% worker_pid=5554 worker_cpu=84.6% coint2_procs=33 cpu_total=1149.6% idle_seconds=0
+2026-01-20T12:31:35Z HEARTBEAT run_pid=1100 run_cpu=83.7% watcher_cpu=0% worker_pid=5654 worker_cpu=83.7% coint2_procs=14 cpu_total=883.8% idle_seconds=0
+2026-01-20T12:32:06Z HEARTBEAT run_pid=1100 run_cpu=83.6% watcher_cpu=0% worker_pid=5554 worker_cpu=83.6% coint2_procs=8 cpu_total=668.1% idle_seconds=0
+2026-01-20T12:32:36Z HEARTBEAT run_pid=1100 run_cpu=84.5% watcher_cpu=0% worker_pid=5554 worker_cpu=84.5% coint2_procs=8 cpu_total=673.1% idle_seconds=0
+2026-01-20T12:33:06Z DONE rc=0

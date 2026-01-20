@@ -61,6 +61,8 @@
     - 2026-01-20: sanity v2 (current-bar signals) завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v2/run_queue.csv`.
     - 2026-01-22: Numba выравнен по std guard (1e-6, без min_volatility clamp в z-score) и принимает beta/mu/sigma; sanity v3 завершён, сделки всё ещё = 0: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`.
     - 2026-01-22: исправлен баг min_spread_move_sigma (NaN + fastmath блокировал входы через last_flat_spread); sanity v4 завершён: сделки восстановились, но turnover 26k+ и stress Sharpe < 0.
-    - 2026-01-22: следующий шаг — перезапуск churnfix grid (holdout+stress) с рабочей логикой min_spread_move_sigma.
+    - 2026-01-22: churnfix grid (holdout+stress) перезапущен → Sharpe 5.0–8.0, PnL 583–1072, trades 20k–28k.
+    - 2026-01-22: лучший компромисс: z0.95/exit0.06/hold180/cd180/ms0.1 (holdout Sharpe 7.00, stress 5.84, trades 20236), кандидат: `docs/candidate_relaxed8_u250_20260122.md`.
+    - 2026-01-22: следующий шаг — проверка концентрации (top‑k/перекрытие экспозиций) или усиление min_spread_move_sigma.
     - Следующий шаг: финальная оценка устойчивости и решение о paper/live.
 12. Финализация 1-2 кандидатов и paper/live проверка.

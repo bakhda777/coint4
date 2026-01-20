@@ -113,4 +113,20 @@
 ### Queue: relaxed8_nokpss_u250_churnfix_v3 (min_spread_move fix)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_v3/run_queue.csv`.
 - Цель: повтор churnfix‑grid (holdout + stress) после фикса min_spread_move_sigma.
-- Статус: `planned`.
+- Статус: `completed` (16 прогонов).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| z0p90/exit0p08/hold120/cd120/ms0p1 | 7.98 | 1071.62 | 25338 | 168 | 6.36 | 855.72 | 25338 | 168 |
+| z0p95/exit0p10/hold120/cd120/ms0p1 | 7.21 | 1012.62 | 25460 | 168 | 5.53 | 777.97 | 25460 | 168 |
+| z0p95/exit0p06/hold180/cd180/ms0p1 | 7.00 | 1069.34 | 20236 | 168 | 5.84 | 892.62 | 20236 | 168 |
+| z1p00/exit0p06/hold120/cd120/ms0p1 | 6.70 | 932.60 | 22503 | 168 | 5.26 | 731.30 | 22503 | 168 |
+| z0p95/exit0p06/hold60/cd60/ms0p1 | 6.61 | 914.52 | 27869 | 168 | 4.99 | 691.80 | 27869 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p2 | 6.48 | 900.79 | 23229 | 168 | 5.05 | 702.77 | 23229 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p1 | 6.45 | 906.62 | 23317 | 168 | 5.04 | 707.73 | 23317 | 168 |
+| z0p95/exit0p06/hold120/cd120/ms0p1/maxpos10 | 5.52 | 583.36 | 23317 | 168 | 4.21 | 445.32 | 23317 | 168 |
+
+Выводы:
+- Лучший баланс Sharpe/PnL/turnover: z0p95/exit0p06/hold180/cd180/ms0p1 (меньше сделок при сопоставимом PnL).
+- Top Sharpe у z0p90/exit0p08, но выше turnover; maxpos10 ухудшает метрики.

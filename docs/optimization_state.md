@@ -64,7 +64,10 @@ Next steps:
 - Sanity v3 завершён: 0 сделок (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v3/run_queue.csv`).
 - Найдено: min_spread_move_sigma блокировал входы из-за NaN в last_flat_spread при fastmath; исправлено через last_flat_valid.
 - Sanity v4 завершён: сделки восстановились, но turnover очень высокий (26k+), stress Sharpe отрицательный (см. `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_sanity_v4/run_queue.csv`).
-- Следующий шаг: перезапустить churnfix grid (holdout+stress) с рабочим min_spread_move_sigma.
+- Churnfix v3 (holdout+stress) завершён: Sharpe 5.0–8.0, PnL 583–1072, trades 20k–28k.
+- Лучший компромисс: z0.95/exit0.06/hold180/cd180/ms0.1 → holdout Sharpe 7.00, stress Sharpe 5.84, PnL 1069/893, trades 20236.
+- Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
+- Следующий шаг: подтвердить кандидата (например, через top‑k/концентрацию или более жёсткий min_spread_move_sigma).
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:
