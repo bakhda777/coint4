@@ -171,16 +171,50 @@
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_alt/run_queue.csv`.
 - Цель: проверить top20/top50/full на альтернативном периоде (WFA ≤ 5 шагов).
 - Конфиги: top20/top50/full × holdout/stress (6 прогонов).
-- Статус: `planned`.
+- Статус: `completed` (6 прогонов).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| full/z0p95/exit0p06/hold180/cd180/ms0p1 | 7.96 | 941.40 | 3836 | 47 | 6.72 | 793.57 | 3836 | 47 |
+| top20/z0p95/exit0p06/hold180/cd180/ms0p1 | 7.41 | 861.47 | 3699 | 46 | 6.17 | 716.39 | 3699 | 46 |
+| top50/z0p95/exit0p06/hold180/cd180/ms0p1 | 7.96 | 941.40 | 3836 | 47 | 6.72 | 793.57 | 3836 | 47 |
+
+Выводы:
+- На альтернативном периоде торгуется всего ~46–47 пар, поэтому top50 и full дают идентичные метрики.
+- top20 слегка снижает Sharpe/PnL, но слабо влияет на turnover.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_sens (entry/exit/hold/cd sensitivity)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv`.
 - Цель: проверить устойчивость вокруг базовых параметров top50.
 - Конфиги: 6 вариантов × holdout/stress (12 прогонов), включая hold120/hold240 (cooldown_hours целое).
-- Статус: `planned`.
+- Статус: `completed` (12 прогонов).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/z0p90/exit0p06/hold180/cd180/ms0p1 | 7.90 | 1106.56 | 12191 | 120 | 6.70 | 940.26 | 12191 | 120 |
+| top50/z0p95/exit0p04/hold180/cd180/ms0p1 | 6.79 | 899.31 | 11055 | 120 | 5.65 | 748.45 | 11055 | 120 |
+| top50/z0p95/exit0p06/hold120/cd120/ms0p1 | 7.49 | 911.10 | 13576 | 120 | 5.95 | 724.32 | 13576 | 120 |
+| top50/z0p95/exit0p06/hold240/cd240/ms0p1 | 5.02 | 715.34 | 10550 | 120 | 3.92 | 558.22 | 10550 | 120 |
+| top50/z0p95/exit0p08/hold180/cd180/ms0p1 | 8.02 | 1179.79 | 12367 | 120 | 6.77 | 997.37 | 12367 | 120 |
+| top50/z1p00/exit0p06/hold180/cd180/ms0p1 | 9.01 | 1114.71 | 11414 | 120 | 7.64 | 946.36 | 11414 | 120 |
+
+Выводы:
+- Лучшая Sharpe‑устойчивость у z1.00/exit0.06 (Sharpe 9.01/7.64) при сильном PnL и умеренном turnover.
+- z0.95/exit0.08 даёт максимальный PnL, но немного ниже Sharpe.
+- hold240 ухудшает метрики; hold120 увеличивает сделки без улучшения Sharpe.
 
 ### Queue: relaxed8_nokpss_u250_churnfix_top50_basecap3 (base cap)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_basecap3/run_queue.csv`.
 - Цель: ограничить концентрацию по базовым активам (max_per_base=3 в pairs_universe).
 - Конфиги: top50 × holdout/stress (2 прогона).
-- Статус: `planned`.
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress)
+| config | hold_sharpe | hold_pnl | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|
+| top50/basecap3/z0p95/exit0p06/hold180/cd180/ms0p1 | 4.87 | 673.66 | 8459 | 71 | 3.80 | 525.93 | 8459 | 71 |
+
+Выводы:
+- basecap3 слишком жёсткий: Sharpe/PNL проседают, торговых пар меньше.

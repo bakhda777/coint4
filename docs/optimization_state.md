@@ -67,10 +67,12 @@ Next steps:
 - Churnfix v3 (holdout+stress) завершён: Sharpe 5.0–8.0, PnL 583–1072, trades 20k–28k.
 - Churnfix top‑k завершён: top20 Sharpe 7.74/6.84, PnL 898/793, trades 4841; top50 Sharpe 7.63/6.43, PnL 1083/914, trades 11823 (holdout/stress).
 - Churnfix msgrid завершён: ms0p2/ms0p3 на hold180 дают метрики близкие к ms0p1; hold240 снижает Sharpe/PNL.
-- Новый лучший компромисс: top50/z0.95/exit0.06/hold180/cd180/ms0.1 → Sharpe 7.63/6.43, PnL 1082/914, trades 11823.
+- Alt holdout (2022-09-01 → 2023-04-30) завершён: top50/full идентичны (≈47 пар), Sharpe 7.96/6.72, PnL 941/794; top20 чуть хуже.
+- Sensitivity top50 завершён: лучший Sharpe у z1.00/exit0.06 (9.01/7.64) при PnL 1115/946; z0.95/exit0.08 даёт максимум PnL (1180/997).
+- Basecap3 завершён: Sharpe 4.87/3.80, PnL 674/526, pairs 71 — слишком жёстко.
+- Новый лучший компромисс: top50/z1.00/exit0.06/hold180/cd180/ms0.1 → Sharpe 9.01/7.64, PnL 1115/946, trades 11414.
 - Кандидат обновлён: `docs/candidate_relaxed8_u250_20260122.md`.
-- Следующий шаг: подтвердить кандидата на альтернативных периодах/режимах и провести sensitivity по entry/exit/hold/cd.
-- Запланированы очереди: alt holdout (top20/top50/full), top50 sensitivity grid, top50 basecap3 (см. `docs/optimization_runs_20260122.md`).
+- Следующий шаг: подтвердить z1.00 на альтернативном holdout или зафиксировать z0.95/exit0.08 как PnL‑вариант.
 - Далее: финальная проверка концентрации/устойчивости и решение о paper/live.
 
 Legacy context:

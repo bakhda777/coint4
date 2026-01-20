@@ -1,0 +1,15 @@
+2026-01-20T15:57:58Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-20T15:57:58Z HEARTBEAT run_pid=1096 run_cpu=0% watcher_cpu=0% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-20T15:58:28Z HEARTBEAT run_pid=1096 run_cpu=99% watcher_cpu=0% worker_pid=1580 worker_cpu=99% coint2_procs=8 cpu_total=795.2% idle_seconds=0
+2026-01-20T15:58:59Z HEARTBEAT run_pid=1096 run_cpu=93.8% watcher_cpu=0% worker_pid=1580 worker_cpu=93.8% coint2_procs=8 cpu_total=750.5% idle_seconds=0
+2026-01-20T15:59:29Z HEARTBEAT run_pid=1096 run_cpu=92.3% watcher_cpu=0% worker_pid=1580 worker_cpu=92.3% coint2_procs=8 cpu_total=738.1% idle_seconds=0
+2026-01-20T16:00:00Z HEARTBEAT run_pid=1096 run_cpu=91% watcher_cpu=0% worker_pid=1580 worker_cpu=91% coint2_procs=11 cpu_total=874.1% idle_seconds=0
+2026-01-20T16:00:30Z HEARTBEAT run_pid=1096 run_cpu=91.3% watcher_cpu=0% worker_pid=1580 worker_cpu=91.3% coint2_procs=8 cpu_total=720.6% idle_seconds=0
+2026-01-20T16:01:00Z DONE rc=0
+2026-01-20T16:22:24Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260122_relaxed8_nokpss_u250_churnfix_top50_sens/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-20T16:22:24Z HEARTBEAT run_pid=1114 run_cpu=0% watcher_cpu=0% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-20T16:22:56Z HEARTBEAT run_pid=1114 run_cpu=108% watcher_cpu=0% worker_pid=1209 worker_cpu=108% coint2_procs=4 cpu_total=434.0% idle_seconds=0
+2026-01-20T16:23:26Z HEARTBEAT run_pid=1114 run_cpu=112% watcher_cpu=0% worker_pid=1209 worker_cpu=112% coint2_procs=19 cpu_total=1128.9% idle_seconds=0
+2026-01-20T16:23:57Z HEARTBEAT run_pid=1114 run_cpu=112% watcher_cpu=0% worker_pid=1209 worker_cpu=112% coint2_procs=4 cpu_total=448.0% idle_seconds=0
+2026-01-20T16:24:27Z HEARTBEAT run_pid=1114 run_cpu=112% watcher_cpu=0% worker_pid=1209 worker_cpu=112% coint2_procs=4 cpu_total=448.0% idle_seconds=0
+2026-01-20T16:24:57Z DONE rc=0
