@@ -48,6 +48,7 @@ def build_engine(args: argparse.Namespace) -> PaperTradingEngine:
         recv_window=int(os.getenv("BYBIT_RECV_WINDOW", "5000")),
         category=os.getenv("BYBIT_CATEGORY", "linear"),
         account_type=os.getenv("BYBIT_ACCOUNT_TYPE", "UNIFIED"),
+        settle_coin=os.getenv("BYBIT_SETTLE_COIN", "USDT"),
     )
     max_retries = int(os.getenv("BYBIT_MAX_RETRIES", "3"))
     backoff_seconds = float(os.getenv("BYBIT_RETRY_BACKOFF", "1.0"))

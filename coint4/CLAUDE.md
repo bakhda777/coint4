@@ -204,6 +204,7 @@ python scripts/universe/scan_data.py
 # Optional:
 #   BYBIT_CATEGORY=linear
 #   BYBIT_ACCOUNT_TYPE=UNIFIED
+#   BYBIT_SETTLE_COIN=USDT
 #   BYBIT_POSITION_MODE=hedge
 #   BYBIT_RECV_WINDOW=5000
 #   BYBIT_BASE_URL=https://api-demo.bybit.com

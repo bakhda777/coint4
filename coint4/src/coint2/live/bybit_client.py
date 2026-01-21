@@ -32,6 +32,7 @@ class BybitSettings:
     recv_window: int = 5000
     category: str = "linear"
     account_type: str = "UNIFIED"
+    settle_coin: str = "USDT"
 
 
 def resolve_base_url(environment: str, override: Optional[str] = None) -> str:
@@ -227,6 +228,8 @@ class BybitRestClient:
         params = {"category": self.settings.category}
         if symbol:
             params["symbol"] = symbol
+        elif self.settings.account_type.upper() == "UNIFIED":
+            params["settleCoin"] = self.settings.settle_coin
         data = self._request("GET", "/v5/position/list", params=params, signed=True)
         return data.get("result", {}).get("list", [])
 
