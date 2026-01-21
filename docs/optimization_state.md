@@ -1,10 +1,18 @@
 # Optimization state
 
-Last updated: 2026-01-23
+Last updated: 2026-01-31
 
-Current stage: Sharpe>1 program (см. docs/optimization_plan_20260118.md). Базовые WFA/sweep завершены, shortlist WFA выполнен; далее holdout + стресс-издержки для топ-1/2.
+Current stage: Extended OOS stop-condition reached; переходим к paper/forward проверке кандидата.
+
+Recent updates (2026-01-31):
+- Extended OOS (2023-05-01 → 2024-04-30) для top20/top30 завершён: stress cost_ratio > 1.0, слабый Sharpe (см. `docs/optimization_runs_20260130.md`).
+- Turnover-grid extended OOS (top10/top15, ms0.25/0.30, hold/cd 240) завершён: провал по парам и стресс-издержкам (см. `docs/optimization_runs_20260131.md`).
+- Stop-condition: extended OOS stress cost_ratio > 0.5 и пары < 50 → оптимизацию в этом направлении останавливаем.
+- Paper configs: `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (primary) и `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (fallback).
+- План paper/forward: `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
+- Paper/forward тест кандидата: см. `docs/paper_forward_plan_20260131.md`.
 - Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
 - Baseline WFA (5 шагов) выполнен и зафиксирован (done).
 - Turnover sweep завершён, лучшая комбинация entry 0.95 / exit 0.10 (done).

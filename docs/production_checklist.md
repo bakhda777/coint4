@@ -22,7 +22,10 @@
 13. Проверить повторяемость (повторить fixed backtest и сравнить метрики).
 14. Прогнать тесты: `./.venv/bin/pytest -q`.
 15. Обновить документацию и сохранить конфиги/артефакты в репозитории.
-16. Для paper-проверки кандидата использовать `configs/prod_candidate_relaxed8_nokpss_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml` (WFA отключён, results_dir=artifacts/live).
+16. Для paper-проверки кандидата использовать:
+   - основной: `configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
+   - запасной: `configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
+   (WFA отключён, results_dir=artifacts/live).
 
 ## Последний прогон (2026-01-14)
 
