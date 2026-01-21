@@ -212,6 +212,7 @@ python scripts/universe/scan_data.py
 #   BYBIT_KLINE_CACHE_SECONDS=60
 #   BYBIT_STATE_PATH=artifacts/live/state.json
 #   BYBIT_SYNC_ON_START=true
+# Note: if some symbols are unavailable on demo/testnet, the runner skips those pairs and logs a warning.
 PYTHONPATH=src ./.venv/bin/python scripts/run_live.py \
   --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml \
   --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml \

@@ -16,6 +16,11 @@ import requests
 class BybitRequestError(RuntimeError):
     """Raised when Bybit API responds with an error."""
 
+    def __init__(self, message: str, ret_code: Optional[int] = None, ret_msg: Optional[str] = None):
+        super().__init__(message)
+        self.ret_code = ret_code
+        self.ret_msg = ret_msg
+
 
 @dataclass
 class BybitSettings:
@@ -176,7 +181,8 @@ class BybitRestClient:
             if ret_code in retryable_ret and attempt < self.max_retries:
                 time.sleep(self.backoff_seconds * (2**attempt))
                 continue
-            raise BybitRequestError(f"Bybit error {ret_code}: {data.get('retMsg')}")
+            ret_msg = data.get("retMsg")
+            raise BybitRequestError(f"Bybit error {ret_code}: {ret_msg}", ret_code=ret_code, ret_msg=ret_msg)
 
         raise BybitRequestError("Retry loop exhausted")
 
@@ -210,7 +216,11 @@ class BybitRestClient:
         data = self._request("GET", "/v5/market/instruments-info", params=params, signed=False)
         items = data.get("result", {}).get("list", [])
         if not items:
-            raise BybitRequestError(f"Missing instrument info for {symbol}")
+            raise BybitRequestError(
+                f"Missing instrument info for {symbol}",
+                ret_code=10001,
+                ret_msg="symbol invalid",
+            )
         return items[0]
 
     def get_positions(self, symbol: Optional[str] = None) -> list[Dict[str, Any]]:
@@ -250,8 +260,17 @@ class BybitRestClient:
         data = self._request("POST", "/v5/order/create", body=payload, signed=True)
         return data.get("result", {})
 
-    def batch_get_instruments(self, symbols: Iterable[str]) -> Dict[str, Dict[str, Any]]:
-        info = {}
+    def batch_get_instruments(
+        self, symbols: Iterable[str], allow_missing: bool = False
+    ) -> tuple[Dict[str, Dict[str, Any]], list[str]]:
+        info: Dict[str, Dict[str, Any]] = {}
+        missing: list[str] = []
         for symbol in symbols:
-            info[symbol] = self.get_instrument_info(symbol)
-        return info
+            try:
+                info[symbol] = self.get_instrument_info(symbol)
+            except BybitRequestError as exc:
+                if allow_missing and exc.ret_code == 10001:
+                    missing.append(symbol)
+                    continue
+                raise
+        return info, missing

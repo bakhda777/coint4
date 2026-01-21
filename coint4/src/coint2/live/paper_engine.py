@@ -152,7 +152,33 @@ class PaperTradingEngine:
 
     def _load_instruments(self) -> None:
         symbols = sorted({p.symbol1 for p in self.pairs} | {p.symbol2 for p in self.pairs})
-        info_map = self.client.batch_get_instruments(symbols)
+        info_map, missing = self.client.batch_get_instruments(symbols, allow_missing=True)
+        if not info_map:
+            raise RuntimeError(
+                "No valid instruments found on Bybit. Check BYBIT_ENV/BYBIT_CATEGORY or pairs file."
+            )
+        if missing:
+            missing_set = set(missing)
+            original_pairs = len(self.pairs)
+            self.pairs = [
+                pair for pair in self.pairs if pair.symbol1 not in missing_set and pair.symbol2 not in missing_set
+            ]
+            self.states = {
+                pair.key: self.states.get(pair.key, PairState(beta=pair.beta or 1.0)) for pair in self.pairs
+            }
+            sample_missing = sorted(missing_set)[:10]
+            self.logger.log_system(
+                "Filtered pairs with missing instruments",
+                level="warning",
+                missing_count=len(missing_set),
+                missing_sample=sample_missing,
+                removed_pairs=original_pairs - len(self.pairs),
+                remaining_pairs=len(self.pairs),
+            )
+            if not self.pairs:
+                raise RuntimeError(
+                    "No valid pairs left after filtering missing instruments. Update pairs file or BYBIT_CATEGORY."
+                )
         for symbol, info in info_map.items():
             lot = info.get("lotSizeFilter", {})
             min_qty = float(lot.get("minOrderQty", "0") or 0.0)
