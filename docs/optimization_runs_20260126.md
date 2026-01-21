@@ -31,3 +31,7 @@
 - Оба кандидата устойчивы на alt‑OOS и проходят порог stress cost_ratio ≤ 0.5.
 - Лучший баланс Sharpe/PnL: top30/hold180/cd180/ms0.2 (stress Sharpe 7.37, cost_ratio 0.36).
 - top20 остаётся чуть дешевле по издержкам, но уступает по PnL.
+
+### Shortlist (текущий)
+- Основной: top30/hold180/cd180/ms0.2.
+- Запасной: top20/hold180/cd180/ms0.2.
