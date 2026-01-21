@@ -1,0 +1,59 @@
+{
+  "saved_at": "2026-01-21T18:58:15.606638+00:00",
+  "daily_pnl": 0.0,
+  "daily_pnl_day": "2026-01-21T00:00:00+00:00",
+  "pairs": {
+    "DOTUSDT/KDAUSDT": {
+      "position": 0,
+      "entry_time": null,
+      "entry_price_y": 0.0,
+      "entry_price_x": 0.0,
+      "qty_y": 0.0,
+      "qty_x": 0.0,
+      "beta": 4.6833337187883926,
+      "last_exit_time": null,
+      "last_flat_spread": null,
+      "realized_pnl": 0.0,
+      "last_bar_ts": null
+    },
+    "APEXUSDT/AVAUSDT": {
+      "position": 0,
+      "entry_time": null,
+      "entry_price_y": 0.0,
+      "entry_price_x": 0.0,
+      "qty_y": 0.0,
+      "qty_x": 0.0,
+      "beta": 3.2969042286921773,
+      "last_exit_time": null,
+      "last_flat_spread": null,
+      "realized_pnl": 0.0,
+      "last_bar_ts": 1769020200000
+    },
+    "FIREUSDT/GODSUSDT": {
+      "position": 0,
+      "entry_time": null,
+      "entry_price_y": 0.0,
+      "entry_price_x": 0.0,
+      "qty_y": 0.0,
+      "qty_x": 0.0,
+      "beta": -1.1215459481864993,
+      "last_exit_time": null,
+      "last_flat_spread": null,
+      "realized_pnl": 0.0,
+      "last_bar_ts": null
+    },
+    "1INCHUSDT/AXSUSDT": {
+      "position": 0,
+      "entry_time": null,
+      "entry_price_y": 0.0,
+      "entry_price_x": 0.0,
+      "qty_y": 0.0,
+      "qty_x": 0.0,
+      "beta": 0.04770794560380008,
+      "last_exit_time": null,
+      "last_flat_spread": null,
+      "realized_pnl": 0.0,
+      "last_bar_ts": 1769020200000
+    }
+  }
+}
