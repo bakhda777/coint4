@@ -194,13 +194,37 @@ python scripts/universe/merge_pairs.py
 python scripts/universe/scan_data.py
 ```
 
+### Live Trading (Bybit demo)
+```bash
+# Paper trading on Bybit demo (requires BYBIT_* env vars)
+# Required:
+#   BYBIT_ENV=demo
+#   BYBIT_API_KEY=...
+#   BYBIT_API_SECRET=...
+# Optional:
+#   BYBIT_CATEGORY=linear
+#   BYBIT_ACCOUNT_TYPE=UNIFIED
+#   BYBIT_POSITION_MODE=hedge
+#   BYBIT_RECV_WINDOW=5000
+#   BYBIT_BASE_URL=https://api-demo.bybit.com
+#   BYBIT_MAX_RETRIES=3
+#   BYBIT_RETRY_BACKOFF=1.0
+#   BYBIT_KLINE_CACHE_SECONDS=60
+#   BYBIT_STATE_PATH=artifacts/live/state.json
+#   BYBIT_SYNC_ON_START=true
+PYTHONPATH=src ./.venv/bin/python scripts/run_live.py \
+  --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml \
+  --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml \
+  --env demo
+
+# CLI alias
+./.venv/bin/coint2-live --env demo
+```
+
 ### Live Trading (Legacy)
 ```bash
-# Note: Live trading scripts are archived in archive/old_scripts/live/
-# Run live trading (paper mode by default)
+# Archived scripts (simulation only)
 python archive/old_scripts/live/run.py --config configs/main_2024.yaml --mode paper
-
-# Extract live snapshot
 python archive/old_scripts/live/extract_snapshot.py
 ```
 

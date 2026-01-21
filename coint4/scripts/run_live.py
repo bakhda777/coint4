@@ -1,4 +1,5 @@
-"""Live trading CLI entry point."""
+#!/usr/bin/env python3
+"""Entrypoint for Bybit demo paper trading."""
 
 from coint2.live.runner import main
 

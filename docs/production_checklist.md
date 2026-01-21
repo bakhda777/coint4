@@ -26,6 +26,9 @@
    - основной: `configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
    - запасной: `configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
    (WFA отключён, results_dir=artifacts/live).
+   Запуск на Bybit demo:
+   `BYBIT_ENV=demo BYBIT_API_KEY=... BYBIT_API_SECRET=... PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml`
+   Пример переменных окружения: `coint4/.env.example` (опционально можно настроить кэш klines и поведение ретраев).
 
 ## Последний прогон (2026-01-14)
 

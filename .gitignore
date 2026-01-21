@@ -35,6 +35,7 @@ Thumbs.db
 # Local config
 .env
 .env.*
+!.env.example
 .mcp.json
 
 # Личные/временные папки
