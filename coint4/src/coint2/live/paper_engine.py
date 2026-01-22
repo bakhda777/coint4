@@ -13,7 +13,13 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from coint2.live.bybit_client import BybitRestClient, clamp_to_step, map_timeframe_to_interval
+from coint2.live.bybit_client import (
+    BybitRequestError,
+    BybitRestClient,
+    clamp_to_step,
+    map_timeframe_to_interval,
+    round_up_to_step,
+)
 from coint2.utils.config import AppConfig
 from coint2.utils.logging_config import TradingLogger
 
@@ -34,6 +40,7 @@ class PairSpec:
 class InstrumentSpec:
     min_qty: float
     qty_step: float
+    min_notional: float = 0.0
 
 
 @dataclass
@@ -127,12 +134,14 @@ class PaperTradingEngine:
         kline_cache_seconds: int = 60,
         state_path: Optional[Path] = None,
         sync_on_start: bool = True,
+        min_notional_buffer_pct: float = 0.05,
     ):
         self.cfg = cfg
         self.pairs = pairs
         self.client = client
         self.logger = logger
         self.position_mode = position_mode
+        self.min_notional_buffer_pct = max(0.0, min_notional_buffer_pct)
         self.states: Dict[str, PairState] = {pair.key: PairState(beta=pair.beta or 1.0) for pair in pairs}
         self.instrument_specs: Dict[str, InstrumentSpec] = {}
         self.kline_cache: Dict[Tuple[str, str, int], Tuple[int, List[Dict[str, float]]]] = {}
@@ -145,10 +154,16 @@ class PaperTradingEngine:
         self.daily_pnl_day: Optional[datetime] = None
         self._load_state()
 
-    def _position_idx(self, side: str) -> int:
+    def _position_idx(self, side: str, reduce_only: bool) -> int:
         if self.position_mode != "hedge":
             return 0
-        return 1 if side.lower() == "buy" else 2
+        side_norm = side.lower().strip()
+        if not reduce_only:
+            return 1 if side_norm == "buy" else 2
+        # Hedge mode: reduce-only orders must target the position side being reduced:
+        # - Sell reduces a long position (positionIdx=1)
+        # - Buy reduces a short position (positionIdx=2)
+        return 1 if side_norm == "sell" else 2
 
     def _load_instruments(self) -> None:
         symbols = sorted({p.symbol1 for p in self.pairs} | {p.symbol2 for p in self.pairs})
@@ -183,7 +198,8 @@ class PaperTradingEngine:
             lot = info.get("lotSizeFilter", {})
             min_qty = float(lot.get("minOrderQty", "0") or 0.0)
             qty_step = float(lot.get("qtyStep", "0") or 0.0)
-            self.instrument_specs[symbol] = InstrumentSpec(min_qty=min_qty, qty_step=qty_step)
+            min_notional = float(lot.get("minNotionalValue", "0") or 0.0)
+            self.instrument_specs[symbol] = InstrumentSpec(min_qty=min_qty, qty_step=qty_step, min_notional=min_notional)
 
     def _reset_daily_pnl_if_needed(self) -> None:
         now = datetime.now(timezone.utc)
@@ -389,11 +405,25 @@ class PaperTradingEngine:
         spec_x = self.instrument_specs.get(symbol_x)
         if spec_y:
             qty_y = clamp_to_step(qty_y, spec_y.qty_step)
-            if qty_y < spec_y.min_qty:
+            min_qty_y = spec_y.min_qty
+            if spec_y.min_notional > 0 and price_y > 0:
+                min_notional_y = spec_y.min_notional * (1.0 + self.min_notional_buffer_pct)
+                min_qty_y = max(min_qty_y, min_notional_y / price_y)
+            min_qty_y = round_up_to_step(min_qty_y, spec_y.qty_step)
+            if qty_y < min_qty_y:
+                qty_y = min_qty_y
+            if qty_y <= 0:
                 qty_y = 0.0
         if spec_x:
             qty_x = clamp_to_step(qty_x, spec_x.qty_step)
-            if qty_x < spec_x.min_qty:
+            min_qty_x = spec_x.min_qty
+            if spec_x.min_notional > 0 and price_x > 0:
+                min_notional_x = spec_x.min_notional * (1.0 + self.min_notional_buffer_pct)
+                min_qty_x = max(min_qty_x, min_notional_x / price_x)
+            min_qty_x = round_up_to_step(min_qty_x, spec_x.qty_step)
+            if qty_x < min_qty_x:
+                qty_x = min_qty_x
+            if qty_x <= 0:
                 qty_x = 0.0
 
         return qty_y, qty_x
@@ -407,25 +437,60 @@ class PaperTradingEngine:
         qty_x: float,
         reduce_only: bool,
     ) -> None:
+        def opposite_side(side: str) -> str:
+            return "Sell" if side.lower().strip() == "buy" else "Buy"
+
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         order_id_y = f"{pair.symbol1}-{pair.symbol2}-{ts}-y"
         order_id_x = f"{pair.symbol1}-{pair.symbol2}-{ts}-x"
-        self.client.create_order(
-            symbol=pair.symbol1,
-            side=side_y,
-            qty=qty_y,
-            position_idx=self._position_idx(side_y),
-            reduce_only=reduce_only,
-            order_link_id=order_id_y,
-        )
-        self.client.create_order(
-            symbol=pair.symbol2,
-            side=side_x,
-            qty=qty_x,
-            position_idx=self._position_idx(side_x),
-            reduce_only=reduce_only,
-            order_link_id=order_id_x,
-        )
+        placed_first = False
+        try:
+            self.client.create_order(
+                symbol=pair.symbol1,
+                side=side_y,
+                qty=qty_y,
+                position_idx=self._position_idx(side_y, reduce_only=reduce_only),
+                reduce_only=reduce_only,
+                order_link_id=order_id_y,
+            )
+            placed_first = True
+            self.client.create_order(
+                symbol=pair.symbol2,
+                side=side_x,
+                qty=qty_x,
+                position_idx=self._position_idx(side_x, reduce_only=reduce_only),
+                reduce_only=reduce_only,
+                order_link_id=order_id_x,
+            )
+        except BybitRequestError as exc:
+            if placed_first and not reduce_only:
+                rollback_side = opposite_side(side_y)
+                try:
+                    self.client.create_order(
+                        symbol=pair.symbol1,
+                        side=rollback_side,
+                        qty=qty_y,
+                        position_idx=self._position_idx(rollback_side, reduce_only=True),
+                        reduce_only=True,
+                        order_link_id=f"{order_id_y}-rollback",
+                    )
+                    self.logger.log_alert(
+                        "PARTIAL_ENTRY_ROLLBACK",
+                        "Second leg failed; rolled back first leg",
+                        severity="warning",
+                        pair=pair.key,
+                        error=str(exc),
+                    )
+                except Exception as rollback_exc:  # noqa: BLE001
+                    self.logger.log_alert(
+                        "PARTIAL_ENTRY_ROLLBACK_FAILED",
+                        "Second leg failed; rollback failed",
+                        severity="error",
+                        pair=pair.key,
+                        error=str(exc),
+                        rollback_error=str(rollback_exc),
+                    )
+            raise
 
     def run_once(self) -> None:
         if not self.instrument_specs:
@@ -543,13 +608,25 @@ class PaperTradingEngine:
         side_y = "Buy" if position > 0 else "Sell"
         side_x = "Sell" if position > 0 else "Buy"
 
-        self._place_pair_orders(pair, side_y, side_x, qty_y, qty_x, reduce_only=False)
+        try:
+            self._place_pair_orders(pair, side_y, side_x, qty_y, qty_x, reduce_only=False)
+        except BybitRequestError as exc:
+            self.logger.log_alert(
+                "ENTRY_FAILED",
+                "Failed to place entry orders",
+                severity="error",
+                pair=pair.key,
+                error=str(exc),
+            )
+            return
         state.position = position
         state.entry_time = now
         state.entry_price_y = price_y
         state.entry_price_x = price_x
         state.qty_y = qty_y
         state.qty_x = qty_x
+        if self.position_mode != "hedge":
+            self.blocked_symbols.update({pair.symbol1, pair.symbol2})
         self.logger.log_trade(
             {
                 "pair": pair.key,
@@ -576,7 +653,17 @@ class PaperTradingEngine:
 
         side_y = "Sell" if state.position > 0 else "Buy"
         side_x = "Buy" if state.position > 0 else "Sell"
-        self._place_pair_orders(pair, side_y, side_x, state.qty_y, state.qty_x, reduce_only=True)
+        try:
+            self._place_pair_orders(pair, side_y, side_x, state.qty_y, state.qty_x, reduce_only=True)
+        except BybitRequestError as exc:
+            self.logger.log_alert(
+                "EXIT_FAILED",
+                "Failed to place exit orders",
+                severity="error",
+                pair=pair.key,
+                error=str(exc),
+            )
+            return
 
         pnl = self._estimate_realized_pnl(state, price_y, price_x)
         state.realized_pnl += pnl
@@ -602,6 +689,9 @@ class PaperTradingEngine:
         state.entry_price_x = 0.0
         state.qty_y = 0.0
         state.qty_x = 0.0
+        if self.position_mode != "hedge":
+            self.blocked_symbols.discard(pair.symbol1)
+            self.blocked_symbols.discard(pair.symbol2)
 
     def _estimate_realized_pnl(self, state: PairState, price_y: float, price_x: float) -> float:
         if state.position == 0:

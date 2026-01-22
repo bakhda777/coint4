@@ -210,6 +210,7 @@ python scripts/universe/scan_data.py
 #   BYBIT_BASE_URL=https://api-demo.bybit.com
 #   BYBIT_MAX_RETRIES=3
 #   BYBIT_RETRY_BACKOFF=1.0
+#   BYBIT_MIN_NOTIONAL_BUFFER_PCT=0.05
 #   BYBIT_KLINE_CACHE_SECONDS=60
 #   BYBIT_STATE_PATH=artifacts/live/state.json
 #   BYBIT_SYNC_ON_START=true
@@ -218,6 +219,18 @@ PYTHONPATH=src ./.venv/bin/python scripts/run_live.py \
   --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml \
   --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml \
   --env demo
+
+# Small capital (1k) variant (loads top-250 pairs then filters by Bybit availability)
+PYTHONPATH=src ./.venv/bin/python scripts/run_live.py \
+  --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml \
+  --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml \
+  --env demo
+
+# Check minimum order sizes on Bybit for a given universe (helps calibrate min_notional_per_trade)
+PYTHONPATH=src ./.venv/bin/python scripts/bybit_min_order.py \
+  --env demo \
+  --category linear \
+  --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml
 
 # CLI alias
 ./.venv/bin/coint2-live --env demo

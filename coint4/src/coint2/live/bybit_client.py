@@ -7,6 +7,7 @@ import hmac
 import json
 import time
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import urlencode
 
@@ -80,8 +81,20 @@ def clamp_to_step(value: float, step: float) -> float:
     """Clamp value down to step size."""
     if step <= 0:
         return value
-    steps = int(value / step)
-    return steps * step
+    step_dec = Decimal(str(step))
+    value_dec = Decimal(str(value))
+    steps = (value_dec / step_dec).to_integral_value(rounding=ROUND_DOWN)
+    return float(steps * step_dec)
+
+
+def round_up_to_step(value: float, step: float) -> float:
+    """Round value up to step size."""
+    if step <= 0:
+        return value
+    step_dec = Decimal(str(step))
+    value_dec = Decimal(str(value))
+    steps = (value_dec / step_dec).to_integral_value(rounding=ROUND_UP)
+    return float(steps * step_dec)
 
 
 def _json_dumps(payload: Dict[str, Any]) -> str:

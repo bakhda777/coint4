@@ -67,6 +67,9 @@ def build_engine(args: argparse.Namespace) -> PaperTradingEngine:
     kline_cache_seconds = int(os.getenv("BYBIT_KLINE_CACHE_SECONDS", "60"))
     state_path = Path(os.getenv("BYBIT_STATE_PATH", "artifacts/live/state.json"))
     sync_on_start = os.getenv("BYBIT_SYNC_ON_START", "true").strip().lower() not in {"0", "false", "no"}
+    min_notional_buffer_pct = float(os.getenv("BYBIT_MIN_NOTIONAL_BUFFER_PCT", "0.05"))
+    if min_notional_buffer_pct < 0:
+        min_notional_buffer_pct = 0.0
     return PaperTradingEngine(
         cfg,
         pairs,
@@ -76,6 +79,7 @@ def build_engine(args: argparse.Namespace) -> PaperTradingEngine:
         kline_cache_seconds=kline_cache_seconds,
         state_path=state_path,
         sync_on_start=sync_on_start,
+        min_notional_buffer_pct=min_notional_buffer_pct,
     )
 
 
