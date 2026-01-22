@@ -390,3 +390,22 @@
 Выводы:
 - Метрики теперь масштабируются с капиталом; значения PnL выросли из-за учета notional per-trade.
 - Абсолютные PnL существенно выше initial_capital из-за суммирования по всем парам; требуется отдельная проверка реалистичной агрегированной экспозиции.
+
+### Queue: budget1000_top50_top30_scaled_caps_v2 (entry notional diagnostics)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30_scaled_caps_v2/run_queue.csv`.
+- Цель: пересчитать scaled WFA с корректными `entry_notional_*` (fallback на pair_data при нулевых y/x).
+- Статус: `completed` (4 прогона).
+- Примечание: в `coint4/artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled_caps/` `entry_notional_*` были нулями (диагностика не сработала).
+
+#### Entry notional (holdout + stress)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | holdout | 11384 | 0 | 0 | 27.18 | 15.00 | 12.31 | 50.97 |
+| top30/ms0p2 | holdout | 6865 | 0 | 0 | 24.68 | 15.00 | 12.38 | 45.72 |
+| top50/ms0p2 | stress | 11384 | 0 | 0 | 25.02 | 15.00 | 11.73 | 45.47 |
+| top30/ms0p2 | stress | 6865 | 0 | 0 | 23.10 | 15.00 | 11.97 | 41.64 |
+
+Выводы:
+- `cap_hits=0` и `below_min=0`: фактические notional лежат в диапазоне ~12–51, лимиты min/max не срабатывают.
+- Средний notional 23–27 при медиане 15; max_notional=250 не является ограничением.
+- Высокие PnL объясняются суммированием по большому числу сделок/пар; стоит проверить реальную агрегированную экспозицию (gross) и лимиты на число позиций.

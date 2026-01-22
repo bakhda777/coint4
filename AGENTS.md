@@ -21,6 +21,9 @@
 - Если сервер уже включён вручную — запускать с `SKIP_POWER=1`; если нужно оставить включённым после задачи — `STOP_AFTER=0`.
 - Для работы скрипта задать `SERVSPACE_API_KEY` и `SERVER_ID` или `SERVER_NAME`; `SERVER_IP` по умолчанию `85.198.90.128`, базовый URL API можно переопределить через `SERVSPACE_API_BASE` (по умолчанию `https://api.serverspace.ru/api/v1`).
 - Полезные опции скрипта: `UPDATE_CODE=1/0` (git pull), `SYNC_BACK=1/0`, `SYNC_PATHS`, `SSH_KEY`, `SERVER_REPO_DIR`, `SERVER_WORK_DIR`.
+- Пример запуска (из `coint4/`):
+  - `export SERVSPACE_API_KEY="***"; export SERVER_ID="***"; export SERVER_IP="85.198.90.128"`
+  - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv`
 
 ## Цель и ориентировочный план (может меняться)
 - Цель: добиться стабильного `sharpe_ratio_abs > 1.0` в OOS (WFA): медиана по 5 шагам ≥ 1.0, минимум по шагам ≥ 0.6, при достаточном количестве сделок/пар и с учётом комиссий, слиппеджа и funding (плюс стресс-коэффициенты издержек).
