@@ -340,10 +340,10 @@
 - basecap3 слишком жёсткий: Sharpe/PNL проседают, торговых пар меньше.
 
 ### Fixed backtest smoke (cap1000, pairs_smoke, 2024-01)
-- Команда (из `coint4/`): `./.venv/bin/coint2 backtest --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml --pairs-file bench/pairs_smoke.yaml --period-start 2024-01-01 --period-end 2024-01-31 --out-dir outputs/backtest_smoke_cap1000_202401`
+- Команда (из `coint4/`): `./.venv/bin/coint2 backtest --config configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml --pairs-file bench/pairs_smoke.yaml --period-start 2024-01-01 --period-end 2024-01-31 --out-dir outputs/backtest_smoke_cap1000_top50_202401`
 - Цель: быстрый sanity-check пайплайна на загруженных данных (3 пары, 1 месяц).
 - Результаты: sharpe 0.1072; total_pnl 876.60; max_drawdown -5456.44; trades 363; win_rate 0.4738; avg_bars_held 17.79.
-- Артефакты: `outputs/backtest_smoke_cap1000_202401/` (metrics.yaml, trades.csv, equity.csv).
+- Артефакты: `outputs/backtest_smoke_cap1000_top50_202401/` (metrics.yaml, trades.csv, equity.csv).
 
 ### Лучшие прогоны (rollup 2026-01-22, realcost) + адаптация под $1000
 - Источник: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (refresh).
