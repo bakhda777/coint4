@@ -324,7 +324,8 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
         from coint2.core.portfolio import Portfolio
         temp_portfolio = Portfolio(
             initial_capital=capital_per_pair,
-            max_active_positions=1  # Single pair
+            max_active_positions=1,  # Single pair
+            config=cfg.portfolio,
         )
         
         bt = PairBacktester(
@@ -1240,6 +1241,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     portfolio = Portfolio(
         initial_capital=cfg.portfolio.initial_capital,
         max_active_positions=cfg.portfolio.max_active_positions,
+        config=cfg.portfolio,
     )
     equity_data.append((start_date, portfolio.get_current_equity()))
 
@@ -1582,7 +1584,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             # Create portfolio for position management
             position_portfolio = Portfolio(
                 initial_capital=current_equity,
-                max_active_positions=cfg.portfolio.max_active_positions
+                max_active_positions=cfg.portfolio.max_active_positions,
+                config=cfg.portfolio,
             )
             pair_tracker = ProgressTracker(len(active_pairs), f"{step_tag} backtests", step=max(1, len(active_pairs)//5))
             logger.info(f"🚀 {step_tag}: Начинаем бэктесты для {len(active_pairs)} пар...")

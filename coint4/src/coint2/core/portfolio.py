@@ -6,10 +6,17 @@ from typing import Optional
 class Portfolio:
     """Enhanced portfolio to track equity, cash, reserved margin and open positions."""
 
-    def __init__(self, initial_capital: float, max_active_positions: int, leverage_limit: float = 1.0) -> None:
+    def __init__(
+        self,
+        initial_capital: float,
+        max_active_positions: int,
+        leverage_limit: float = 1.0,
+        config: Optional[object] = None,
+    ) -> None:
         self.initial_capital = initial_capital
         self.max_active_positions = max_active_positions
         self.leverage_limit = leverage_limit
+        self.config = config
         
         # Portfolio state tracking
         self.equity_curve = pd.Series(dtype=float)

@@ -373,3 +373,10 @@
 Выводы:
 - Метрики PnL/издержек/трейдов совпали с $10k версиями (см. rollup), что указывает на отсутствие масштабирования капитала/позиционирования в этих прогонах.
 - По профилю рисков лучше выглядит top30 (меньше DD/turnover и издержек) при сопоставимом Sharpe в stress, но выбор предварительный до фикса масштабирования.
+
+#### Фикс масштабирования капитала (Numba) + sanity-check
+- Исправление: в Numba-сигнале позиции масштабируются через `capital_at_risk` и учитывают `min/max_notional_per_trade` (см. `coint4/src/coint2/core/numba_kernels.py`, `coint4/src/coint2/engine/numba_backtest_engine_full.py`).
+- Быстрый локальный чек (BTC/ETH, 2024-01):
+  - С отключенным max_notional: pnl_1k=-181.53, pnl_10k=-1815.31 (ratio=10.00).
+  - С бюджетным max_notional=250: pnl_1k=-45.38, pnl_10k=-45.38 (cap биндинг ожидаем).
+- Для повторного WFA под фикс: новая очередь `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30_scaled/run_queue.csv` (status=planned).

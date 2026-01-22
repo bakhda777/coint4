@@ -1192,7 +1192,8 @@ class FastWalkForwardObjective:
         # Инициализируем портфель для совместимости
         portfolio = Portfolio(
             initial_capital=cfg.portfolio.initial_capital,
-            max_active_positions=cfg.portfolio.max_active_positions
+            max_active_positions=cfg.portfolio.max_active_positions,
+            config=cfg.portfolio,
         )
 
         # Проверяем что есть результаты для расчета метрик
@@ -1442,7 +1443,8 @@ class FastWalkForwardObjective:
             # Создаем временный портфель для этой пары
             temp_portfolio = Portfolio(
                 initial_capital=cfg.portfolio.initial_capital,
-                max_active_positions=1
+                max_active_positions=1,
+                config=cfg.portfolio,
             )
 
             # Конвертация cooldown_hours -> cooldown_periods для бэктестера
@@ -1453,7 +1455,6 @@ class FastWalkForwardObjective:
                 cooldown_periods = self.convert_hours_to_periods(cooldown_hours, bar_minutes)
 
             # УСКОРЕНИЕ: Создаем полностью Numba-оптимизированный бэктестер для максимального ускорения
-            # FullNumbaPairBacktester не использует portfolio, capital_per_pair и cooldown_periods
             # ВАЖНО: Передаем СЫРЫЕ цены, бэктестер сам вычислит z-scores
             # КРИТИЧНО: Передаем beta из коинтеграционного теста для правильного расчета спреда
             backtester = FullNumbaPairBacktester(
@@ -1464,7 +1465,9 @@ class FastWalkForwardObjective:
                 z_exit=getattr(cfg.backtest, 'zscore_exit', 0.0),
                 commission_pct=getattr(cfg.backtest, 'commission_pct', 0.0),
                 slippage_pct=getattr(cfg.backtest, 'slippage_pct', 0.0),
-                cooldown_periods=cooldown_periods
+                cooldown_periods=cooldown_periods,
+                portfolio=temp_portfolio,
+                capital_at_risk=cfg.portfolio.initial_capital,
             )
 
             # Запускаем бэктест (FullNumbaPairBacktester не требует установки имен символов)

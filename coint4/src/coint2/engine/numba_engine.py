@@ -54,6 +54,14 @@ class NumbaPairBacktester(BasePairBacktester):
                         max_holding_period = 1
             except (TypeError, ValueError):
                 pass
+
+        min_notional = 0.0
+        max_notional = 0.0
+        if getattr(self, "portfolio", None) is not None and getattr(self.portfolio, "config", None) is not None:
+            min_notional = float(getattr(self.portfolio.config, "min_notional_per_trade", 0.0) or 0.0)
+            max_notional = float(getattr(self.portfolio.config, "max_notional_per_trade", 0.0) or 0.0)
+
+        capital_at_risk = float(getattr(self, "capital_at_risk", 0.0) or 0.0)
         
         positions, pnl, cumulative_pnl, costs = calculate_positions_and_pnl_full(
             y, x,
@@ -73,6 +81,9 @@ class NumbaPairBacktester(BasePairBacktester):
             min_hold_periods=min_hold_periods,
             stop_loss_zscore=float(getattr(self, "pair_stop_loss_zscore", 0.0) or 0.0),
             min_spread_move_sigma=float(getattr(self, "min_spread_move_sigma", 0.0) or 0.0),
+            capital_at_risk=capital_at_risk,
+            min_notional_per_trade=min_notional,
+            max_notional_per_trade=max_notional,
         )
 
         spread = y - beta * x

@@ -665,7 +665,10 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    cooldown_periods: int = 0,
                                    min_hold_periods: int = 0,
                                    stop_loss_zscore: float = 0.0,
-                                   min_spread_move_sigma: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                   min_spread_move_sigma: float = 0.0,
+                                   capital_at_risk: float = 1.0,
+                                   min_notional_per_trade: float = 0.0,
+                                   max_notional_per_trade: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Полная торговая функция с всеми возможностями оригинального алгоритма.
 
@@ -705,6 +708,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         Stop-loss по z-score
     min_spread_move_sigma : float
         Минимальный сдвиг спреда от последней плоскости (в сигмах)
+    capital_at_risk : float
+        Капитал на сделку (не меньше 0)
+    min_notional_per_trade : float
+        Минимальный notional на сделку (0 = отключено)
+    max_notional_per_trade : float
+        Максимальный notional на сделку (0 = отключено)
 
     Returns
     -------
@@ -727,6 +736,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         stop_loss_zscore = 0.0
     if min_spread_move_sigma < 0.0:
         min_spread_move_sigma = 0.0
+    if capital_at_risk < 0.0:
+        capital_at_risk = 0.0
+    if min_notional_per_trade < 0.0:
+        min_notional_per_trade = 0.0
+    if max_notional_per_trade < 0.0:
+        max_notional_per_trade = 0.0
 
     min_sigma = 1e-6  # Align with base_engine z-score guard.
 
@@ -743,6 +758,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         base_sigma = min_volatility
 
     position = 0.0
+    position_units = 0.0
     entry_bar = 0
     entry_spread = 0.0  # Добавляем переменную для хранения спреда при входе
     entry_beta = 1.0    # Бета на момент входа (для консистентного PnL)
@@ -769,7 +785,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 
     for i in range(rolling_window, n):
         if np.isnan(beta[i]) or np.isnan(mu[i]) or np.isnan(sigma[i]) or sigma[i] < min_sigma:
-            positions[i] = position
+            positions[i] = position * position_units
             continue
 
         # Use current bar stats for signal generation (aligns with base_engine logic)
@@ -801,10 +817,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         z_curr = (current_spread - mu_curr) / current_vol
 
         new_position = position
+        new_position_units = position_units
 
         # Проверяем максимальный период удержания
         if position != 0.0 and (i - entry_bar) >= max_holding_period:
             new_position = 0.0  # Принудительное закрытие
+            new_position_units = 0.0
 
         # Логика выхода из позиции
         elif position != 0.0:
@@ -817,6 +835,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
             if new_position == position:
                 if (i - entry_bar) >= min_hold_periods and abs(z_curr) <= abs(adaptive_exit):
                     new_position = 0.0
+                    new_position_units = 0.0
 
         # Вход в позицию только если нет текущей позиции
         elif position == 0.0:
@@ -826,24 +845,41 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                     can_enter = False
 
             if can_enter:
-                if z_curr > adaptive_entry:
-                    new_position = -1.0  # Short spread
-                    entry_bar = i
-                    entry_beta = beta_signal
-                    entry_spread = current_spread  # Сохраняем спред при входе
-                elif z_curr < -adaptive_entry:
-                    new_position = 1.0   # Long spread
-                    entry_bar = i
-                    entry_beta = beta_signal
-                    entry_spread = current_spread  # Сохраняем спред при входе
+                if z_curr > adaptive_entry or z_curr < -adaptive_entry:
+                    trade_notional = capital_at_risk
+                    if max_notional_per_trade > 0.0 and trade_notional > max_notional_per_trade:
+                        trade_notional = max_notional_per_trade
+                    if min_notional_per_trade > 0.0 and trade_notional < min_notional_per_trade:
+                        trade_notional = 0.0
+
+                    entry_notional = abs(y[i]) + abs(beta_signal * x[i])
+                    if trade_notional > 0.0 and entry_notional > min_sigma:
+                        new_position_units = trade_notional / entry_notional
+                        if z_curr > adaptive_entry:
+                            new_position = -1.0  # Short spread
+                        else:
+                            new_position = 1.0   # Long spread
+                        entry_bar = i
+                        entry_beta = beta_signal
+                        entry_spread = current_spread  # Сохраняем спред при входе
 
         # Расчет PnL при изменении позиции
         if new_position != position:
             # Торговые издержки
-            trade_size = abs(new_position - position)
             total_cost_pct = commission + slippage
-            cost_notional = abs(y[i]) + abs(entry_beta * x[i])
-            cost = trade_size * cost_notional * total_cost_pct
+            trade_units = 0.0
+            cost_beta = entry_beta
+            if position == 0.0 and new_position != 0.0:
+                trade_units = new_position_units
+                cost_beta = entry_beta
+            elif position != 0.0 and new_position == 0.0:
+                trade_units = position_units
+                cost_beta = entry_beta
+            else:
+                trade_units = position_units + new_position_units
+                cost_beta = entry_beta
+            cost_notional = abs(y[i]) + abs(cost_beta * x[i])
+            cost = trade_units * cost_notional * total_cost_pct
             costs_series[i] = cost
             
             # Если закрываем позицию, рассчитываем PnL от изменения цены
@@ -851,20 +887,22 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                 # Рассчитываем текущий спред
                 current_spread = y[i] - entry_beta * x[i]
                 # PnL от изменения спреда (position уже содержит знак)
-                price_pnl = position * (current_spread - entry_spread)
+                price_pnl = position * position_units * (current_spread - entry_spread)
                 # Общий PnL = прибыль от цены минус комиссии
                 pnl_series[i] = price_pnl - cost
                 total_pnl += price_pnl - cost
                 cooldown_until = i + cooldown_periods + 1
                 last_flat_spread = current_spread
                 last_flat_valid = True
+                position_units = 0.0
             else:
                 # При входе в позицию или изменении размера - только комиссия
                 pnl_series[i] = -cost
                 total_pnl -= cost
 
         position = new_position
-        positions[i] = position
+        position_units = new_position_units
+        positions[i] = position * position_units
 
     # Вычисляем кумулятивный PnL
     cumulative_pnl = np.cumsum(pnl_series)
