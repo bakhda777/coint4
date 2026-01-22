@@ -457,6 +457,9 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
                     else:
                         y_vals = y_vals.values if hasattr(y_vals, "values") else np.asarray(y_vals)
                         x_vals = x_vals.values if hasattr(x_vals, "values") else np.asarray(x_vals)
+                        if np.nanmax(np.abs(y_vals)) == 0.0 or np.nanmax(np.abs(x_vals)) == 0.0:
+                            y_vals = pair_data.iloc[:, 0].values
+                            x_vals = pair_data.iloc[:, 1].values
 
                     if beta_vals is None:
                         beta_vals = np.ones_like(y_vals, dtype=float)
