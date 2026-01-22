@@ -424,7 +424,71 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             actual_trade_count = int(np.sum(is_trade_open_event))
         else:
             actual_trade_count = 0
-        
+
+        # Notional cap diagnostics (entry-level)
+        entry_notional_count = 0
+        entry_notional_cap_hits = 0
+        entry_notional_below_min = 0
+        entry_notional_avg = 0.0
+        entry_notional_p50 = 0.0
+        entry_notional_min = 0.0
+        entry_notional_max = 0.0
+
+        min_notional = float(getattr(cfg.portfolio, "min_notional_per_trade", 0.0) or 0.0)
+        max_notional = float(getattr(cfg.portfolio, "max_notional_per_trade", 0.0) or 0.0)
+        if actual_trade_count > 0 and (min_notional > 0.0 or max_notional > 0.0):
+            try:
+                import numpy as np
+
+                entry_mask = is_trade_open_event
+                if entry_mask.any():
+                    if isinstance(results, dict):
+                        y_vals = results.get("y")
+                        x_vals = results.get("x")
+                        beta_vals = results.get("beta")
+                    else:
+                        y_vals = results.get("y")
+                        x_vals = results.get("x")
+                        beta_vals = results.get("beta")
+
+                    if y_vals is None or x_vals is None:
+                        y_vals = pair_data.iloc[:, 0].values
+                        x_vals = pair_data.iloc[:, 1].values
+                    else:
+                        y_vals = y_vals.values if hasattr(y_vals, "values") else np.asarray(y_vals)
+                        x_vals = x_vals.values if hasattr(x_vals, "values") else np.asarray(x_vals)
+
+                    if beta_vals is None:
+                        beta_vals = np.ones_like(y_vals, dtype=float)
+                    else:
+                        beta_vals = beta_vals.values if hasattr(beta_vals, "values") else np.asarray(beta_vals)
+                        if beta_vals.shape[0] != y_vals.shape[0]:
+                            beta_vals = np.ones_like(y_vals, dtype=float)
+
+                    entry_idx = np.where(entry_mask)[0]
+                    entry_positions = positions_values[entry_mask]
+                    entry_notional = np.abs(entry_positions) * (
+                        np.abs(y_vals[entry_idx]) + np.abs(beta_vals[entry_idx] * x_vals[entry_idx])
+                    )
+                    entry_notional = np.nan_to_num(entry_notional, nan=0.0, posinf=0.0, neginf=0.0)
+
+                    entry_notional_count = int(entry_notional.size)
+                    if entry_notional_count > 0:
+                        entry_notional_avg = float(entry_notional.mean())
+                        entry_notional_p50 = float(np.median(entry_notional))
+                        entry_notional_min = float(entry_notional.min())
+                        entry_notional_max = float(entry_notional.max())
+                        if max_notional > 0.0:
+                            entry_notional_cap_hits = int(
+                                np.sum(entry_notional >= max_notional * 0.999)
+                            )
+                        if min_notional > 0.0:
+                            entry_notional_below_min = int(
+                                np.sum(entry_notional <= min_notional * 1.001)
+                            )
+            except Exception as exc:
+                logger.debug(f"Notional diagnostics failed for {s1}-{s2}: {exc}")
+
         # Vectorized calculation of pair statistics using numpy
         if not pnl_series.empty:
             import numpy as np
@@ -457,7 +521,14 @@ def _run_backtest_for_pair(pair_data, s1, s2, cfg, capital_per_pair, bar_minutes
             'lose_days': lose_days,
             'total_days': len(pnl_series),
             'max_daily_gain': max_daily_gain,
-            'max_daily_loss': max_daily_loss
+            'max_daily_loss': max_daily_loss,
+            'entry_notional_count': entry_notional_count,
+            'entry_notional_cap_hits': entry_notional_cap_hits,
+            'entry_notional_below_min': entry_notional_below_min,
+            'entry_notional_avg': entry_notional_avg,
+            'entry_notional_p50': entry_notional_p50,
+            'entry_notional_min': entry_notional_min,
+            'entry_notional_max': entry_notional_max,
         }
         
         # Логирование результатов обработки
@@ -1914,6 +1985,19 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 'worst_pair_pnl': trades_df['total_pnl'].min(),
                 'avg_pnl_per_pair': trades_df['total_pnl'].mean(),
             }
+
+            if 'entry_notional_count' in trades_df.columns:
+                total_entry_count = trades_df['entry_notional_count'].sum()
+                total_entry_notional = (trades_df['entry_notional_avg'] * trades_df['entry_notional_count']).sum()
+                trade_metrics.update({
+                    'entry_notional_count': float(total_entry_count),
+                    'entry_notional_cap_hits': float(trades_df['entry_notional_cap_hits'].sum()),
+                    'entry_notional_below_min': float(trades_df['entry_notional_below_min'].sum()),
+                    'entry_notional_avg': float(total_entry_notional / max(total_entry_count, 1)),
+                    'entry_notional_p50': float(trades_df['entry_notional_p50'].median()),
+                    'entry_notional_min': float(trades_df['entry_notional_min'].min()),
+                    'entry_notional_max': float(trades_df['entry_notional_max'].max()),
+                })
         
         all_metrics = {**base_metrics, **extended_metrics, **trade_metrics}
         logger.info(f"✅ Рассчитаны метрики производительности ({len(all_metrics)} показателей)")
