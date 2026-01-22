@@ -379,4 +379,14 @@
 - Быстрый локальный чек (BTC/ETH, 2024-01):
   - С отключенным max_notional: pnl_1k=-181.53, pnl_10k=-1815.31 (ratio=10.00).
   - С бюджетным max_notional=250: pnl_1k=-45.38, pnl_10k=-45.38 (cap биндинг ожидаем).
-- Для повторного WFA под фикс: новая очередь `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30_scaled/run_queue.csv` (status=planned).
+- Для повторного WFA под фикс: новая очередь `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30_scaled/run_queue.csv` (status=completed).
+
+#### Результаты (holdout + stress, cap1000, scaled)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 4.11 | 4724.37 | -760.20 | 11384 | 120 | 3.81 | 4002.68 | -695.20 | 11384 | 120 |
+| top30/ms0p2 | 3.15 | 2764.43 | -1107.34 | 6865 | 75 | 2.91 | 2347.79 | -1018.56 | 6865 | 75 |
+
+Выводы:
+- Метрики теперь масштабируются с капиталом; значения PnL выросли из-за учета notional per-trade.
+- Абсолютные PnL существенно выше initial_capital из-за суммирования по всем парам; требуется отдельная проверка реалистичной агрегированной экспозиции.
