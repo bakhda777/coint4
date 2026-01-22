@@ -344,3 +344,21 @@
 - Цель: быстрый sanity-check пайплайна на загруженных данных (3 пары, 1 месяц).
 - Результаты: sharpe 0.1072; total_pnl 876.60; max_drawdown -5456.44; trades 363; win_rate 0.4738; avg_bars_held 17.79.
 - Артефакты: `outputs/backtest_smoke_cap1000_202401/` (metrics.yaml, trades.csv, equity.csv).
+
+### Лучшие прогоны (rollup 2026-01-22, realcost) + адаптация под $1000
+- Источник: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (refresh).
+- Отбор: status=completed, metrics_present, total_costs>0, trades>=200, pairs>=20.
+
+| run_id | sharpe | pnl | dd_abs | trades | pairs | costs | run_dir |
+|---|---|---|---|---|---|---|---|
+| holdout_relaxed8_nokpss_20260123_top50_ms0p2 | 9.09 | 1135.26 | -82.22 | 11384 | 120 | 326.39 | `coint4/artifacts/wfa/runs/20260120_realcost_shortlist/holdout_relaxed8_nokpss_20260123_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p2` |
+| holdout_relaxed8_nokpss_20260125_top30_ms0p2 | 8.79 | 1151.40 | -60.67 | 6865 | 75 | 189.54 | `coint4/artifacts/wfa/runs/20260125_realcost_churngrid/holdout_relaxed8_nokpss_20260125_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2` |
+
+Фильтрация/стабильность (по run.log):
+- Pair stability filter: 115 → 87 (history=1), 113 → 93 (history=2), 76 → 66 (history=3), 77 → 52 (history=4); шаг 0 — insufficient history.
+- В обоих run.log: предупреждения о нулевом gap между train/test (0 дней).
+
+Бюджет $1000:
+- Добавлены конфиги: `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`.
+- Изменения: initial_capital=1000, min_notional_per_trade=10, max_notional_per_trade=250, pair_stop_loss_usd=7.5 (масштаб 0.1).
+- При линейном масштабировании ожидается PnL ~$113–115 и DD ~$6–8, но для $1000 часть дорогих пар может не пройти `_check_capital_sufficiency` (min_position_size=0.01), поэтому фактические метрики могут отличаться.
