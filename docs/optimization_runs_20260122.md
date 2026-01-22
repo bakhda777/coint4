@@ -362,4 +362,14 @@
 - Добавлены конфиги: `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`.
 - Изменения: initial_capital=1000, min_notional_per_trade=10, max_notional_per_trade=250, pair_stop_loss_usd=7.5 (масштаб 0.1).
 - При линейном масштабировании ожидается PnL ~$113–115 и DD ~$6–8, но для $1000 часть дорогих пар может не пройти `_check_capital_sufficiency` (min_position_size=0.01), поэтому фактические метрики могут отличаться.
-- Очередь для WFA на удаленном сервере: `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30/run_queue.csv` (status=planned).
+- Очередь для WFA на удаленном сервере: `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30/run_queue.csv` (status=completed, 4 прогона).
+
+#### Результаты (holdout + stress, cap1000)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 8.63 | 1135.26 | -82.22 | 11384 | 120 | 7.39 | 966.13 | -82.91 | 11384 | 120 |
+| top30/ms0p2 | 8.76 | 1151.40 | -60.67 | 6865 | 75 | 7.73 | 1015.75 | -63.39 | 6865 | 75 |
+
+Выводы:
+- Метрики PnL/издержек/трейдов совпали с $10k версиями (см. rollup), что указывает на отсутствие масштабирования капитала/позиционирования в этих прогонах.
+- По профилю рисков лучше выглядит top30 (меньше DD/turnover и издержек) при сопоставимом Sharpe в stress, но выбор предварительный до фикса масштабирования.
