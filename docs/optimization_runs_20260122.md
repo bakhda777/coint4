@@ -359,6 +359,7 @@
 - В обоих run.log: предупреждения о нулевом gap между train/test (0 дней).
 
 Бюджет $1000:
-- Добавлены конфиги: `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`.
+- Добавлены конфиги: `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`, `coint4/configs/budget_20260122_1000/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`.
 - Изменения: initial_capital=1000, min_notional_per_trade=10, max_notional_per_trade=250, pair_stop_loss_usd=7.5 (масштаб 0.1).
 - При линейном масштабировании ожидается PnL ~$113–115 и DD ~$6–8, но для $1000 часть дорогих пар может не пройти `_check_capital_sufficiency` (min_position_size=0.01), поэтому фактические метрики могут отличаться.
+- Очередь для WFA на удаленном сервере: `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30/run_queue.csv` (status=planned).
