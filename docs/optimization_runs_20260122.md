@@ -1010,3 +1010,82 @@ Top30:
 ### Queue: budget1000_oos20250101_20250630_top50_maxnot40_riskfine_maxpairs20 (skipped)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot40_riskfine_maxpairs20/run_queue.csv`.
 - Причина: 0 сделок на OOS 2024H1, запуск нецелесообразен.
+
+### Queue: budget1000_oos20240101_20240630_top50_maxnot40_riskfine2_minnotgrid_maxpairsgrid (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot40_riskfine2_minnotgrid_maxpairsgrid/run_queue.csv`.
+- Цель: micro-grid (risk 0.0175/0.018/0.019/0.02/0.021, min_notional 15/20, max_pairs 15/20) для OOS 2024H1 при капитале 1000.
+- Конфиги: `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_riskfine2_minnotgrid_maxpairsgrid/*.yaml`.
+- Статус: `completed` (40 прогонов).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | 1.75 | 309.88 | -452.24 | 2328 | 22 | 92.75 | 1.47 | 238.47 | -466.67 | 2328 | 22 | 161.93 |
+| risk0p0175/minnot15/maxpairs20 | 1.53 | 270.87 | -427.46 | 3050 | 31 | 131.74 | 1.20 | 180.49 | -418.26 | 3050 | 31 | 228.96 |
+| risk0p018/minnot15/maxpairs15 | 1.75 | 317.75 | -468.57 | 2328 | 22 | 95.82 | 1.47 | 243.97 | -483.32 | 2328 | 22 | 167.22 |
+| risk0p018/minnot15/maxpairs20 | 1.53 | 276.83 | -443.93 | 3050 | 31 | 136.44 | 1.20 | 183.52 | -433.92 | 3050 | 31 | 236.99 |
+| risk0p019/minnot15/maxpairs15 | 1.76 | 333.29 | -501.77 | 2328 | 22 | 102.04 | 1.48 | 254.75 | -517.15 | 2328 | 22 | 177.90 |
+| risk0p019/minnot15/maxpairs20 | 1.54 | 288.42 | -477.59 | 3050 | 31 | 146.00 | 1.21 | 189.21 | -465.86 | 3050 | 31 | 253.31 |
+| risk0p02/minnot15/maxpairs15 | 1.76 | 348.59 | -535.71 | 2328 | 22 | 108.34 | 1.48 | 265.22 | -551.69 | 2328 | 22 | 188.71 |
+| risk0p02/minnot15/maxpairs20 | 1.55 | 299.61 | -512.24 | 3050 | 31 | 155.77 | 1.22 | 194.43 | -498.63 | 3050 | 31 | 269.95 |
+| risk0p02/minnot20/maxpairs15 | 1.76 | 348.59 | -535.71 | 2328 | 22 | 108.34 | 1.48 | 265.22 | -551.69 | 2328 | 22 | 188.71 |
+| risk0p02/minnot20/maxpairs20 | 1.55 | 299.61 | -512.24 | 3050 | 31 | 155.77 | 1.22 | 194.43 | -498.63 | 3050 | 31 | 269.95 |
+| risk0p021/minnot15/maxpairs15 | 1.77 | 363.64 | -570.38 | 2328 | 22 | 114.73 | 1.49 | 275.38 | -586.94 | 2328 | 22 | 199.64 |
+| risk0p021/minnot15/maxpairs20 | 1.55 | 310.38 | -547.86 | 3050 | 31 | 165.75 | 1.23 | 199.17 | -532.22 | 3050 | 31 | 286.93 |
+| risk0p021/minnot20/maxpairs15 | 1.77 | 363.64 | -570.38 | 2328 | 22 | 114.73 | 1.49 | 275.38 | -586.94 | 2328 | 22 | 199.64 |
+| risk0p021/minnot20/maxpairs20 | 1.55 | 310.38 | -547.86 | 3050 | 31 | 165.75 | 1.23 | 199.17 | -532.22 | 3050 | 31 | 286.93 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | holdout | 2328 | 0 | 0 | 21.08 | 21.50 | 17.50 | 24.35 |
+| risk0p0175/minnot15/maxpairs15 | stress | 2328 | 0 | 0 | 20.71 | 20.72 | 17.50 | 23.99 |
+| risk0p0175/minnot15/maxpairs20 | holdout | 3050 | 0 | 0 | 22.96 | 25.31 | 17.50 | 26.09 |
+| risk0p0175/minnot15/maxpairs20 | stress | 3050 | 0 | 0 | 22.45 | 24.86 | 17.50 | 25.00 |
+| risk0p018/minnot15/maxpairs15 | holdout | 2328 | 0 | 0 | 21.78 | 22.21 | 18.00 | 25.25 |
+| risk0p018/minnot15/maxpairs15 | stress | 2328 | 0 | 0 | 21.38 | 21.38 | 18.00 | 24.87 |
+| risk0p018/minnot15/maxpairs20 | holdout | 3050 | 0 | 0 | 23.78 | 26.26 | 18.00 | 27.09 |
+| risk0p018/minnot15/maxpairs20 | stress | 3050 | 0 | 0 | 23.24 | 25.79 | 18.00 | 25.94 |
+| risk0p019/minnot15/maxpairs15 | holdout | 2328 | 0 | 0 | 23.20 | 23.64 | 19.00 | 27.07 |
+| risk0p019/minnot15/maxpairs15 | stress | 2328 | 0 | 0 | 22.75 | 22.71 | 19.00 | 26.66 |
+| risk0p019/minnot15/maxpairs20 | holdout | 3050 | 0 | 0 | 25.45 | 28.21 | 19.00 | 29.15 |
+| risk0p019/minnot15/maxpairs20 | stress | 3050 | 0 | 0 | 24.84 | 27.68 | 19.00 | 27.85 |
+| risk0p02/minnot15/maxpairs15 | holdout | 2328 | 0 | 0 | 24.63 | 25.08 | 20.00 | 28.95 |
+| risk0p02/minnot15/maxpairs15 | stress | 2328 | 0 | 0 | 24.13 | 24.05 | 20.00 | 28.48 |
+| risk0p02/minnot15/maxpairs20 | holdout | 3050 | 0 | 0 | 27.15 | 30.20 | 20.00 | 31.26 |
+| risk0p02/minnot15/maxpairs20 | stress | 3050 | 0 | 0 | 26.47 | 29.62 | 20.00 | 29.81 |
+| risk0p02/minnot20/maxpairs15 | holdout | 2328 | 0 | 790 | 24.63 | 25.08 | 20.00 | 28.95 |
+| risk0p02/minnot20/maxpairs15 | stress | 2328 | 0 | 790 | 24.13 | 24.05 | 20.00 | 28.48 |
+| risk0p02/minnot20/maxpairs20 | holdout | 3050 | 0 | 1018 | 27.15 | 30.20 | 20.00 | 31.26 |
+| risk0p02/minnot20/maxpairs20 | stress | 3050 | 0 | 1018 | 26.47 | 29.62 | 20.00 | 29.81 |
+| risk0p021/minnot15/maxpairs15 | holdout | 2328 | 0 | 0 | 26.08 | 26.54 | 21.00 | 30.86 |
+| risk0p021/minnot15/maxpairs15 | stress | 2328 | 0 | 0 | 25.53 | 25.39 | 21.00 | 30.35 |
+| risk0p021/minnot15/maxpairs20 | holdout | 3050 | 0 | 0 | 28.89 | 32.25 | 21.00 | 33.43 |
+| risk0p021/minnot15/maxpairs20 | stress | 3050 | 0 | 0 | 28.13 | 31.60 | 21.00 | 31.81 |
+| risk0p021/minnot20/maxpairs15 | holdout | 2328 | 0 | 0 | 26.08 | 26.54 | 21.00 | 30.86 |
+| risk0p021/minnot20/maxpairs15 | stress | 2328 | 0 | 0 | 25.53 | 25.39 | 21.00 | 30.35 |
+| risk0p021/minnot20/maxpairs20 | holdout | 3050 | 0 | 0 | 28.89 | 32.25 | 21.00 | 33.43 |
+| risk0p021/minnot20/maxpairs20 | stress | 3050 | 0 | 0 | 28.13 | 31.60 | 21.00 | 31.81 |
+
+#### Концентрация (gross PnL, holdout)
+| config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p0175/minnot15/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p018/minnot15/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p018/minnot15/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p019/minnot15/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p019/minnot15/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p02/minnot15/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p02/minnot15/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p02/minnot20/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p02/minnot20/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p021/minnot15/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p021/minnot15/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p021/minnot20/maxpairs15 | 100% | 100% | 13 | 22 |
+| risk0p021/minnot20/maxpairs20 | 98% | 100% | 17 | 31 |
+
+Выводы:
+- Для `risk<0p02` сделки появляются только при `min_notional=15` (entry_min 17.5–19); `min_notional=20` режет сетапы до нуля.
+- `maxpairs15` даёт более высокий PnL/Sharpe, но DD всё ещё высокий: ~-450…-570 (45–57% от капитала 1000).
+- Концентрация экстремальная: top10/top20 фактически 98–100% по всем конфигам.
