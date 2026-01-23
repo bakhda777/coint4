@@ -1447,6 +1447,12 @@ Top30:
 | 0.0175 | 30 | 3.13 | 396.32 | -320.41 | 65.24 | 2.80 | 345.02 | -335.54 | 114.59 | 25.94 | 25.71 |
 | 0.0175 | 20 | 3.68 | 432.89 | -259.49 | 57.27 | 3.32 | 388.34 | -274.70 | 101.82 | 20.00 | 20.00 |
 
+#### Deep-dive DD (OOS 2025H1, stress, risk0p0175/maxpairs12/maxnot20)
+- run_dir: `coint4/artifacts/wfa/runs/20260124_budget1000_oos20250101_20250630_top50_tlow_maxnot20/stress_relaxed8_nokpss_20260124_oos20250101_20250630_top50_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot20_risk0p0175_minnot15_maxpairs12`
+- max_drawdown_abs: `-274.70` (peak `2025-02-01 03:30:00` → trough `2025-03-04 00:00:00`, recovery `2025-03-27 01:45:00`).
+- Худшие дни (daily_pnl): `2025-03-28 -168.81`, `2025-02-01 -94.44`, `2025-03-03 -86.58`.
+- Худшие пары (net PnL): `AVAUSDT-KASTAUSDT -101.88`, `ETCUSDT-JUVUSDT -46.46`, `FILUSDC-JUVUSDT -43.85`; лучший вклад: `ETHDAI-ETHEUR +375.71`.
+
 Выводы:
 - `maxnot20` улучшает Sharpe и снижает DD на OOS 2025H1; эффект особенно сильный для `risk0p0175` (Sharpe 2.80 → 3.32 в stress при DD -335 → -275).
 - Cap действительно биндинг (notional_max становится ровно 20.00), при этом издержки тоже снижаются.
