@@ -689,3 +689,51 @@ Top30:
 Выводы:
 - OOS 2025H1 показывает Sharpe 1.59–1.96 и положительный PnL.
 - Cap=25 не ограничивает (max_notional < 25); экспозиция определяется risk_per_position.
+
+### Queue: budget1000_oos_risk_minnot_grid (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos_risk_minnot_grid/run_queue.csv`.
+- Цель: OOS 2023H2 и 2025H1 для кандидатов `risk0p0125` и `risk0p75/minnot5` при cap25 (top50).
+- Конфиги (2023H2):
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+- Конфиги (2025H1):
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+- Статус: `completed` (8 прогонов).
+
+#### Результаты (holdout + stress, OOS 2023H2)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | 1.58 | 421.31 | -514.38 | 6871 | 69 | 189.73 | 1.21 | 276.26 | -510.21 | 6871 | 69 | 323.81 |
+| risk0p75/minnot5 | 1.66 | 281.69 | -279.31 | 6871 | 69 | 107.17 | 1.28 | 201.39 | -280.47 | 6871 | 69 | 185.89 |
+
+#### Entry notional (OOS 2023H2)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | holdout | 6871 | 0 | 0 | 14.94 | 14.85 | 12.50 | 19.33 |
+| risk0p0125 | stress | 6871 | 0 | 0 | 14.35 | 13.57 | 12.50 | 18.13 |
+| risk0p75/minnot5 | holdout | 6871 | 0 | 0 | 8.44 | 8.60 | 7.50 | 9.99 |
+| risk0p75/minnot5 | stress | 6871 | 0 | 0 | 8.24 | 8.15 | 7.50 | 9.60 |
+
+#### Результаты (holdout + stress, OOS 2025H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | 1.99 | 377.64 | -572.14 | 6694 | 79 | 187.81 | 1.61 | 276.69 | -593.00 | 6694 | 79 | 325.59 |
+| risk0p75/minnot5 | 2.07 | 235.28 | -311.68 | 6694 | 79 | 105.30 | 1.66 | 179.00 | -326.69 | 6694 | 79 | 184.31 |
+
+#### Entry notional (OOS 2025H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | holdout | 6694 | 0 | 0 | 15.15 | 15.53 | 12.50 | 17.95 |
+| risk0p0125 | stress | 6694 | 0 | 0 | 14.77 | 14.76 | 12.50 | 17.59 |
+| risk0p75/minnot5 | holdout | 6694 | 0 | 0 | 8.49 | 8.70 | 7.50 | 9.46 |
+| risk0p75/minnot5 | stress | 6694 | 0 | 0 | 8.36 | 8.43 | 7.50 | 9.33 |
+
+Выводы:
+- OOS 2023H2/2025H1: `risk0p0125` даёт выше PnL, но глубже DD.
+- `risk0p75/minnot5` даёт меньший PnL, зато более высокий Sharpe и заметно меньшую просадку.
+- В обоих периодах cap=25 не активен (cap_hits=0), разница определяется риск‑параметрами и min_notional.
