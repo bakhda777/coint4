@@ -1222,6 +1222,37 @@ Top30:
 - `risk0p015` даёт лучший DD/Sharpe, но сохраняется `below_min` (455 входов).
 - Концентрация немного ниже, чем в 2024H1, но всё ещё высокая.
 
+### Queue: budget1000_oos20230701_20231231_top50_tlow_maxpairs10 (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260124_budget1000_oos20230701_20231231_top50_tlow_maxpairs10/run_queue.csv`.
+- Цель: проверить `maxpairs10` как более осторожную альтернативу `maxpairs12` для `tlow` на OOS 2023H2 (risk0p015/0p0175).
+- Конфиги: `coint4/configs/budget_20260124_1000_capsweep_oos20230701_20231231_top50_tlow_maxpairs10/*.yaml`.
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, OOS 2023H2)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | 4.08 | 1040.50 | -37.37 | 1133 | 18 | 36.38 | 3.97 | 1000.12 | -43.47 | 1133 | 18 | 64.16 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | 4.04 | 1254.97 | -44.76 | 1133 | 18 | 43.33 | 3.94 | 1204.51 | -50.88 | 1133 | 18 | 76.32 |
+
+#### Entry notional (OOS 2023H2)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | holdout | 1133 | 0 | 374 | 17.04 | 16.07 | 15.00 | 20.44 |
+| tlow/maxnot30/risk0p015/maxpairs10 | stress | 1133 | 0 | 374 | 16.90 | 15.95 | 15.00 | 20.14 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | holdout | 1133 | 0 | 0 | 20.29 | 18.96 | 17.50 | 24.97 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | stress | 1133 | 0 | 0 | 20.10 | 18.79 | 17.50 | 24.55 |
+
+#### Концентрация (gross PnL, holdout, агрегировано по парам)
+| config | top1_share | top3_share | top5_share | top10_share | neg_pairs | total_pairs |
+|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | 30% | 75% | 83% | 96% | 3 | 18 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | 31% | 75% | 83% | 96% | 3 | 18 |
+
+Выводы:
+- `maxpairs10` сильно снижает DD на 2023H2 (примерно в 1.7–1.9 раза vs `maxpairs12`) при небольшом снижении Sharpe.
+- Число торгуемых пар падает (18 vs 24), концентрация немного растёт (top1 +~4 п.п. vs `maxpairs12`).
+- Как «conservative» вариант под $1000 `risk0p015/maxpairs10` выглядит разумно, но на OOS 2025H1 `maxpairs10` ухудшал Sharpe и резко увеличивал концентрацию — поэтому primary остаётся `maxpairs12`.
+
 ### Queue: budget1000_oos20240101_20240630_top50_tlow_minnot_sweep (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260124_budget1000_oos20240101_20240630_top50_tlow_minnot_sweep/run_queue.csv`.
 - Цель: проверить влияние `min_notional_per_trade` (10/12/15) для `tlow` на OOS 2024H1 при `risk0p015`, `maxpairs12`, `maxnot30`.
