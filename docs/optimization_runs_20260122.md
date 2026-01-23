@@ -972,3 +972,41 @@ Top30:
 Выводы:
 - `maxpairs20` стабильно лучше по Sharpe/PnL и контролю издержек; DD около -960 (на грани капитала 1000).
 - `maxpairs30` ухудшает Sharpe и даёт отрицательный stress PnL.
+
+### Queue: budget1000_oos20240101_20240630_top50_maxnot40_riskfine_maxpairs20 (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot40_riskfine_maxpairs20/run_queue.csv`.
+- Цель: уточнить риск ниже 0.02 при min_notional=20 и max_pairs=20 (risk=0.0175/0.018/0.019) в OOS 2024H1.
+- Конфиги: `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_riskfine_maxpairs20/*.yaml`.
+- Статус: `completed` (6 прогонов).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot20/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+| risk0p018/minnot20/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+| risk0p019/minnot20/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot20/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p0175/minnot20/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p018/minnot20/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p018/minnot20/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p019/minnot20/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p019/minnot20/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+
+#### Концентрация (gross PnL, holdout)
+| config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|
+| risk0p0175/minnot20/maxpairs20 | 0% | 0% | 0 | 31 |
+| risk0p018/minnot20/maxpairs20 | 0% | 0% | 0 | 31 |
+| risk0p019/minnot20/maxpairs20 | 0% | 0% | 0 | 31 |
+
+Выводы:
+- При risk < 0.02 и min_notional=20 сделки не открываются (0 трейдов).
+- Для 2025H1 эти конфиги помечены как `skipped` и не запускались.
+
+### Queue: budget1000_oos20250101_20250630_top50_maxnot40_riskfine_maxpairs20 (skipped)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot40_riskfine_maxpairs20/run_queue.csv`.
+- Причина: 0 сделок на OOS 2024H1, запуск нецелесообразен.
