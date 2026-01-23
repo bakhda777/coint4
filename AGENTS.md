@@ -22,9 +22,18 @@
 - Если сервер уже включён вручную — запускать с `SKIP_POWER=1`; если нужно оставить включённым после задачи — `STOP_AFTER=0`.
 - Для работы скрипта задать `SERVSPACE_API_KEY` и `SERVER_ID` или `SERVER_NAME`; `SERVER_IP` по умолчанию `85.198.90.128`, базовый URL API можно переопределить через `SERVSPACE_API_BASE` (по умолчанию `https://api.serverspace.ru/api/v1`).
 - Полезные опции скрипта: `UPDATE_CODE=1/0` (git pull), `SYNC_BACK=1/0`, `SYNC_PATHS`, `SSH_KEY`, `SERVER_REPO_DIR`, `SERVER_WORK_DIR`.
+- Чтобы не затирать локальные правки в `docs`, при `SYNC_BACK=1` задавать `SYNC_PATHS="coint4/artifacts coint4/results coint4/outputs"` и синхронизировать `docs` вручную после фиксации.
 - Пример запуска (из `coint4/`):
   - `export SERVSPACE_API_KEY="***"; export SERVER_ID="***"; export SERVER_IP="85.198.90.128"`
   - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv`
+
+## Paper run и cutover
+- Рекомендуемый конфиг для paper: `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p0175_minnot15_maxpairs12.yaml`.
+- Запуск paper (demo): `PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p0175_minnot15_maxpairs12.yaml --env demo`
+- Проверка одиночного цикла: добавить `--once` (полезно для smoke).
+- Переменные: `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_ENV=demo` (без значений в репозитории).
+- Мониторинг: логи в `coint4/artifacts/live/logs`, состояние `coint4/artifacts/live/state.json`, снапшоты через `coint4/scripts/extract_live_snapshot.py` (обновляет `coint4/artifacts/live/LIVE_DASHBOARD.md`).
+- Cutover чеклист: 1–2 недели paper без критических ошибок, DD < 25–30%, стабильные costs/turnover, подтверждённые пары/инструменты; затем сменить `BYBIT_ENV=live`, новые ключи, запустить `--once` и только после этого постоянный цикл.
 
 ## Цель и ориентировочный план (может меняться)
 - Цель: добиться стабильного `sharpe_ratio_abs > 1.0` в OOS (WFA): медиана по 5 шагам ≥ 1.0, минимум по шагам ≥ 0.6, при достаточном количестве сделок/пар и с учётом комиссий, слиппеджа и funding (плюс стресс-коэффициенты издержек).

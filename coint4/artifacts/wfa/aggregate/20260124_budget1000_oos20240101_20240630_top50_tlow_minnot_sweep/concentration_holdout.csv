@@ -1,0 +1,4 @@
+config,top10_share,top20_share,neg_pairs,total_pairs
+turnoverlow/maxnot30/risk0p015/minnot15/maxpairs12,0.9711151485590233,1.0,5,19
+turnoverlow/maxnot30/risk0p015/minnot10/maxpairs12,0.9711151485590233,1.0,5,19
+turnoverlow/maxnot30/risk0p015/minnot12/maxpairs12,0.9711151485590233,1.0,5,19
