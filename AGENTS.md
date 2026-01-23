@@ -28,9 +28,9 @@
   - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv`
 
 ## Paper run и cutover
-- Рекомендуемый конфиг для paper: `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p015_minnot15_maxpairs12.yaml`.
+- Рекомендуемый конфиг для paper: `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot20_risk0p0175_minnot15_maxpairs12.yaml`.
 - Более осторожная альтернатива (ниже DD, но чаще выше концентрация): `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p015_minnot15_maxpairs10.yaml`.
-- Запуск paper (demo): `PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p015_minnot15_maxpairs12.yaml --env demo`
+- Запуск paper (demo): `PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot20_risk0p0175_minnot15_maxpairs12.yaml --env demo`
 - Проверка одиночного цикла: добавить `--once` (полезно для smoke).
 - Переменные: `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_ENV=demo` (без значений в репозитории).
 - Мониторинг: логи в `coint4/artifacts/live/logs`, состояние `coint4/artifacts/live/state.json`, снапшоты через `coint4/scripts/extract_live_snapshot.py` (обновляет `coint4/artifacts/live/LIVE_DASHBOARD.md`).
