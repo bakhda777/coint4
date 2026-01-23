@@ -475,7 +475,7 @@ Top30:
 - PnL и Sharpe снизились: top50 holdout 3316 vs 4724 (baseline), Sharpe 3.70 vs 4.11.
 - По gross exposure средний уровень опустился к ~27% (max ~38%), что делает экспозицию более реалистичной, но ухудшает доходность.
 
-### Queue: budget1000_capsweep_maxnot50 (planned)
+### Queue: budget1000_capsweep_maxnot50 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot50/run_queue.csv`.
 - Цель: промежуточный cap (max_notional=50) для компромисса между доходностью и экспозицией.
 - Конфиги:
@@ -483,8 +483,37 @@ Top30:
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
+- Статус: `completed` (4 прогона).
 
-### Queue: budget1000_capsweep_maxnot100 (planned)
+#### Результаты (holdout + stress, cap1000, max_notional=50)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 4.10 | 4680.03 | -745.71 | 11384 | 120 | 586.86 | 3.81 | 4002.68 | -695.20 | 11384 | 120 | 967.06 |
+| top30/ms0p2 | 3.15 | 2764.43 | -1107.34 | 6865 | 75 | 324.41 | 2.91 | 2347.79 | -1018.56 | 6865 | 75 | 539.73 |
+
+#### Entry notional (holdout + stress, max_notional=50)
+| config | split | entry_count | cap_hits | cap_hit_pct | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | holdout | 11384 | 2300 | 20.20% | 26.99 | 15.00 | 12.31 | 50.00 |
+| top30/ms0p2 | holdout | 6865 | 0 | 0.00% | 24.68 | 15.00 | 12.38 | 45.72 |
+| top50/ms0p2 | stress | 11384 | 0 | 0.00% | 25.02 | 15.00 | 11.73 | 45.47 |
+| top30/ms0p2 | stress | 6865 | 0 | 0.00% | 23.10 | 15.00 | 11.97 | 41.64 |
+
+#### Оценка gross exposure (max_notional=50)
+Оценка = `entry_notional_* * max_active_positions / initial_capital` (капитал=1000, max_active_positions=15).
+
+| config | split | gross_avg | gross_p50 | gross_max |
+|---|---|---|---|---|
+| top50/ms0p2 | holdout | 0.40 | 0.23 | 0.75 |
+| top30/ms0p2 | holdout | 0.37 | 0.23 | 0.69 |
+| top50/ms0p2 | stress | 0.38 | 0.23 | 0.68 |
+| top30/ms0p2 | stress | 0.35 | 0.23 | 0.62 |
+
+Выводы:
+- Cap=50 частично активен только в top50 holdout (cap_hit_pct ~20%); в остальных сплитах cap не срабатывает.
+- Метрики близки к baseline (max_notional=250); для top30 изменений нет.
+
+### Queue: budget1000_capsweep_maxnot100 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot100/run_queue.csv`.
 - Цель: более мягкий cap (max_notional=100) для сравнения с baseline 250 и cap25.
 - Конфиги:
@@ -492,3 +521,40 @@ Top30:
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, cap1000, max_notional=100)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 4.11 | 4724.37 | -760.20 | 11384 | 120 | 591.31 | 3.81 | 4002.68 | -695.20 | 11384 | 120 | 967.06 |
+| top30/ms0p2 | 3.15 | 2764.43 | -1107.34 | 6865 | 75 | 324.41 | 2.91 | 2347.79 | -1018.56 | 6865 | 75 | 539.73 |
+
+#### Entry notional (holdout + stress, max_notional=100)
+| config | split | entry_count | cap_hits | cap_hit_pct | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | holdout | 11384 | 0 | 0.00% | 27.18 | 15.00 | 12.31 | 50.97 |
+| top30/ms0p2 | holdout | 6865 | 0 | 0.00% | 24.68 | 15.00 | 12.38 | 45.72 |
+| top50/ms0p2 | stress | 11384 | 0 | 0.00% | 25.02 | 15.00 | 11.73 | 45.47 |
+| top30/ms0p2 | stress | 6865 | 0 | 0.00% | 23.10 | 15.00 | 11.97 | 41.64 |
+
+#### Оценка gross exposure (max_notional=100)
+Оценка = `entry_notional_* * max_active_positions / initial_capital` (капитал=1000, max_active_positions=15).
+
+| config | split | gross_avg | gross_p50 | gross_max |
+|---|---|---|---|---|
+| top50/ms0p2 | holdout | 0.41 | 0.23 | 0.76 |
+| top30/ms0p2 | holdout | 0.37 | 0.23 | 0.69 |
+| top50/ms0p2 | stress | 0.38 | 0.23 | 0.68 |
+| top30/ms0p2 | stress | 0.35 | 0.23 | 0.62 |
+
+Выводы:
+- Cap=100 не активен (cap_hits=0); метрики совпадают с baseline max_notional=250.
+
+### Queue: budget1000_capsweep_maxnot25_risk0p75 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot25_risk0p75/run_queue.csv`.
+- Цель: проверить снижение `risk_per_position_pct` до 0.0075 при cap=25.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
