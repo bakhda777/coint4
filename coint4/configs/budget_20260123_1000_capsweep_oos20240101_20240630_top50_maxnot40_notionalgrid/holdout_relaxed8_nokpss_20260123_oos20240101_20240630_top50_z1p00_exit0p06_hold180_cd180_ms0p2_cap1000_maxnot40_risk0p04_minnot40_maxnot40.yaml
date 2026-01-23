@@ -17,7 +17,7 @@ portfolio:
   max_active_positions: 15
   max_margin_usage: 0.5
   min_notional_per_trade: 40.0
-  max_notional_per_trade: 40.0
+  max_notional_per_trade: 40.1
   volatility_based_sizing: true
   volatility_lookback_hours: 24
   min_position_size_pct: 0.005
