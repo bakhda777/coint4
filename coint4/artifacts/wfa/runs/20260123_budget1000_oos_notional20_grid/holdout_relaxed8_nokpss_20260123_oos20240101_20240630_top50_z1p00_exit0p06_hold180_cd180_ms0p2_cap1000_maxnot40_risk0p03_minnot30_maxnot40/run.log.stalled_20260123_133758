@@ -1,0 +1,31 @@
+[run_wfa_queue] 2026-01-23T13:35:58Z cmd: /opt/coint4/coint4/run_wfa_fullcpu.sh configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_notionalgrid/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40.yaml artifacts/wfa/runs/20260123_budget1000_oos_notional20_grid/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40
+[run_wfa_fullcpu] start: 2026-01-23T13:35:58Z
+[run_wfa_fullcpu] os.cpu_count: 8
+[run_wfa_fullcpu] worker_pid=1188
+2026-01-23 13:36:01,835 - coint2.core.memory_optimization - INFO - ✅ BLAS threading limits set to 1 via threadpoolctl
+2026-01-23 13:36:01,836 - coint2.core.memory_optimization - INFO - 🔧 Controlled libraries: openblas, openmp
+2026-01-23 13:36:01,836 - coint2.core.memory_optimization - INFO - 🧵 Process threads: 2 → 2
+2026-01-23 13:36:01,836 - coint2.core.memory_optimization - INFO - 📝 Set 11 environment variables
+2026-01-23 13:36:02,217 - ERROR - ❌ Ошибка валидации параметров: max_position_size_pct (0.02) должен быть >= risk_per_position_pct (0.03)
+2026-01-23 13:36:02,217 - ERROR - ⇠ run_walk_forward_analysis — failed after 0.40s: max_position_size_pct (0.02) должен быть >= risk_per_position_pct (0.03)
+Traceback (most recent call last):
+  File "/opt/coint4/coint4/./.venv/bin/coint2", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/opt/coint4/coint4/src/coint2/cli/__init__.py", line 196, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/src/coint2/cli/__init__.py", line 73, in _handle_walk_forward
+    run_walk_forward(cfg, use_memory_map=not args.no_memory_map)
+  File "/opt/coint4/coint4/src/coint2/utils/timing_utils.py", line 25, in wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/src/coint2/pipeline/walk_forward_orchestrator.py", line 1134, in run_walk_forward
+    validated_params = validate_params(params)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/src/optimiser/metric_utils.py", line 167, in validate_params
+    _validate_cross_parameter_constraints(validated, strict=False)
+  File "/opt/coint4/coint4/src/optimiser/metric_utils.py", line 268, in _validate_cross_parameter_constraints
+    raise ValueError(
+ValueError: max_position_size_pct (0.02) должен быть >= risk_per_position_pct (0.03)
+[run_wfa_fullcpu] end: 2026-01-23T13:36:03Z

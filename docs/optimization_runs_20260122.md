@@ -827,3 +827,60 @@ Top30:
 Выводы:
 - `max_pairs=30` улучшает PnL на 2024H1, но концентрация остаётся очень высокой.
 - `max_pairs=40` не улучшает PnL/Sharpe относительно базового `risk0p0125` и концентрацию не снижает.
+
+### Queue: budget1000_oos_notional20_grid (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos_notional20_grid/run_queue.csv`.
+- Цель: проверить "notional ~20 на сторону" (cap1000, max_notional=40) при `risk_per_position_pct=0.03/0.04` и `min_notional_per_trade=30/40` в OOS 2024H1 и 2025H1.
+- Конфиги (2024H1):
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_notionalgrid/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_notionalgrid/stress_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_notionalgrid/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p04_minnot40_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_notionalgrid/stress_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p04_minnot40_maxnot40.yaml`
+- Конфиги (2025H1):
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_notionalgrid/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_notionalgrid/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p03_minnot30_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_notionalgrid/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p04_minnot40_maxnot40.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_notionalgrid/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot40_risk0p04_minnot40_maxnot40.yaml`
+- Статус: `completed` (8 прогонов).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p03/minnot30 | 2.53 | -8.42 | -902.23 | 2056 | 53 | 115.22 | 2.48 | -74.99 | -907.93 | 2056 | 53 | 204.84 |
+| risk0p04/minnot40 | -1.90 | -11.22 | -1202.98 | 2056 | 53 | 153.63 | -1.17 | -99.98 | -1210.57 | 2056 | 53 | 273.12 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p03/minnot30 | holdout | 2056 | 0 | 2056 | 30.00 | 0.00 | 0.00 | 30.00 |
+| risk0p03/minnot30 | stress | 2056 | 0 | 2056 | 30.00 | 0.00 | 0.00 | 30.00 |
+| risk0p04/minnot40 | holdout | 2056 | 0 | 2056 | 40.00 | 0.00 | 0.00 | 40.00 |
+| risk0p04/minnot40 | stress | 2056 | 0 | 2056 | 40.00 | 0.00 | 0.00 | 40.00 |
+
+#### Результаты (holdout + stress, OOS 2025H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p03/minnot30 | 2.24 | 963.35 | -1381.59 | 6694 | 79 | 451.82 | 1.89 | 722.42 | -1477.87 | 6694 | 79 | 803.23 |
+| risk0p04/minnot40 | 2.65 | 1311.89 | -1385.04 | 6694 | 79 | 497.07 | 2.32 | 1047.62 | -1481.57 | 6694 | 79 | 883.69 |
+
+#### Entry notional (OOS 2025H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p03/minnot30 | holdout | 6694 | 4314 | 2380 | 36.44 | 40.00 | 30.00 | 40.00 |
+| risk0p03/minnot30 | stress | 6694 | 4314 | 2380 | 36.44 | 40.00 | 30.00 | 40.00 |
+| risk0p04/minnot40 | holdout | 6694 | 4314 | 2380 | 40.06 | 40.10 | 40.00 | 40.10 |
+| risk0p04/minnot40 | stress | 6694 | 4314 | 2380 | 40.06 | 40.10 | 40.00 | 40.10 |
+
+#### Концентрация (gross PnL, holdout)
+| period | config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|---|
+| 2024H1 | risk0p03/minnot30 | 83% | 98% | 16 | 53 |
+| 2024H1 | risk0p04/minnot40 | 83% | 98% | 16 | 53 |
+| 2025H1 | risk0p03/minnot30 | 65% | 88% | 30 | 79 |
+| 2025H1 | risk0p04/minnot40 | 62% | 85% | 30 | 79 |
+
+Выводы:
+- OOS 2024H1 остаётся слабым: PnL около нуля/минус при высокой концентрации (83%/98%).
+- OOS 2025H1 даёт высокий PnL, но просадка ~-1380 превышает капитал 1000 (рисковый профиль слишком агрессивный).
+- `risk0p04/minnot40` в 2025H1 повышает PnL, но увеличивает издержки и не снижает DD.
+- В 2024H1 `entry_notional_p50/min=0` и `below_min=entry_count` при avg=30/40 — похоже, агрегат entry_notional в `strategy_metrics.csv` сбоит; по `trade_statistics.csv` фактические notional ~30/40 (нужно проверить диагностику).
