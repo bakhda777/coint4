@@ -550,7 +550,7 @@ Top30:
 Выводы:
 - Cap=100 не активен (cap_hits=0); метрики совпадают с baseline max_notional=250.
 
-### Queue: budget1000_capsweep_maxnot25_risk0p75 (planned)
+### Queue: budget1000_capsweep_maxnot25_risk0p75 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot25_risk0p75/run_queue.csv`.
 - Цель: проверить снижение `risk_per_position_pct` до 0.0075 при cap=25.
 - Конфиги:
@@ -558,3 +558,23 @@ Top30:
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_risk0p75/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75.yaml`
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, cap1000, risk=0.0075)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 0.00 | 0.00 | 0.00 | 0 | 120 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 120 | 0.00 |
+| top30/ms0p2 | 0.00 | 0.00 | 0.00 | 0 | 75 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 75 | 0.00 |
+
+Выводы:
+- При `risk_per_position_pct=0.0075` trade_notional=7.5 < min_notional=10, поэтому входы блокируются (0 сделок).
+- Для проверки этой ветки нужно либо снизить `min_notional_per_trade`, либо поднять риск (например, 0.01).
+
+### Queue: budget1000_capsweep_maxnot50_posgrid (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot50_posgrid/run_queue.csv`.
+- Цель: проверить влияние `max_active_positions` (10/12 vs базовые 15) при cap=50 и top50.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos10.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos10.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos12.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos12.yaml`
