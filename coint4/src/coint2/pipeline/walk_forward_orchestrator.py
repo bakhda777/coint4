@@ -1992,14 +1992,23 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             if 'entry_notional_count' in trades_df.columns:
                 total_entry_count = trades_df['entry_notional_count'].sum()
                 total_entry_notional = (trades_df['entry_notional_avg'] * trades_df['entry_notional_count']).sum()
+                nonzero_entry = trades_df['entry_notional_count'] > 0
+                if nonzero_entry.any():
+                    entry_notional_p50 = float(trades_df.loc[nonzero_entry, 'entry_notional_p50'].median())
+                    entry_notional_min = float(trades_df.loc[nonzero_entry, 'entry_notional_min'].min())
+                    entry_notional_max = float(trades_df.loc[nonzero_entry, 'entry_notional_max'].max())
+                else:
+                    entry_notional_p50 = 0.0
+                    entry_notional_min = 0.0
+                    entry_notional_max = 0.0
                 trade_metrics.update({
                     'entry_notional_count': float(total_entry_count),
                     'entry_notional_cap_hits': float(trades_df['entry_notional_cap_hits'].sum()),
                     'entry_notional_below_min': float(trades_df['entry_notional_below_min'].sum()),
                     'entry_notional_avg': float(total_entry_notional / max(total_entry_count, 1)),
-                    'entry_notional_p50': float(trades_df['entry_notional_p50'].median()),
-                    'entry_notional_min': float(trades_df['entry_notional_min'].min()),
-                    'entry_notional_max': float(trades_df['entry_notional_max'].max()),
+                    'entry_notional_p50': entry_notional_p50,
+                    'entry_notional_min': entry_notional_min,
+                    'entry_notional_max': entry_notional_max,
                 })
         
         all_metrics = {**base_metrics, **extended_metrics, **trade_metrics}

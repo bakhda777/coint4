@@ -2,6 +2,9 @@
 
 Назначение: churn-control micro-grid после включения cooldown/min_hold/min_spread_move, проверка компромисса Sharpe/PnL/turnover.
 
+Примечание по метрикам:
+- `sharpe_ratio_abs` считается по `equity_curve` (pct_change), `sharpe_ratio_on_returns` — по `PnL / capital_per_pair` (см. `coint4/src/coint2/core/performance.py`, `coint4/src/coint2/pipeline/walk_forward_orchestrator.py`).
+
 ## Обновления (2026-01-22)
 
 ### Queue: relaxed8_nokpss_u250_churnfix (holdout + stress)
@@ -852,10 +855,10 @@ Top30:
 #### Entry notional (OOS 2024H1)
 | config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
 |---|---|---|---|---|---|---|---|---|
-| risk0p03/minnot30 | holdout | 2056 | 0 | 2056 | 30.00 | 0.00 | 0.00 | 30.00 |
-| risk0p03/minnot30 | stress | 2056 | 0 | 2056 | 30.00 | 0.00 | 0.00 | 30.00 |
-| risk0p04/minnot40 | holdout | 2056 | 0 | 2056 | 40.00 | 0.00 | 0.00 | 40.00 |
-| risk0p04/minnot40 | stress | 2056 | 0 | 2056 | 40.00 | 0.00 | 0.00 | 40.00 |
+| risk0p03/minnot30 | holdout | 2056 | 0 | 2056 | 30.00 | 30.00 | 30.00 | 30.00 |
+| risk0p03/minnot30 | stress | 2056 | 0 | 2056 | 30.00 | 30.00 | 30.00 | 30.00 |
+| risk0p04/minnot40 | holdout | 2056 | 0 | 2056 | 40.00 | 40.00 | 40.00 | 40.00 |
+| risk0p04/minnot40 | stress | 2056 | 0 | 2056 | 40.00 | 40.00 | 40.00 | 40.00 |
 
 #### Результаты (holdout + stress, OOS 2025H1)
 | config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
@@ -883,4 +886,4 @@ Top30:
 - OOS 2024H1 остаётся слабым: PnL около нуля/минус при высокой концентрации (83%/98%).
 - OOS 2025H1 даёт высокий PnL, но просадка ~-1380 превышает капитал 1000 (рисковый профиль слишком агрессивный).
 - `risk0p04/minnot40` в 2025H1 повышает PnL, но увеличивает издержки и не снижает DD.
-- В 2024H1 `entry_notional_p50/min=0` и `below_min=entry_count` при avg=30/40 — похоже, агрегат entry_notional в `strategy_metrics.csv` сбоит; по `trade_statistics.csv` фактические notional ~30/40 (нужно проверить диагностику).
+- Исправлена агрегация entry_notional (исключаем строки с `entry_notional_count=0`), значения для 2024H1 пересчитаны по `trade_statistics.csv`.
