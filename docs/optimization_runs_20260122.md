@@ -598,16 +598,48 @@ Top30:
 - Снижение max_active_positions до 10/12 приводит к отрицательному PnL и Sharpe.
 - В maxpos10 holdout большое число `entry_notional_below_min`; p50=0 указывает на нулевые значения в диагностике (нужно проверить корректность entry_notional при низкой активности).
 
-### Queue: budget1000_oos20230501_20231231_top50_maxnot25 (planned)
+### Queue: budget1000_oos20230501_20231231_top50_maxnot25 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20230501_20231231_top50_maxnot25/run_queue.csv`.
 - Цель: OOS 2023H2 для top50 cap25.
 - Конфиги:
   - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25/holdout_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25/stress_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+- Статус: `completed` (2 прогона).
 
-### Queue: budget1000_oos20250101_20250630_top50_maxnot25 (planned)
+#### Результаты (holdout + stress, OOS 2023H2, cap1000, max_notional=25)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 1.55 | 471.06 | -646.70 | 6871 | 69 | 233.44 | 1.17 | 291.74 | -643.45 | 6871 | 69 | 395.18 |
+
+#### Entry notional (OOS 2023H2)
+| split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|
+| holdout | 6871 | 0 | 0 | 18.38 | 17.86 | 15.00 | 24.73 |
+| stress | 6871 | 0 | 0 | 17.51 | 16.00 | 15.00 | 22.92 |
+
+Выводы:
+- OOS 2023H2 остаётся прибыльным; Sharpe 1.17–1.55 при умеренном DD.
+- Cap=25 не ограничивает (max_notional < 25).
+
+### Queue: budget1000_oos20250101_20250630_top50_maxnot25 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot25/run_queue.csv`.
 - Цель: OOS 2025H1 (3 шага) для top50 cap25.
 - Конфиги:
   - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress, OOS 2025H1, cap1000, max_notional=25)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 1.96 | 443.56 | -716.08 | 6694 | 79 | 232.29 | 1.59 | 318.28 | -738.34 | 6694 | 79 | 400.82 |
+
+#### Entry notional (OOS 2025H1)
+| split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|
+| holdout | 6694 | 0 | 0 | 18.74 | 19.15 | 15.00 | 22.85 |
+| stress | 6694 | 0 | 0 | 18.19 | 18.02 | 15.00 | 22.33 |
+
+Выводы:
+- OOS 2025H1 показывает Sharpe 1.59–1.96 и положительный PnL.
+- Cap=25 не ограничивает (max_notional < 25); экспозиция определяется risk_per_position.
