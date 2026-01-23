@@ -737,3 +737,35 @@ Top30:
 - OOS 2023H2/2025H1: `risk0p0125` даёт выше PnL, но глубже DD.
 - `risk0p75/minnot5` даёт меньший PnL, зато более высокий Sharpe и заметно меньшую просадку.
 - В обоих периодах cap=25 не активен (cap_hits=0), разница определяется риск‑параметрами и min_notional.
+
+#### Концентрация (gross PnL, holdout)
+| period | config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|---|
+| 2023H2 | risk0p0125 | 64% | 87% | 28 | 69 |
+| 2023H2 | risk0p75/minnot5 | 64% | 86% | 28 | 69 |
+| 2025H1 | risk0p0125 | 66% | 88% | 31 | 79 |
+| 2025H1 | risk0p75/minnot5 | 65% | 87% | 30 | 79 |
+| 2024H1 | risk0p75/minnot5 | 85% | 98% | 24 | 53 |
+
+### Queue: budget1000_oos20240101_20240630_top50_maxnot25_risk0p75_minnot5 (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot25_risk0p75_minnot5/run_queue.csv`.
+- Цель: дополнительный OOS 2024H1 (2024-01-01 → 2024-06-30, max_steps=3) для `risk0p75/minnot5`.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot25_risk0p75_minnot5/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot25_risk0p75_minnot5/stress_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p75/minnot5 | 0.09 | -35.02 | -225.56 | 5009 | 53 | 71.54 | -0.22 | -78.66 | -226.98 | 5009 | 53 | 125.41 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p75/minnot5 | holdout | 5009 | 0 | 0 | 7.61 | 7.50 | 7.48 | 7.91 |
+| risk0p75/minnot5 | stress | 5009 | 0 | 0 | 7.51 | 7.50 | 7.36 | 7.67 |
+
+Выводы:
+- OOS 2024H1 для `risk0p75/minnot5` около нуля/негативный по Sharpe и PnL.
+- Концентрация очень высокая (top10/top20 = 85%/98%), период выглядит нестабильным.
