@@ -570,7 +570,7 @@ Top30:
 - При `risk_per_position_pct=0.0075` trade_notional=7.5 < min_notional=10, поэтому входы блокируются (0 сделок).
 - Для проверки этой ветки нужно либо снизить `min_notional_per_trade`, либо поднять риск (например, 0.01).
 
-### Queue: budget1000_capsweep_maxnot50_posgrid (planned)
+### Queue: budget1000_capsweep_maxnot50_posgrid (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot50_posgrid/run_queue.csv`.
 - Цель: проверить влияние `max_active_positions` (10/12 vs базовые 15) при cap=50 и top50.
 - Конфиги:
@@ -578,3 +578,36 @@ Top30:
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos10.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos12.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep_maxnot50_posgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50_maxpos12.yaml`
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, cap1000, max_notional=50)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/maxpos10 | -1.23 | -395.22 | -689.44 | 4326 | 120 | 101.36 | -1.49 | -357.78 | -618.61 | 2139 | 120 | 107.53 |
+| top50/maxpos12 | -1.74 | -414.28 | -679.73 | 2139 | 120 | 60.49 | -1.88 | -443.54 | -696.24 | 2139 | 120 | 107.53 |
+
+#### Entry notional (holdout + stress)
+| config | split | entry_count | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|
+| top50/maxpos10 | holdout | 4326 | 2187 | 12.48 | 0.00 | 0.00 | 15.00 |
+| top50/maxpos12 | holdout | 2139 | 0 | 15.00 | 0.00 | 0.00 | 15.00 |
+| top50/maxpos10 | stress | 2139 | 0 | 15.00 | 0.00 | 0.00 | 15.00 |
+| top50/maxpos12 | stress | 2139 | 0 | 15.00 | 0.00 | 0.00 | 15.00 |
+
+Выводы:
+- Снижение max_active_positions до 10/12 приводит к отрицательному PnL и Sharpe.
+- В maxpos10 holdout большое число `entry_notional_below_min`; p50=0 указывает на нулевые значения в диагностике (нужно проверить корректность entry_notional при низкой активности).
+
+### Queue: budget1000_oos20230501_20231231_top50_maxnot25 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20230501_20231231_top50_maxnot25/run_queue.csv`.
+- Цель: OOS 2023H2 для top50 cap25.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25/holdout_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20230501_20231231_top50_maxnot25/stress_relaxed8_nokpss_20260123_oos20230501_20231231_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+
+### Queue: budget1000_oos20250101_20250630_top50_maxnot25 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot25/run_queue.csv`.
+- Цель: OOS 2025H1 (3 шага) для top50 cap25.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25/holdout_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot25/stress_relaxed8_nokpss_20260123_oos20250101_20250630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
