@@ -474,3 +474,21 @@ Top30:
 - Cap=25 стал активным (cap_hit_pct ~41%); notional_avg снизился до ~18 (vs ~23–27 на max_notional=250).
 - PnL и Sharpe снизились: top50 holdout 3316 vs 4724 (baseline), Sharpe 3.70 vs 4.11.
 - По gross exposure средний уровень опустился к ~27% (max ~38%), что делает экспозицию более реалистичной, но ухудшает доходность.
+
+### Queue: budget1000_capsweep_maxnot50 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot50/run_queue.csv`.
+- Цель: промежуточный cap (max_notional=50) для компромисса между доходностью и экспозицией.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot50/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot50.yaml`
+
+### Queue: budget1000_capsweep_maxnot100 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot100/run_queue.csv`.
+- Цель: более мягкий cap (max_notional=100) для сравнения с baseline 250 и cap25.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot100/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot100.yaml`
