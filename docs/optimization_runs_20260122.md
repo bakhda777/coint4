@@ -1357,3 +1357,47 @@ Top30:
 Выводы:
 - `portfolio_daily_stop_pct` в диапазоне 1–3% не срабатывает в OOS 2024H1 (метрики идентичны).
 - Оставляем 2% как защитный лимит для live.
+
+### Queue: budget1000_oos20250101_20250630_top50_tlow_candidates (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260124_budget1000_oos20250101_20250630_top50_tlow_candidates/run_queue.csv`.
+- Цель: проверить `tlow` на новом OOS 2025H1 и выбрать более сбалансированный вариант по `risk_per_position_pct` и `max_pairs`.
+- Конфиги: `coint4/configs/budget_20260124_1000_capsweep_oos20250101_20250630_top50_tlow_candidates/*.yaml`.
+- Статус: `completed` (8 прогонов).
+
+#### Результаты (holdout + stress, OOS 2025H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | 2.75 | 265.01 | -171.24 | 1265 | 19 | 43.97 | 2.44 | 230.76 | -181.78 | 1265 | 19 | 77.47 |
+| tlow/maxnot30/risk0p015/maxpairs12 | 3.16 | 345.68 | -263.76 | 1517 | 22 | 54.47 | 2.83 | 302.95 | -276.54 | 1517 | 22 | 95.82 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | 2.75 | 306.39 | -206.46 | 1265 | 19 | 52.47 | 2.44 | 265.50 | -218.91 | 1265 | 19 | 92.32 |
+| tlow/maxnot30/risk0p0175/maxpairs12 | 3.13 | 396.32 | -320.41 | 1517 | 22 | 65.24 | 2.80 | 345.02 | -335.54 | 1517 | 22 | 114.59 |
+
+#### Entry notional (OOS 2025H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | holdout | 1265 | 0 | 415 | 17.57 | 18.04 | 15.00 | 19.55 |
+| tlow/maxnot30/risk0p015/maxpairs10 | stress | 1265 | 0 | 415 | 17.42 | 17.73 | 15.00 | 19.41 |
+| tlow/maxnot30/risk0p015/maxpairs12 | holdout | 1517 | 0 | 504 | 18.28 | 18.57 | 15.00 | 21.20 |
+| tlow/maxnot30/risk0p015/maxpairs12 | stress | 1517 | 0 | 504 | 18.10 | 18.18 | 15.00 | 21.03 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | holdout | 1265 | 0 | 0 | 20.97 | 21.56 | 17.50 | 23.69 |
+| tlow/maxnot30/risk0p0175/maxpairs10 | stress | 1265 | 0 | 0 | 20.76 | 21.13 | 17.50 | 23.50 |
+| tlow/maxnot30/risk0p0175/maxpairs12 | holdout | 1517 | 0 | 0 | 21.91 | 22.18 | 17.50 | 25.94 |
+| tlow/maxnot30/risk0p0175/maxpairs12 | stress | 1517 | 0 | 0 | 21.66 | 21.65 | 17.50 | 25.71 |
+
+#### Концентрация (gross PnL, агрегировано по парам)
+| config | split | pos_pairs | neg_pairs | total_pairs | top1_share | top3_share | top5_share |
+|---|---|---|---|---|---|---|---|
+| tlow/maxnot30/risk0p015/maxpairs10 | holdout | 10 | 9 | 19 | 56% | 77% | 91% |
+| tlow/maxnot30/risk0p015/maxpairs10 | stress | 10 | 9 | 19 | 58% | 79% | 93% |
+| tlow/maxnot30/risk0p015/maxpairs12 | holdout | 11 | 11 | 22 | 44% | 62% | 78% |
+| tlow/maxnot30/risk0p015/maxpairs12 | stress | 11 | 11 | 22 | 45% | 63% | 79% |
+| tlow/maxnot30/risk0p0175/maxpairs10 | holdout | 10 | 9 | 19 | 56% | 77% | 92% |
+| tlow/maxnot30/risk0p0175/maxpairs10 | stress | 10 | 9 | 19 | 58% | 79% | 93% |
+| tlow/maxnot30/risk0p0175/maxpairs12 | holdout | 11 | 11 | 22 | 44% | 62% | 78% |
+| tlow/maxnot30/risk0p0175/maxpairs12 | stress | 11 | 11 | 22 | 45% | 63% | 79% |
+
+Выводы:
+- По сравнению с OOS 2024H1 Sharpe заметно ниже (примерно 5.6 → 3.1 holdout, 5.4 → 2.8 stress), но edge остаётся положительным.
+- `maxpairs12` повышает Sharpe и снижает концентрацию (top1 ~44–45% vs ~56–58%), но увеличивает DD (до ~26–34%).
+- `risk0p015` чаще упирается в `min_notional` (`below_min` 415–504), `risk0p0175` устраняет этот эффект, но добавляет DD.
+- Для баланса под $1000 предварительно лучше выглядит `risk0p015/maxpairs12`; более консервативная альтернатива — `risk0p015/maxpairs10` (DD заметно ниже, но Sharpe тоже ниже).
