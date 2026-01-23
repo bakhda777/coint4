@@ -21,7 +21,7 @@ portfolio:
   volatility_based_sizing: true
   volatility_lookback_hours: 24
   min_position_size_pct: 0.005
-  max_position_size_pct: 0.02
+  max_position_size_pct: 0.05
   volatility_adjustment_factor: 2.0
 pair_selection:
   lookback_days: 90
