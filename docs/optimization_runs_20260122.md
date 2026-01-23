@@ -745,6 +745,7 @@ Top30:
 | 2023H2 | risk0p75/minnot5 | 64% | 86% | 28 | 69 |
 | 2025H1 | risk0p0125 | 66% | 88% | 31 | 79 |
 | 2025H1 | risk0p75/minnot5 | 65% | 87% | 30 | 79 |
+| 2024H1 | risk0p0125 | 85% | 98% | 24 | 53 |
 | 2024H1 | risk0p75/minnot5 | 85% | 98% | 24 | 53 |
 
 ### Queue: budget1000_oos20240101_20240630_top50_maxnot25_risk0p75_minnot5 (completed)
@@ -769,3 +770,26 @@ Top30:
 Выводы:
 - OOS 2024H1 для `risk0p75/minnot5` около нуля/негативный по Sharpe и PnL.
 - Концентрация очень высокая (top10/top20 = 85%/98%), период выглядит нестабильным.
+
+### Queue: budget1000_oos20240101_20240630_top50_maxnot25_risk0p0125 (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot25_risk0p0125/run_queue.csv`.
+- Цель: дополнительный OOS 2024H1 (2024-01-01 → 2024-06-30, max_steps=3) для `risk0p0125`.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot25_risk0p0125/holdout_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot25_risk0p0125/stress_relaxed8_nokpss_20260123_oos20240101_20240630_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+- Статус: `completed` (2 прогона).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | 0.33 | -63.57 | -375.93 | 5009 | 53 | 120.41 | 0.03 | -134.30 | -378.30 | 5009 | 53 | 209.09 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0125 | holdout | 5009 | 0 | 0 | 12.81 | 12.50 | 12.46 | 13.63 |
+| risk0p0125 | stress | 5009 | 0 | 0 | 12.51 | 12.50 | 12.11 | 12.96 |
+
+Выводы:
+- OOS 2024H1 для `risk0p0125` негативный по PnL и почти нулевой по Sharpe; профиль нестабилен.
+- Концентрация в 2024H1 такая же высокая (top10/top20 = 85%/98%).
