@@ -887,3 +887,88 @@ Top30:
 - OOS 2025H1 даёт высокий PnL, но просадка ~-1380 превышает капитал 1000 (рисковый профиль слишком агрессивный).
 - `risk0p04/minnot40` в 2025H1 повышает PnL, но увеличивает издержки и не снижает DD.
 - Исправлена агрегация entry_notional (исключаем строки с `entry_notional_count=0`), значения для 2024H1 пересчитаны по `trade_statistics.csv`.
+
+### Queue: budget1000_oos20240101_20240630_top50_maxnot40_lowrisk_maxpairsgrid (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot40_lowrisk_maxpairsgrid/run_queue.csv`.
+- Цель: lower‑risk grid под капитал 1000 (risk 0.015/0.02, min_notional 20/30, max_pairs 20/30) в OOS 2024H1.
+- Конфиги: `coint4/configs/budget_20260123_1000_capsweep_oos20240101_20240630_top50_maxnot40_lowrisk_maxpairsgrid/*.yaml`.
+- Статус: `completed` (16 прогонов).
+
+#### Результаты (holdout + stress, OOS 2024H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p015/minnot20/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+| risk0p015/minnot20/maxpairs30 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 |
+| risk0p015/minnot30/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+| risk0p015/minnot30/maxpairs30 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 |
+| risk0p02/minnot20/maxpairs20 | 1.55 | 299.61 | -512.24 | 3050 | 31 | 155.77 | 1.22 | 194.43 | -498.63 | 3050 | 31 | 269.95 |
+| risk0p02/minnot20/maxpairs30 | 0.96 | 107.27 | -619.25 | 4354 | 49 | 206.04 | 0.58 | -12.61 | -621.54 | 4354 | 49 | 354.12 |
+| risk0p02/minnot30/maxpairs20 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 31 | 0.00 |
+| risk0p02/minnot30/maxpairs30 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 | 0.00 | 0.00 | 0.00 | 0 | 49 | 0.00 |
+
+#### Entry notional (OOS 2024H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p015/minnot20/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot20/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot20/maxpairs30 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot20/maxpairs30 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot30/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot30/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot30/maxpairs30 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p015/minnot30/maxpairs30 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p02/minnot20/maxpairs20 | holdout | 3050 | 0 | 1018 | 27.15 | 30.20 | 20.00 | 31.26 |
+| risk0p02/minnot20/maxpairs20 | stress | 3050 | 0 | 1018 | 26.47 | 29.62 | 20.00 | 29.81 |
+| risk0p02/minnot20/maxpairs30 | holdout | 4354 | 0 | 1439 | 25.20 | 26.95 | 20.00 | 28.59 |
+| risk0p02/minnot20/maxpairs30 | stress | 4354 | 0 | 1439 | 24.36 | 26.21 | 20.00 | 26.83 |
+| risk0p02/minnot30/maxpairs20 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p02/minnot30/maxpairs20 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p02/minnot30/maxpairs30 | holdout | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+| risk0p02/minnot30/maxpairs30 | stress | 0 | 0 | 0 | 0.00 | 0.00 | 0.00 | 0.00 |
+
+#### Концентрация (gross PnL, holdout)
+| config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|
+| risk0p015/minnot20/maxpairs20 | 0% | 0% | 0 | 31 |
+| risk0p015/minnot20/maxpairs30 | 0% | 0% | 0 | 49 |
+| risk0p015/minnot30/maxpairs20 | 0% | 0% | 0 | 31 |
+| risk0p015/minnot30/maxpairs30 | 0% | 0% | 0 | 49 |
+| risk0p02/minnot20/maxpairs20 | 98% | 100% | 17 | 31 |
+| risk0p02/minnot20/maxpairs30 | 88% | 99% | 25 | 49 |
+| risk0p02/minnot30/maxpairs20 | 0% | 0% | 0 | 31 |
+| risk0p02/minnot30/maxpairs30 | 0% | 0% | 0 | 49 |
+
+Выводы:
+- `risk0p015` и `minnot30` дали 0 сделок — слишком консервативно при капитале 1000.
+- Жизнеспособные варианты только `risk0p02/minnot20`, при этом `maxpairs20` заметно лучше по PnL/Sharpe и издержкам.
+- Концентрация остаётся высокой (top10/top20 до 98%/100%).
+
+### Queue: budget1000_oos20250101_20250630_top50_maxnot40_lowrisk_maxpairsgrid (completed, shortlist)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot40_lowrisk_maxpairsgrid/run_queue.csv`.
+- Цель: проверить shortlisted конфиги `risk0p02/minnot20` в OOS 2025H1.
+- Конфиги: `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_lowrisk_maxpairsgrid/*.yaml` (12 skipped, 4 completed).
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, OOS 2025H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p02/minnot20/maxpairs20 | 1.95 | 400.64 | -960.70 | 2960 | 37 | 163.04 | 1.57 | 287.67 | -992.42 | 2960 | 37 | 282.96 |
+| risk0p02/minnot20/maxpairs30 | 0.92 | 108.87 | -1254.38 | 4403 | 55 | 228.73 | 0.43 | -21.46 | -1282.02 | 4403 | 55 | 393.52 |
+
+#### Entry notional (OOS 2025H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p02/minnot20/maxpairs20 | holdout | 2960 | 0 | 981 | 29.55 | 29.27 | 20.00 | 39.12 |
+| risk0p02/minnot20/maxpairs20 | stress | 2960 | 0 | 981 | 28.85 | 27.73 | 20.00 | 38.54 |
+| risk0p02/minnot20/maxpairs30 | holdout | 4403 | 0 | 1450 | 27.99 | 24.53 | 20.00 | 38.96 |
+| risk0p02/minnot20/maxpairs30 | stress | 4403 | 0 | 1450 | 27.08 | 22.59 | 20.00 | 38.19 |
+
+#### Концентрация (gross PnL, holdout)
+| config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|
+| risk0p02/minnot20/maxpairs20 | 95% | 100% | 21 | 37 |
+| risk0p02/minnot20/maxpairs30 | 84% | 96% | 27 | 55 |
+
+Выводы:
+- `maxpairs20` стабильно лучше по Sharpe/PnL и контролю издержек; DD около -960 (на грани капитала 1000).
+- `maxpairs30` ухудшает Sharpe и даёт отрицательный stress PnL.

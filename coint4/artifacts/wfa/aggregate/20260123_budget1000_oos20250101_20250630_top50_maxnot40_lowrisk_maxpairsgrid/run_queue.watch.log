@@ -1,0 +1,5 @@
+2026-01-23T14:10:27Z START queue=/opt/coint4/coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot40_lowrisk_maxpairsgrid/run_queue.csv parallel=8 heartbeat=30s idle_minutes=5 cpu_threshold=50
+2026-01-23T14:10:27Z HEARTBEAT run_pid=1135 run_cpu=0% watcher_cpu=0.2% worker_pid=none worker_cpu=0% coint2_procs=0 cpu_total=0.0% idle_seconds=30
+2026-01-23T14:10:57Z HEARTBEAT run_pid=1135 run_cpu=108% watcher_cpu=0% worker_pid=1221 worker_cpu=108% coint2_procs=4 cpu_total=432.0% idle_seconds=0
+2026-01-23T14:11:28Z HEARTBEAT run_pid=1135 run_cpu=110% watcher_cpu=0% worker_pid=1221 worker_cpu=110% coint2_procs=4 cpu_total=438.0% idle_seconds=0
+2026-01-23T14:11:58Z DONE rc=0
