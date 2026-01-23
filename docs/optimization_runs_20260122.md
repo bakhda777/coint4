@@ -570,6 +570,52 @@ Top30:
 - При `risk_per_position_pct=0.0075` trade_notional=7.5 < min_notional=10, поэтому входы блокируются (0 сделок).
 - Для проверки этой ветки нужно либо снизить `min_notional_per_trade`, либо поднять риск (например, 0.01).
 
+### Queue: budget1000_capsweep_maxnot25_risk_minnot_grid (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot25_risk_minnot_grid/run_queue.csv`.
+- Цель: micro-grid для `risk_per_position_pct` (0.01/0.0125/0.02) при cap=25 + проверка `min_notional_per_trade` (7.5/5) при `risk_per_position_pct=0.0075`.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p01.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p01.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p0125.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p02.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_riskgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p02.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_minnotgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot7p5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_minnotgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot7p5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_minnotgrid/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep_maxnot25_minnotgrid/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25_risk0p75_minnot5.yaml`
+- Статус: `completed` (10 прогонов).
+
+#### Результаты (holdout + stress, cap1000, max_notional=25)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p01 | -0.55 | -119.63 | -459.13 | 2139 | 120 | 40.33 | -0.69 | -142.93 | -463.47 | 2139 | 120 | 71.69 |
+| risk0p0125 | 3.93 | 3059.40 | -573.91 | 11384 | 120 | 368.16 | 3.70 | 2767.31 | -579.33 | 11384 | 120 | 646.47 |
+| risk0p02 | 3.36 | 3763.63 | -918.25 | 11384 | 120 | 439.74 | 3.15 | 3283.57 | -926.93 | 11384 | 120 | 761.84 |
+| risk0p75/minnot7p5 | -0.59 | -89.72 | -344.35 | 2139 | 120 | 30.24 | -0.73 | -107.20 | -347.60 | 2139 | 120 | 53.77 |
+| risk0p75/minnot5 | 4.28 | 1976.41 | -344.35 | 11384 | 120 | 232.98 | 4.01 | 1771.05 | -353.57 | 11384 | 120 | 398.42 |
+
+#### Entry notional (holdout + stress)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p01 | holdout | 2139 | 0 | 2139 | 10.00 | 0.00 | 0.00 | 10.00 |
+| risk0p01 | stress | 2139 | 0 | 2139 | 10.00 | 0.00 | 0.00 | 10.00 |
+| risk0p0125 | holdout | 11384 | 4705 | 0 | 16.97 | 12.50 | 10.63 | 25.00 |
+| risk0p0125 | stress | 11384 | 4705 | 0 | 16.77 | 12.50 | 10.23 | 25.00 |
+| risk0p02 | holdout | 11384 | 4705 | 0 | 20.28 | 20.00 | 15.21 | 25.00 |
+| risk0p02 | stress | 11384 | 4705 | 0 | 19.77 | 20.00 | 14.20 | 25.00 |
+| risk0p75/minnot7p5 | holdout | 2139 | 0 | 2139 | 7.50 | 0.00 | 0.00 | 7.50 |
+| risk0p75/minnot7p5 | stress | 2139 | 0 | 2139 | 7.50 | 0.00 | 0.00 | 7.50 |
+| risk0p75/minnot5 | holdout | 11384 | 0 | 0 | 10.73 | 7.50 | 6.83 | 16.63 |
+| risk0p75/minnot5 | stress | 11384 | 0 | 0 | 10.32 | 7.50 | 6.68 | 15.68 |
+
+Выводы:
+- `risk0p01`: много `entry_notional_below_min` и резкое падение Sharpe/PnL; текущий min_notional блокирует значимую часть входов.
+- `risk0p0125`: лучший компромисс по Sharpe и DD при умеренном снижении PnL относительно базового risk0p015 (cap25).
+- `risk0p02`: выше PnL, но глубже просадка и ниже Sharpe — более агрессивный профиль.
+- `risk0p75/minnot7p5`: даже при min_notional=7.5 входы остаются заблокированными.
+- `risk0p75/minnot5`: сделки восстановились, Sharpe самый высокий, но PnL заметно ниже — вариант для более консервативной цели.
+
 ### Queue: budget1000_capsweep_maxnot50_posgrid (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot50_posgrid/run_queue.csv`.
 - Цель: проверить влияние `max_active_positions` (10/12 vs базовые 15) при cap=50 и top50.
