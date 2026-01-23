@@ -1089,3 +1089,42 @@ Top30:
 - Для `risk<0p02` сделки появляются только при `min_notional=15` (entry_min 17.5–19); `min_notional=20` режет сетапы до нуля.
 - `maxpairs15` даёт более высокий PnL/Sharpe, но DD всё ещё высокий: ~-450…-570 (45–57% от капитала 1000).
 - Концентрация экстремальная: top10/top20 фактически 98–100% по всем конфигам.
+
+### Queue: budget1000_oos20250101_20250630_top50_maxnot40_riskfine2_shortlist (completed)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20250101_20250630_top50_maxnot40_riskfine2_shortlist/run_queue.csv`.
+- Цель: проверить shortlist (risk 0.0175/0.018, min_notional=15, max_pairs=15/20) на OOS 2025H1.
+- Конфиги: `coint4/configs/budget_20260123_1000_capsweep_oos20250101_20250630_top50_maxnot40_riskfine2_shortlist/*.yaml`.
+- Статус: `completed` (8 прогонов).
+
+#### Результаты (holdout + stress, OOS 2025H1)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | 2.19 | 268.50 | -475.88 | 2259 | 29 | 91.11 | 1.73 | 200.57 | -496.21 | 2259 | 29 | 159.23 |
+| risk0p0175/minnot15/maxpairs20 | 2.04 | 377.05 | -807.93 | 2960 | 37 | 137.86 | 1.66 | 280.16 | -836.48 | 2960 | 37 | 239.93 |
+| risk0p018/minnot15/maxpairs15 | 2.17 | 273.73 | -493.01 | 2259 | 29 | 94.16 | 1.71 | 203.60 | -513.87 | 2259 | 29 | 164.49 |
+| risk0p018/minnot15/maxpairs20 | 2.02 | 382.07 | -838.96 | 2960 | 37 | 142.83 | 1.64 | 281.94 | -868.19 | 2960 | 37 | 248.43 |
+
+#### Entry notional (OOS 2025H1)
+| config | split | entry_count | cap_hits | below_min | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | holdout | 2259 | 0 | 0 | 21.64 | 21.33 | 17.50 | 26.03 |
+| risk0p0175/minnot15/maxpairs15 | stress | 2259 | 0 | 0 | 21.27 | 20.55 | 17.50 | 25.69 |
+| risk0p0175/minnot15/maxpairs20 | holdout | 2960 | 0 | 0 | 24.99 | 25.04 | 17.50 | 32.21 |
+| risk0p0175/minnot15/maxpairs20 | stress | 2960 | 0 | 0 | 24.46 | 23.89 | 17.50 | 31.77 |
+| risk0p018/minnot15/maxpairs15 | holdout | 2259 | 0 | 0 | 22.36 | 22.00 | 18.00 | 27.03 |
+| risk0p018/minnot15/maxpairs15 | stress | 2259 | 0 | 0 | 21.98 | 21.18 | 18.00 | 26.66 |
+| risk0p018/minnot15/maxpairs20 | holdout | 2960 | 0 | 0 | 25.89 | 25.88 | 18.00 | 33.56 |
+| risk0p018/minnot15/maxpairs20 | stress | 2960 | 0 | 0 | 25.33 | 24.66 | 18.00 | 33.09 |
+
+#### Концентрация (gross PnL, holdout)
+| config | top10_share | top20_share | neg_pairs | total_pairs |
+|---|---|---|---|---|
+| risk0p0175/minnot15/maxpairs15 | 98% | 100% | 15 | 29 |
+| risk0p0175/minnot15/maxpairs20 | 95% | 100% | 19 | 37 |
+| risk0p018/minnot15/maxpairs15 | 98% | 100% | 15 | 29 |
+| risk0p018/minnot15/maxpairs20 | 95% | 100% | 20 | 37 |
+
+Выводы:
+- `maxpairs20` даёт больше PnL, но DD ~-808…-868 (80–87% капитала) — слишком агрессивно для 1000.
+- `maxpairs15` сохраняет DD около -476…-514 (47–51%), но это всё ещё высокий риск.
+- Разница между `risk0p0175` и `risk0p018` минимальна; по DD чуть лучше `risk0p0175`.
