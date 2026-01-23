@@ -1,6 +1,6 @@
 # WFA run index
 
-Generated at: 2026-01-22 22:39:50Z
+Generated at: 2026-01-23 08:18:58Z
 
 Notes:
 - `sharpe_ratio_abs` is recomputed from `equity_curve.csv` with inferred bar frequency (periods/year = 365 * periods/day).
@@ -25,7 +25,7 @@ Notes:
 - stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.8136 pnl=4002.68 dd=-695.20 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
 - stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.8136 pnl=4002.68 dd=-695.20 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled_caps/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
 - stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.8136 pnl=4002.68 dd=-695.20 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled_caps_v2/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
+- holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25 | sharpe=3.6951 pnl=3316.63 dd=-688.69 | artifacts/wfa/runs/20260123_budget1000_capsweep_maxnot25/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25
+- stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25 | sharpe=3.4783 pnl=2967.65 dd=-695.20 | artifacts/wfa/runs/20260123_budget1000_capsweep_maxnot25/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25
 - holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.1454 pnl=2764.43 dd=-1107.34 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
 - holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.1454 pnl=2764.43 dd=-1107.34 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled_caps/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
-- holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=3.1454 pnl=2764.43 dd=-1107.34 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled_caps_v2/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000
-- stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000 | sharpe=2.9120 pnl=2347.79 dd=-1018.56 | artifacts/wfa/runs/20260122_budget1000_top50_top30_scaled/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000

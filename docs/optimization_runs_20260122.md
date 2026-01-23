@@ -436,7 +436,7 @@ Top30:
 Выводы:
 - Распределение дискретное: заметные кластеры около ~15 и верхнего значения (45–51), что указывает на влияние правил sizing и min/max границ.
 
-### Queue: budget1000_capsweep_maxnot25 (planned)
+### Queue: budget1000_capsweep_maxnot25 (completed)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot25/run_queue.csv`.
 - Цель: проверить tighter cap по `max_notional_per_trade=25` при текущей сетке top50/top30.
 - Конфиги:
@@ -444,3 +444,33 @@ Top30:
   - `coint4/configs/budget_20260123_1000_capsweep/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
   - `coint4/configs/budget_20260123_1000_capsweep/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+- Статус: `completed` (4 прогона).
+
+#### Результаты (holdout + stress, cap1000, max_notional=25)
+| config | hold_sharpe | hold_pnl | hold_dd | hold_trades | hold_pairs | hold_costs | stress_sharpe | stress_pnl | stress_dd | stress_trades | stress_pairs | stress_costs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | 3.70 | 3316.63 | -688.69 | 11384 | 120 | 393.27 | 3.48 | 2967.65 | -695.20 | 11384 | 120 | 687.70 |
+| top30/ms0p2 | 3.05 | 2244.03 | -725.06 | 6865 | 75 | 238.61 | 2.85 | 1983.11 | -733.60 | 6865 | 75 | 418.49 |
+
+#### Entry notional (holdout + stress, max_notional=25)
+| config | split | entry_count | cap_hits | cap_hit_pct | notional_avg | notional_p50 | notional_min | notional_max |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | holdout | 11384 | 4705 | 41.33% | 18.13 | 15.00 | 12.31 | 25.00 |
+| top30/ms0p2 | holdout | 6865 | 2810 | 40.93% | 18.18 | 15.00 | 12.38 | 25.00 |
+| top50/ms0p2 | stress | 11384 | 4705 | 41.33% | 17.84 | 15.00 | 11.73 | 25.00 |
+| top30/ms0p2 | stress | 6865 | 2810 | 40.93% | 17.94 | 15.00 | 11.97 | 25.00 |
+
+#### Оценка gross exposure (max_notional=25)
+Оценка = `entry_notional_* * max_active_positions / initial_capital` (капитал=1000, max_active_positions=15).
+
+| config | split | gross_avg | gross_p50 | gross_max |
+|---|---|---|---|---|
+| top50/ms0p2 | holdout | 0.27 | 0.23 | 0.38 |
+| top30/ms0p2 | holdout | 0.27 | 0.23 | 0.38 |
+| top50/ms0p2 | stress | 0.27 | 0.23 | 0.38 |
+| top30/ms0p2 | stress | 0.27 | 0.23 | 0.38 |
+
+Выводы:
+- Cap=25 стал активным (cap_hit_pct ~41%); notional_avg снизился до ~18 (vs ~23–27 на max_notional=250).
+- PnL и Sharpe снизились: top50 holdout 3316 vs 4724 (baseline), Sharpe 3.70 vs 4.11.
+- По gross exposure средний уровень опустился к ~27% (max ~38%), что делает экспозицию более реалистичной, но ухудшает доходность.
