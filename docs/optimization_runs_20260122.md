@@ -409,3 +409,38 @@
 - `cap_hits=0` и `below_min=0`: фактические notional лежат в диапазоне ~12–51, лимиты min/max не срабатывают.
 - Средний notional 23–27 при медиане 15; max_notional=250 не является ограничением.
 - Высокие PnL объясняются суммированием по большому числу сделок/пар; стоит проверить реальную агрегированную экспозицию (gross) и лимиты на число позиций.
+
+#### Оценка gross exposure (на основе max_active_positions)
+Оценка = `entry_notional_* * max_active_positions / initial_capital` (капитал=1000, max_active_positions=15).
+
+| config | split | notional_avg | notional_p50 | notional_max | gross_avg | gross_p50 | gross_max | max_notional_limit |
+|---|---|---|---|---|---|---|---|---|
+| top50/ms0p2 | holdout | 27.18 | 15.00 | 50.97 | 0.41 | 0.23 | 0.76 | 250 |
+| top30/ms0p2 | holdout | 24.68 | 15.00 | 45.72 | 0.37 | 0.23 | 0.69 | 250 |
+| top50/ms0p2 | stress | 25.02 | 15.00 | 45.47 | 0.38 | 0.23 | 0.68 | 250 |
+| top30/ms0p2 | stress | 23.10 | 15.00 | 41.64 | 0.35 | 0.23 | 0.62 | 250 |
+
+Выводы:
+- Средняя оценка gross exposure 35–41% при p50 ~22.5%; верхняя оценка до ~76% (по max_notional_obs).
+- Даже по верхней оценке лимит max_notional=250 не задействован, поэтому имеет смысл проверить tighter cap.
+
+#### Распределение entry_notional_avg по парам (holdout)
+Top50:
+- Квантили (avg_notional): p10=12.31, p25=12.67, p50=15.00, p75=43.00, p90=50.97, p95=50.97, p99=50.97.
+- Топ-5 пар по notional_avg: ADAEUR-ADAUSDC, CELOUSDT-CGPTUSDT, ARTYUSDT-KUBUSDT, CBKUSDT-ENJUSDT, FITFIUSDT-JUVUSDT (все ~50.97).
+
+Top30:
+- Квантили (avg_notional): p10=12.38, p25=13.04, p50=15.00, p75=36.27, p90=45.72, p95=45.72, p99=45.72.
+- Топ-5 пар по notional_avg: BTCDAI-BTCEUR, FTTUSDT-KCSUSDT, HOOKUSDT-KAVAUSDT, INJUSDT-KSMUSDT, ADAUSDC-KUBUSDT (все ~45.72).
+
+Выводы:
+- Распределение дискретное: заметные кластеры около ~15 и верхнего значения (45–51), что указывает на влияние правил sizing и min/max границ.
+
+### Queue: budget1000_capsweep_maxnot25 (planned)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260123_budget1000_capsweep_maxnot25/run_queue.csv`.
+- Цель: проверить tighter cap по `max_notional_per_trade=25` при текущей сетке top50/top30.
+- Конфиги:
+  - `coint4/configs/budget_20260123_1000_capsweep/holdout_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep/stress_relaxed8_nokpss_20260123_top50_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep/holdout_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
+  - `coint4/configs/budget_20260123_1000_capsweep/stress_relaxed8_nokpss_20260125_top30_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000_maxnot25.yaml`
