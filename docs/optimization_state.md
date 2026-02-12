@@ -28,6 +28,10 @@ Recent updates (2026-02-12):
 - Итог sprint5: лучший `ms3` (ms=0.20) совпал с `v1` (Sharpe `3.338/3.007`), остальные `ms=0.16-0.24` хуже → по `ms` достигнут локальный максимум.
 - Signal sprint6 (max_pairs sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint6/run_queue.csv` (`10/10 completed`).
 - Итог sprint6: лучший `mp4` (max_pairs=24) совпал с `v1` (Sharpe `3.338/3.007`), остальные max_pairs хуже → по `max_pairs` локальный максимум на `24` (для max-Sharpe режима).
+- Signal sprint7 (stop_loss_zscore sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint7/run_queue.csv` (`10/10 completed`).
+- Итог sprint7: лучший `slz3p0` (stop_loss_z=3.0) совпал с `v1`; `2.0-2.5` убивает edge через churn/издержки, `3.5-4.0` раздувает DD → локальный максимум по stop_loss на `3.0`.
+- Signal sprint8 (max_active_positions sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint8/run_queue.csv` (`10/10 completed`).
+- Итог sprint8: лучший `ap18` (max_active_positions=18) совпал с `v1`; `ap24` почти идентичен, но чуть хуже; `ap6-ap14` дают просадку Sharpe.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):

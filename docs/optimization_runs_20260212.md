@@ -319,3 +319,76 @@
 ### Итог по sprint6
 - Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `mp4` (max_pairs=24), совпадает с `v1`.
 - Уменьшение `max_pairs` снижает Sharpe, но резко уменьшает DD (например `mp1` DD ~-18% против ~-31% у `v1`) — это путь для “quality/risk” режима, но не для max-Sharpe.
+
+## Extra sweep: signal sprint7 (stop_loss_zscore sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint7/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint7/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `slz2p0-slz4p0` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (slz2p0-slz4p0)
+Фиксируем параметры `v1`, меняем только `backtest.pair_stop_loss_zscore`.
+
+| variant | stop_loss_z |
+|---|---:|
+| slz2p0 | 2.0 |
+| slz2p5 | 2.5 |
+| slz3p0 | 3.0 |
+| slz3p5 | 3.5 |
+| slz4p0 | 4.0 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| slz2p0 | holdout | 1.632 | 257.18 | -276.90 | 0.62 | 5193 | 58 |
+| slz2p0 | stress | 0.944 | 127.44 | -290.61 | 2.14 | 5193 | 58 |
+| slz2p5 | holdout | 1.330 | 244.60 | -241.94 | 0.55 | 4638 | 58 |
+| slz2p5 | stress | 0.843 | 129.30 | -254.82 | 1.78 | 4638 | 58 |
+| slz3p0 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| slz3p0 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| slz3p5 | holdout | 1.172 | 250.76 | -589.47 | 0.47 | 3953 | 58 |
+| slz3p5 | stress | 0.855 | 149.72 | -625.86 | 1.36 | 3953 | 58 |
+| slz4p0 | holdout | 0.726 | 112.28 | -811.17 | 0.89 | 3776 | 58 |
+| slz4p0 | stress | 0.463 | 21.32 | -836.05 | 8.06 | 3776 | 58 |
+
+### Итог по sprint7
+- Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `slz3p0` (stop_loss_z=3.0), совпадает с `v1`.
+- Слишком агрессивный stop-loss (`2.0-2.5`) резко повышает churn/издержки и обнуляет edge; слишком мягкий (`3.5-4.0`) раздувает DD и тоже рушит Sharpe.
+
+## Extra sweep: signal sprint8 (max_active_positions sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint8/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint8/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `ap6-ap24` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ap6-ap24)
+Фиксируем параметры `v1`, меняем только `portfolio.max_active_positions`.
+
+| variant | max_active_positions |
+|---|---:|
+| ap6 | 6 |
+| ap10 | 10 |
+| ap14 | 14 |
+| ap18 | 18 |
+| ap24 | 24 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ap6 | holdout | 2.679 | 697.98 | -235.75 | 0.20 | 4204 | 58 |
+| ap6 | stress | 2.411 | 605.28 | -249.73 | 0.40 | 4204 | 58 |
+| ap10 | holdout | 3.219 | 1060.25 | -317.72 | 0.14 | 4204 | 58 |
+| ap10 | stress | 2.907 | 914.15 | -316.52 | 0.28 | 4204 | 58 |
+| ap14 | holdout | 3.294 | 1128.06 | -323.97 | 0.13 | 4204 | 58 |
+| ap14 | stress | 2.964 | 966.27 | -309.02 | 0.27 | 4204 | 58 |
+| ap18 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| ap18 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| ap24 | holdout | 3.334 | 1148.42 | -327.07 | 0.13 | 4204 | 58 |
+| ap24 | stress | 3.002 | 984.30 | -314.69 | 0.26 | 4204 | 58 |
+
+### Итог по sprint8
+- Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `ap18` (max_active_positions=18), совпадает с `v1`.
+- `ap24` почти идентичен, но чуть хуже по robust-метрике (и не даёт прироста Sharpe).
+- Снижение лимита позиций уменьшает DD, но Sharpe падает (особенно `ap6`).
