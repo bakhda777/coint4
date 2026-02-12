@@ -609,3 +609,39 @@
 ### Итог по sprint14
 - Лучший robust снова на `pair_stop_loss_zscore=3.0` (`slz3p0`) и совпадает с лидером `vmf101`.
 - Отклонение stop-loss в обе стороны ухудшает Sharpe (особенно >3.0 раздувает DD).
+
+## Extra sweep: signal sprint15 (max_var_multiplier ultra-fine sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint15/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint15/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `vm1001-vm1010` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (vm1001-vm1010)
+Фиксируем параметры лидера `vmf101` (`z=1.15`, `exit=0.08`, `ms=0.20`, `pair_stop_loss_z=3.0`), меняем только `max_var_multiplier` (супер‑тонкая настройка около `1.01`).
+
+| variant | max_var_multiplier |
+|---|---:|
+| vm1001 | 1.001 |
+| vm1003 | 1.003 |
+| vm1005 | 1.005 |
+| vm1008 | 1.008 |
+| vm1010 | 1.010 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vm1001 | holdout | 4.291 | 2113.12 | -467.75 | 0.09 | 4614 | 58 |
+| vm1001 | stress | 3.987 | 1869.83 | -458.76 | 0.17 | 4614 | 58 |
+| vm1003 | holdout | 4.341 | 2156.36 | -471.50 | 0.09 | 4611 | 58 |
+| vm1003 | stress | 4.037 | 1910.54 | -462.40 | 0.17 | 4611 | 58 |
+| vm1005 | holdout | 4.378 | 2188.25 | -473.46 | 0.09 | 4610 | 58 |
+| vm1005 | stress | 4.074 | 1940.54 | -464.39 | 0.17 | 4610 | 58 |
+| vm1008 | holdout | 4.341 | 2148.41 | -420.64 | 0.09 | 4604 | 58 |
+| vm1008 | stress | 4.036 | 1903.46 | -414.70 | 0.17 | 4604 | 58 |
+| vm1010 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| vm1010 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+
+### Итог по sprint15
+- Новый лучший по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `vm1005` (`max_var_multiplier=1.005`): Sharpe `4.378/4.074`.
+- Это улучшает предыдущего лидера `vmf101` (`max_var_multiplier=1.01`): Sharpe `4.348/4.043`.
