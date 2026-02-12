@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-12
 
-Current stage: Max-Sharpe mode for `$1000`: min_notional unbounded sweep completed (12/12), текущий лидер — `u6` (stress Sharpe `2.425`).
+Current stage: Max-Sharpe mode for `$1000`: signal sprint around `u6` completed (10/10), текущий лидер — `v1` (holdout/stress Sharpe `3.338/3.007`).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
@@ -14,6 +14,9 @@ Recent updates (2026-02-12):
 - Дополнительный sweep без ограничений по рисковым гейтам: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_unbounded_minnot/run_queue.csv` (`12/12 completed`).
 - Лучший вариант в Max-Sharpe режиме: `u6` (holdout/stress Sharpe `2.775/2.425`, pairs `58`, stress PnL `668.69`).
 - Наблюдение по min_notional: в вариантах `u1-u3` (`min_notional` 0.5/1/2) метрики идентичны — в этой зоне параметр не лимитирует; рост Sharpe получен за счёт комбинированной смены режима (`z/ms/corr/pvalue/max_pairs`).
+- Дополнительный signal sprint around `u6`: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint1/run_queue.csv` (`10/10 completed`).
+- Новый лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)`: `v1` (`3.338/3.007`), выше `u6` (`2.775/2.425`).
+- Целостность результатов `signal_sprint1`: `Sharpe consistency OK (10 run(s))`, обязательные артефакты есть в `10/10`, в `run.log` нет `Traceback/ERROR`.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
