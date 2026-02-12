@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-12
 
-Current stage: Extended OOS Sharpe-recovery sweep for `$1000` completed (10/10); analyzing follow-up DD/cost downshift around best variant r4.
+Current stage: Max-Sharpe mode for `$1000`: min_notional unbounded sweep completed (12/12), текущий лидер — `u6` (stress Sharpe `2.425`).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
@@ -11,6 +11,9 @@ Recent updates (2026-02-12):
 - Гипотеза: улучшить Sharpe через более широкий пул пар (`corr/pvalue`, `max_pairs`) и снижение нелинейности sizing (`min/max_notional`).
 - Запуск на `85.198.90.128` завершён: `10/10 completed`.
 - Лучший вариант: `r4` (min Sharpe holdout/stress = `1.482`), пары выросли до `53`, но DD остался за гейтом (`~ -356`) и stress cost_ratio `0.62 > 0.5`.
+- Дополнительный sweep без ограничений по рисковым гейтам: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_unbounded_minnot/run_queue.csv` (`12/12 completed`).
+- Лучший вариант в Max-Sharpe режиме: `u6` (holdout/stress Sharpe `2.775/2.425`, pairs `58`, stress PnL `668.69`).
+- Наблюдение по min_notional: в вариантах `u1-u3` (`min_notional` 0.5/1/2) метрики идентичны — в этой зоне параметр не лимитирует; рост Sharpe получен за счёт комбинированной смены режима (`z/ms/corr/pvalue/max_pairs`).
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
