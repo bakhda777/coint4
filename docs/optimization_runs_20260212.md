@@ -283,3 +283,39 @@
 ### Итог по sprint5
 - `ms3` (ms=0.20) снова лучший по `min(Sharpe_holdout, Sharpe_stress)` и совпадает с `v1`.
 - По `min_spread_move_sigma` локальный максимум найден на `0.20` в этом режиме.
+
+## Extra sweep: signal sprint6 (max_pairs sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint6/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint6/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `mp1-mp5` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (mp1-mp5)
+Фиксируем signal-параметры `v1` (`z=1.15`, `exit=0.08`, `ms=0.20`, `hold/cd=300`) и фильтры, меняем только `pair_selection.max_pairs`.
+
+| variant | max_pairs |
+|---|---:|
+| mp1 | 12 |
+| mp2 | 16 |
+| mp3 | 20 |
+| mp4 | 24 |
+| mp5 | 28 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| mp1 | holdout | 2.924 | 524.63 | -172.40 | 0.14 | 2256 | 27 |
+| mp1 | stress | 2.622 | 456.86 | -180.01 | 0.27 | 2256 | 27 |
+| mp2 | holdout | 2.649 | 526.25 | -217.65 | 0.17 | 2922 | 39 |
+| mp2 | stress | 2.302 | 439.38 | -236.54 | 0.36 | 2922 | 39 |
+| mp3 | holdout | 1.807 | 362.61 | -304.73 | 0.29 | 3536 | 52 |
+| mp3 | stress | 1.432 | 266.70 | -326.74 | 0.67 | 3536 | 52 |
+| mp4 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| mp4 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| mp5 | holdout | 2.695 | 920.49 | -379.02 | 0.19 | 4935 | 64 |
+| mp5 | stress | 2.335 | 746.60 | -402.78 | 0.40 | 4935 | 64 |
+
+### Итог по sprint6
+- Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `mp4` (max_pairs=24), совпадает с `v1`.
+- Уменьшение `max_pairs` снижает Sharpe, но резко уменьшает DD (например `mp1` DD ~-18% против ~-31% у `v1`) — это путь для “quality/risk” режима, но не для max-Sharpe.
