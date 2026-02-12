@@ -8,11 +8,17 @@ Recent updates (2026-01-31):
 - Extended OOS (2023-05-01 → 2024-04-30) для top20/top30 завершён: stress cost_ratio > 1.0, слабый Sharpe (см. `docs/optimization_runs_20260130.md`).
 - Turnover-grid extended OOS (top10/top15, ms0.25/0.30, hold/cd 240) завершён: провал по парам и стресс-издержкам (см. `docs/optimization_runs_20260131.md`).
 - Stop-condition: extended OOS stress cost_ratio > 0.5 и пары < 50 → оптимизацию в этом направлении останавливаем.
+- Сформирован обзор по $1000: `docs/budget1000_overview_20260131.md`.
+- Очередь tlow extended OOS для $1000 выполнена: risk0p0175 Sharpe 1.70/1.36, cost_ratio 0.26/0.60, DD ~-32%, pairs 36; risk0p015 отрицательный (см. `docs/optimization_runs_20260131.md`).
+- Refine‑очередь (z=1.25/1.30, ms=0.30/0.35, hold/cd=300) выполнена: DD снизился до ~-17…-18%, но stress cost_ratio 0.53–0.56 и пары 36 (см. `docs/optimization_runs_20260131.md`).
+- Refine2‑очередь (z=1.35/1.40, ms=0.35/0.40, hold/cd=360) выполнена: PnL/Sharpe ухудшились, stress cost_ratio 1.85–1.86, пары 36 — направление закрываем (см. `docs/optimization_runs_20260131.md`).
+- Tradeability+basecap3 очередь (corr 0.35/0.40, pv 0.25/0.20, пары basecap3=102) выполнена: Sharpe < 0, PnL отрицательный, pairs 26–27; tradeM/tradeS совпали → ветку закрываем (см. `docs/optimization_runs_20260131.md`).
 - Paper configs: `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (primary) и `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (fallback).
 - План paper/forward: `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
 - Paper/forward тест кандидата: см. `docs/paper_forward_plan_20260131.md`.
+- Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к paper/forward.
 - Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
 - Baseline WFA (5 шагов) выполнен и зафиксирован (done).
 - Turnover sweep завершён, лучшая комбинация entry 0.95 / exit 0.10 (done).
