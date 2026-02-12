@@ -1,8 +1,15 @@
 # Optimization state
 
-Last updated: 2026-01-31
+Last updated: 2026-02-12
 
-Current stage: Extended OOS stop-condition reached; переходим к paper/forward проверке кандидата.
+Current stage: Re-opened targeted extended OOS sweep for `$1000` (10 configs) to test Sharpe recovery; runs dispatched to 85.198.90.128.
+
+Recent updates (2026-02-12):
+- Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
+- Подготовлена новая очередь из 10 конфигов: `coint4/artifacts/wfa/aggregate/20260212_budget1000_tlow_extended_sharpe_recover10/run_queue.csv`.
+- Новые конфиги: `coint4/configs/budget_20260212_1000_tlow_extended_sharpe_recover10/*.yaml` (варианты r1-r5, holdout/stress).
+- Гипотеза: улучшить Sharpe через более широкий пул пар (`corr/pvalue`, `max_pairs`) и снижение нелинейности sizing (`min/max_notional`).
+- Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
 - Extended OOS (2023-05-01 → 2024-04-30) для top20/top30 завершён: stress cost_ratio > 1.0, слабый Sharpe (см. `docs/optimization_runs_20260130.md`).
