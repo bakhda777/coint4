@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-12
 
-Current stage: Max-Sharpe mode for `$1000`: signal sprint around `u6` completed (10/10), текущий лидер — `v1` (holdout/stress Sharpe `3.338/3.007`).
+Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `vmf101` (max_var_multiplier=1.01), holdout/stress Sharpe `4.348/4.043`.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
@@ -32,6 +32,14 @@ Recent updates (2026-02-12):
 - Итог sprint7: лучший `slz3p0` (stop_loss_z=3.0) совпал с `v1`; `2.0-2.5` убивает edge через churn/издержки, `3.5-4.0` раздувает DD → локальный максимум по stop_loss на `3.0`.
 - Signal sprint8 (max_active_positions sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint8/run_queue.csv` (`10/10 completed`).
 - Итог sprint8: лучший `ap18` (max_active_positions=18) совпал с `v1`; `ap24` почти идентичен, но чуть хуже; `ap6-ap14` дают просадку Sharpe.
+- Signal sprint9 (max_var_multiplier sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint9/run_queue.csv` (`10/10 completed`).
+- Итог sprint9: Sharpe резко растёт при уменьшении `max_var_multiplier`; лучший `vm1` (1.10) уже лучше `v1` (Sharpe `3.650/3.306` vs `3.338/3.007`).
+- Signal sprint10 (max_var_multiplier fine sweep) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint10/run_queue.csv` (`10/10 completed`).
+- Итог sprint10: новый лидер `vmf101` (max_var_multiplier=1.01) — Sharpe `4.348/4.043`, PnL `2153.76/1908.57`.
+- Signal sprint11 (adaptive+regime+struct toggles) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint11/run_queue.csv` (`10/10 completed`).
+- Итог sprint11: `market_regime_detection` и `structural_break_protection` должны оставаться включенными; `adaptive_thresholds=false` почти не хуже, но лидер всё равно `at1vm101` (= `vmf101`).
+- Signal sprint12 (z sweep under max_var_multiplier=1.01) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint12/run_queue.csv` (`10/10 completed`).
+- Итог sprint12: по `z` локальный максимум остался на `z=1.15` (`z1p15` совпадает с лидером `vmf101`).
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):

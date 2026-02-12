@@ -1,0 +1,25 @@
+[run_wfa_queue] 2026-02-12T20:41:31Z cmd: /opt/coint4/coint4/run_wfa_fullcpu.sh configs/budget_20260212_1000_sharpe_signal_sprint9/holdout_relaxed8_nokpss_20260212_oos20230501_20240430_top250_z1p15_exit0p08_hold300_cd300_ms0p2_cap1000_maxnot1000_risk0p015_minnot5_maxpairs24_corr0p34_pv0p35_vm1.yaml artifacts/wfa/runs/20260212_budget1000_sharpe_signal_sprint9/holdout_relaxed8_nokpss_20260212_oos20230501_20240430_top250_z1p15_exit0p08_hold300_cd300_ms0p2_cap1000_maxnot1000_risk0p015_minnot5_maxpairs24_corr0p34_pv0p35_vm1
+[run_wfa_fullcpu] start: 2026-02-12T20:41:31Z
+[run_wfa_fullcpu] os.cpu_count: 8
+[run_wfa_fullcpu] worker_pid=41165
+Traceback (most recent call last):
+  File "/opt/coint4/coint4/./.venv/bin/coint2", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/opt/coint4/coint4/src/coint2/cli/__init__.py", line 196, in main
+    return args.func(args)
+           ^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/src/coint2/cli/__init__.py", line 63, in _handle_walk_forward
+    cfg = load_config(args.config)
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/src/coint2/utils/config.py", line 456, in load_config
+    return AppConfig(**raw_cfg)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/coint4/coint4/.venv/lib/python3.12/site-packages/pydantic/main.py", line 250, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for AppConfig
+backtest.max_var_multiplier
+  Input should be greater than 1 [type=greater_than, input_value=1.0, input_type=float]
+    For further information visit https://errors.pydantic.dev/2.12/v/greater_than
+[run_wfa_fullcpu] end: 2026-02-12T20:41:35Z

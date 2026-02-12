@@ -392,3 +392,148 @@
 - Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `ap18` (max_active_positions=18), совпадает с `v1`.
 - `ap24` почти идентичен, но чуть хуже по robust-метрике (и не даёт прироста Sharpe).
 - Снижение лимита позиций уменьшает DD, но Sharpe падает (особенно `ap6`).
+
+## Extra sweep: signal sprint9 (max_var_multiplier sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint9/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint9/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `vm1/vm2/vm3/vm4/vm6` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (vm1-vm6)
+Фиксируем параметры `v1`, меняем только `backtest.max_var_multiplier` (cap для адаптивных порогов). `max_var_multiplier` должен быть `> 1`.
+
+| variant | max_var_multiplier |
+|---|---:|
+| vm1 | 1.10 |
+| vm2 | 2.00 |
+| vm3 | 3.00 |
+| vm4 | 4.00 |
+| vm6 | 6.00 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vm1 | holdout | 3.650 | 1362.97 | -369.32 | 0.12 | 4478 | 58 |
+| vm1 | stress | 3.306 | 1173.87 | -370.45 | 0.24 | 4478 | 58 |
+| vm2 | holdout | 3.378 | 1171.92 | -329.96 | 0.13 | 4212 | 58 |
+| vm2 | stress | 3.046 | 1006.14 | -313.17 | 0.26 | 4212 | 58 |
+| vm3 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| vm3 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| vm4 | holdout | 3.341 | 1152.21 | -327.64 | 0.13 | 4204 | 58 |
+| vm4 | stress | 3.010 | 987.92 | -312.97 | 0.26 | 4204 | 58 |
+| vm6 | holdout | 3.345 | 1154.56 | -328.00 | 0.13 | 4204 | 58 |
+| vm6 | stress | 3.014 | 990.13 | -312.25 | 0.26 | 4204 | 58 |
+
+### Итог по sprint9
+- Sharpe заметно растёт при уменьшении `max_var_multiplier` (меньше “задавливаем” входы в высокую волатильность).
+- Новый лидер по `min(Sharpe_holdout, Sharpe_stress)` — `vm1` (`3.650/3.306`), выше `v1` (`3.338/3.007`).
+
+## Extra sweep: signal sprint10 (max_var_multiplier fine sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint10/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint10/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `vmf101-vmf120` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (vmf101-vmf120)
+Фиксируем параметры `v1`, меняем только `backtest.max_var_multiplier`.
+
+| variant | max_var_multiplier |
+|---|---:|
+| vmf101 | 1.01 |
+| vmf105 | 1.05 |
+| vmf110 | 1.10 |
+| vmf115 | 1.15 |
+| vmf120 | 1.20 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vmf101 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| vmf101 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+| vmf105 | holdout | 4.055 | 1899.82 | -449.96 | 0.10 | 4557 | 58 |
+| vmf105 | stress | 3.752 | 1674.80 | -442.22 | 0.19 | 4557 | 58 |
+| vmf110 | holdout | 3.650 | 1362.97 | -369.32 | 0.12 | 4478 | 58 |
+| vmf110 | stress | 3.306 | 1173.87 | -370.45 | 0.24 | 4478 | 58 |
+| vmf115 | holdout | 3.893 | 1429.29 | -341.98 | 0.11 | 4442 | 58 |
+| vmf115 | stress | 3.538 | 1237.71 | -365.46 | 0.23 | 4442 | 58 |
+| vmf120 | holdout | 3.620 | 1284.60 | -342.32 | 0.12 | 4409 | 58 |
+| vmf120 | stress | 3.268 | 1103.44 | -365.42 | 0.25 | 4409 | 58 |
+
+### Итог по sprint10
+- Лучший по `min(Sharpe_holdout, Sharpe_stress)` — `vmf101` (max_var_multiplier=1.01).
+- Это новый глобальный лидер для `$1000` в extended OOS `2023-05-01 → 2024-04-30`: Sharpe `4.348/4.043`.
+
+## Extra sweep: signal sprint11 (adaptive/regime/struct toggles, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint11/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint11/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `at*` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (at*)
+Проверяем, не “ломают” ли результат отключения `adaptive_thresholds`, `market_regime_detection`, `structural_break_protection`.
+
+| variant | adaptive_thresholds | max_var_multiplier | market_regime_detection | structural_break_protection |
+|---|---|---:|---|---|
+| at0 | false | (n/a) | true | true |
+| at0rg0 | false | (n/a) | false | true |
+| at0sb0 | false | (n/a) | true | false |
+| at0rg0sb0 | false | (n/a) | false | false |
+| at1vm101 | true | 1.01 | true | true |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| at0 | holdout | 4.285 | 2108.25 | -467.05 | 0.09 | 4614 | 58 |
+| at0 | stress | 3.981 | 1865.27 | -458.08 | 0.17 | 4614 | 58 |
+| at0rg0 | holdout | 1.005 | 203.03 | -827.07 | 0.58 | 5395 | 58 |
+| at0rg0 | stress | 0.734 | 58.21 | -823.04 | 3.42 | 5395 | 58 |
+| at0rg0sb0 | holdout | 1.236 | 361.17 | -1167.57 | 0.43 | 5553 | 58 |
+| at0rg0sb0 | stress | 1.070 | 202.07 | -1187.21 | 1.29 | 5553 | 58 |
+| at0sb0 | holdout | 3.088 | 1219.54 | -420.08 | 0.13 | 5220 | 58 |
+| at0sb0 | stress | 2.734 | 1008.32 | -401.43 | 0.26 | 5220 | 58 |
+| at1vm101 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| at1vm101 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+
+### Итог по sprint11
+- `market_regime_detection` выключать нельзя: Sharpe и DD разваливаются.
+- `structural_break_protection` тоже помогает (при выключении Sharpe заметно падает).
+- `adaptive_thresholds=false` близко к лидеру, но хуже по robust-метрике → оставляем `adaptive_thresholds=true` и `max_var_multiplier=1.01` как в `vmf101`.
+
+## Extra sweep: signal sprint12 (z sweep under max_var_multiplier=1.01, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint12/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint12/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `z1p10-z1p30` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (z1p10-z1p30)
+Фиксируем `max_var_multiplier=1.01` (как в `vmf101`), меняем только `z`.
+
+| variant | z |
+|---|---:|
+| z1p10 | 1.10 |
+| z1p15 | 1.15 |
+| z1p20 | 1.20 |
+| z1p25 | 1.25 |
+| z1p30 | 1.30 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| z1p10 | holdout | 4.133 | 2070.76 | -508.90 | 0.09 | 4761 | 58 |
+| z1p10 | stress | 3.826 | 1820.11 | -494.30 | 0.17 | 4761 | 58 |
+| z1p15 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| z1p15 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+| z1p20 | holdout | 3.841 | 1714.90 | -409.58 | 0.10 | 4434 | 58 |
+| z1p20 | stress | 3.539 | 1505.39 | -406.32 | 0.20 | 4434 | 58 |
+| z1p25 | holdout | 2.655 | 692.96 | -443.52 | 0.20 | 4246 | 58 |
+| z1p25 | stress | 2.258 | 555.15 | -442.97 | 0.42 | 4246 | 58 |
+| z1p30 | holdout | 4.055 | 1161.65 | -364.34 | 0.12 | 4105 | 58 |
+| z1p30 | stress | 3.655 | 1000.64 | -364.98 | 0.24 | 4105 | 58 |
+
+### Итог по sprint12
+- Лучший robust снова на `z=1.15` (`z1p15`), то есть оптимум `z` не сдвинулся после фикса `max_var_multiplier`.
+- Текущий лидер: `vmf101` (`z=1.15`, `max_var_multiplier=1.01`).
