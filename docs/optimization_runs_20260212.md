@@ -211,3 +211,39 @@
 ### Итог по sprint3
 - `zf4` (z=1.15) снова лучший по `min(Sharpe_holdout, Sharpe_stress)` и совпадает с `v1` один-в-один → пик по `z` для этого режима найден.
 - Дальнейший рост Sharpe требует следующего измерения: `exit`, `min_spread_move_sigma`, `hold/cd`, sizing/risk, или изменения selection/filters.
+
+## Extra sweep: signal sprint4 (exit sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint4/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint4/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `ex1-ex5` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ex1-ex5)
+Фиксируем `z=1.15`, `ms=0.20`, `hold/cd=300` как в `v1`, меняем только `exit`.
+
+| variant | exit |
+|---|---:|
+| ex1 | 0.06 |
+| ex2 | 0.07 |
+| ex3 | 0.08 |
+| ex4 | 0.09 |
+| ex5 | 0.10 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ex1 | holdout | 3.057 | 856.26 | -287.33 | 0.16 | 4109 | 58 |
+| ex1 | stress | 2.687 | 714.35 | -285.84 | 0.33 | 4109 | 58 |
+| ex2 | holdout | 2.355 | 581.74 | -328.52 | 0.22 | 4165 | 58 |
+| ex2 | stress | 1.967 | 455.20 | -337.43 | 0.48 | 4165 | 58 |
+| ex3 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| ex3 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| ex4 | holdout | 2.815 | 819.99 | -315.07 | 0.17 | 4227 | 58 |
+| ex4 | stress | 2.456 | 676.56 | -321.05 | 0.36 | 4227 | 58 |
+| ex5 | holdout | 2.923 | 864.31 | -290.78 | 0.17 | 4260 | 58 |
+| ex5 | stress | 2.562 | 716.90 | -292.24 | 0.35 | 4260 | 58 |
+
+### Итог по sprint4
+- `ex3` (exit=0.08) снова лучший по `min(Sharpe_holdout, Sharpe_stress)` и совпадает с `v1`.
+- По `exit` локальный максимум найден на `0.08` в этом режиме.
