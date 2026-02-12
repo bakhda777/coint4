@@ -24,6 +24,8 @@ Recent updates (2026-02-12):
 - Итог sprint3: лучший `zf4` (z=1.15) совпал с `v1` (Sharpe `3.338/3.007`), остальные `z=1.12-1.16` хуже → по `z` достигнут локальный максимум.
 - Signal sprint4 (exit sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint4/run_queue.csv` (`10/10 completed`).
 - Итог sprint4: лучший `ex3` (exit=0.08) совпал с `v1` (Sharpe `3.338/3.007`), остальные `exit=0.06-0.10` хуже → по `exit` достигнут локальный максимум.
+- Signal sprint5 (ms sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint5/run_queue.csv` (`10/10 completed`).
+- Итог sprint5: лучший `ms3` (ms=0.20) совпал с `v1` (Sharpe `3.338/3.007`), остальные `ms=0.16-0.24` хуже → по `ms` достигнут локальный максимум.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
