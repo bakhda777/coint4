@@ -537,3 +537,39 @@
 ### Итог по sprint12
 - Лучший robust снова на `z=1.15` (`z1p15`), то есть оптимум `z` не сдвинулся после фикса `max_var_multiplier`.
 - Текущий лидер: `vmf101` (`z=1.15`, `max_var_multiplier=1.01`).
+
+## Extra sweep: signal sprint13 (exit sweep under vmf101, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint13/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint13/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `ex04-ex12` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ex04-ex12)
+Фиксируем параметры лидера `vmf101` (`z=1.15`, `ms=0.20`, `max_var_multiplier=1.01`), меняем только `zscore_exit`.
+
+| variant | zscore_exit |
+|---|---:|
+| ex04 | 0.04 |
+| ex06 | 0.06 |
+| ex08 | 0.08 |
+| ex10 | 0.10 |
+| ex12 | 0.12 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ex04 | holdout | 3.301 | 1207.93 | -302.88 | 0.13 | 4304 | 58 |
+| ex04 | stress | 2.984 | 1036.96 | -308.72 | 0.26 | 4304 | 58 |
+| ex06 | holdout | 4.112 | 1694.67 | -372.57 | 0.10 | 4482 | 58 |
+| ex06 | stress | 3.786 | 1486.55 | -369.98 | 0.20 | 4482 | 58 |
+| ex08 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| ex08 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+| ex10 | holdout | 3.665 | 1536.11 | -396.32 | 0.11 | 4673 | 58 |
+| ex10 | stress | 3.344 | 1329.21 | -387.65 | 0.22 | 4673 | 58 |
+| ex12 | holdout | 3.504 | 1428.31 | -405.03 | 0.12 | 4747 | 58 |
+| ex12 | stress | 3.177 | 1226.00 | -395.80 | 0.25 | 4747 | 58 |
+
+### Итог по sprint13
+- Лучший robust снова на `exit=0.08` (`ex08`) и совпадает с лидером `vmf101`.
+- Отклонение `exit` в обе стороны ухудшает Sharpe и/или DD для `$1000`.

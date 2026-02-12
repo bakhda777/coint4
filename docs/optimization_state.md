@@ -40,6 +40,8 @@ Recent updates (2026-02-12):
 - Итог sprint11: `market_regime_detection` и `structural_break_protection` должны оставаться включенными; `adaptive_thresholds=false` почти не хуже, но лидер всё равно `at1vm101` (= `vmf101`).
 - Signal sprint12 (z sweep under max_var_multiplier=1.01) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint12/run_queue.csv` (`10/10 completed`).
 - Итог sprint12: по `z` локальный максимум остался на `z=1.15` (`z1p15` совпадает с лидером `vmf101`).
+- Signal sprint13 (exit sweep under `vmf101`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint13/run_queue.csv` (`10/10 completed`).
+- Итог sprint13: по `exit` локальный максимум остался на `exit=0.08` (`ex08` совпадает с лидером `vmf101`).
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
