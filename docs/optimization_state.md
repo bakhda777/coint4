@@ -20,6 +20,8 @@ Recent updates (2026-02-12):
 - Signal sprint2 (local search around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint2/run_queue.csv` (`10/10 completed`).
 - Итог sprint2: ни один `s1-s5` не улучшил `v1`; лучший robust `min_sharpe` у `s5` = `2.067` (хуже `v1` = `3.007`). Понижение `z/ms` относительно `v1` ухудшает Sharpe.
 - Infra: устранена коррупция memory-mapped кэша при параллельных WFA (lock + atomic replace + range-keyed cache filename для consolidated parquet).
+- Signal sprint3 (z fine sweep around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint3/run_queue.csv` (`10/10 completed`).
+- Итог sprint3: лучший `zf4` (z=1.15) совпал с `v1` (Sharpe `3.338/3.007`), остальные `z=1.12-1.16` хуже → по `z` достигнут локальный максимум.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):

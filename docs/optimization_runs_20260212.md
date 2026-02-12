@@ -175,3 +175,39 @@
 ### Итог по sprint2
 - Ни один вариант `s1-s5` не улучшил `v1`; лучший robust `min_sharpe` у `s5` = `2.067` (хуже `v1` = `3.007`).
 - Понижение `z` и `min_spread_move_sigma` относительно `v1` в этом extended OOS ухудшает Sharpe и увеличивает DD → локальный оптимум в зоне `z≈1.15`, `ms≈0.20`, `hold/cd=300`.
+
+## Extra sweep: signal sprint3 (z fine sweep, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint3/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint3/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `zf1-zf5` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (zf1-zf5)
+Фиксируем `exit=0.08`, `ms=0.20`, `hold/cd=300` как в `v1`, меняем только `z`.
+
+| variant | z |
+|---|---:|
+| zf1 | 1.12 |
+| zf2 | 1.13 |
+| zf3 | 1.14 |
+| zf4 | 1.15 |
+| zf5 | 1.16 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| zf1 | holdout | 2.680 | 822.07 | -365.47 | 0.17 | 4291 | 58 |
+| zf1 | stress | 2.332 | 674.33 | -386.57 | 0.35 | 4291 | 58 |
+| zf2 | holdout | 2.959 | 937.11 | -325.13 | 0.15 | 4270 | 58 |
+| zf2 | stress | 2.611 | 783.47 | -347.15 | 0.32 | 4270 | 58 |
+| zf3 | holdout | 3.055 | 1012.78 | -318.19 | 0.14 | 4238 | 58 |
+| zf3 | stress | 2.720 | 855.57 | -340.73 | 0.29 | 4238 | 58 |
+| zf4 | holdout | 3.338 | 1150.58 | -327.39 | 0.13 | 4204 | 58 |
+| zf4 | stress | 3.007 | 986.38 | -313.70 | 0.26 | 4204 | 58 |
+| zf5 | holdout | 2.878 | 923.03 | -380.25 | 0.15 | 4178 | 58 |
+| zf5 | stress | 2.545 | 773.27 | -380.73 | 0.32 | 4178 | 58 |
+
+### Итог по sprint3
+- `zf4` (z=1.15) снова лучший по `min(Sharpe_holdout, Sharpe_stress)` и совпадает с `v1` один-в-один → пик по `z` для этого режима найден.
+- Дальнейший рост Sharpe требует следующего измерения: `exit`, `min_spread_move_sigma`, `hold/cd`, sizing/risk, или изменения selection/filters.
