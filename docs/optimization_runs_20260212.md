@@ -573,3 +573,39 @@
 ### Итог по sprint13
 - Лучший robust снова на `exit=0.08` (`ex08`) и совпадает с лидером `vmf101`.
 - Отклонение `exit` в обе стороны ухудшает Sharpe и/или DD для `$1000`.
+
+## Extra sweep: signal sprint14 (stop_loss_zscore sweep under vmf101, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint14/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint14/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `slz2p5-slz3p5` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (slz2p5-slz3p5)
+Фиксируем параметры лидера `vmf101` (`z=1.15`, `exit=0.08`, `ms=0.20`, `max_var_multiplier=1.01`), меняем только `pair_stop_loss_zscore`.
+
+| variant | pair_stop_loss_zscore |
+|---|---:|
+| slz2p5 | 2.50 |
+| slz2p75 | 2.75 |
+| slz3p0 | 3.00 |
+| slz3p25 | 3.25 |
+| slz3p5 | 3.50 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| slz2p5 | holdout | 2.573 | 734.19 | -345.24 | 0.24 | 5100 | 58 |
+| slz2p5 | stress | 2.148 | 569.81 | -349.24 | 0.52 | 5100 | 58 |
+| slz2p75 | holdout | 3.506 | 1348.49 | -360.89 | 0.13 | 4825 | 58 |
+| slz2p75 | stress | 3.157 | 1148.34 | -355.78 | 0.27 | 4825 | 58 |
+| slz3p0 | holdout | 4.348 | 2153.76 | -424.18 | 0.09 | 4602 | 58 |
+| slz3p0 | stress | 4.043 | 1908.57 | -418.11 | 0.17 | 4602 | 58 |
+| slz3p25 | holdout | 1.784 | 581.54 | -513.04 | 0.24 | 4433 | 58 |
+| slz3p25 | stress | 1.511 | 445.61 | -500.86 | 0.53 | 4433 | 58 |
+| slz3p5 | holdout | 2.472 | 938.79 | -593.32 | 0.15 | 4302 | 58 |
+| slz3p5 | stress | 2.199 | 782.65 | -580.37 | 0.32 | 4302 | 58 |
+
+### Итог по sprint14
+- Лучший robust снова на `pair_stop_loss_zscore=3.0` (`slz3p0`) и совпадает с лидером `vmf101`.
+- Отклонение stop-loss в обе стороны ухудшает Sharpe (особенно >3.0 раздувает DD).
