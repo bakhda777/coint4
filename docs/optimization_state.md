@@ -17,6 +17,9 @@ Recent updates (2026-02-12):
 - Дополнительный signal sprint around `u6`: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint1/run_queue.csv` (`10/10 completed`).
 - Новый лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)`: `v1` (`3.338/3.007`), выше `u6` (`2.775/2.425`).
 - Целостность результатов `signal_sprint1`: `Sharpe consistency OK (10 run(s))`, обязательные артефакты есть в `10/10`, в `run.log` нет `Traceback/ERROR`.
+- Signal sprint2 (local search around `v1`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint2/run_queue.csv` (`10/10 completed`).
+- Итог sprint2: ни один `s1-s5` не улучшил `v1`; лучший robust `min_sharpe` у `s5` = `2.067` (хуже `v1` = `3.007`). Понижение `z/ms` относительно `v1` ухудшает Sharpe.
+- Infra: устранена коррупция memory-mapped кэша при параллельных WFA (lock + atomic replace + range-keyed cache filename для consolidated parquet).
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):

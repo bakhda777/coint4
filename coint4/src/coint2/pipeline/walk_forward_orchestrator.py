@@ -1267,37 +1267,86 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         logger.info(f"📊 Consolidating data range: {data_start.date()} → {data_end.date()}")
         
         try:
-            # Consolidate all price data into a single memory-mapped file
-            consolidated_path = Path(cfg.data_dir).parent / ".cache" / "consolidated_prices.parquet"
-            consolidated_ok = consolidate_price_data(
-                str(cfg.data_dir),
-                str(consolidated_path),
-                data_start,
-                data_end,
-                clean_window=clean_window,
-                exclude_symbols=excluded_symbols,
-            )
+            # NOTE: WFA queues often run multiple configs in parallel (separate OS processes).
+            # If all runs write to the same consolidated parquet path concurrently, it can be
+            # corrupted ("Parquet magic bytes not found"). Use a range-keyed cache filename
+            # + cross-process lock + atomic replace to make this safe.
+            import os
+            try:
+                import fcntl  # Linux-only (Serverspace) cross-process lock
+            except Exception:  # pragma: no cover
+                fcntl = None  # type: ignore[assignment]
 
-            if not consolidated_ok:
-                raise RuntimeError("consolidate_price_data failed")
-            
+            def _is_valid_parquet(path: Path) -> bool:
+                try:
+                    import pyarrow.parquet as pq  # local import to keep module load light
+                    _ = pq.ParquetFile(str(path))
+                    return True
+                except Exception:
+                    return False
+
+            cache_dir = Path(cfg.data_dir).parent / ".cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # Cache file keyed by data range + timeframe to avoid collisions across runs.
+            bar_minutes = int(getattr(cfg.pair_selection, "bar_minutes", 15))
+            consolidated_path = (
+                cache_dir
+                / f"consolidated_prices_{data_start:%Y%m%d}_{data_end:%Y%m%d}_{bar_minutes}m.parquet"
+            )
+            lock_path = consolidated_path.with_suffix(consolidated_path.suffix + ".lock")
+
+            lock_handle = None
+            if fcntl is not None:
+                lock_handle = lock_path.open("w")
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+
+            try:
+                # If the cache exists but is corrupted, rebuild it under the lock.
+                if consolidated_path.exists() and not _is_valid_parquet(consolidated_path):
+                    logger.warning(f"⚠️ Corrupted consolidated parquet detected: {consolidated_path}; rebuilding")
+                    try:
+                        consolidated_path.unlink()
+                    except FileNotFoundError:
+                        pass
+
+                if not consolidated_path.exists():
+                    tmp_path = consolidated_path.with_suffix(consolidated_path.suffix + f".tmp.{os.getpid()}")
+                    consolidated_ok = consolidate_price_data(
+                        str(cfg.data_dir),
+                        str(tmp_path),
+                        data_start,
+                        data_end,
+                        clean_window=clean_window,
+                        exclude_symbols=excluded_symbols,
+                    )
+                    if not consolidated_ok:
+                        raise RuntimeError("consolidate_price_data failed")
+                    os.replace(tmp_path, consolidated_path)
+            finally:
+                if lock_handle is not None and fcntl is not None:
+                    try:
+                        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                    finally:
+                        lock_handle.close()
+
             # Initialize global memory-mapped data
             initialize_global_price_data(str(consolidated_path))
             memory_map_path = str(consolidated_path)
-            
+
             # Verify memory mapping is working
             if GLOBAL_PRICE is not None and not GLOBAL_PRICE.empty:
                 sample_symbols = list(GLOBAL_PRICE.columns[: min(2, len(GLOBAL_PRICE.columns))])
                 if sample_symbols:
                     data_view = get_price_data_view(sample_symbols)
                     verify_no_data_copies(data_view, GLOBAL_PRICE)
-            
+
             logger.info("✅ Memory-mapped data initialized successfully")
-            
+
             # Start memory monitoring if in debug mode
             if logger.isEnabledFor(10):  # DEBUG level
                 monitor_memory_usage()
-                
+
         except Exception as e:
             logger.warning(f"⚠️ Memory-mapped optimization failed: {e}")
             logger.warning("Falling back to traditional data loading")
