@@ -645,3 +645,39 @@
 ### Итог по sprint15
 - Новый лучший по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `vm1005` (`max_var_multiplier=1.005`): Sharpe `4.378/4.074`.
 - Это улучшает предыдущего лидера `vmf101` (`max_var_multiplier=1.01`): Sharpe `4.348/4.043`.
+
+## Extra sweep: signal sprint16 (max_var_multiplier refine around 1.005, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint16/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint16/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `vm1004-vm1006` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (vm1004-vm1006)
+Дальше уточняем найденный максимум по `max_var_multiplier` вокруг `1.005`.
+
+| variant | max_var_multiplier |
+|---|---:|
+| vm1004 | 1.0040 |
+| vm10045 | 1.0045 |
+| vm1005 | 1.0050 |
+| vm10055 | 1.0055 |
+| vm1006 | 1.0060 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vm1004 | holdout | 4.369 | 2181.50 | -474.10 | 0.09 | 4610 | 58 |
+| vm1004 | stress | 4.066 | 1934.23 | -465.02 | 0.17 | 4610 | 58 |
+| vm10045 | holdout | 4.378 | 2188.25 | -473.46 | 0.09 | 4610 | 58 |
+| vm10045 | stress | 4.074 | 1940.54 | -464.39 | 0.17 | 4610 | 58 |
+| vm1005 | holdout | 4.378 | 2188.25 | -473.46 | 0.09 | 4610 | 58 |
+| vm1005 | stress | 4.074 | 1940.54 | -464.39 | 0.17 | 4610 | 58 |
+| vm10055 | holdout | 4.380 | 2190.02 | -473.46 | 0.09 | 4610 | 58 |
+| vm10055 | stress | 4.076 | 1942.05 | -464.39 | 0.17 | 4610 | 58 |
+| vm1006 | holdout | 4.363 | 2175.02 | -473.17 | 0.09 | 4608 | 58 |
+| vm1006 | stress | 4.059 | 1928.12 | -464.11 | 0.17 | 4608 | 58 |
+
+### Итог по sprint16
+- Новый лучший robust — `vm10055` (`max_var_multiplier=1.0055`): Sharpe `4.380/4.076`.
+- Прирост небольшой, но устойчивый (по 5 WF шагам и по stress тоже).

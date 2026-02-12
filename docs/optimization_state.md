@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-12
 
-Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `vm1005` (max_var_multiplier=1.005), holdout/stress Sharpe `4.378/4.074`.
+Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `4.380/4.076`.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
@@ -46,6 +46,8 @@ Recent updates (2026-02-12):
 - Итог sprint14: по `pair_stop_loss_zscore` локальный максимум остался на `3.0` (`slz3p0` совпадает с лидером `vmf101`).
 - Signal sprint15 (max_var_multiplier ultra-fine sweep) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint15/run_queue.csv` (`10/10 completed`).
 - Итог sprint15: новый лидер `vm1005` (max_var_multiplier=1.005) — Sharpe `4.378/4.074`, PnL `2188.25/1940.54`.
+- Signal sprint16 (max_var_multiplier refine around 1.005) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint16/run_queue.csv` (`10/10 completed`).
+- Итог sprint16: новый лидер `vm10055` (max_var_multiplier=1.0055) — Sharpe `4.380/4.076`, PnL `2190.02/1942.05`.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
