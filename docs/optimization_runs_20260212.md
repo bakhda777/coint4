@@ -718,3 +718,38 @@
 
 ### Итог по sprint17
 - `z=1.15` остаётся лучшим локальным максимумом; новый лидер не найден.
+
+## Extra sweep: signal sprint18 (time_stop_multiplier sweep under `vm10055`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint18/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260212_1000_sharpe_signal_sprint18/*.yaml`
+- Размер: 10 прогонов (`5` вариантов `tsOff-ts3p0` × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (tsOff-ts3p0)
+Фиксируем лидера `vm10055` (`max_var_multiplier=1.0055`, `z=1.15`, `exit=0.08`, `ms=0.20`, `hold/cd=300`) и меняем только `time_stop_multiplier`.
+
+| variant | time_stop_multiplier |
+|---|---:|
+| tsOff | — |
+| ts1p0 | 1.0 |
+| ts1p5 | 1.5 |
+| ts2p0 | 2.0 |
+| ts3p0 | 3.0 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| tsOff | holdout | 4.354 | 2177.38 | -459.76 | 0.08 | 4515 | 58 |
+| tsOff | stress | 4.057 | 1934.75 | -451.27 | 0.16 | 4515 | 58 |
+| ts1p0 | holdout | 4.412 | 2222.24 | -475.56 | 0.09 | 4677 | 58 |
+| ts1p0 | stress | 4.106 | 1969.97 | -466.44 | 0.17 | 4677 | 58 |
+| ts1p5 | holdout | 4.424 | 2230.75 | -466.47 | 0.09 | 4646 | 58 |
+| ts1p5 | stress | 4.119 | 1978.76 | -457.92 | 0.17 | 4646 | 58 |
+| ts2p0 | holdout | 4.380 | 2190.02 | -473.46 | 0.09 | 4610 | 58 |
+| ts2p0 | stress | 4.076 | 1942.05 | -464.39 | 0.17 | 4610 | 58 |
+| ts3p0 | holdout | 4.354 | 2175.28 | -467.29 | 0.09 | 4573 | 58 |
+| ts3p0 | stress | 4.054 | 1930.90 | -458.38 | 0.17 | 4573 | 58 |
+
+### Итог по sprint18
+- Новый лучший robust — `ts1p5` (`time_stop_multiplier=1.5`): Sharpe `4.424/4.119` (лучше baseline `ts2p0` = `4.380/4.076`).
