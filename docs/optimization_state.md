@@ -48,6 +48,8 @@ Recent updates (2026-02-12):
 - Итог sprint15: новый лидер `vm1005` (max_var_multiplier=1.005) — Sharpe `4.378/4.074`, PnL `2188.25/1940.54`.
 - Signal sprint16 (max_var_multiplier refine around 1.005) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint16/run_queue.csv` (`10/10 completed`).
 - Итог sprint16: новый лидер `vm10055` (max_var_multiplier=1.0055) — Sharpe `4.380/4.076`, PnL `2190.02/1942.05`.
+- Signal sprint17 (z micro-sweep under `vm10055`) завершён: `coint4/artifacts/wfa/aggregate/20260212_budget1000_sharpe_signal_sprint17/run_queue.csv` (`10/10 completed`).
+- Итог sprint17: `z=1.15` остаётся локальным максимумом, новый лидер не найден.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
