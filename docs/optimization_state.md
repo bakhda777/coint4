@@ -2,13 +2,15 @@
 
 Last updated: 2026-02-12
 
-Current stage: Re-opened targeted extended OOS sweep for `$1000` (10 configs) to test Sharpe recovery; runs dispatched to 85.198.90.128.
+Current stage: Extended OOS Sharpe-recovery sweep for `$1000` completed (10/10); analyzing follow-up DD/cost downshift around best variant r4.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
 - Подготовлена новая очередь из 10 конфигов: `coint4/artifacts/wfa/aggregate/20260212_budget1000_tlow_extended_sharpe_recover10/run_queue.csv`.
 - Новые конфиги: `coint4/configs/budget_20260212_1000_tlow_extended_sharpe_recover10/*.yaml` (варианты r1-r5, holdout/stress).
 - Гипотеза: улучшить Sharpe через более широкий пул пар (`corr/pvalue`, `max_pairs`) и снижение нелинейности sizing (`min/max_notional`).
+- Запуск на `85.198.90.128` завершён: `10/10 completed`.
+- Лучший вариант: `r4` (min Sharpe holdout/stress = `1.482`), пары выросли до `53`, но DD остался за гейтом (`~ -356`) и stress cost_ratio `0.62 > 0.5`.
 - Детали: `docs/optimization_runs_20260212.md`.
 
 Recent updates (2026-01-31):
