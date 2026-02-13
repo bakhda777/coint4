@@ -1,8 +1,12 @@
 # Optimization state
 
-Last updated: 2026-02-12
+Last updated: 2026-02-13
 
 Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `ts1p5` (time_stop_multiplier=1.5) поверх `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `4.424/4.119`.
+
+Recent updates (2026-02-13):
+- Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint19: максимум по robust-метрике остаётся на baseline `hold300/cd300` (Sharpe `4.424/4.119`); `hold60` уходит в отрицательный Sharpe, `hold600/900` резко режут PnL и ухудшают cost_ratio.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
