@@ -72,6 +72,9 @@
     - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - Если прогоны шли не через watcher/queue-runner, статусы в `run_queue.csv` могут остаться `planned`:
     - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
+- “Сгенерировал очередь с OOS окнами и sweep-параметрами, а получилось 3×3 окон (мусорные сочетания start/end)”
+  - В `scripts/optimization/generate_configs.py` нужно zip’ать `walk_forward.start_date` + `walk_forward.end_date`, иначе будет декартово произведение.
+  - Использовать: `--zip-keys walk_forward.start_date,walk_forward.end_date`
 - “Как убедиться, что VPS реально выключился (и не жрёт деньги)?”
   - По умолчанию `STOP_AFTER=1` должен выключать VPS в конце remote job.
   - Важно: `run_server_job.sh` пытается выключить VPS даже если команда/SSH внутри job упали. Если нужно оставить VPS для дебага, явно ставить `STOP_AFTER=0`.
