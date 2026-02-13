@@ -562,3 +562,40 @@
 - Новый лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `tp15`: Sharpe `5.142/4.899` (robust `4.899`), выше baseline `tp30` (robust `4.277`).
 - Вероятная причина роста Sharpe: `tp15` режет горизонт теста при `max_steps=5` (тест ~`75` дней против ~`150` дней у `tp30`), одновременно снижает turnover (trades `2283` vs `4659`) и издержки.
 - `tp21` ломает стратегию (отрицательные Sharpe/PnL); `tp45/tp60` сильно ухудшают robust Sharpe и раздувают stress `cost_ratio`.
+
+## Extra sweep: signal sprint34 (training_period_days sweep under `tp15`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint34/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint34/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (tr*)
+Фиксируем нового лидера `tp15` (testing=15d) и меняем только `walk_forward.training_period_days`.
+
+| variant | training_period_days |
+|---|---:|
+| tr60 | 60 |
+| tr90 | 90 |
+| tr120 | 120 |
+| tr180 | 180 |
+| tr240 | 240 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| tr60 | holdout | 1.516 | 244.98 | -944.74 | 0.28 | 2274 | 58 |
+| tr60 | stress | 1.301 | 177.50 | -939.28 | 0.67 | 2274 | 58 |
+| tr90 | holdout | 5.142 | 1486.56 | -535.64 | 0.07 | 2283 | 44 |
+| tr90 | stress | 4.899 | 1378.07 | -544.30 | 0.13 | 2283 | 44 |
+| tr120 | holdout | 2.305 | 488.24 | -451.51 | 0.16 | 2252 | 54 |
+| tr120 | stress | 2.093 | 419.99 | -447.52 | 0.33 | 2252 | 54 |
+| tr180 | holdout | 4.402 | 1419.65 | -456.71 | 0.06 | 2271 | 47 |
+| tr180 | stress | 4.200 | 1314.31 | -452.61 | 0.12 | 2271 | 47 |
+| tr240 | holdout | 3.872 | 1284.69 | -851.60 | 0.07 | 2246 | 45 |
+| tr240 | stress | 3.690 | 1184.84 | -843.11 | 0.12 | 2246 | 45 |
+
+### Итог по sprint34
+- Лидер не изменился: baseline `tr90` (training=90d) остаётся лучшим по robust Sharpe (Sharpe `5.142/4.899`).
+- `tr180` второй по robust (Sharpe `4.402/4.200`), но хуже лидера.
+- `tr60` и `tr240` заметно раздувают max_dd; `tr60` практически ломает стратегию по robust Sharpe и stress cost_ratio.
