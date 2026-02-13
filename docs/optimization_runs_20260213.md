@@ -1,6 +1,6 @@
 # Журнал прогонов оптимизации (2026-02-13)
 
-Цель: продолжить Max-Sharpe оптимизацию для капитала `$1000` на extended OOS `2023-05-01 -> 2024-04-30` вокруг текущего лидера `ts1p5` (holdout/stress Sharpe `4.424/4.119`).
+Цель: продолжить Max-Sharpe оптимизацию для капитала `$1000` на extended OOS `2023-05-01 -> 2024-04-30` вокруг текущего лидера `ms0p1` (holdout/stress Sharpe `4.572/4.277`).
 
 ## Extra sweep: signal sprint19 (hold/cooldown sweep under `ts1p5`, 10 прогонов)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint19/run_queue.csv`
@@ -414,3 +414,40 @@
 - Лидер не изменился: `max_pairs=24` остаётся лучшим по robust Sharpe.
 - `max_pairs=12` режет диверсификацию и ухудшает Sharpe.
 - `max_pairs>=36` увеличивает turnover/издержки и ухудшает Sharpe; `max_pairs=48` и `60` дают идентичные метрики (сaturation по доступным парам/сигналам).
+
+## Extra sweep: signal sprint30 (training_period_days sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint30/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint30/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (tr*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только `walk_forward.training_period_days`.
+
+| variant | training_period_days |
+|---|---:|
+| tr60 | 60 |
+| tr90 | 90 |
+| tr120 | 120 |
+| tr180 | 180 |
+| tr240 | 240 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| tr60 | holdout | -0.778 | -310.88 | -792.49 | — | 4708 | 62 |
+| tr60 | stress | -1.117 | -384.53 | -822.47 | — | 4708 | 62 |
+| tr90 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| tr90 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| tr120 | holdout | 2.475 | 921.49 | -653.33 | 0.16 | 4567 | 63 |
+| tr120 | stress | 2.176 | 753.91 | -651.20 | 0.33 | 4567 | 63 |
+| tr180 | holdout | 2.421 | 890.07 | -459.06 | 0.13 | 4460 | 54 |
+| tr180 | stress | 2.126 | 726.91 | -458.41 | 0.28 | 4460 | 54 |
+| tr240 | holdout | 3.740 | 1817.58 | -469.10 | 0.09 | 4436 | 54 |
+| tr240 | stress | 3.459 | 1594.82 | -467.88 | 0.17 | 4436 | 54 |
+
+### Итог по sprint30
+- Лидер не изменился: baseline `tr90` (training=90d) остаётся лучшим по robust Sharpe.
+- `tr60` (training=60d) ломает стратегию: отрицательный Sharpe и PnL при заметно большем DD.
+- Увеличение training-window (`120–240d`) снижает robust Sharpe и повышает stress cost_ratio; `tr240` частично восстанавливает Sharpe, но остаётся хуже `tr90`.
