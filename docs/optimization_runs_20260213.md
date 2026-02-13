@@ -747,3 +747,16 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 ### Наблюдения
 - `20260214_notional_sweep` оказался **no-op** при `$1000`: `max_position_size_pct=0.05` + risk sizing держат entry notional в районе ~$15–$34, поэтому `max_notional_per_trade` (100..10000) не связывает (cap_hits=0). Чтобы реально увидеть эффект maxnot, нужно опускать `max_notional_per_trade` ниже ~30–35 или ослаблять ограничение `max_position_size_pct`.
 - Самое слабое окно для обоих pruned-universe — OOS B (20231001-20240930). Следующий шаг: понять причину (режим, пары, концентрация, costs/turnover) и решить, нужно ли отдельное “B-окно” донастраивать или просто принимать как реалистичный worst-case.
+
+## Planned: DD sprint01 (pair_stop_loss_usd sweep, pruned_v2)
+
+Цель: повысить устойчивость к просадке, не убивая Sharpe, на 3 независимых OOS-окнах.
+
+- Run group: `20260213_budget1000_dd_sprint01_stoplossusd`
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint01_stoplossusd/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_dd_sprint01_stoplossusd/*.yaml` (24 прогона: 3 окна × 4 значения × holdout/stress)
+- Sweep: `backtest.pair_stop_loss_usd ∈ {5.0, 7.5, 10.0, 15.0}`
+- Критерии отбора (предлагаемые):
+  - robust Sharpe = `min(Sharpe_holdout, Sharpe_stress)` по каждому окну
+  - выбирать максимальный `min(robust_sharpe_window_A, window_B, window_C)` при `max_dd_pct <= 0.40`
+  - sanity: `total_trades >= 200`, `total_pairs_traded >= 50`

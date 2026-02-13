@@ -137,6 +137,7 @@ Recent updates (2026-01-31):
 - Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
+- DD sprint01 (stop-loss USD sweep, pruned_v2, multi-window): `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint01_stoplossusd/run_queue.csv`.
 - Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
 - Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).
 - Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
