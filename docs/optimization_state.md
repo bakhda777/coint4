@@ -9,6 +9,8 @@ Recent updates (2026-02-13):
 - Итог sprint19: максимум по robust-метрике остаётся на baseline `hold300/cd300` (Sharpe `4.424/4.119`); `hold60` уходит в отрицательный Sharpe, `hold600/900` резко режут PnL и ухудшают cost_ratio.
 - Signal sprint20 (min_spread_move_sigma sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint20: новый лидер `ms0p1` (min_spread_move_sigma=0.1) — Sharpe `4.572/4.277` (лучше baseline `ms0p2` = `4.424/4.119`).
+- Signal sprint21 (corr/pvalue sweep under `ms0p1`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint21: loosen/tighten `corr/pvalue` ухудшает Sharpe; лидер остаётся `ms0p1` (baseline `corr0p34_pv0p35`).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.

@@ -76,3 +76,41 @@
 
 ### Итог по sprint20
 - Новый лучший robust по `min(Sharpe_holdout, Sharpe_stress)` — `ms0p1` (min_spread_move_sigma=0.1): Sharpe `4.572/4.277` (лучше baseline `ms0p2` = `4.424/4.119`).
+
+## Extra sweep: signal sprint21 (corr/pvalue sweep under `ms0p1`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint21/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint21/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (c*_pv*)
+Фиксируем лидера `ms0p1` и меняем только:
+- `backtest.min_correlation_threshold`
+- `pair_selection.min_correlation`
+- `pair_selection.coint_pvalue_threshold`
+
+| variant | min_correlation | coint_pvalue_threshold |
+|---|---:|---:|
+| c0p28_pv0p45 | 0.28 | 0.45 |
+| c0p30_pv0p40 | 0.30 | 0.40 |
+| c0p34_pv0p35 | 0.34 | 0.35 |
+| c0p40_pv0p30 | 0.40 | 0.30 |
+| c0p50_pv0p25 | 0.50 | 0.25 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| c0p28_pv0p45 | holdout | 3.746 | 1396.33 | -427.66 | 0.12 | 4677 | 55 |
+| c0p28_pv0p45 | stress | 3.383 | 1195.10 | -439.00 | 0.23 | 4677 | 55 |
+| c0p30_pv0p40 | holdout | 3.749 | 1632.64 | -427.66 | 0.11 | 4655 | 58 |
+| c0p30_pv0p40 | stress | 3.425 | 1414.86 | -439.00 | 0.21 | 4655 | 58 |
+| c0p34_pv0p35 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| c0p34_pv0p35 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| c0p40_pv0p30 | holdout | 3.927 | 1907.67 | -506.71 | 0.11 | 4735 | 59 |
+| c0p40_pv0p30 | stress | 3.625 | 1673.73 | -494.84 | 0.20 | 4735 | 59 |
+| c0p50_pv0p25 | holdout | 3.777 | 1787.70 | -505.88 | 0.10 | 4773 | 63 |
+| c0p50_pv0p25 | stress | 3.468 | 1557.50 | -502.06 | 0.20 | 4773 | 63 |
+
+### Итог по sprint21
+- Ни один вариант `corr/pvalue` не улучшил `ms0p1` baseline `c0p34_pv0p35`; loosen/tighten снижает robust Sharpe.
