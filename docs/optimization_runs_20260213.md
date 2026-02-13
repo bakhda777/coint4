@@ -149,3 +149,42 @@
 
 ### Итог по sprint22
 - `ts1p5` остаётся локальным максимумом и под `ms0p1`; новый лидер не найден.
+
+## Extra sweep: signal sprint23 (pair_stop_loss_zscore sweep under `ms0p1+ts1p5`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint23/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint23/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (slz*)
+Фиксируем лидера `ms0p1+ts1p5` и меняем только `backtest.pair_stop_loss_zscore`.
+
+Примечание: `pair_stop_loss_zscore` должен быть строго `> 0`, отключить через `0.0` нельзя.
+
+| variant | pair_stop_loss_zscore |
+|---|---:|
+| slz2p0 | 2.0 |
+| slz2p5 | 2.5 |
+| slz3p0 | 3.0 |
+| slz3p5 | 3.5 |
+| slz4p0 | 4.0 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| slz2p0 | holdout | 2.032 | 375.70 | -312.73 | 0.50 | 5844 | 58 |
+| slz2p0 | stress | 1.340 | 220.01 | -323.71 | 1.44 | 5844 | 58 |
+| slz2p5 | holdout | 2.948 | 916.25 | -384.97 | 0.21 | 5149 | 58 |
+| slz2p5 | stress | 2.531 | 736.51 | -388.44 | 0.44 | 5149 | 58 |
+| slz3p0 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| slz3p0 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| slz3p5 | holdout | 2.547 | 1001.95 | -631.18 | 0.15 | 4352 | 58 |
+| slz3p5 | stress | 2.277 | 840.24 | -616.24 | 0.30 | 4352 | 58 |
+| slz4p0 | holdout | 1.669 | 564.83 | -698.37 | 0.21 | 4126 | 58 |
+| slz4p0 | stress | 1.431 | 435.47 | -730.71 | 0.47 | 4126 | 58 |
+
+### Итог по sprint23
+- Лидер остаётся `slz3p0` (stop_loss_z=3.0): Sharpe `4.572/4.277`.
+- Более агрессивный stop (`2.0–2.5`) резко увеличивает churn и издержки (stress `cost_ratio` до `1.44`) и ломает Sharpe.
+- Более мягкий stop (`3.5–4.0`) ухудшает Sharpe и раздувает DD (holdout max_dd до `-698…-730`).
