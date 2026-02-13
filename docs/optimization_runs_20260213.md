@@ -639,3 +639,41 @@
 - На полном extended OOS (без усечения по `max_steps`) `tp15` остаётся лучшим по robust-метрике: Sharpe `3.326/3.117` (robust `3.117`), но преимущество над `tp30` уже небольшое (robust `2.941`).
 - Результат подтверждает, что рост Sharpe у `tp15` в sprint33/34 (Sharpe `5.142/4.899`) был существенно завязан на укороченный горизонт теста при `max_steps=5`.
 - `tp21` стабильно ломает стратегию (отрицательные Sharpe/PnL), а большие `tp45/tp60` режут robust Sharpe и раздувают stress `cost_ratio` (до `1.18` на `tp60`).
+
+## Extra sweep: signal sprint36 (pair stability sweep under full-horizon `tp15_tr90`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint36/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint36/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (psw*m*)
+Фиксируем full-horizon конфиг (`tp15_tr90`, `max_steps=null`) и меняем только:
+- `pair_selection.pair_stability_window_steps`
+- `pair_selection.pair_stability_min_steps`
+
+| variant | window_steps | min_steps |
+|---|---:|---:|
+| psw1m1 | 1 | 1 |
+| psw2m1 | 2 | 1 |
+| psw2m2 | 2 | 2 |
+| psw3m2 | 3 | 2 |
+| psw5m3 | 5 | 3 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs | days |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| psw1m1 | holdout | 3.544 | 34891.31 | -17862.70 | 0.13 | 11451 | 121 | 376 |
+| psw1m1 | stress | 3.342 | 27439.77 | -15618.33 | 0.24 | 11451 | 121 | 376 |
+| psw2m1 | holdout | 3.326 | 25993.76 | -11582.56 | 0.14 | 11531 | 110 | 376 |
+| psw2m1 | stress | 3.117 | 20256.41 | -10156.50 | 0.28 | 11531 | 110 | 376 |
+| psw2m2 | holdout | 3.397 | 20280.90 | -28571.29 | 0.21 | 11458 | 128 | 376 |
+| psw2m2 | stress | 3.168 | 15837.74 | -25005.41 | 0.42 | 11458 | 128 | 376 |
+| psw3m2 | holdout | 3.082 | 12609.45 | -11994.72 | 0.20 | 11669 | 112 | 376 |
+| psw3m2 | stress | 2.832 | 9659.74 | -10237.85 | 0.39 | 11669 | 112 | 376 |
+| psw5m3 | holdout | 2.585 | 8082.41 | -11339.91 | 0.24 | 11643 | 104 | 376 |
+| psw5m3 | stress | 2.347 | 6072.28 | -9535.25 | 0.47 | 11643 | 104 | 376 |
+
+### Итог по sprint36
+- Новый full-horizon лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `psw1m1`: Sharpe `3.544/3.342` (robust `3.342`), лучше baseline `psw2m1` (= `3.326/3.117`, robust `3.117`).
+- Более жёсткая стабилизация (`psw3m2/psw5m3`) ухудшает Sharpe: вероятно, фильтр начинает отрезать слишком много свежих/качественных пар и снижает edge.
