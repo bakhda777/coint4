@@ -714,3 +714,36 @@
 ### Итог по sprint37
 - Новый full-horizon лидер по robust-метрике — `hx0p70`: Sharpe `3.576/3.375` (robust `3.375`), лучше `hx0p80` (= `3.544/3.342`, robust `3.342`).
 - Слишком строгий Hurst-фильтр (`hx0p50`) резко ломает edge (Sharpe `1.586/1.450`), а слишком мягкий (`hx0p90`) хуже по robust → локальный максимум около `0.70`.
+
+## Pruned Universe Validation (run_group `20260214_*`, executed 2026-02-13)
+
+Примечание по датам: директории/теги прогонов имеют префикс `20260214`, но фактически были запущены **2026-02-13** (UTC: 2026-02-13).
+
+### Очереди и статус
+- `coint4/artifacts/wfa/aggregate/20260214_oos_pruned/run_queue.csv` (`6/6 completed`, `Sharpe consistency OK`)
+- `coint4/artifacts/wfa/aggregate/20260214_oos_pruned_v2/run_queue.csv` (`6/6 completed`, `Sharpe consistency OK`)
+- `coint4/artifacts/wfa/aggregate/20260214_oos_validation/run_queue.csv` (`6/6 completed`, `Sharpe consistency OK`)
+- `coint4/artifacts/wfa/aggregate/20260214_notional_sweep/run_queue.csv` (`36/36 completed`, `Sharpe consistency OK`)
+- Full-span sanity v1: `coint4/artifacts/wfa/aggregate/20260214_fullspan/run_queue.csv` (`2/2 completed`, `Sharpe consistency OK`)
+- Full-span sanity v2: `coint4/artifacts/wfa/aggregate/20260214_fullspan_v2/run_queue.csv` (`2/2 completed`, `Sharpe consistency OK`)
+
+### Итоги (robust Sharpe = min(holdout, stress))
+
+Pruned v1 (`pruned191`, universe `coint4/artifacts/universe/20260214_pruned_nofan/pairs_universe.yaml`, 191 pair):
+- OOS A (20220601-20230430): robust `5.169` (holdout/stress `5.398/5.169`), PnL `795/751`, DD `-107/-108`
+- OOS B (20231001-20240930): robust `2.032` ( `2.254/2.032`), PnL `497/421`, DD `-337/-348`
+- OOS C (20240501-20250630): robust `5.286` ( `5.509/5.286`), PnL `1713/1601`, DD `-287/-281`
+
+Pruned v2 (`pruned168`, universe `coint4/configs/universe/pruned_v2_pairs_universe.yaml`, 168 pair):
+- OOS A: robust `4.272` ( `4.607/4.272`), PnL `593/540`, DD `-104/-108`
+- OOS B: robust `1.432` ( `1.644/1.432`), PnL `291/227`, DD `-430/-422`
+- OOS C: robust `4.368` ( `4.573/4.368`), PnL `1293/1202`, DD `-286/-285`
+
+Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
+- OOS C: robust `3.660` ( `3.947/3.660`)
+- OOS B: robust `2.087` ( `2.763/2.087`), PnL `-874/-885`, DD `-1073/-1076`
+- OOS A: robust `-0.810` ( `-0.614/-0.810`)
+
+### Наблюдения
+- `20260214_notional_sweep` оказался **no-op** при `$1000`: `max_position_size_pct=0.05` + risk sizing держат entry notional в районе ~$15–$34, поэтому `max_notional_per_trade` (100..10000) не связывает (cap_hits=0). Чтобы реально увидеть эффект maxnot, нужно опускать `max_notional_per_trade` ниже ~30–35 или ослаблять ограничение `max_position_size_pct`.
+- Самое слабое окно для обоих pruned-universe — OOS B (20231001-20240930). Следующий шаг: понять причину (режим, пары, концентрация, costs/turnover) и решить, нужно ли отдельное “B-окно” донастраивать или просто принимать как реалистичный worst-case.
