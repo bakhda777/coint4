@@ -377,3 +377,40 @@
 - Лидер не изменился: базовый clamp `rg0p5to1p5` остаётся лучшим по robust Sharpe.
 - `rg1p0to1p5` даёт идентичные метрики baseline → в текущей реализации `regime_factor` практически не опускается ниже `1.0`, нижний clamp не лимитирует.
 - Расширение верхнего clamp (`2.0–3.0`) снижает robust Sharpe (хотя DD становится меньше и trades ниже), narrow clamp (`0.8–1.2`) ломает Sharpe через рост churn/издержек.
+
+## Extra sweep: signal sprint29 (max_pairs sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint29/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint29/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (mp*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только `pair_selection.max_pairs`.
+
+| variant | max_pairs |
+|---|---:|
+| mp12 | 12 |
+| mp24 | 24 |
+| mp36 | 36 |
+| mp48 | 48 |
+| mp60 | 60 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| mp12 | holdout | 3.209 | 668.07 | -293.43 | 0.12 | 2502 | 27 |
+| mp12 | stress | 2.905 | 586.43 | -300.67 | 0.24 | 2502 | 27 |
+| mp24 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| mp24 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| mp36 | holdout | 3.899 | 2594.83 | -620.87 | 0.11 | 6986 | 81 |
+| mp36 | stress | 3.557 | 2199.49 | -591.42 | 0.22 | 6986 | 81 |
+| mp48 | holdout | 3.277 | 2099.90 | -573.67 | 0.14 | 7654 | 83 |
+| mp48 | stress | 2.946 | 1729.31 | -544.59 | 0.28 | 7654 | 83 |
+| mp60 | holdout | 3.277 | 2099.90 | -573.67 | 0.14 | 7654 | 83 |
+| mp60 | stress | 2.946 | 1729.31 | -544.59 | 0.28 | 7654 | 83 |
+
+### Итог по sprint29
+- Лидер не изменился: `max_pairs=24` остаётся лучшим по robust Sharpe.
+- `max_pairs=12` режет диверсификацию и ухудшает Sharpe.
+- `max_pairs>=36` увеличивает turnover/издержки и ухудшает Sharpe; `max_pairs=48` и `60` дают идентичные метрики (сaturation по доступным парам/сигналам).
