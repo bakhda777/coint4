@@ -29,6 +29,8 @@ Recent updates (2026-02-13):
 - Итог sprint29: `max_pairs=24` остаётся лучшим; уменьшение/увеличение числа торгуемых пар ухудшает Sharpe через потерю диверсификации или рост издержек.
 - Signal sprint30 (training_period_days sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint30: лидер остаётся baseline `tr90` (training=90d); `tr60` ломает стратегию (отрицательные Sharpe/PnL), а `120–240d` ухудшают robust Sharpe и повышают stress cost_ratio.
+- Signal sprint31 (max_active_positions sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint31: лидер остаётся baseline `ap18` (max_active_positions=18); уменьшение лимита (`12/16`) ухудшает Sharpe, увеличение (`20/24`) не улучшает (почти идентичные метрики и чуть хуже robust Sharpe).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.

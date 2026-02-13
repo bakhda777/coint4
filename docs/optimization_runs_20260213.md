@@ -451,3 +451,40 @@
 - Лидер не изменился: baseline `tr90` (training=90d) остаётся лучшим по robust Sharpe.
 - `tr60` (training=60d) ломает стратегию: отрицательный Sharpe и PnL при заметно большем DD.
 - Увеличение training-window (`120–240d`) снижает robust Sharpe и повышает stress cost_ratio; `tr240` частично восстанавливает Sharpe, но остаётся хуже `tr90`.
+
+## Extra sweep: signal sprint31 (max_active_positions sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint31/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint31/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ap*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только `portfolio.max_active_positions`.
+
+| variant | max_active_positions |
+|---|---:|
+| ap12 | 12 |
+| ap16 | 16 |
+| ap18 | 18 |
+| ap20 | 20 |
+| ap24 | 24 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ap12 | holdout | 4.400 | 2302.82 | -496.33 | 0.09 | 4659 | 58 |
+| ap12 | stress | 4.119 | 2058.49 | -483.40 | 0.17 | 4659 | 58 |
+| ap16 | holdout | 4.506 | 2413.05 | -529.82 | 0.08 | 4659 | 58 |
+| ap16 | stress | 4.213 | 2149.65 | -518.79 | 0.16 | 4659 | 58 |
+| ap18 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| ap18 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| ap20 | holdout | 4.568 | 2459.59 | -536.38 | 0.08 | 4659 | 58 |
+| ap20 | stress | 4.273 | 2192.68 | -525.23 | 0.16 | 4659 | 58 |
+| ap24 | holdout | 4.568 | 2459.59 | -536.38 | 0.08 | 4659 | 58 |
+| ap24 | stress | 4.273 | 2192.68 | -525.23 | 0.16 | 4659 | 58 |
+
+### Итог по sprint31
+- Лидер не изменился: baseline `ap18` (max_active_positions=18) остаётся лучшим по robust Sharpe.
+- Снижение лимита (`ap12/ap16`) ухудшает Sharpe через потерю диверсификации.
+- Увеличение лимита (`ap20/ap24`) даёт почти идентичные метрики и не улучшает Sharpe (на текущем сигнале лимит позиций редко является главным бутылочным горлышком).
