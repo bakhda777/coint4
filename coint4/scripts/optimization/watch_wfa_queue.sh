@@ -205,14 +205,31 @@ with queue_path.open(newline="") as handle:
         if not path.exists():
             missing.append(config_path)
             continue
+        found = False
         max_steps = None
+        raw_value = None
         with path.open() as cfg:
             for line in cfg:
-                match = re.match(r"\s*max_steps:\s*(\d+)", line)
+                match = re.match(r"\s*max_steps:\s*(.*)$", line)
                 if match:
-                    max_steps = int(match.group(1))
+                    found = True
+                    # Strip inline comments and surrounding whitespace
+                    raw_value = match.group(1).split("#", 1)[0].strip()
+                    if raw_value == "" or raw_value.lower() in {"null", "none", "~"}:
+                        max_steps = None
+                    else:
+                        try:
+                            max_steps = int(raw_value)
+                        except ValueError:
+                            max_steps = None
                     break
+        # NOTE: default for walk_forward.max_steps is null/None (unbounded),
+        # so missing or null is unsafe for queue runs.
+        if not found:
+            bad.append((config_path, "missing"))
+            continue
         if max_steps is None:
+            bad.append((config_path, raw_value or "null"))
             continue
         if max_steps > 5:
             bad.append((config_path, max_steps))
@@ -220,7 +237,10 @@ with queue_path.open(newline="") as handle:
 if missing:
     print("WARN: configs missing:", ", ".join(missing))
 if bad:
-    print("ERROR: max_steps > 5:", ", ".join(f"{p}={v}" for p, v in bad))
+    print(
+        "ERROR: unsafe walk_forward.max_steps (must be an explicit integer <= 5 for queue runs):",
+        ", ".join(f"{p}={v}" for p, v in bad),
+    )
     sys.exit(2)
 PY
 }
