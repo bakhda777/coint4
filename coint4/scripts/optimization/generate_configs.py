@@ -35,6 +35,8 @@ Sweep modes:
   - Single --sweep flag: iterate over values
   - Multiple --sweep flags with different lengths: cartesian product
   - Use --zip to force zipped iteration (arrays must be same length)
+  - Use --zip-keys to zip only a subset of keys (e.g. pair start/end dates) while
+    keeping other sweeps as cartesian products.
 """
 
 from __future__ import annotations
@@ -223,6 +225,15 @@ def main() -> None:
     )
     parser.add_argument("--zip", action="store_true", dest="zip_mode",
                         help="Force zipped (not cartesian) iteration")
+    parser.add_argument(
+        "--zip-keys",
+        action="append",
+        default=[],
+        help=(
+            "Comma-separated sweep keys to zip together (partial zip). Example: "
+            "--zip-keys walk_forward.start_date,walk_forward.end_date"
+        ),
+    )
     parser.add_argument("--output-dir", required=True, help="Directory for generated YAML configs")
     parser.add_argument("--queue-dir", required=True, help="Directory for run_queue.csv")
     parser.add_argument("--runs-dir", default="artifacts/wfa/runs",
@@ -240,7 +251,31 @@ def main() -> None:
         base_cfg = yaml.safe_load(f)
 
     sweeps = [parse_sweep(s) for s in args.sweep]
-    permutations = generate_permutations(sweeps, args.zip_mode)
+
+    zip_keys: List[str] = []
+    for raw in args.zip_keys:
+        for part in str(raw).split(","):
+            key = part.strip()
+            if key:
+                zip_keys.append(key)
+
+    if args.zip_mode and zip_keys:
+        raise ValueError("--zip and --zip-keys are mutually exclusive")
+
+    if zip_keys:
+        sweep_keys = {k for k, _ in sweeps}
+        missing = sorted(set(zip_keys) - sweep_keys)
+        if missing:
+            raise ValueError(f"--zip-keys contains keys not present in --sweep: {missing}")
+
+        zipped = [s for s in sweeps if s[0] in set(zip_keys)]
+        others = [s for s in sweeps if s[0] not in set(zip_keys)]
+
+        zipped_perms = generate_permutations(zipped, zip_mode=True)
+        other_perms = generate_permutations(others, zip_mode=False)
+        permutations = [z + o for z in zipped_perms for o in other_perms]
+    else:
+        permutations = generate_permutations(sweeps, args.zip_mode)
 
     output_dir = Path(args.output_dir)
     queue_dir = Path(args.queue_dir)
