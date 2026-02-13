@@ -414,3 +414,11 @@ Active components remain in:
 - Main source: `src/coint2/` and `src/optimiser/`
 
 Heartbeat watcher: поле `run_cpu` в `watch_wfa_queue.sh` теперь относится к воркеру `coint2 walk-forward`; отдельно пишутся `watcher_cpu`, `worker_pid`, `worker_cpu`.
+
+## Trading Rules
+
+- Paper trading НЕ используется
+- Live режим запускается ТОЛЬКО после финализации параметров
+- Все решения принимаются на основе WFA-бэктестов
+- Целевая метрика: максимизация Sharpe ratio при initial_capital=$1,000
+- Артефакты live-торговли (artifacts/live/) удалены — не содержали реальных данных
