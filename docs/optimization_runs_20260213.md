@@ -263,3 +263,38 @@
 
 ### Итог по sprint25
 - `rolling_window=96` остаётся явным максимумом Sharpe; остальные окна резко ухудшают Sharpe и/или уводят PnL в ноль/минус (особенно `rw144`).
+
+## Extra sweep: signal sprint26 (z-entry sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint26/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint26/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (z*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только `backtest.zscore_entry_threshold` (синхронно с `backtest.zscore_threshold` для консистентности).
+
+| variant | zscore_entry_threshold |
+|---|---:|
+| z0p90 | 0.90 |
+| z1p00 | 1.00 |
+| z1p15 | 1.15 |
+| z1p30 | 1.30 |
+| z1p45 | 1.45 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| z0p90 | holdout | 3.671 | 2021.14 | -525.13 | 0.09 | 5379 | 58 |
+| z0p90 | stress | 3.360 | 1734.41 | -522.71 | 0.18 | 5379 | 58 |
+| z1p00 | holdout | 3.505 | 1995.60 | -586.21 | 0.09 | 5103 | 58 |
+| z1p00 | stress | 3.224 | 1724.38 | -559.22 | 0.18 | 5103 | 58 |
+| z1p15 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| z1p15 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| z1p30 | holdout | 3.965 | 1102.78 | -365.68 | 0.13 | 4147 | 58 |
+| z1p30 | stress | 3.554 | 944.21 | -366.28 | 0.25 | 4147 | 58 |
+| z1p45 | holdout | 3.552 | 884.72 | -273.98 | 0.14 | 3647 | 58 |
+| z1p45 | stress | 3.163 | 755.30 | -280.35 | 0.27 | 3647 | 58 |
+
+### Итог по sprint26
+- Лидер по robust Sharpe остаётся `z1p15` (текущий baseline); как занижение `z` (churn), так и завышение (резкое падение PnL/Sharpe) ухудшают метрики.
