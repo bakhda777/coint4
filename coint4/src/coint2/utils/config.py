@@ -247,6 +247,10 @@ class BacktestConfig(BaseModel):
     
     # Structural break protection parameters
     structural_break_protection: bool = True
+    # Numba structural break protection tuning (used by numba_kernels.calculate_positions_and_pnl_full)
+    structural_break_min_correlation: float = Field(default=0.3, gt=0.0, lt=1.0)
+    structural_break_entry_multiplier: float = Field(default=1.5, gt=0.0)
+    structural_break_exit_multiplier: float = Field(default=1.2, gt=0.0)
     cointegration_test_frequency: int = Field(default=2688, ge=1)  # Минимум зависит от режима, проверяется валидатором
     adf_pvalue_threshold: float = Field(default=0.05, gt=0.0, lt=1.0)
     exclusion_period_days: int = Field(default=30, ge=1)

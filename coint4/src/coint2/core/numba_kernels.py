@@ -656,14 +656,17 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    exit_threshold: float,
                                    commission: float,
                                    slippage: float,
-                                   max_holding_period: int,
-                                   enable_regime_detection: bool,
-                                   enable_structural_breaks: bool,
-                                   min_volatility: float,
-                                   adaptive_threshold_factor: float,
-                                   max_var_multiplier: float = 3.0,
-                                   cooldown_periods: int = 0,
-                                   min_hold_periods: int = 0,
+	                                   max_holding_period: int,
+	                                   enable_regime_detection: bool,
+	                                   enable_structural_breaks: bool,
+	                                   min_volatility: float,
+	                                   adaptive_threshold_factor: float,
+	                                   structural_break_min_correlation: float = 0.3,
+	                                   structural_break_entry_multiplier: float = 1.5,
+	                                   structural_break_exit_multiplier: float = 1.2,
+	                                   max_var_multiplier: float = 3.0,
+	                                   cooldown_periods: int = 0,
+	                                   min_hold_periods: int = 0,
                                    stop_loss_zscore: float = 0.0,
                                    min_spread_move_sigma: float = 0.0,
                                    capital_at_risk: float = 1.0,
@@ -694,6 +697,12 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         Включить определение рыночного режима
     enable_structural_breaks : bool
         Включить защиту от структурных сдвигов
+    structural_break_min_correlation : float
+        Min корреляция (по модулю) в половинах ряда, ниже которой считаем, что есть structural break.
+    structural_break_entry_multiplier : float
+        Множитель entry/exit порогов при structural break (entry).
+    structural_break_exit_multiplier : float
+        Множитель entry/exit порогов при structural break (exit).
     min_volatility : float
         Минимальная волатильность
     adaptive_threshold_factor : float
@@ -742,6 +751,14 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         min_notional_per_trade = 0.0
     if max_notional_per_trade < 0.0:
         max_notional_per_trade = 0.0
+    if structural_break_min_correlation <= 0.0:
+        structural_break_min_correlation = 0.3
+    elif structural_break_min_correlation > 1.0:
+        structural_break_min_correlation = 1.0
+    if structural_break_entry_multiplier <= 0.0:
+        structural_break_entry_multiplier = 1.0
+    if structural_break_exit_multiplier <= 0.0:
+        structural_break_exit_multiplier = 1.0
 
     min_sigma = 1e-6  # Align with base_engine z-score guard.
 
@@ -775,7 +792,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     # Проверяем структурные сдвиги (если включено)
     has_structural_break = False
     if enable_structural_breaks and n > 200:
-        has_structural_break = check_structural_breaks(y, x, 0.3)
+        has_structural_break = check_structural_breaks(y, x, structural_break_min_correlation)
 
     adaptive_max_multiplier = 1.0
     if adaptive_threshold_factor > 0.0:
@@ -811,8 +828,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 
         # Если есть структурные сдвиги, увеличиваем пороги
         if has_structural_break:
-            adaptive_entry *= 1.5
-            adaptive_exit *= 1.2
+            adaptive_entry *= structural_break_entry_multiplier
+            adaptive_exit *= structural_break_exit_multiplier
 
         z_curr = (current_spread - mu_curr) / current_vol
 

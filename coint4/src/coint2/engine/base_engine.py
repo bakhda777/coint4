@@ -339,6 +339,11 @@ class BasePairBacktester:
             self.pair_stop_loss_usd = getattr(config, 'pair_stop_loss_usd', 75.0)
             self.pair_stop_loss_zscore = getattr(config, 'pair_stop_loss_zscore', 3.0)
             self.portfolio_daily_stop_pct = getattr(config, 'portfolio_daily_stop_pct', 0.02)
+
+            # Numba structural break protection tuning (kept separate from other structural-break logic)
+            self.structural_break_min_correlation = getattr(config, 'structural_break_min_correlation', 0.3)
+            self.structural_break_entry_multiplier = getattr(config, 'structural_break_entry_multiplier', 1.5)
+            self.structural_break_exit_multiplier = getattr(config, 'structural_break_exit_multiplier', 1.2)
             
             # NEW: Time-based filters
             self.enable_funding_time_filter = getattr(config, 'enable_funding_time_filter', True)
@@ -374,6 +379,9 @@ class BasePairBacktester:
             self.pair_stop_loss_usd = 75.0
             self.pair_stop_loss_zscore = 3.0
             self.portfolio_daily_stop_pct = 0.02
+            self.structural_break_min_correlation = 0.3
+            self.structural_break_entry_multiplier = 1.5
+            self.structural_break_exit_multiplier = 1.2
             self.enable_funding_time_filter = True
             self.funding_blackout_minutes = 30
             self.funding_reset_hours = [0, 8, 16]
