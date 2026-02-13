@@ -196,6 +196,7 @@ class FullNumbaPairBacktester(BasePairBacktester):
             capital_at_risk=capital_at_risk,
             min_notional_per_trade=min_notional,
             max_notional_per_trade=max_notional,
+            pair_stop_loss_usd=float(getattr(self, "pair_stop_loss_usd", 0.0) or 0.0),
         )
         
         # Calculate spread and z_scores for compatibility

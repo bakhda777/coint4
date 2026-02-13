@@ -688,7 +688,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
                                    min_spread_move_sigma: float = 0.0,
                                    capital_at_risk: float = 1.0,
                                    min_notional_per_trade: float = 0.0,
-                                   max_notional_per_trade: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                   max_notional_per_trade: float = 0.0,
+                                   pair_stop_loss_usd: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Полная торговая функция с всеми возможностями оригинального алгоритма.
 
@@ -872,8 +873,14 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 
         # Логика выхода из позиции
         elif position != 0.0:
+            # Stop-loss по USD (override min_hold, highest priority)
+            if pair_stop_loss_usd > 0.0:
+                unrealized_pnl = position * position_units * (current_spread - entry_spread)
+                if unrealized_pnl <= -pair_stop_loss_usd:
+                    new_position = 0.0
+
             # Stop-loss по z-score (override min_hold)
-            if stop_loss_zscore > 0.0:
+            if new_position == position and stop_loss_zscore > 0.0:
                 if (position > 0.0 and z_curr <= -stop_loss_zscore) or (position < 0.0 and z_curr >= stop_loss_zscore):
                     new_position = 0.0
 

@@ -1,21 +1,27 @@
 ##############################################################################
-# PRODUCTION CONFIG — Budget $1,000 — Pruned Universe (191 pairs, no fan tokens)
+# PRODUCTION CONFIG — Budget $1,000 — Pruned Universe v2 (168 pairs)
+#
+# Pruning: removed fan/sports tokens + HFT/KDA (beta amplification crash)
+# Code fix: pair_stop_loss_usd=$7.5 now implemented in numba kernel
 #
 # Validated on 3 OOS windows (Jun22-Apr23, Oct23-Sep24, May24-Jun25):
-#   Holdout Sharpe: 5.40 / 2.25 / 5.51 (avg 4.39)
-#   Stress Sharpe:  5.17 / 2.03 / 5.29 (avg 4.16)
-#   All windows profitable, total PnL +$3,005
+#   Holdout Sharpe: 4.61 / 1.64 / 4.57 (avg 3.61)
+#   Stress Sharpe:  4.27 / 1.43 / 4.37 (avg 3.36)
+#   All 3 windows profitable
 #
 # Full-span (Jun 2022 → Jun 2025, 75 WFA steps):
-#   Holdout Sharpe 1.90, PnL +$29,836 (30.8x)
-#   Stress  Sharpe 1.59, PnL +$19,276 (19.3x)
+#   Holdout Sharpe 2.24, PnL +$25,402 (26.4x), Max DD -53.0%
+#   Stress  Sharpe 1.83, PnL +$18,906 (19.9x), Max DD -66.0%
+#
+# vs v1 (191 pairs, no pair_stop_loss_usd):
+#   Sharpe: 1.90→2.24 (+18%), DD: -83.1%→-53.0%, worst pair: -$6489→-$2237
 #
 # Key parameters (converged after 37 optimization sprints):
 #   z_entry=1.15, z_exit=0.08, rolling_window=96, training=90d, testing=15d
-#   time_stop=1.5, stop_loss_z=3.0, max_var_multiplier=1.0055
-#   min_spread_move_sigma=0.1, regime_clamp=[0.5, 1.5]
+#   time_stop=1.5, stop_loss_z=3.0, pair_stop_loss_usd=7.5
+#   max_var_multiplier=1.0055, min_spread_move_sigma=0.1, regime_clamp=[0.5,1.5]
 #
-# Finalized: 2026-02-14
+# Finalized: 2026-02-13 (tag: 20260214)
 ##############################################################################
 backtest:
   adaptive_thresholds: true
@@ -163,7 +169,7 @@ walk_forward:
   gap_minutes: 15
   max_steps: 5
   min_training_samples: 500
-  pairs_file: artifacts/universe/20260214_pruned_nofan/pairs_universe.yaml
+  pairs_file: configs/universe/pruned_v2_pairs_universe.yaml
   refit_frequency: weekly
   start_date: '2025-07-01'
   step_size_days: 15
