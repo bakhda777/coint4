@@ -338,3 +338,42 @@
 - Никакой вариант не улучшил baseline `sb_base` (параметры по умолчанию, эквивалентны прежним константам Numba): лидер остаётся `ms0p1+ts1p5+slz3p0`.
 - Сдвиг `structural_break_min_correlation` в обе стороны (`0.20`/`0.40`) ухудшает robust Sharpe (stress до `~3.84–3.87`).
 - Ослабление/усиление мультипликаторов (`sb_mulLo/sb_mulHi`) тоже снижает robust Sharpe; `sb_mulHi` уменьшает DD, но сильнее режет PnL и Sharpe.
+
+## Extra sweep: signal sprint28 (market-regime clamp sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint28/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint28/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (rg*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только clamp диапазон для Numba market-regime factor:
+- `backtest.market_regime_factor_min`
+- `backtest.market_regime_factor_max`
+
+| variant | factor_min | factor_max |
+|---|---:|---:|
+| rg0p5to1p5 | 0.5 | 1.5 |
+| rg1p0to1p5 | 1.0 | 1.5 |
+| rg0p5to2p0 | 0.5 | 2.0 |
+| rg0p5to3p0 | 0.5 | 3.0 |
+| rg0p8to1p2 | 0.8 | 1.2 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| rg0p5to1p5 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| rg0p5to1p5 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| rg1p0to1p5 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| rg1p0to1p5 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| rg0p5to2p0 | holdout | 3.713 | 1050.72 | -292.77 | 0.11 | 3699 | 58 |
+| rg0p5to2p0 | stress | 3.354 | 909.77 | -295.12 | 0.22 | 3699 | 58 |
+| rg0p5to3p0 | holdout | 3.832 | 1096.33 | -292.77 | 0.11 | 3689 | 58 |
+| rg0p5to3p0 | stress | 3.473 | 953.14 | -295.12 | 0.21 | 3689 | 58 |
+| rg0p8to1p2 | holdout | 2.654 | 1148.31 | -504.01 | 0.14 | 5219 | 58 |
+| rg0p8to1p2 | stress | 2.349 | 942.19 | -501.96 | 0.29 | 5219 | 58 |
+
+### Итог по sprint28
+- Лидер не изменился: базовый clamp `rg0p5to1p5` остаётся лучшим по robust Sharpe.
+- `rg1p0to1p5` даёт идентичные метрики baseline → в текущей реализации `regime_factor` практически не опускается ниже `1.0`, нижний clamp не лимитирует.
+- Расширение верхнего clamp (`2.0–3.0`) снижает robust Sharpe (хотя DD становится меньше и trades ниже), narrow clamp (`0.8–1.2`) ломает Sharpe через рост churn/издержек.
