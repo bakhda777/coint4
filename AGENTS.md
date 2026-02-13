@@ -34,6 +34,7 @@
 ## Исполнение / серверы
 - На этом сервере (146.103.41.248) не запускать тяжёлые прогоны.
 - Тяжёлые WFA/оптимизации/долгие бэктесты выполнять на 85.198.90.128 (через remote helper ниже).
+- Важно: после завершения прогонов на 85.198.90.128 сервер **выключать** (не оставлять включённым). Предпочитать запуск через `coint4/scripts/remote/run_server_job.sh` (по умолчанию `STOP_AFTER=1`).
 - Guardrail: `watch_wfa_queue.sh` требует явный `walk_forward.max_steps` и проверяет `max_steps<=5` для queue-прогонов. Длинные “fullspan” сценарии запускать отдельным пайплайном и явно фиксировать в `docs/`.
 
 ## Артефакты и Git
@@ -49,6 +50,7 @@
 - Скрипт: `coint4/scripts/remote/run_server_job.sh`
 - Переменные: `SERVSPACE_API_KEY`, `SERVER_ID` (или `SERVER_NAME`), `SERVER_IP` (по умолчанию `85.198.90.128`)
 - Опции: `SKIP_POWER=1`, `STOP_AFTER=0/1`, `UPDATE_CODE=1/0`, `SYNC_BACK=1/0`, `SYNC_PATHS`, `SSH_KEY`, `SERVER_REPO_DIR`, `SERVER_WORK_DIR`
+- Примечание: `STOP_AFTER=1` (default) = **автоматически выключить VPS** после выполнения команды. Не ставить `STOP_AFTER=0` без явной причины.
 - Пример (из `coint4/`):
   - `export SERVSPACE_API_KEY="***"; export SERVER_ID="***"; export SERVER_IP="85.198.90.128"`
   - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
