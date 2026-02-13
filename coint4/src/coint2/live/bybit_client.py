@@ -1,4 +1,4 @@
-"""Minimal Bybit v5 REST client for demo/paper trading."""
+"""Minimal Bybit v5 REST client for demo/testnet/live trading."""
 
 from __future__ import annotations
 

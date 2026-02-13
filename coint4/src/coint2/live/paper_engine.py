@@ -1,4 +1,8 @@
-"""Stateful paper trading engine for Bybit demo."""
+"""Stateful Bybit trading engine (demo/testnet/live).
+
+Historical note: the module/class name contains "paper", but the runner can
+place real orders when `BYBIT_ENV=live`.
+"""
 
 from __future__ import annotations
 

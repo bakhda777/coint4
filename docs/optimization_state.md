@@ -1,22 +1,40 @@
 # Optimization state
 
-Last updated: 2026-02-14
+Last updated: 2026-02-13
 
-Current stage: **Multi-window OOS validation + universe pruning**. Pruned universe (191 пар, без фан-токенов) подтверждён на 3 независимых OOS-окнах. Full-span WFA (~69 шагов) в процессе.
+Current stage: **Prod config v2 finalized**. Pruned universe v2 (168 пар) + pair_stop_loss_usd bug fix. Full-span validated.
 
-**Pruned universe лидер**: `pruned191` (удалены JUV/CITY/GALFT/AFC/INTER/ERTHA/IZI/FLOW), avg holdout Sharpe **4.39** (3 окна), avg stress Sharpe **4.16**, все 3 окна прибыльны. Это улучшение относительно sprint 34 baseline (`5.142/4.899` quick-WFA, единственное окно).
+**Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
-Recent updates (2026-02-14):
-- **OOS validation (3 окна, original 250 пар)**: Window A (bear Jun22-Aug22) Sharpe -0.61, Window B (Oct23-Dec23) -$874 DD>100%, Window C (May24-Jul24) Sharpe 3.95. Gate FAIL: 1/3 прибыльных.
-- **Pair attribution**: FLOWUSDT-JUVUSDT уничтожил Window B (-$738.90, 84.5% потерь, -$651 за один день). Фан-токены (JUV/CITY) и ERTHA/IZI/FLOW — источники катастрофических потерь.
-- **Universe pruning**: удалены 59 пар (24%) с фан-токенами и проблемными символами. Pruned universe: `artifacts/universe/20260214_pruned_nofan/pairs_universe.yaml` (191 пара).
-- **Re-test pruned (3 окна)**: все 3 окна прибыльны — holdout Sharpe A=5.40, B=2.25, C=5.51 (avg 4.39). Stress: A=5.17, B=2.03, C=5.29 (avg 4.16). Total PnL: +$3,005 (было -$302).
-- **Notional sweep**: `max_notional_per_trade` — no-op при $1K (avg entry notional $15-34, cap_hits=0). Ставим 100 как guardrail.
-- **Full-span WFA** (Jun 2022 → Jun 2025, 75 шагов, `max_steps=null`): holdout Sharpe 1.90 ($1K→$30.8K, 30.8x), stress Sharpe 1.59 ($1K→$20.3K, 19.3x). Max DD -83.1% (Jul-Aug 2023).
-- **Prod config финализирован**: `configs/prod_final_budget1000.yaml` — pruned191 universe, max_notional=100, все оптимизированные параметры.
-- **Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT (фан-токены + tail risk).
+**Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, HFTUSDC, HFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT, KDAUSDT
 
-Previous updates (2026-02-13):
+Recent updates (2026-02-13):
+
+### DD Analysis & Fix (pair_stop_loss_usd + pruned_v2)
+- **Root cause**: HFTUSDC-KDAUSDT lost -$6,489 in Jul-Aug 2023 (68x leverage from beta amplification on $0.35/$0.56 tokens)
+- **CRITICAL BUG FOUND**: `pair_stop_loss_usd` was configured ($7.5) but NOT implemented in numba kernel! Only worked in live/paper engine.
+- **Code fix**: Added `pair_stop_loss_usd` parameter to `calculate_positions_and_pnl_full()` in `numba_kernels.py`, propagated through `numba_backtest_engine_full.py` and `numba_engine.py`
+- **Universe pruning v2**: removed HFT (HFTUSDC, HFTUSDT) and KDAUSDT from denylist — 191→168 pairs (23 pairs removed)
+- **Full-span v2 results** (Jun 2022 → Jun 2025, 75 steps):
+  - Holdout: Sharpe **2.24** (was 1.90, +18%), PnL $25,402, Max DD **-53.0%** (was -83.1%)
+  - Stress: Sharpe **1.83** (was 1.59, +15%), PnL $18,906, Max DD -66.0%
+  - Worst pair: **-$2,237** (was -$6,489)
+- **OOS validation v2** (3 windows, pruned_v2):
+  - Window A holdout: Sharpe 4.61, PnL $593, DD -9.8%
+  - Window B holdout: Sharpe 1.64, PnL $291, DD -36.6%
+  - Window C holdout: Sharpe 4.57, PnL $1,293, DD -21.4%
+  - Avg holdout: 3.61, avg stress: 3.36. All 3 windows profitable.
+
+### Previous: OOS validation + pruned universe v1 (191 pairs)
+- **OOS validation (3 окна, original 250 пар)**: Window A Sharpe -0.61, Window B -$874 DD>100%, Window C Sharpe 3.95. Gate FAIL: 1/3 прибыльных.
+- **Pair attribution**: FLOWUSDT-JUVUSDT уничтожил Window B (-$738.90, 84.5% потерь). Фан-токены — источники катастрофических потерь.
+- **Universe pruning v1**: удалены 59 пар (фан-токены). Pruned universe: 191 пара.
+- **Re-test pruned v1 (3 окна)**: все 3 окна прибыльны — holdout Sharpe A=5.40, B=2.25, C=5.51 (avg 4.39).
+- **Notional sweep**: no-op при $1K (avg entry notional $15-34). Set 100 as guardrail.
+- **Full-span v1**: holdout Sharpe 1.90, PnL $29,836, Max DD -83.1%.
+- **Prod config v1**: `pruned191` universe, max_notional=100.
+
+Signal sprints (2026-02-13):
 - Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint19: максимум по robust-метрике остаётся на baseline `hold300/cd300` (Sharpe `4.424/4.119`); `hold60` уходит в отрицательный Sharpe, `hold600/900` резко режут PnL и ухудшают cost_ratio.
 - Signal sprint20 (min_spread_move_sigma sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
@@ -115,12 +133,12 @@ Recent updates (2026-01-31):
 - Refine‑очередь (z=1.25/1.30, ms=0.30/0.35, hold/cd=300) выполнена: DD снизился до ~-17…-18%, но stress cost_ratio 0.53–0.56 и пары 36 (см. `docs/optimization_runs_20260131.md`).
 - Refine2‑очередь (z=1.35/1.40, ms=0.35/0.40, hold/cd=360) выполнена: PnL/Sharpe ухудшились, stress cost_ratio 1.85–1.86, пары 36 — направление закрываем (см. `docs/optimization_runs_20260131.md`).
 - Tradeability+basecap3 очередь (corr 0.35/0.40, pv 0.25/0.20, пары basecap3=102) выполнена: Sharpe < 0, PnL отрицательный, pairs 26–27; tradeM/tradeS совпали → ветку закрываем (см. `docs/optimization_runs_20260131.md`).
-- Paper configs: `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (primary) и `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (fallback).
-- План paper/forward: `docs/paper_forward_plan_20260131.md`.
+- Candidate configs (live): `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (primary) и `coint4/configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` (fallback).
+- Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
-- Paper/forward тест кандидата: см. `docs/paper_forward_plan_20260131.md`.
-- Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к paper/forward.
+- Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
+- Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).
 - Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
 - Baseline WFA (5 шагов) выполнен и зафиксирован (done).
 - Turnover sweep завершён, лучшая комбинация entry 0.95 / exit 0.10 (done).
@@ -201,7 +219,7 @@ Next steps:
   - PnL alt (z0.95/exit0.08): лучший на OOS 2023H2, но слабее на 2025H1.
 - Sharpe sanity: скрипт `scripts/optimization/check_sharpe_consistency.py` прошёл для ключевых очередей (32 прогона).
 - Base cap: текущий pairs_universe уже max_per_base=4; basecap3 ухудшал метрики, поэтому отдельный cap 5/8 не даёт нового эффекта.
-- Следующий шаг: финальная проверка концентрации/устойчивости и решение о paper/live.
+- Следующий шаг: финальная проверка концентрации/устойчивости и решение о live cutover (paper не делаем).
 
 Legacy context:
 Current stage: Leader holdout WFA (2024-05-01 → 2024-12-31, max_steps=5) via artifacts/wfa/aggregate/20260116_leader_holdout/run_queue.csv (parallel=1, n_jobs=-1). Additional: next5_fast WFA (manual sequential runs; queue file artifacts/wfa/aggregate/20260117_next5_fast/run_queue_next5_fast.csv used for status, backtest.n_jobs=-1, COINT_FILTER_BACKEND=threads). Current next5_fast run: none (latest best by Sharpe: pair_sweep_20260117_corr0p55_z0p85_exit0p12_ssd25000); queued: none.

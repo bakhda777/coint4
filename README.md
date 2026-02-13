@@ -7,7 +7,7 @@ This repository contains a cointegration pairs trading framework and related too
 - `coint4/`: main application workspace (full src, tests, configs, UI, Docker files)
 - `coint4/data_downloaded/`: canonical dataset location (ignored, large files)
 - `legacy/`: archived root-level code/tests/configs/scripts and legacy tooling
-- `docs/`: architecture, data, and testing docs (paths assume `cd coint4`)
+- `docs/`: architecture, data, and testing docs (paths assume `cd coint4`; `coint4/docs` is a symlink to `../docs` for convenience)
 - `data/`: local datasets (ignored)
 - `outputs/`, `results/`, `artifacts/` (including `artifacts/live/logs/`): generated artifacts (ignored)
 
@@ -23,6 +23,15 @@ See `docs/data_storage.md` for details.
 ## Quickstart
 
 See `docs/quickstart.md` and `docs/testing_guide.md` (paths assume `cd coint4`).
+
+### Dev commands (repo root)
+
+```bash
+make setup
+make lint
+make test
+```
+
 For production runs, use `docs/production_checklist.md`. Overlays and configs:
 - `coint4/configs/data_quality_strict.yaml` (strict QA)
 - `coint4/configs/data_window_clean.yaml` (clean window + symbol exclusions overlay)

@@ -39,11 +39,17 @@ temporary useful files/
 artifacts/archive/
 outputs/optuna/archive/
 
+# WFA run outputs (large; keep queues + rollups tracked)
+artifacts/wfa/runs/
+artifacts/wfa/traces/
+
 # Live artifacts (runtime outputs)
 artifacts/baseline_traces/
 artifacts/live/logs/
 artifacts/live/metrics/
 artifacts/live/PREFLIGHT.json
+artifacts/live/PREFLIGHT_REPORT.md
+artifacts/live/state.json
 artifacts/live/SNAPSHOT_*.md
 
 # Database files (except important ones)

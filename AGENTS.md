@@ -1,46 +1,63 @@
 # AGENTS
 
-- Всегда обновляйте документацию (`docs/`, `README.md`, `coint4/README.md`, `coint4/CLAUDE.md`) при изменениях в коде, CLI, конфигурациях и тестах.
-- Примеры команд должны быть воспроизводимы из `coint4/` и соответствовать текущим entrypoint-ам.
-- Устаревшие материалы помечайте как legacy/archived, чтобы они не вводили в заблуждение.
-- Любые WFA-прогоны ограничены 5 шагами; для большего количества шагов сначала спросить у меня.
-- Все изменения комитить на GitHub с понятным описанием или комментарием.
-- В спорных вопросах руководствуйтесь best practices для подобных проектов и парной торговли криптовалютой.
-- При отсутствии явных указаний выбирать оптимальные стратегии самостоятельно, опираясь на Sharpe, PnL, просадку и стабильность.
-- Всегда используйте параллелизацию и загружайте все доступные CPU по максимуму.
-- Фактический торговый капитал: 1000 USD. Все рекомендации, конфиги и оценки риска ориентировать на этот бюджет.
-- Информацию о прогонах (включая фильтрацию пар по этапам) фиксировать в `docs/optimization_runs_*.md`.
-- Все прогоны агрегировать в единый файл/папку для последующего анализа (журнал + артефакты запусков).
-- Файлы мониторинга/дашбордов и все артефакты/результаты включать в коммиты всегда, даже в нестандартных случаях.
-- Для контроля выполнения прогонов отслеживать нагрузку CPU, а не логи.
-- На этом сервере (146.103.41.248) не запускать тяжёлые прогоны; все WFA/оптимизации/долгие бэктесты выполнять только на 85.198.90.128.
-- Всегда общайтесь со мной на русском языке.
-- Serverspace API для запуска/остановки сервера: https://docs.serverspace.ru/public_api.html
-- SERVSPACE_API_KEY: 06383daf6bd8fafacc4255e8c57cb524d1bb5c6b9c63fb9f1c0fd1e35696fa1c
-- Для запуска/остановки удалённого сервера использовать `coint4/scripts/remote/run_server_job.sh` (запускает питание через API, ждёт SSH, делает `git pull`, выполняет команду, синхронизирует артефакты, затем выключает сервер).
-- Включать сервер 85.198.90.128 только перед тяжёлыми WFA/оптимизациями/долгими бэктестами; выключать сразу после завершения (по умолчанию `STOP_AFTER=1`).
-- Если сервер уже включён вручную — запускать с `SKIP_POWER=1`; если нужно оставить включённым после задачи — `STOP_AFTER=0`.
-- Для работы скрипта задать `SERVSPACE_API_KEY` и `SERVER_ID` или `SERVER_NAME`; `SERVER_IP` по умолчанию `85.198.90.128`, базовый URL API можно переопределить через `SERVSPACE_API_BASE` (по умолчанию `https://api.serverspace.ru/api/v1`).
-- Полезные опции скрипта: `UPDATE_CODE=1/0` (git pull), `SYNC_BACK=1/0`, `SYNC_PATHS`, `SSH_KEY`, `SERVER_REPO_DIR`, `SERVER_WORK_DIR`.
-- Чтобы не затирать локальные правки в `docs`, при `SYNC_BACK=1` задавать `SYNC_PATHS="coint4/artifacts coint4/results coint4/outputs"` и синхронизировать `docs` вручную после фиксации.
-- Пример запуска (из `coint4/`):
+Цель: убрать двусмысленность в структуре репозитория и в том, где лежат результаты/журналы.
+
+## Канонические пути
+- Git-репозиторий (root): `/home/claudeuser/coint4`
+- Рабочее приложение (Poetry/CLI/скрипты): `coint4/` (то есть `/home/claudeuser/coint4/coint4`)
+- Документация: `docs/` (в корне репо). Для удобства в app-root есть ссылка `coint4/docs -> ../docs`.
+
+## Единые команды (проверки)
+Из корня репозитория:
+- `make setup` (требует Poetry; ставит зависимости в `coint4/.venv`)
+- `make lint` (минимальный ruff: синтаксис/undefined names)
+- `make test` (pytest по умолчанию: `not slow and not serial`, см. `coint4/pytest.ini`)
+- `make test-serial`, `make test-slow`
+- `make ci` (lint + test)
+
+## Где лежат результаты WFA/оптимизаций
+- Артефакты запусков (тяжёлые): `coint4/artifacts/wfa/runs/<run_group>/<run_id>/`
+- Очереди (маленькие, держим в Git): `coint4/artifacts/wfa/aggregate/<run_group>/run_queue.csv`
+- Rollup индекс (маленький, держим в Git): `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`
+
+## Документация результатов
+- Состояние: `docs/optimization_state.md` (1 файл, “что сейчас и что дальше”)
+- Журналы: `docs/optimization_runs_YYYYMMDD.md` (дневник прогонов)
+- Правило: после каждого блока прогонов обновлять `docs/optimization_state.md` и дописывать дневник.
+
+## Статусы очередей (важно для rollup)
+- Если прогоны запускались НЕ через `scripts/optimization/run_wfa_queue.py` или `scripts/optimization/watch_wfa_queue.sh` (например, вручную через `run_wfa_fullcpu.sh`), то в `run_queue.csv` статус остаётся `planned`.
+- После ручных запусков синхронизировать статусы и пересобрать rollup:
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+
+## Исполнение / серверы
+- На этом сервере (146.103.41.248) не запускать тяжёлые прогоны.
+- Тяжёлые WFA/оптимизации/долгие бэктесты выполнять на 85.198.90.128 (через remote helper ниже).
+- Guardrail: `watch_wfa_queue.sh` требует явный `walk_forward.max_steps` и проверяет `max_steps<=5` для queue-прогонов. Длинные “fullspan” сценарии запускать отдельным пайплайном и явно фиксировать в `docs/`.
+
+## Артефакты и Git
+- Не коммитить тяжёлые артефакты из `coint4/artifacts/wfa/runs/` (equity curves, PNG, trade stats и т.п.).
+- В репозитории фиксируем: `coint4/configs/`, очереди `coint4/artifacts/wfa/aggregate/`, rollup `coint4/artifacts/wfa/aggregate/rollup/`, и `docs/`.
+
+## Безопасность
+- Никаких ключей/токенов в репозитории. `SERVSPACE_API_KEY`, `BYBIT_API_KEY`, `BYBIT_API_SECRET` задавать через env или локальные `.env` (не коммитить).
+- Если ключ когда-либо попадал в Git/логи, его нужно перевыпустить у провайдера.
+
+## Remote runs (Serverspace)
+- API docs: https://docs.serverspace.ru/public_api.html
+- Скрипт: `coint4/scripts/remote/run_server_job.sh`
+- Переменные: `SERVSPACE_API_KEY`, `SERVER_ID` (или `SERVER_NAME`), `SERVER_IP` (по умолчанию `85.198.90.128`)
+- Опции: `SKIP_POWER=1`, `STOP_AFTER=0/1`, `UPDATE_CODE=1/0`, `SYNC_BACK=1/0`, `SYNC_PATHS`, `SSH_KEY`, `SERVER_REPO_DIR`, `SERVER_WORK_DIR`
+- Пример (из `coint4/`):
   - `export SERVSPACE_API_KEY="***"; export SERVER_ID="***"; export SERVER_IP="85.198.90.128"`
-  - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260116_signal_grid/run_queue.csv`
+  - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
 
-## Paper run и cutover
-- Рекомендуемый конфиг для paper: `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot20_risk0p0175_minnot15_maxpairs12.yaml`.
-- Более осторожная альтернатива (ниже DD, но чаще выше концентрация): `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot30_risk0p015_minnot15_maxpairs10.yaml`.
-- Запуск paper (demo): `PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p20_exit0p08_hold240_cd240_ms0p25_cap1000_maxnot20_risk0p0175_minnot15_maxpairs12.yaml --env demo`
-- Проверка одиночного цикла: добавить `--once` (полезно для smoke).
-- Переменные: `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_ENV=demo` (без значений в репозитории).
+## Live trading / cutover
+- Paper trading (demo/testnet) **не делаем и не планируем**.
+- Прод-конфиг: `configs/prod_final_budget1000.yaml`
+- План cutover: запуск **сразу в live** (без paper-этапа). Команда (из `coint4/`): `BYBIT_ENV=live BYBIT_API_KEY="***" BYBIT_API_SECRET="***" PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_final_budget1000.yaml --env live`
 - Мониторинг: логи в `coint4/artifacts/live/logs`, состояние `coint4/artifacts/live/state.json`, снапшоты через `coint4/scripts/extract_live_snapshot.py` (обновляет `coint4/artifacts/live/LIVE_DASHBOARD.md`).
-- Cutover чеклист: 1–2 недели paper без критических ошибок, DD < 25–30%, стабильные costs/turnover, подтверждённые пары/инструменты; затем сменить `BYBIT_ENV=live`, новые ключи, запустить `--once` и только после этого постоянный цикл.
 
-## Цель и ориентировочный план (может меняться)
-- Цель: добиться стабильного `sharpe_ratio_abs > 1.0` в OOS (WFA): медиана по 5 шагам ≥ 1.0, минимум по шагам ≥ 0.6, при достаточном количестве сделок/пар и с учётом комиссий, слиппеджа и funding (плюс стресс-коэффициенты издержек).
-- Шаг 0 (санити): убедиться, что издержки реально отражаются в метриках (например, `total_costs` не всегда `0.0`); если нет — сначала исправить конфиг/метрики, иначе оптимизация Sharpe будет самообманом.
-- Шаг 1 (валидация базы): зафиксировать базовый конфиг и подтвердить на 5-step WFA + отдельном holdout; holdout не использовать для подбора параметров.
-- Шаг 2 (снижение turnover): подбирать `entry/exit`, `min_hold`, `cooldown`, `timeframe` с целью убрать churn (меньше сделок, выше качество), потому что в крипте Sharpe чаще всего ломают издержки и проскальзывание.
-- Шаг 3 (качество пар): усиливать требования к стационарности/корреляции/ликвидности (corr/pvalue/kpss/hurst/спред/фандинг) и проверять tradeability; дополнительно контролировать перекрытие экспозиций (не набирать десятки пар на один и тот же базовый актив).
-- Шаг 4 (риск и диверсификация): консервативнее position sizing/kelly, лимиты на число позиций/маржу, таргет волатильности; цель — снизить хвостовой риск, не убив ожидание.
-- Шаг 5 (стресс и отбор): прогонять стресс-издержки (slippage×2, funding+50%, комиссия+50%) и повторную WFA-валидацию; в shortlist оставлять только прошедшие стабильность.
+## Язык
+- Всегда общаемся на русском языке.

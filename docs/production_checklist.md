@@ -1,6 +1,6 @@
 # Чек-лист production-запуска
 
-Для прод-пайплайна используйте `configs/main_2024.yaml` (поверх `configs/data_window_clean.yaml`). `configs/prod.yaml` предназначен для live/paper и не используется в scan/backtest/WFA.
+Для прод-пайплайна используйте `configs/main_2024.yaml` (поверх `configs/data_window_clean.yaml`). `configs/prod.yaml` предназначен для live (paper trading не используем) и не используется в scan/backtest/WFA.
 
 1. Обновить данные в `coint4/data_downloaded/` и убедиться, что структура помесячная (`year=YYYY/month=MM`).
 2. Зафиксировать `data_filters.clean_window` и список `data_filters.exclude_symbols` (сейчас пустой) в `configs/main_2024.yaml` / `configs/data_window_clean.yaml`.
@@ -22,15 +22,16 @@
 13. Проверить повторяемость (повторить fixed backtest и сравнить метрики).
 14. Прогнать тесты: `./.venv/bin/pytest -q`.
 15. Обновить документацию и сохранить конфиги/артефакты в репозитории.
-16. Для paper-проверки кандидата использовать:
+16. Для live-candidate запуска использовать:
    - основной: `configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
    - запасной: `configs/prod_candidate_relaxed8_nokpss_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml`
    - малый капитал (1k) + расширенный universe: `configs/prod_candidate_relaxed8_nokpss_u250_top250_z1p00_exit0p06_hold180_cd180_ms0p2_cap1000.yaml`
    (WFA отключён, results_dir=artifacts/live).
-   Запуск на Bybit demo:
-   `BYBIT_ENV=demo BYBIT_API_KEY=... BYBIT_API_SECRET=... PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml`
+   ВНИМАНИЕ: `BYBIT_ENV=live` размещает реальные ордера.
+   Запуск на Bybit live:
+   `BYBIT_ENV=live BYBIT_API_KEY=... BYBIT_API_SECRET=... PYTHONPATH=src ./.venv/bin/python scripts/run_live.py --config configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml --pairs-file artifacts/universe/20260119_relaxed8_strict_preholdout_v2/pairs_universe.yaml --env live`
    Пример переменных окружения: `coint4/.env.example` (опционально можно настроить кэш klines и поведение ретраев).
-   Если часть инструментов недоступна на demo/testnet, раннер отфильтрует такие пары и запишет предупреждение в `artifacts/live/logs/main.jsonl`.
+   Если часть инструментов недоступна на Bybit, раннер отфильтрует такие пары и запишет предупреждение в `artifacts/live/logs/main.jsonl`.
 
 ## Последний прогон (2026-01-14)
 

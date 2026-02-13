@@ -1,4 +1,7 @@
-"""CLI runner for Bybit demo paper trading."""
+"""CLI runner for Bybit trading (demo/testnet/live).
+
+WARNING: `BYBIT_ENV=live` places real orders on Bybit.
+"""
 
 from __future__ import annotations
 
@@ -84,12 +87,12 @@ def build_engine(args: argparse.Namespace) -> PaperTradingEngine:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Bybit demo paper trader")
+    parser = argparse.ArgumentParser(description="Run Bybit trading runner (demo/testnet/live)")
     parser.add_argument("--config", default="configs/prod_candidate_relaxed8_nokpss_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml")
     parser.add_argument("--pairs-file", help="Path to pairs_universe.yaml")
     parser.add_argument("--pairs-metrics", help="Path to universe_metrics.csv")
     parser.add_argument("--max-pairs", type=int, help="Override max pairs")
-    parser.add_argument("--env", default="demo", help="Bybit environment: demo/testnet/live")
+    parser.add_argument("--env", default="demo", help="Bybit environment: demo/testnet/live (live places real orders)")
     parser.add_argument("--position-mode", default="hedge", help="Position mode: hedge/oneway")
     parser.add_argument("--once", action="store_true", help="Run a single iteration")
     parser.add_argument("--poll-seconds", type=int, default=30, help="Polling interval")
