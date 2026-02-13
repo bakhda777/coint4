@@ -16,11 +16,17 @@ SERVER_USER=${SERVER_USER:-"root"}
 SSH_KEY=${SSH_KEY:-"${HOME}/.ssh/id_ed25519"}
 SERVER_REPO_DIR=${SERVER_REPO_DIR:-"/opt/coint4"}
 SERVER_WORK_DIR=${SERVER_WORK_DIR:-"/opt/coint4/coint4"}
-LOCAL_REPO_DIR=${LOCAL_REPO_DIR:-"/root/coint4"}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_LOCAL_REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+LOCAL_REPO_DIR=${LOCAL_REPO_DIR:-"${DEFAULT_LOCAL_REPO_DIR}"}
 UPDATE_CODE=${UPDATE_CODE:-"1"}
 SYNC_BACK=${SYNC_BACK:-"1"}
 SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
+# If local repo is ahead of origin or git push isn't available, sync tracked files up to VPS.
+SYNC_UP=${SYNC_UP:-"0"}
 STOP_AFTER=${STOP_AFTER:-"1"}
+# If SERVSPACE_API_KEY isn't available, you can still shut down via SSH after syncing back.
+STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
 SKIP_POWER=${SKIP_POWER:-"0"}
 
 SSH_OPTS=(
@@ -29,6 +35,11 @@ SSH_OPTS=(
   -o StrictHostKeyChecking=no
   -o ConnectTimeout=5
 )
+
+if [[ "$SYNC_UP" == "1" && "$UPDATE_CODE" == "1" ]]; then
+  echo "[local] SYNC_UP=1 => forcing UPDATE_CODE=0 (avoid git pull conflicts)" >&2
+  UPDATE_CODE="0"
+fi
 
 api_get() {
   curl -sS -H 'content-type: application/json' -H "x-api-key: ${API_KEY}" "${API_BASE}/$1"
@@ -104,18 +115,28 @@ start_server() {
 }
 
 stop_server() {
-  if [[ "$SKIP_POWER" == "1" || "$STOP_AFTER" != "1" ]]; then
+  if [[ "$STOP_AFTER" != "1" ]]; then
     return 0
   fi
-  if [[ -z "$API_KEY" ]]; then
-    echo "SERVSPACE_API_KEY is required to stop server (set env var)." >&2
-    exit 1
+
+  if [[ "$SKIP_POWER" != "1" && -n "$API_KEY" ]]; then
+    if [[ -z "$SERVER_ID" ]]; then
+      SERVER_ID=$(resolve_server_id)
+    fi
+    echo "[server] stopping ${SERVER_ID} (API)"
+    api_post "servers/${SERVER_ID}/power/shutdown" "{\"server_id\":\"${SERVER_ID}\"}" || true
+    return 0
   fi
-  if [[ -z "$SERVER_ID" ]]; then
-    SERVER_ID=$(resolve_server_id)
+
+  if [[ "$STOP_VIA_SSH" == "1" ]]; then
+    echo "[server] stopping via SSH (shutdown -h now)"
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "shutdown -h now" || true
+    return 0
   fi
-  echo "[server] stopping ${SERVER_ID}"
-  api_post "servers/${SERVER_ID}/power/shutdown" "{\"server_id\":\"${SERVER_ID}\"}" || true
+
+  echo "Unable to stop VPS automatically." >&2
+  echo "Set SERVSPACE_API_KEY (and leave SKIP_POWER=0) OR set STOP_VIA_SSH=1." >&2
+  exit 1
 }
 
 wait_for_ssh() {
@@ -133,6 +154,39 @@ wait_for_ssh() {
       return 1
     fi
   done
+}
+
+sync_up() {
+  if [[ "$SYNC_UP" != "1" ]]; then
+    return 0
+  fi
+  if [[ ! -d "$LOCAL_REPO_DIR" ]]; then
+    echo "LOCAL_REPO_DIR not found: $LOCAL_REPO_DIR" >&2
+    exit 1
+  fi
+  if [[ ! -d "$LOCAL_REPO_DIR/.git" ]]; then
+    echo "LOCAL_REPO_DIR is not a git repo (missing .git): $LOCAL_REPO_DIR" >&2
+    exit 1
+  fi
+  if ! command -v rsync >/dev/null 2>&1; then
+    echo "rsync not found (required for SYNC_UP=1)" >&2
+    exit 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "git not found (required for SYNC_UP=1)" >&2
+    exit 1
+  fi
+
+  local sha
+  sha="$(git -C "$LOCAL_REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+  echo "[server] syncing tracked files from ${LOCAL_REPO_DIR} -> ${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}"
+
+  ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "mkdir -p '${SERVER_REPO_DIR}'"
+  git -C "$LOCAL_REPO_DIR" ls-files -z | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
+
+  if [[ -n "$sha" ]]; then
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "echo '${sha}' > '${SERVER_REPO_DIR}/SYNCED_FROM_COMMIT.txt'"
+  fi
 }
 
 run_remote() {
@@ -162,6 +216,7 @@ sync_back() {
 main() {
   start_server
   wait_for_ssh
+  sync_up
   run_remote "$@"
   sync_back
   stop_server
