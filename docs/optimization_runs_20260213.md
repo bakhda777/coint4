@@ -677,3 +677,40 @@
 ### Итог по sprint36
 - Новый full-horizon лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `psw1m1`: Sharpe `3.544/3.342` (robust `3.342`), лучше baseline `psw2m1` (= `3.326/3.117`, robust `3.117`).
 - Более жёсткая стабилизация (`psw3m2/psw5m3`) ухудшает Sharpe: вероятно, фильтр начинает отрезать слишком много свежих/качественных пар и снижает edge.
+
+## Extra sweep: signal sprint37 (max_hurst_exponent sweep under full-horizon `tp15_tr90 + psw1m1`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint37/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint37/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (hx*)
+Фиксируем текущего full-horizon лидера (`tp15_tr90_mxAll_psw1m1`) и меняем только:
+- `filter_params.max_hurst_exponent` (дублируем в `pair_selection.max_hurst_exponent` для читаемости конфигов)
+
+| variant | max_hurst_exponent |
+|---|---:|
+| hx0p50 | 0.50 |
+| hx0p60 | 0.60 |
+| hx0p70 | 0.70 |
+| hx0p80 | 0.80 |
+| hx0p90 | 0.90 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs | days |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| hx0p50 | holdout | 1.586 | 1779.97 | -1967.88 | 0.18 | 5332 | 113 | 376 |
+| hx0p50 | stress | 1.450 | 1472.48 | -1858.79 | 0.37 | 5332 | 113 | 376 |
+| hx0p60 | holdout | 3.298 | 19550.26 | -31480.93 | 0.17 | 10173 | 141 | 376 |
+| hx0p60 | stress | 3.105 | 15736.75 | -27337.65 | 0.33 | 10173 | 141 | 376 |
+| hx0p70 | holdout | 3.576 | 33901.38 | -30688.29 | 0.14 | 11221 | 138 | 376 |
+| hx0p70 | stress | 3.375 | 26838.97 | -26420.03 | 0.27 | 11221 | 138 | 376 |
+| hx0p80 | holdout | 3.544 | 34891.31 | -17862.70 | 0.13 | 11451 | 121 | 376 |
+| hx0p80 | stress | 3.342 | 27439.77 | -15618.33 | 0.24 | 11451 | 121 | 376 |
+| hx0p90 | holdout | 3.425 | 28400.90 | -6538.08 | 0.09 | 11596 | 109 | 376 |
+| hx0p90 | stress | 3.217 | 22239.68 | -5321.16 | 0.18 | 11596 | 109 | 376 |
+
+### Итог по sprint37
+- Новый full-horizon лидер по robust-метрике — `hx0p70`: Sharpe `3.576/3.375` (robust `3.375`), лучше `hx0p80` (= `3.544/3.342`, robust `3.342`).
+- Слишком строгий Hurst-фильтр (`hx0p50`) резко ломает edge (Sharpe `1.586/1.450`), а слишком мягкий (`hx0p90`) хуже по robust → локальный максимум около `0.70`.

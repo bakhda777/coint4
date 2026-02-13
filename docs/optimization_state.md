@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-13
 
-Current stage: Max-Sharpe mode for `$1000`: лидер quick-WFA (`max_steps=5`) — `tp15_tr90` (testing=15d, training=90d) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`). Лидер full-horizon (`max_steps=null`) — `tp15_tr90 + psw1m1` (pair_stability window=1, min_steps=1): Sharpe `3.544/3.342` (robust `3.342`).
+Current stage: Max-Sharpe mode for `$1000`: лидер quick-WFA (`max_steps=5`) — `tp15_tr90` (testing=15d, training=90d) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`). Лидер full-horizon (`max_steps=null`) — `tp15_tr90 + psw1m1 + hx0p70` (pair_stability window=1, min_steps=1; max_hurst_exponent=0.70): Sharpe `3.576/3.375` (robust `3.375`).
 
 Recent updates (2026-02-13):
 - Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
@@ -41,6 +41,8 @@ Recent updates (2026-02-13):
 - Итог sprint35: на полном горизонте extended OOS `tp15` остаётся лучшим по robust (Sharpe `3.326/3.117`, robust `3.117`), но рост Sharpe в sprint33/34 был существенно завязан на укороченный тест при `max_steps=5`.
 - Signal sprint36 (pair stability sweep under full-horizon `tp15_tr90`, max_steps=null) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint36: новый full-horizon лидер `psw1m1` (pair_stability window=1, min_steps=1) — Sharpe `3.544/3.342` (robust `3.342`).
+- Signal sprint37 (max_hurst_exponent sweep under full-horizon `tp15_tr90 + psw1m1`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint37: новый full-horizon лидер `hx0p70` (max_hurst_exponent=0.70) — Sharpe `3.576/3.375` (robust `3.375`).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
