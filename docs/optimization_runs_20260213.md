@@ -114,3 +114,38 @@
 
 ### Итог по sprint21
 - Ни один вариант `corr/pvalue` не улучшил `ms0p1` baseline `c0p34_pv0p35`; loosen/tighten снижает robust Sharpe.
+
+## Extra sweep: signal sprint22 (time_stop_multiplier sweep under `ms0p1`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint22/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint22/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ts*)
+Фиксируем лидера `ms0p1` и меняем только `backtest.time_stop_multiplier`.
+
+| variant | time_stop_multiplier |
+|---|---:|
+| tsOff | — |
+| ts1p0 | 1.0 |
+| ts1p5 | 1.5 |
+| ts2p0 | 2.0 |
+| ts3p0 | 3.0 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| tsOff | holdout | 4.502 | 2404.55 | -529.30 | 0.08 | 4523 | 58 |
+| tsOff | stress | 4.214 | 2147.83 | -518.24 | 0.16 | 4523 | 58 |
+| ts1p0 | holdout | 4.565 | 2458.15 | -547.24 | 0.08 | 4687 | 58 |
+| ts1p0 | stress | 4.269 | 2190.74 | -535.45 | 0.16 | 4687 | 58 |
+| ts1p5 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| ts1p5 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| ts2p0 | holdout | 4.529 | 2419.70 | -543.60 | 0.08 | 4624 | 58 |
+| ts2p0 | stress | 4.236 | 2156.84 | -532.19 | 0.16 | 4624 | 58 |
+| ts3p0 | holdout | 4.503 | 2403.74 | -537.30 | 0.08 | 4585 | 58 |
+| ts3p0 | stress | 4.214 | 2144.82 | -525.66 | 0.16 | 4585 | 58 |
+
+### Итог по sprint22
+- `ts1p5` остаётся локальным максимумом и под `ms0p1`; новый лидер не найден.
