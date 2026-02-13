@@ -40,3 +40,39 @@
 - Лучший robust по `min(Sharpe_holdout, Sharpe_stress)` остаётся baseline `hc300` (то есть `hold300/cd300`), совпадает с текущим лидером `ts1p5`.
 - `hc60` ломает стратегию (отрицательный Sharpe и очень глубокий DD), а `hc600/900` режут turnover, но Sharpe и PnL падают, cost_ratio ухудшается.
 
+## Extra sweep: signal sprint20 (min_spread_move_sigma sweep under `ts1p5`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint20/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint20/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (ms*)
+Фиксируем лидера `ts1p5` и меняем только `backtest.min_spread_move_sigma`.
+
+Примечание: `min_spread_move_sigma` должен быть строго `> 0`, поэтому вместо `0.0` используем `0.1`.
+
+| variant | min_spread_move_sigma |
+|---|---:|
+| ms0p1 | 0.1 |
+| ms0p2 | 0.2 |
+| ms0p4 | 0.4 |
+| ms0p6 | 0.6 |
+| ms0p8 | 0.8 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ms0p1 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| ms0p1 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| ms0p2 | holdout | 4.424 | 2230.75 | -466.47 | 0.09 | 4646 | 58 |
+| ms0p2 | stress | 4.119 | 1978.76 | -457.92 | 0.17 | 4646 | 58 |
+| ms0p4 | holdout | 4.190 | 2064.46 | -483.21 | 0.09 | 4629 | 58 |
+| ms0p4 | stress | 3.888 | 1823.16 | -488.91 | 0.18 | 4629 | 58 |
+| ms0p6 | holdout | 3.899 | 1605.32 | -449.38 | 0.11 | 4573 | 58 |
+| ms0p6 | stress | 3.562 | 1394.77 | -448.81 | 0.21 | 4573 | 58 |
+| ms0p8 | holdout | 4.184 | 1956.38 | -486.64 | 0.10 | 4531 | 58 |
+| ms0p8 | stress | 3.875 | 1726.73 | -494.39 | 0.19 | 4531 | 58 |
+
+### Итог по sprint20
+- Новый лучший robust по `min(Sharpe_holdout, Sharpe_stress)` — `ms0p1` (min_spread_move_sigma=0.1): Sharpe `4.572/4.277` (лучше baseline `ms0p2` = `4.424/4.119`).
