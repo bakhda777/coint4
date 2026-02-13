@@ -21,6 +21,8 @@ Recent updates (2026-02-13):
 - Итог sprint25: `rolling_window=96` остаётся явным максимумом Sharpe; `48/144/192/288` резко ухудшают метрики, вплоть до отрицательного PnL в stress.
 - Signal sprint26 (z-entry sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint26: `z=1.15` остаётся локальным максимумом; `z=0.9–1.0` ухудшает Sharpe через churn, `z=1.30–1.45` режет PnL и снижает Sharpe.
+- Signal sprint27 (structural-break intensity sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint27: baseline `sb_base` (= прежние Numba константы) остаётся лучшим; изменение min_correlation или мультипликаторов ухудшает robust Sharpe.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.

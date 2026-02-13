@@ -298,3 +298,43 @@
 
 ### Итог по sprint26
 - Лидер по robust Sharpe остаётся `z1p15` (текущий baseline); как занижение `z` (churn), так и завышение (резкое падение PnL/Sharpe) ухудшают метрики.
+
+## Extra sweep: signal sprint27 (structural-break intensity sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint27/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint27/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (sb*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только параметры structural-break защиты (новые поля Numba):
+- `backtest.structural_break_min_correlation`
+- `backtest.structural_break_entry_multiplier`
+- `backtest.structural_break_exit_multiplier`
+
+| variant | min_correlation | entry_multiplier | exit_multiplier |
+|---|---:|---:|---:|
+| sb_base | 0.30 | 1.5 | 1.2 |
+| sb_mc0p2 | 0.20 | 1.5 | 1.2 |
+| sb_mc0p4 | 0.40 | 1.5 | 1.2 |
+| sb_mulLo | 0.30 | 1.3 | 1.1 |
+| sb_mulHi | 0.30 | 2.0 | 1.5 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| sb_base | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| sb_base | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| sb_mc0p2 | holdout | 4.172 | 1941.10 | -541.44 | 0.09 | 4807 | 58 |
+| sb_mc0p2 | stress | 3.840 | 1695.03 | -524.08 | 0.18 | 4807 | 58 |
+| sb_mc0p4 | holdout | 4.171 | 2030.99 | -548.13 | 0.09 | 4525 | 58 |
+| sb_mc0p4 | stress | 3.873 | 1796.70 | -534.93 | 0.17 | 4525 | 58 |
+| sb_mulLo | holdout | 3.949 | 2014.33 | -498.66 | 0.09 | 4922 | 58 |
+| sb_mulLo | stress | 3.650 | 1760.95 | -480.59 | 0.17 | 4922 | 58 |
+| sb_mulHi | holdout | 4.000 | 1571.70 | -446.27 | 0.09 | 4017 | 58 |
+| sb_mulHi | stress | 3.689 | 1384.88 | -447.89 | 0.18 | 4017 | 58 |
+
+### Итог по sprint27
+- Никакой вариант не улучшил baseline `sb_base` (параметры по умолчанию, эквивалентны прежним константам Numba): лидер остаётся `ms0p1+ts1p5+slz3p0`.
+- Сдвиг `structural_break_min_correlation` в обе стороны (`0.20`/`0.40`) ухудшает robust Sharpe (stress до `~3.84–3.87`).
+- Ослабление/усиление мультипликаторов (`sb_mulLo/sb_mulHi`) тоже снижает robust Sharpe; `sb_mulHi` уменьшает DD, но сильнее режет PnL и Sharpe.
