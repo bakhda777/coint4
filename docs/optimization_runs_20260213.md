@@ -523,3 +523,42 @@
 
 ### Итог по sprint32
 - Все 10 прогонов дали идентичные метрики → в текущем WFA пайплайне `pair_selection.lookback_days` не влияет на результаты (окно данных на шаге задаётся напрямую `training_start..testing_end`).
+
+## Extra sweep: signal sprint33 (testing_period_days sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint33/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint33/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (tp*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только:
+- `walk_forward.testing_period_days`
+- `walk_forward.step_size_days` (держим равным `testing_period_days`, чтобы не было overlap/дыр в тестовом времени)
+
+| variant | testing_period_days | step_size_days |
+|---|---:|---:|
+| tp15 | 15 | 15 |
+| tp21 | 21 | 21 |
+| tp30 | 30 | 30 |
+| tp45 | 45 | 45 |
+| tp60 | 60 | 60 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| tp15 | holdout | 5.142 | 1486.56 | -535.64 | 0.07 | 2283 | 44 |
+| tp15 | stress | 4.899 | 1378.07 | -544.30 | 0.13 | 2283 | 44 |
+| tp21 | holdout | -0.808 | -243.83 | -523.46 | — | 3025 | 55 |
+| tp21 | stress | -1.116 | -296.76 | -540.02 | — | 3025 | 55 |
+| tp30 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| tp30 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| tp45 | holdout | 1.388 | 691.21 | -871.58 | 0.38 | 7427 | 58 |
+| tp45 | stress | 1.126 | 456.19 | -868.80 | 0.96 | 7427 | 58 |
+| tp60 | holdout | 1.435 | 1007.79 | -776.10 | 0.30 | 9805 | 61 |
+| tp60 | stress | 1.116 | 628.74 | -782.50 | 0.76 | 9805 | 61 |
+
+### Итог по sprint33
+- Новый лидер по robust-метрике `min(Sharpe_holdout, Sharpe_stress)` — `tp15`: Sharpe `5.142/4.899` (robust `4.899`), выше baseline `tp30` (robust `4.277`).
+- Вероятная причина роста Sharpe: `tp15` режет горизонт теста при `max_steps=5` (тест ~`75` дней против ~`150` дней у `tp30`), одновременно снижает turnover (trades `2283` vs `4659`) и издержки.
+- `tp21` ломает стратегию (отрицательные Sharpe/PnL); `tp45/tp60` сильно ухудшают robust Sharpe и раздувают stress `cost_ratio`.

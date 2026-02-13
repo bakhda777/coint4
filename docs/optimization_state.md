@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-13
 
-Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `ms0p1` (min_spread_move_sigma=0.1) поверх `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `4.572/4.277`.
+Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `tp15` (testing_period_days=15) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`).
 
 Recent updates (2026-02-13):
 - Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
@@ -33,6 +33,8 @@ Recent updates (2026-02-13):
 - Итог sprint31: лидер остаётся baseline `ap18` (max_active_positions=18); уменьшение лимита (`12/16`) ухудшает Sharpe, увеличение (`20/24`) не улучшает (почти идентичные метрики и чуть хуже robust Sharpe).
 - Signal sprint32 (lookback_days sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint32: все варианты дали идентичные метрики → `pair_selection.lookback_days` сейчас не влияет на WFA (окно данных задаётся `training_start..testing_end`).
+- Signal sprint33 (testing_period_days sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint33: новый лидер `tp15` — Sharpe `5.142/4.899` (robust `4.899`), но горизонт теста при `max_steps=5` становится короче (≈75 дней) → нужно подтверждение на сопоставимом горизонте (например, `tp15 + max_steps=10`).
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.
