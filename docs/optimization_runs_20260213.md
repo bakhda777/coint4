@@ -770,6 +770,25 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 
 Примечание: `slusd2.0` даёт сильный Sharpe, но worst-DD `~0.155` (чуть выше гейта 0.15).
 
-### Рекомендация
-- Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.75`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
-- Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.75` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).
+### Run group sprint06 (fine grid по `pair_stop_loss_usd` вокруг лидера, 30 прогонов)
+- Run group: `20260213_budget1000_dd_sprint06_stoplossusd_fine`
+- Sweep: `pair_stop_loss_usd=1.65/1.70/1.75/1.80/1.85` (фикс `risk_per_position_pct=0.006`), 3 OOS-окна, `holdout+stress`
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint06_stoplossusd_fine/run_queue.csv` (`30/30 completed`, `Sharpe consistency OK`)
+
+### Итог sprint06 (gate `max_dd_pct <= 0.15`)
+| variant | worst_robust_sh | worst_dd_pct | комментарий |
+|---|---:|---:|---|
+| `slusd1.85` | `3.448` | `0.132` | **новый лидер** (worst robust окно = OOS C `20240501-20250630`) |
+| `slusd1.75` | `3.323` | `0.137` | прежний лидер sprint05 |
+| `slusd1.8` | `3.299` | `0.138` | близко к лидеру |
+| `slusd1.65` | `3.179` | `0.137` | хуже worst robust |
+| `slusd1.7` | `3.147` | `0.141` | хуже worst robust |
+
+### По окнам для нового лидера (`slusd1.85`)
+- OOS A `20220601-20230430`: robust `5.745`, worst DD `2.5%`
+- OOS B `20231001-20240930`: robust `3.725`, worst DD `13.2%` (worst DD окно)
+- OOS C `20240501-20250630`: robust `3.448`, worst DD `11.1%` (worst robust окно)
+
+### Рекомендация (обновлено после sprint06)
+- Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.85`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
+- Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.85` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).

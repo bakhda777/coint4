@@ -26,7 +26,7 @@ Recent updates (2026-02-13):
   - Avg holdout: 3.61, avg stress: 3.36. All 3 windows profitable.
 - **DD sprints (multi-window, pruned_v2, risk=0.006)**:
   - Ключевой рычаг — `pair_stop_loss_usd`: снижение stop-loss с 5.0 до ~1.5–2.25 резко улучшает worst-DD и robust Sharpe.
-  - Новый лидер по DD<=15%: `pair_stop_loss_usd=1.75` → worst-window robust Sharpe `3.323`, worst DD `-13.7%` (worst окно: `20231001-20240930`).
+  - Новый лидер по DD<=15%: `pair_stop_loss_usd=1.85` → worst-window robust Sharpe `3.448`, worst DD `-13.2%` (worst DD окно: `20231001-20240930`).
   - Детали/очереди: `docs/optimization_runs_20260213.md`.
 
 ### Previous: OOS validation + pruned universe v1 (191 pairs)
@@ -141,7 +141,7 @@ Recent updates (2026-01-31):
 - Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
-- Зафиксировать DD-оптимум: `pair_stop_loss_usd=1.75` (multi-window worst-DD `-13.7%`, worst robust Sharpe `3.323`) и прогнать full-span holdout+stress для подтверждения.
+- Зафиксировать DD-оптимум: `pair_stop_loss_usd=1.85` (multi-window worst-DD `-13.2%`, worst robust Sharpe `3.448`) и прогнать full-span holdout+stress для подтверждения.
 - Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
 - Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).
 - Исправление `total_costs` для Numba-бэктеста выполнено; метрики обновлены (done).
