@@ -297,10 +297,5 @@ def test_fast_coint_numba_final_when_called_then_returns_k_in_bounds(rng):
 
 
 if __name__ == "__main__":
-    # Запуск тестов при прямом вызове файла
-    test_fast_coint_accuracy()
-    test_fast_coint_speed()
-    test_fast_coint_pandas_compatibility()
-    test_fast_coint_with_nan_values()
-    test_fast_coint_edge_cases()
-    print("Все тесты прошли успешно! ✅")
+    # Allow running this test module directly without relying on pytest's fixture injection.
+    raise SystemExit(pytest.main([__file__]))
