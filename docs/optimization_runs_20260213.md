@@ -748,15 +748,28 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 - `20260214_notional_sweep` оказался **no-op** при `$1000`: `max_position_size_pct=0.05` + risk sizing держат entry notional в районе ~$15–$34, поэтому `max_notional_per_trade` (100..10000) не связывает (cap_hits=0). Чтобы реально увидеть эффект maxnot, нужно опускать `max_notional_per_trade` ниже ~30–35 или ослаблять ограничение `max_position_size_pct`.
 - Самое слабое окно для обоих pruned-universe — OOS B (20231001-20240930). Следующий шаг: понять причину (режим, пары, концентрация, costs/turnover) и решить, нужно ли отдельное “B-окно” донастраивать или просто принимать как реалистичный worst-case.
 
-## Planned: DD sprint01 (pair_stop_loss_usd sweep, pruned_v2)
+## DD Sprints (pruned_v2, цель: Sharpe max при DD <= 10-15%)
 
-Цель: повысить устойчивость к просадке, не убивая Sharpe, на 3 независимых OOS-окнах.
+Коротко: `max_active_positions` почти не влияет на worst-DD; ключевой рычаг — `backtest.pair_stop_loss_usd`.
 
-- Run group: `20260213_budget1000_dd_sprint01_stoplossusd`
-- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint01_stoplossusd/run_queue.csv`
-- Конфиги: `coint4/configs/budget_20260213_1000_dd_sprint01_stoplossusd/*.yaml` (24 прогона: 3 окна × 4 значения × holdout/stress)
-- Sweep: `backtest.pair_stop_loss_usd ∈ {5.0, 7.5, 10.0, 15.0}`
-- Критерии отбора (предлагаемые):
-  - robust Sharpe = `min(Sharpe_holdout, Sharpe_stress)` по каждому окну
-  - выбирать максимальный `min(robust_sharpe_window_A, window_B, window_C)` при `max_dd_pct <= 0.40`
-  - sanity: `total_trades >= 200`, `total_pairs_traded >= 50`
+### Run groups (все multi-window, 3 OOS-окна; holdout+stress)
+- sprint01: `20260213_budget1000_dd_sprint01_stoplossusd` (sweep `pair_stop_loss_usd=5/7.5/10/15`).
+- sprint02: `20260213_budget1000_dd_sprint02_riskpct` (фикс `pair_stop_loss_usd=5.0`, sweep `risk_per_position_pct`).
+- sprint03: `20260213_budget1000_dd_sprint03_maxpos` (фикс `pair_stop_loss_usd=5.0`, `risk_per_position_pct=0.006`, sweep `max_active_positions=12/14/16`).
+- sprint04: `20260213_budget1000_dd_sprint04_stoplossusd` (фикс `risk_per_position_pct=0.006`, sweep `pair_stop_loss_usd=2/3/4/5`).
+- sprint05: `20260213_budget1000_dd_sprint05_stoplossusd_refine` (фикс `risk_per_position_pct=0.006`, refine `pair_stop_loss_usd=1.5/1.75/2.0/2.25`).
+
+### Итог sprint05 (multi-window robust = worst-window `min(Sharpe_holdout, Sharpe_stress)` при gate `max_dd_pct <= 0.15`)
+Источник: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint05_stoplossusd_refine/run_queue.csv`.
+
+| variant | worst_robust_sh | worst_dd_pct | комментарий |
+|---|---:|---:|---|
+| `slusd1.75` | `3.323` | `0.137` | лидер (worst окно = OOS B `20231001-20240930`) |
+| `slusd1.5` | `2.864` | `0.108` | backup, более строгий stop |
+| `slusd2.25` | `1.691` | `0.148` | проходит DD, но хуже robust Sharpe |
+
+Примечание: `slusd2.0` даёт сильный Sharpe, но worst-DD `~0.155` (чуть выше гейта 0.15).
+
+### Рекомендация
+- Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.75`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
+- Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.75` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).
