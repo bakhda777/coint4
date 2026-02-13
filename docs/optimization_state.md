@@ -15,6 +15,8 @@ Recent updates (2026-02-13):
 - Итог sprint22: `ts1p5` остаётся лучшим (чуть лучше `ts1p0`); новый лидер не найден.
 - Signal sprint23 (pair_stop_loss_zscore sweep under `ms0p1+ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint23: лидер остаётся `slz3p0` (=3.0); `2.0–2.5` ломает Sharpe через churn/издержки, `3.5–4.0` ухудшает Sharpe и раздувает DD.
+- Signal sprint24 (protections toggles sweep under `ms0p1+ts1p5+slz3p0`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint24: все защиты должны оставаться включенными; `market_regime_detection=false` особенно разрушает Sharpe и DD; лидер остаётся `ms0p1`.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.

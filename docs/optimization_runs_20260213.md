@@ -188,3 +188,43 @@
 - Лидер остаётся `slz3p0` (stop_loss_z=3.0): Sharpe `4.572/4.277`.
 - Более агрессивный stop (`2.0–2.5`) резко увеличивает churn и издержки (stress `cost_ratio` до `1.44`) и ломает Sharpe.
 - Более мягкий stop (`3.5–4.0`) ухудшает Sharpe и раздувает DD (holdout max_dd до `-698…-730`).
+
+## Extra sweep: signal sprint24 (protections toggles sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint24/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint24/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и проверяем влияние основных защитных механизмов:
+- `backtest.adaptive_thresholds`
+- `backtest.market_regime_detection`
+- `backtest.structural_break_protection`
+
+| variant | adaptive_thresholds | market_regime_detection | structural_break_protection |
+|---|---:|---:|---:|
+| base | true | true | true |
+| noadapt | false | true | true |
+| noregime | true | false | true |
+| nostruct | true | true | false |
+| alloff | false | false | false |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| base | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| base | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| noadapt | holdout | 4.499 | 2393.68 | -529.88 | 0.08 | 4665 | 58 |
+| noadapt | stress | 4.203 | 2130.60 | -518.85 | 0.16 | 4665 | 58 |
+| noregime | holdout | 1.179 | 303.39 | -831.60 | 0.40 | 5446 | 58 |
+| noregime | stress | 0.905 | 147.28 | -825.06 | 1.40 | 5446 | 58 |
+| nostruct | holdout | 3.541 | 1515.46 | -459.81 | 0.11 | 5267 | 58 |
+| nostruct | stress | 3.188 | 1280.46 | -440.27 | 0.22 | 5267 | 58 |
+| alloff | holdout | 1.459 | 601.85 | -1166.22 | 0.27 | 5597 | 58 |
+| alloff | stress | 1.292 | 416.67 | -1180.86 | 0.66 | 5597 | 58 |
+
+### Итог по sprint24
+- Лидер не изменился: `base` (все защиты включены) остаётся лучшим по robust-метрике.
+- `market_regime_detection=false` резко ухудшает Sharpe и раздувает DD; эту защиту выключать нельзя.
+- `structural_break_protection=false` заметно ухудшает Sharpe; защита полезна, но кандидат на параметризацию (чтобы тюнить интенсивность, а не только on/off).
