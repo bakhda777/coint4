@@ -57,6 +57,34 @@
   - `export SERVSPACE_API_KEY="***"; export SERVER_ID="***"; export SERVER_IP="85.198.90.128"`
   - `bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
 
+## FAQ / грабли (частые вопросы по ходу прогонов)
+- “Почему кажется, что прогоны запускаются локально?”
+  - Локально мы обычно делаем только “подготовку”: генерируем конфиги/очереди, пересобираем rollup, ранжируем.
+  - Тяжёлое исполнение WFA/оптимизаций должно идти **только** через `coint4/scripts/remote/run_server_job.sh` на `85.198.90.128`.
+  - Быстрый способ снять сомнения: добавить в команду `hostname`/`uname -a`, чтобы это попало в stdout:
+    - `bash scripts/remote/run_server_job.sh bash -lc 'echo RUN_HOST=$(hostname); bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv'`
+- “Как сделать, чтобы проект на VPS точно совпадал с тем, что здесь?”
+  - Использовать `SYNC_UP=1` (он rsync’ит **только tracked** файлы, то есть `git ls-files`).
+  - Новые файлы (очереди, конфиги, новые скрипты) нужно минимум `git add ...` (лучше сразу коммит) перед запуском с `SYNC_UP=1`, иначе они не попадут на VPS.
+  - Рекомендация: перед VPS-прогоном держать чистый `git status` (sync_back может перезаписать файлы внутри `docs/`, `coint4/artifacts/`, `coint4/outputs/`).
+- “Ранкер/rollup не видит новые результаты или показывает пусто”
+  - После sync_back обязательно пересобрать индекс:
+    - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+  - Если прогоны шли не через watcher/queue-runner, статусы в `run_queue.csv` могут остаться `planned`:
+    - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
+- “Как убедиться, что VPS реально выключился (и не жрёт деньги)?”
+  - По умолчанию `STOP_AFTER=1` должен выключать VPS в конце remote job.
+  - Важно: `run_server_job.sh` пытается выключить VPS даже если команда/SSH внутри job упали. Если нужно оставить VPS для дебага, явно ставить `STOP_AFTER=0`.
+  - Проверка: после завершения команды `ssh root@85.198.90.128 "echo ok"` должен перестать отвечать.
+  - Если выключение не сработало: немедленно выключить в панели/через API (и потом разобраться почему).
+- “Почему в live используется `PaperTradingEngine`?”
+  - Это историческое название класса. Факт реальных ордеров определяется `BYBIT_ENV`.
+  - В коде есть явное предупреждение: `BYBIT_ENV=live` размещает реальные ордера на Bybit (`coint4/scripts/run_live.py`, `coint4/src/coint2/live/runner.py`).
+- “Мы делаем paper trading?”
+  - Нет. Не делаем и не планируем. Cutover: сразу в `live`.
+- “Я случайно засветил ключ/токен”
+  - Не вставлять ключи в чат/issue/логи. Если ключ где-либо засветили, считать скомпрометированным и перевыпустить.
+
 ## Live trading / cutover
 - Paper trading (demo/testnet) **не делаем и не планируем**.
 - Прод-конфиг: `configs/prod_final_budget1000.yaml`

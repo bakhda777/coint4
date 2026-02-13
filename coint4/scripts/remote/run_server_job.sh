@@ -29,6 +29,9 @@ STOP_AFTER=${STOP_AFTER:-"1"}
 STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
 SKIP_POWER=${SKIP_POWER:-"0"}
 
+CLEANUP_ENABLED=0
+DID_STOP=0
+
 SSH_OPTS=(
   -i "$SSH_KEY"
   -o BatchMode=yes
@@ -136,7 +139,7 @@ stop_server() {
 
   echo "Unable to stop VPS automatically." >&2
   echo "Set SERVSPACE_API_KEY (and leave SKIP_POWER=0) OR set STOP_VIA_SSH=1." >&2
-  exit 1
+  return 1
 }
 
 wait_for_ssh() {
@@ -155,6 +158,24 @@ wait_for_ssh() {
     fi
   done
 }
+
+cleanup() {
+  local rc=$?
+  if [[ "${CLEANUP_ENABLED}" != "1" ]]; then
+    exit "${rc}"
+  fi
+  if [[ "${DID_STOP}" == "1" ]]; then
+    exit "${rc}"
+  fi
+
+  # Best-effort shutdown to avoid leaving an expensive VPS running if anything fails mid-run.
+  set +e
+  stop_server
+  set -e
+  exit "${rc}"
+}
+
+trap cleanup EXIT
 
 sync_up() {
   if [[ "$SYNC_UP" != "1" ]]; then
@@ -215,10 +236,12 @@ sync_back() {
 
 main() {
   start_server
+  CLEANUP_ENABLED=1
   wait_for_ssh
   sync_up
   run_remote "$@"
   sync_back
+  DID_STOP=1
   stop_server
 }
 
