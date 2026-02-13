@@ -26,8 +26,9 @@ Recent updates (2026-02-13):
   - Avg holdout: 3.61, avg stress: 3.36. All 3 windows profitable.
 - **DD sprints (multi-window, pruned_v2, risk=0.006)**:
   - Ключевой рычаг — `pair_stop_loss_usd`: снижение stop-loss с 5.0 до ~1.5–2.25 резко улучшает worst-DD и robust Sharpe.
-  - Новый лидер по DD<=15%: `pair_stop_loss_usd=1.85` → worst-window robust Sharpe `3.448`, worst DD `-13.2%` (worst DD окно: `20231001-20240930`).
+  - Новый лидер по DD<=15%: `pair_stop_loss_usd=1.91` → worst-window robust Sharpe `3.530`, worst DD `-13.2%` (worst DD окно: `20231001-20240930`).
   - Sprint07 (`20260213_budget1000_dd_sprint07_maxbeta_slusd2`): cap по `filter_params.max_beta` при `pair_stop_loss_usd=2.0` не улучшил Sharpe/DD (лучшее при DD<=15%: `max_beta=20` → worst robust `2.211`, worst DD `14.3%`).
+  - Sprint08 (`20260213_budget1000_dd_sprint08_stoplossusd_micro`): micro-sweep `pair_stop_loss_usd=1.85..2.0` нашёл улучшение лидера (новый лидер `slusd=1.91`).
   - Детали/очереди: `docs/optimization_runs_20260213.md`.
 
 ### Previous: OOS validation + pruned universe v1 (191 pairs)

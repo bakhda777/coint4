@@ -789,9 +789,10 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 - OOS B `20231001-20240930`: robust `3.725`, worst DD `13.2%` (worst DD окно)
 - OOS C `20240501-20250630`: robust `3.448`, worst DD `11.1%` (worst robust окно)
 
-### Рекомендация (обновлено после sprint06)
-- Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.85`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
-- Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.85` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).
+### Рекомендация (обновлено после sprint08)
+- Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.91`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
+- Предыдущий лидер sprint06: `pair_stop_loss_usd=1.85` (хуже worst-window robust Sharpe).
+- Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.91` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).
 
 ## DD sprint07: max_beta cap (попытка “разжать” stop-loss до 2.0 без выхода за DD<=15%)
 
@@ -811,3 +812,24 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 - `max_beta=20`: worst robust Sharpe `2.211`, worst DD `14.3%`
 
 Вывод: cap по `max_beta` **не улучшил** компромисс Sharpe/DD. Даже лучшие варианты (DD<=15%) сильно уступают лидеру sprint06 (`slusd=1.85`, worst robust `3.448`).
+
+## DD sprint08: micro-sweep `pair_stop_loss_usd` (поиск Sharpe>leader при DD<=15%)
+
+Цель: проверить, есть ли значение `pair_stop_loss_usd` чуть выше 1.85, которое улучшает worst-window robust Sharpe без выхода за DD<=15%.
+
+### Run group
+- `20260213_budget1000_dd_sprint08_stoplossusd_micro`
+- Sweep:
+  - `portfolio.risk_per_position_pct=0.006` (фикс)
+  - `backtest.pair_stop_loss_usd=1.85/1.88/1.91/1.94/1.97/2.0`
+  - 3 OOS-окна (A/B/C), `holdout+stress`
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint08_stoplossusd_micro/run_queue.csv` (`36/36 completed`, `Sharpe consistency OK`)
+
+### Итог sprint08 (gate `max_dd_pct <= 0.15`)
+Новый лидер:
+- `pair_stop_loss_usd=1.91` → worst-window robust Sharpe `3.530`, worst DD `13.2%` (worst DD окно: `20231001-20240930`, worst robust окно: `20240501-20250630`)
+
+По окнам для `slusd=1.91`:
+- OOS A `20220601-20230430`: robust `6.034`, worst DD `2.6%`
+- OOS B `20231001-20240930`: robust `3.599`, worst DD `13.2%`
+- OOS C `20240501-20250630`: robust `3.530`, worst DD `10.9%`
