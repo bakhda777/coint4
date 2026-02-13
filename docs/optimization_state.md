@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-13
 
-Current stage: Max-Sharpe mode for `$1000`: текущий лидер — `tp15_tr90` (testing_period_days=15, training_period_days=90) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`).
+Current stage: Max-Sharpe mode for `$1000`: лидер quick-WFA (`max_steps=5`) — `tp15_tr90` (testing=15d, training=90d) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`). Лидер full-horizon (`max_steps=null`) — `tp15` (testing=15d) с тем же `tr90`: Sharpe `3.326/3.117` (robust `3.117`).
 
 Recent updates (2026-02-13):
 - Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
@@ -37,6 +37,8 @@ Recent updates (2026-02-13):
 - Итог sprint33: новый лидер `tp15` — Sharpe `5.142/4.899` (robust `4.899`), но горизонт теста при `max_steps=5` становится короче (≈75 дней) → нужно подтверждение на сопоставимом горизонте (например, `tp15 + max_steps=10`).
 - Signal sprint34 (training_period_days sweep under `tp15`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint34: лидер по robust остаётся на `tr90` (Sharpe `5.142/4.899`); `tr180` второй (Sharpe `4.402/4.200`), `tr60` ломает стратегию через огромный DD и высокий stress cost_ratio.
+- Signal sprint35 (testing_period_days sweep under `tp15_tr90`, max_steps=null) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
+- Итог sprint35: на полном горизонте extended OOS `tp15` остаётся лучшим по robust (Sharpe `3.326/3.117`, robust `3.117`), но рост Sharpe в sprint33/34 был существенно завязан на укороченный тест при `max_steps=5`.
 
 Recent updates (2026-02-12):
 - Проверена целостность последних `$1000` прогонов: для очередей `20260131_budget1000_*` обязательные артефакты присутствуют; Sharpe consistency check пройден.

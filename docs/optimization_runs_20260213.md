@@ -599,3 +599,43 @@
 - Лидер не изменился: baseline `tr90` (training=90d) остаётся лучшим по robust Sharpe (Sharpe `5.142/4.899`).
 - `tr180` второй по robust (Sharpe `4.402/4.200`), но хуже лидера.
 - `tr60` и `tr240` заметно раздувают max_dd; `tr60` практически ломает стратегию по robust Sharpe и stress cost_ratio.
+
+## Extra sweep: signal sprint35 (testing_period_days sweep under `tp15_tr90`, max_steps=null, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint35/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint35/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (tp*_mxAll)
+Фиксируем лидера `tp15_tr90` и меняем только:
+- `walk_forward.testing_period_days`
+- `walk_forward.step_size_days` (держим равным `testing_period_days`, чтобы не было overlap/дыр)
+- `walk_forward.max_steps=null` (полный горизонт extended OOS; число WFA шагов зависит от `tp`)
+
+| variant | testing_period_days | step_size_days | planned_steps |
+|---|---:|---:|---:|
+| tp15 | 15 | 15 | 25 |
+| tp21 | 21 | 21 | 18 |
+| tp30 | 30 | 30 | 13 |
+| tp45 | 45 | 45 | 9 |
+| tp60 | 60 | 60 | 7 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs | days |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| tp15 | holdout | 3.326 | 25993.76 | -11582.56 | 0.14 | 11531 | 110 | 376 |
+| tp15 | stress | 3.117 | 20256.41 | -10156.50 | 0.28 | 11531 | 110 | 376 |
+| tp21 | holdout | -1.264 | -727.59 | -868.49 | — | 4967 | 96 | 379 |
+| tp21 | stress | -1.428 | -763.42 | -893.72 | — | 4967 | 96 | 379 |
+| tp30 | holdout | 3.197 | 12977.21 | -7080.87 | 0.19 | 12435 | 94 | 391 |
+| tp30 | stress | 2.941 | 10068.60 | -6704.95 | 0.38 | 12435 | 94 | 391 |
+| tp45 | holdout | 2.356 | 5208.21 | -1709.90 | 0.15 | 13371 | 84 | 406 |
+| tp45 | stress | 2.091 | 3859.92 | -1449.36 | 0.32 | 13371 | 84 | 406 |
+| tp60 | holdout | 1.295 | 1278.39 | -1015.15 | 0.42 | 13841 | 73 | 421 |
+| tp60 | stress | 0.972 | 699.76 | -883.80 | 1.18 | 13841 | 73 | 421 |
+
+### Итог по sprint35
+- На полном extended OOS (без усечения по `max_steps`) `tp15` остаётся лучшим по robust-метрике: Sharpe `3.326/3.117` (robust `3.117`), но преимущество над `tp30` уже небольшое (robust `2.941`).
+- Результат подтверждает, что рост Sharpe у `tp15` в sprint33/34 (Sharpe `5.142/4.899`) был существенно завязан на укороченный горизонт теста при `max_steps=5`.
+- `tp21` стабильно ломает стратегию (отрицательные Sharpe/PnL), а большие `tp45/tp60` режут robust Sharpe и раздувают stress `cost_ratio` (до `1.18` на `tp60`).
