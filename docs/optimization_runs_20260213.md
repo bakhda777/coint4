@@ -228,3 +228,38 @@
 - Лидер не изменился: `base` (все защиты включены) остаётся лучшим по robust-метрике.
 - `market_regime_detection=false` резко ухудшает Sharpe и раздувает DD; эту защиту выключать нельзя.
 - `structural_break_protection=false` заметно ухудшает Sharpe; защита полезна, но кандидат на параметризацию (чтобы тюнить интенсивность, а не только on/off).
+
+## Extra sweep: signal sprint25 (rolling_window sweep under `ms0p1+ts1p5+slz3p0`, 10 прогонов)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_sharpe_signal_sprint25/run_queue.csv`
+- Конфиги: `coint4/configs/budget_20260213_1000_sharpe_signal_sprint25/*.yaml`
+- Размер: 10 прогонов (`5` вариантов × `holdout/stress`)
+- Статус: `10/10 completed`
+- Валидация: `Sharpe consistency OK (10 run(s))`
+
+### Матрица параметров (rw*)
+Фиксируем текущего лидера `ms0p1+ts1p5+slz3p0` и меняем только `backtest.rolling_window`.
+
+| variant | rolling_window |
+|---|---:|
+| rw48 | 48 |
+| rw96 | 96 |
+| rw144 | 144 |
+| rw192 | 192 |
+| rw288 | 288 |
+
+### Результаты (10 прогонов)
+| variant | kind | sharpe | pnl | max_dd | cost_ratio | trades | pairs |
+|---|---|---:|---:|---:|---:|---:|---:|
+| rw48 | holdout | 2.341 | 1190.89 | -634.14 | 0.17 | 5846 | 58 |
+| rw48 | stress | 2.071 | 958.48 | -598.20 | 0.36 | 5846 | 58 |
+| rw96 | holdout | 4.572 | 2463.52 | -536.99 | 0.08 | 4659 | 58 |
+| rw96 | stress | 4.277 | 2196.52 | -525.86 | 0.16 | 4659 | 58 |
+| rw144 | holdout | 0.603 | 50.90 | -453.29 | 2.20 | 3971 | 58 |
+| rw144 | stress | 0.398 | -38.24 | -437.92 | -5.04 | 3971 | 58 |
+| rw192 | holdout | 1.183 | 309.39 | -582.47 | 0.32 | 3532 | 58 |
+| rw192 | stress | 0.970 | 212.88 | -581.62 | 0.79 | 3532 | 58 |
+| rw288 | holdout | 0.922 | 161.41 | -599.74 | 0.47 | 2887 | 58 |
+| rw288 | stress | 0.646 | 87.23 | -608.51 | 1.51 | 2887 | 58 |
+
+### Итог по sprint25
+- `rolling_window=96` остаётся явным максимумом Sharpe; остальные окна резко ухудшают Sharpe и/или уводят PnL в ноль/минус (особенно `rw144`).
