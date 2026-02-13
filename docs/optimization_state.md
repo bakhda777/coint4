@@ -1,10 +1,22 @@
 # Optimization state
 
-Last updated: 2026-02-13
+Last updated: 2026-02-14
 
-Current stage: Max-Sharpe mode for `$1000`: лидер quick-WFA (`max_steps=5`) — `tp15_tr90` (testing=15d, training=90d) поверх `ms0p1` (min_spread_move_sigma=0.1), `ts1p5` (time_stop_multiplier=1.5) и `vm10055` (max_var_multiplier=1.0055), holdout/stress Sharpe `5.142/4.899` (robust `4.899`). Лидер full-horizon (`max_steps=null`) — `tp15_tr90 + psw1m1 + hx0p70` (pair_stability window=1, min_steps=1; max_hurst_exponent=0.70): Sharpe `3.576/3.375` (robust `3.375`).
+Current stage: **Multi-window OOS validation + universe pruning**. Pruned universe (191 пар, без фан-токенов) подтверждён на 3 независимых OOS-окнах. Full-span WFA (~69 шагов) в процессе.
 
-Recent updates (2026-02-13):
+**Pruned universe лидер**: `pruned191` (удалены JUV/CITY/GALFT/AFC/INTER/ERTHA/IZI/FLOW), avg holdout Sharpe **4.39** (3 окна), avg stress Sharpe **4.16**, все 3 окна прибыльны. Это улучшение относительно sprint 34 baseline (`5.142/4.899` quick-WFA, единственное окно).
+
+Recent updates (2026-02-14):
+- **OOS validation (3 окна, original 250 пар)**: Window A (bear Jun22-Aug22) Sharpe -0.61, Window B (Oct23-Dec23) -$874 DD>100%, Window C (May24-Jul24) Sharpe 3.95. Gate FAIL: 1/3 прибыльных.
+- **Pair attribution**: FLOWUSDT-JUVUSDT уничтожил Window B (-$738.90, 84.5% потерь, -$651 за один день). Фан-токены (JUV/CITY) и ERTHA/IZI/FLOW — источники катастрофических потерь.
+- **Universe pruning**: удалены 59 пар (24%) с фан-токенами и проблемными символами. Pruned universe: `artifacts/universe/20260214_pruned_nofan/pairs_universe.yaml` (191 пара).
+- **Re-test pruned (3 окна)**: все 3 окна прибыльны — holdout Sharpe A=5.40, B=2.25, C=5.51 (avg 4.39). Stress: A=5.17, B=2.03, C=5.29 (avg 4.16). Total PnL: +$3,005 (было -$302).
+- **Notional sweep**: `max_notional_per_trade` — no-op при $1K (avg entry notional $15-34, cap_hits=0). Ставим 100 как guardrail.
+- **Full-span WFA** (Jun 2022 → Jun 2025, 75 шагов, `max_steps=null`): holdout Sharpe 1.90 ($1K→$30.8K, 30.8x), stress Sharpe 1.59 ($1K→$20.3K, 19.3x). Max DD -83.1% (Jul-Aug 2023).
+- **Prod config финализирован**: `configs/prod_final_budget1000.yaml` — pruned191 universe, max_notional=100, все оптимизированные параметры.
+- **Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT (фан-токены + tail risk).
+
+Previous updates (2026-02-13):
 - Signal sprint19 (hold/cooldown sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
 - Итог sprint19: максимум по robust-метрике остаётся на baseline `hold300/cd300` (Sharpe `4.424/4.119`); `hold60` уходит в отрицательный Sharpe, `hold600/900` резко режут PnL и ухудшают cost_ratio.
 - Signal sprint20 (min_spread_move_sigma sweep under `ts1p5`) завершён: `10/10 completed`, `Sharpe consistency OK (10 run(s))`.
