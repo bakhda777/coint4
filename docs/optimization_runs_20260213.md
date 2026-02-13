@@ -792,3 +792,22 @@ Baseline relaxed8 (old universe `20260119_relaxed8_strict_preholdout_v2`):
 ### Рекомендация (обновлено после sprint06)
 - Кандидат под live (с текущими параметрами риска): `pair_stop_loss_usd=1.85`, `risk_per_position_pct=0.006`, universe `pruned_v2` (168 пар).
 - Следующий обязательный шаг: full-span holdout+stress прогон с `pair_stop_loss_usd=1.85` (чтобы убедиться, что общий DD тоже приемлемый, а Sharpe не деградирует).
+
+## DD sprint07: max_beta cap (попытка “разжать” stop-loss до 2.0 без выхода за DD<=15%)
+
+Гипотеза: `pair_stop_loss_usd=2.0` почти проходит gate по DD (в sprint05 было ~15.5%), возможно, хвостовой риск можно “срезать” cap’ом по `filter_params.max_beta` и сохранить/улучшить Sharpe.
+
+### Run group
+- `20260213_budget1000_dd_sprint07_maxbeta_slusd2`
+- Sweep:
+  - `backtest.pair_stop_loss_usd=2.0` (фикс)
+  - `portfolio.risk_per_position_pct=0.006` (фикс)
+  - `filter_params.max_beta=5/10/20/50/100`
+  - 3 OOS-окна (A/B/C), `holdout+stress`
+- Очередь: `coint4/artifacts/wfa/aggregate/20260213_budget1000_dd_sprint07_maxbeta_slusd2/run_queue.csv` (`30/30 completed`, `Sharpe consistency OK`)
+
+### Итог (multi-window, gate `max_dd_pct <= 0.15`)
+Лучший вариант по критерию “макс worst-window robust Sharpe при DD<=15%”:
+- `max_beta=20`: worst robust Sharpe `2.211`, worst DD `14.3%`
+
+Вывод: cap по `max_beta` **не улучшил** компромисс Sharpe/DD. Даже лучшие варианты (DD<=15%) сильно уступают лидеру sprint06 (`slusd=1.85`, worst robust `3.448`).
