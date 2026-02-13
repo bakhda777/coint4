@@ -181,6 +181,8 @@ class FullNumbaPairBacktester(BasePairBacktester):
             max_holding_period=max_holding_period,
             enable_regime_detection=getattr(self, 'market_regime_detection', True),
             enable_structural_breaks=getattr(self, 'structural_break_protection', True),
+            market_regime_factor_min=float(getattr(self, "market_regime_factor_min", 0.5) or 0.5),
+            market_regime_factor_max=float(getattr(self, "market_regime_factor_max", 1.5) or 1.5),
             structural_break_min_correlation=float(getattr(self, "structural_break_min_correlation", 0.3) or 0.3),
             structural_break_entry_multiplier=float(getattr(self, "structural_break_entry_multiplier", 1.5) or 1.5),
             structural_break_exit_multiplier=float(getattr(self, "structural_break_exit_multiplier", 1.2) or 1.2),

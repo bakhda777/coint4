@@ -244,6 +244,9 @@ class BacktestConfig(BaseModel):
     variance_ratio_window: int = Field(default=480, ge=50)
     variance_ratio_trending_min: float = Field(default=1.2, gt=1.0)
     variance_ratio_mean_reverting_max: float = Field(default=0.8, lt=1.0, gt=0.0)
+    # Numba regime detection tuning (used by numba_kernels.detect_market_regime)
+    market_regime_factor_min: float = Field(default=0.5, gt=0.0, le=5.0)
+    market_regime_factor_max: float = Field(default=1.5, gt=0.0, le=5.0)
     
     # Structural break protection parameters
     structural_break_protection: bool = True
@@ -313,6 +316,9 @@ class BacktestConfig(BaseModel):
         
         if self.variance_ratio_mean_reverting_max >= 1.0:
             raise ValueError("`variance_ratio_mean_reverting_max` must be less than 1.0")
+
+        if self.market_regime_factor_min > self.market_regime_factor_max:
+            raise ValueError("`market_regime_factor_min` must be <= `market_regime_factor_max`")
         
         # Validate structural break protection parameters
         if self.structural_break_protection and self.cointegration_test_frequency < 100:

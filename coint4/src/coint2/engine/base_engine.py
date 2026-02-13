@@ -344,6 +344,10 @@ class BasePairBacktester:
             self.structural_break_min_correlation = getattr(config, 'structural_break_min_correlation', 0.3)
             self.structural_break_entry_multiplier = getattr(config, 'structural_break_entry_multiplier', 1.5)
             self.structural_break_exit_multiplier = getattr(config, 'structural_break_exit_multiplier', 1.2)
+
+            # Numba market regime detection tuning
+            self.market_regime_factor_min = getattr(config, 'market_regime_factor_min', 0.5)
+            self.market_regime_factor_max = getattr(config, 'market_regime_factor_max', 1.5)
             
             # NEW: Time-based filters
             self.enable_funding_time_filter = getattr(config, 'enable_funding_time_filter', True)
@@ -382,6 +386,8 @@ class BasePairBacktester:
             self.structural_break_min_correlation = 0.3
             self.structural_break_entry_multiplier = 1.5
             self.structural_break_exit_multiplier = 1.2
+            self.market_regime_factor_min = 0.5
+            self.market_regime_factor_max = 1.5
             self.enable_funding_time_filter = True
             self.funding_blackout_minutes = 30
             self.funding_reset_hours = [0, 8, 16]

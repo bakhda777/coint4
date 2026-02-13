@@ -536,8 +536,13 @@ def calculate_variance_ratio(prices: np.ndarray) -> float:
 
 
 @nb.njit(fastmath=True, cache=True)
-def detect_market_regime(y: np.ndarray, x: np.ndarray) -> float:
-    """Определяет рыночный режим на основе Hurst и Variance Ratio."""
+def detect_market_regime(y: np.ndarray, x: np.ndarray,
+                         factor_min: float = 0.5,
+                         factor_max: float = 1.5) -> float:
+    """Определяет рыночный режим на основе Hurst и Variance Ratio.
+
+    Возвращает фактор, который используется для масштабирования entry/exit порогов.
+    """
     if y.size < 50 or x.size < 50:
         return 1.0  # Нейтральный режим
 
@@ -572,11 +577,21 @@ def detect_market_regime(y: np.ndarray, x: np.ndarray) -> float:
 
     regime_score = 0.5 * (2.0 - hurst) + 0.5 * (2.0 / vr)
 
-    # Нормализуем в диапазон [0.5, 1.5]
-    if regime_score < 0.5:
-        regime_score = 0.5
-    elif regime_score > 1.5:
-        regime_score = 1.5
+    # Нормализуем в заданный диапазон [factor_min, factor_max]
+    if factor_min <= 0.0:
+        factor_min = 0.5
+    if factor_max <= 0.0:
+        factor_max = 1.5
+    if factor_max < factor_min:
+        # swap
+        tmp = factor_min
+        factor_min = factor_max
+        factor_max = tmp
+
+    if regime_score < factor_min:
+        regime_score = factor_min
+    elif regime_score > factor_max:
+        regime_score = factor_max
 
     return regime_score
 
@@ -661,6 +676,8 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
 	                                   enable_structural_breaks: bool,
 	                                   min_volatility: float,
 	                                   adaptive_threshold_factor: float,
+	                                   market_regime_factor_min: float = 0.5,
+	                                   market_regime_factor_max: float = 1.5,
 	                                   structural_break_min_correlation: float = 0.3,
 	                                   structural_break_entry_multiplier: float = 1.5,
 	                                   structural_break_exit_multiplier: float = 1.2,
@@ -695,6 +712,10 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         Максимальный период удержания позиции
     enable_regime_detection : bool
         Включить определение рыночного режима
+    market_regime_factor_min : float
+        Минимальный regime_factor (clamp) для Numba regime detection.
+    market_regime_factor_max : float
+        Максимальный regime_factor (clamp) для Numba regime detection.
     enable_structural_breaks : bool
         Включить защиту от структурных сдвигов
     structural_break_min_correlation : float
@@ -751,6 +772,14 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
         min_notional_per_trade = 0.0
     if max_notional_per_trade < 0.0:
         max_notional_per_trade = 0.0
+    if market_regime_factor_min <= 0.0:
+        market_regime_factor_min = 0.5
+    if market_regime_factor_max <= 0.0:
+        market_regime_factor_max = 1.5
+    if market_regime_factor_max < market_regime_factor_min:
+        tmp = market_regime_factor_min
+        market_regime_factor_min = market_regime_factor_max
+        market_regime_factor_max = tmp
     if structural_break_min_correlation <= 0.0:
         structural_break_min_correlation = 0.3
     elif structural_break_min_correlation > 1.0:
@@ -787,7 +816,7 @@ def calculate_positions_and_pnl_full(y: np.ndarray, x: np.ndarray,
     # Определяем рыночный режим (если включено)
     regime_factor = 1.0
     if enable_regime_detection and n > 100:
-        regime_factor = detect_market_regime(y, x)
+        regime_factor = detect_market_regime(y, x, market_regime_factor_min, market_regime_factor_max)
 
     # Проверяем структурные сдвиги (если включено)
     has_structural_break = False
