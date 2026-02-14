@@ -77,3 +77,16 @@ wf_results.json
 
 # Nested repo backup
 **/.git.bak/
+
+# Ralph TUI (local loop state)
+.ralph-tui/iterations/
+.ralph-tui/progress.md
+
+# coint4 generated artifacts / outputs (do not commit)
+coint4/artifacts/
+coint4/outputs/
+outputs/
+
+# Common runtime junk
+**/*.pid
+**/*.log
