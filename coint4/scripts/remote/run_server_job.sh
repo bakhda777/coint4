@@ -29,6 +29,11 @@ STOP_AFTER=${STOP_AFTER:-"1"}
 STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
 SKIP_POWER=${SKIP_POWER:-"0"}
 
+# Optional preflight guard (idempotency): run once after SSH is ready, but before any update/sync/stop.
+# If the command prints PREFLIGHT_MATCH and exits 0, this script exits 0 immediately (no side effects).
+REMOTE_PREFLIGHT_CMD=${REMOTE_PREFLIGHT_CMD:-""}
+PREFLIGHT_MATCH=${PREFLIGHT_MATCH:-""}
+
 CLEANUP_ENABLED=0
 DID_STOP=0
 
@@ -210,6 +215,36 @@ sync_up() {
   fi
 }
 
+shell_quote_single() {
+  local s="$1"
+  # Wrap a string in single quotes and escape embedded single quotes as: '\''.
+  s=${s//\'/\'\\\'\'}
+  printf "'%s'" "$s"
+}
+
+preflight_guard() {
+  if [[ -z "${REMOTE_PREFLIGHT_CMD}" || -z "${PREFLIGHT_MATCH}" ]]; then
+    return 0
+  fi
+
+  local out rc quoted
+  quoted="$(shell_quote_single "${REMOTE_PREFLIGHT_CMD}")"
+
+  # Remote preflight is allowed to fail (e.g. session absent => exit 1). We only early-exit on match.
+  set +e
+  out="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "bash -lc ${quoted}" 2>&1)"
+  rc=$?
+  set -e
+
+  if [[ "${rc}" == "0" && "${out}" == *"${PREFLIGHT_MATCH}"* ]]; then
+    # Print preflight output and exit cleanly without any update/sync/stop/cleanup.
+    printf '%s\n' "${out}"
+    CLEANUP_ENABLED=0
+    DID_STOP=1
+    exit 0
+  fi
+}
+
 run_remote() {
   local cmd
   cmd=$(printf '%q ' "$@")
@@ -238,6 +273,7 @@ main() {
   start_server
   CLEANUP_ENABLED=1
   wait_for_ssh
+  preflight_guard
   sync_up
   run_remote "$@"
   sync_back
