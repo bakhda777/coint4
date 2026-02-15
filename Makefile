@@ -33,17 +33,17 @@ setup:
 .PHONY: test
 test:
 	@$(call _ensure_venv,pytest)
-	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q
+	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q -p no:rerunfailures
 
 .PHONY: test-serial
 test-serial:
 	@$(call _ensure_venv,pytest)
-	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q -m serial
+	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q -p no:rerunfailures -m serial
 
 .PHONY: test-slow
 test-slow:
 	@$(call _ensure_venv,pytest)
-	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q -m slow
+	@cd $(COINT4_DIR) && ./.venv/bin/pytest -q -p no:rerunfailures -m slow
 
 .PHONY: lint
 lint:
