@@ -8,7 +8,7 @@ import csv
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from coint2.ops.run_index import _compute_sharpe_from_equity_curve
+from coint2.core.sharpe import compute_sharpe_ratio_abs_from_equity_curve_csv
 
 
 def _iter_queue_paths(queue_dir: Path, queue_paths: List[Path]) -> List[Path]:
@@ -53,7 +53,7 @@ def check_run_dir(run_dir: Path, *, tolerance: float) -> Optional[str]:
     if raw_sharpe is None:
         return f"{run_dir}: missing sharpe_ratio_abs in {metrics_path}"
 
-    computed = _compute_sharpe_from_equity_curve(run_dir)
+    computed = compute_sharpe_ratio_abs_from_equity_curve_csv(run_dir / "equity_curve.csv")
     if computed is None:
         return f"{run_dir}: missing equity_curve.csv for computed sharpe"
 
