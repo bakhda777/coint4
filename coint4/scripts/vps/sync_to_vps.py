@@ -71,7 +71,6 @@ def _rsync_cmd(user: str, host: str, key: str, remote_dir: str, *, delete: bool,
         "coint4/.ruff_cache/",
         "coint4/.mypy_cache/",
         "coint4/__pycache__/",
-        "coint4/artifacts/",
         "coint4/outputs/",
         "coint4/results/",
         "coint4/bench/",
@@ -82,6 +81,17 @@ def _rsync_cmd(user: str, host: str, key: str, remote_dir: str, *, delete: bool,
     ]
     for ex in excludes:
         cmd.extend(["--exclude", ex])
+
+    # Allow small, tracked WFA queue/index inputs on the VPS, but never sync heavy run artifacts.
+    includes = [
+        "coint4/artifacts/",
+        "coint4/artifacts/wfa/",
+        "coint4/artifacts/wfa/aggregate/",
+        "coint4/artifacts/wfa/aggregate/***",
+    ]
+    for inc in includes:
+        cmd.extend(["--include", inc])
+    cmd.extend(["--exclude", "coint4/artifacts/***"])
 
     repo_root = _repo_root()
     # Sync only the essential project surface.
