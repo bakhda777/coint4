@@ -22,6 +22,7 @@
 ## Документация прогонов
 - Состояние (1 файл): `docs/optimization_state.md`
 - Дневники: `docs/optimization_runs_YYYYMMDD.md`
+- Правило: после каждого блока прогонов обновлять `docs/optimization_state.md` и дописывать дневник.
 
 ## Queue / rollup (если прогоны делались вручную)
 Если запускали WFA не через `scripts/optimization/run_wfa_queue.py` или `scripts/optimization/watch_wfa_queue.sh`,
@@ -39,6 +40,8 @@ PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \
 - На этом сервере (146.103.41.248) тяжёлые WFA/оптимизации/долгие бэктесты не запускать.
 - Тяжёлое исполнять на `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh`.
 - По умолчанию `STOP_AFTER=1` выключает VPS по завершении (это желаемое поведение).
+- Guardrail: queue-прогоны через `scripts/optimization/watch_wfa_queue.sh` требуют явный `walk_forward.max_steps` и проверяют `max_steps<=5`.
+- Принцип remote job: сначала `verify` (проверки), затем `run` (прогоны), затем `fetch` (забрать результаты обратно).
 
 ## Git и артефакты
 - Не коммитить тяжёлые артефакты из `coint4/artifacts/wfa/runs/**`.
@@ -48,4 +51,3 @@ PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \
 - Ключи не храним в Git и не печатаем в логи.
 - Serverspace API key: только `.secrets/serverspace_api_key` (chmod 600, gitignored) и/или env `SERVSPACE_API_KEY`.
 - Bybit: `BYBIT_API_KEY`, `BYBIT_API_SECRET` только через env/локальные `.env` (не коммитить).
-
