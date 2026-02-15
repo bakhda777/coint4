@@ -8,6 +8,21 @@ Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 baseline post
 
 **Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, HFTUSDC, HFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT, KDAUSDT
 
+## Критерий отбора (канонический, budget=$1000)
+
+Source of truth для ранжирования: `canonical_metrics.json` (пересчитан из `equity_curve.csv`) и/или rollup `run_index.csv` (поле `sharpe_ratio_abs` уже канонизировано через пересчёт из `equity_curve.csv`; детали: `docs/sharpe_audit.md`).
+
+Objective (robust Sharpe):
+- Для одного окна: `robust_sharpe = min(sharpe_ratio_abs_holdout, sharpe_ratio_abs_stress)`.
+- Для multi-window: `robust_sharpe = min(robust_sharpe_window_i)` (worst-window robust Sharpe).
+
+DD-gate для $1000:
+- Проходит только если `max_drawdown_on_equity <= 0.15` (то есть worst DD не хуже -15%), эквивалентно `max_drawdown_abs >= -150` при `initial_capital=1000`.
+
+Sanity-gates (анти no-op, минимальные):
+- `total_trades >= 10` и (если метрика присутствует) `total_pairs_traded >= 1`.
+- `equity_curve.csv` должен содержать минимум 2 точки (иначе Sharpe/DD по curve не определены, а `sharpe_ratio_abs` в канонизации может стать 0).
+
 Recent updates (2026-02-15):
 
 ### Clean Cycle TOP-10 kickoff (prep)
