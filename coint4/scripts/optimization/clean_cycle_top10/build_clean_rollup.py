@@ -464,6 +464,11 @@ def main() -> int:
         help="Optional path to sweeps manifest (.json/.csv) (relative to coint4/ unless absolute).",
     )
     parser.add_argument(
+        "--allow-baseline-only",
+        action="store_true",
+        help="Deprecated/back-compat flag: baseline-only rollup is allowed by default when --sweeps-manifest is omitted.",
+    )
+    parser.add_argument(
         "--output-csv",
         default="artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.csv",
         help="Where to write rollup_clean_cycle_top10.csv (relative to coint4/ unless absolute).",
