@@ -14,6 +14,11 @@
 - `make test-serial`, `make test-slow`
 - `make ci` (lint + test)
 
+## Sharpe (каноническая методика)
+- `Sharpe = sqrt(periods_per_year) * mean(excess_returns) / std(excess_returns, ddof=1)`
+- `risk_free_rate` по умолчанию `0` (в per-period единицах)
+- если `std == 0` (или данных недостаточно) -> `0.0` (не NaN/inf)
+
 ## Где лежат результаты WFA/оптимизаций
 - Тяжёлые артефакты прогонов (не коммитим): `coint4/artifacts/wfa/runs/<run_group>/<run_id>/`
 - Очереди (маленькие, держим в Git): `coint4/artifacts/wfa/aggregate/<run_group>/run_queue.csv`
@@ -39,6 +44,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \
 ## Тяжёлые прогоны: только на VPS
 - На этом сервере (146.103.41.248) тяжёлые WFA/оптимизации/долгие бэктесты не запускать.
 - Тяжёлое исполнять на `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh`.
+- Альтернатива (без “размножения окон”): `python3 coint4/scripts/vps/vps_pipeline.py --all` (power -> sync -> verify -> tmux run -> fetch-when-done).
 - По умолчанию `STOP_AFTER=1` выключает VPS по завершении (это желаемое поведение).
 - Guardrail: queue-прогоны через `scripts/optimization/watch_wfa_queue.sh` требуют явный `walk_forward.max_steps` и проверяют `max_steps<=5`.
 - Принцип remote job: сначала `verify` (проверки), затем `run` (прогоны), затем `fetch` (забрать результаты обратно).
