@@ -90,7 +90,18 @@ wf_results.json
 .secrets/
 
 # coint4 generated artifacts / outputs (do not commit)
-coint4/artifacts/
+# Default: ignore everything under coint4/artifacts, but keep small WFA queues + rollup index tracked.
+coint4/artifacts/**
+!coint4/artifacts/
+!coint4/artifacts/wfa/
+!coint4/artifacts/wfa/aggregate/
+!coint4/artifacts/wfa/aggregate/**/
+!coint4/artifacts/wfa/aggregate/**/run_queue.csv
+!coint4/artifacts/wfa/aggregate/rollup/
+!coint4/artifacts/wfa/aggregate/rollup/README.md
+!coint4/artifacts/wfa/aggregate/rollup/run_index.csv
+!coint4/artifacts/wfa/aggregate/rollup/run_index.json
+!coint4/artifacts/wfa/aggregate/rollup/run_index.md
 coint4/outputs/
 outputs/
 
