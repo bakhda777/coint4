@@ -1,0 +1,13 @@
+## Task: {{taskTitle}}
+
+{{taskDescription}}
+
+## Rules
+- Work autonomously. If something is ambiguous, pick the safest default and record the decision in `.ralph-tui/progress.md`.
+- Keep diffs small and focused. One task = one commit.
+- Commit messages must be one of: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
+- Never commit generated artifacts/outputs/backtests. If needed, update `.gitignore` and untrack generated files (keep them on disk).
+- Before committing: review `git status --porcelain` and stage only relevant files (avoid accidental `git add -A`).
+- After finishing: update `.ralph-tui/progress.md` (max ~10 bullets, no long text), then commit.
+
+<promise>COMPLETE</promise>
