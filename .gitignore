@@ -97,6 +97,7 @@ coint4/artifacts/**
 !coint4/artifacts/wfa/aggregate/
 !coint4/artifacts/wfa/aggregate/**/
 !coint4/artifacts/wfa/aggregate/**/run_queue.csv
+!coint4/artifacts/wfa/aggregate/clean_cycle_top10/**
 !coint4/artifacts/wfa/aggregate/rollup/
 !coint4/artifacts/wfa/aggregate/rollup/README.md
 !coint4/artifacts/wfa/aggregate/rollup/run_index.csv
