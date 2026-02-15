@@ -9,6 +9,8 @@
 - Never commit secrets. Serverspace API key must live only in `.secrets/serverspace_api_key` (ignored) and/or `SERVSPACE_API_KEY` (env). Never print it and never log request headers.
 - Never commit generated artifacts/outputs/backtests (e.g. `coint4/artifacts/**`, `coint4/outputs/**`, `outputs/**`, `.ralph-tui/iterations/**`, `*.pid`, `*.log`).
 - NEVER run `git add -A`. Stage only explicit files. Before committing: check `git status --porcelain` and `git diff --cached --name-only` to ensure only intended files are staged.
-- After finishing: update `.ralph-tui/progress.md` (max ~10 bullets, no long text), then commit.
+- After finishing: update `.ralph-tui/progress.md` (max ~10 bullets, no long text) for short cross-task context.
+  IMPORTANT: `.ralph-tui/progress.md` is intentionally gitignored. Do NOT change `.gitignore` to track it and do NOT stage/commit it.
+  Then commit only the task's relevant project files.
 
 <promise>COMPLETE</promise>
