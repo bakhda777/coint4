@@ -68,3 +68,11 @@
   - Причина `SYNC_UP=1`: на VPS `git pull` падал из-за dirty worktree (merge would overwrite local changes).
 - Sync-back (узко, из-за root-owned старых директории в локальном `coint4/artifacts/**`):
   - `SYNC_PATHS='docs coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91 coint4/artifacts/wfa/runs/20260214_budget1000_dd_sprint10_minbeta_slusd1p91'`
+
+## VPS confirmatory queue: `clean_cycle_top10` shortlist confirm (holdout+stress)
+
+- Queue: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_confirm_shortlist/run_queue.csv` -> `20/20 completed`.
+- Запуск (локально, из `coint4/`):
+  - `SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash -lc 'cd /opt/coint4 && make ci; cd /opt/coint4/coint4 && bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/clean_cycle_top10/20260215_confirm_shortlist/run_queue.csv'`
+- Rollup индекс обновлён: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.
+- Примечание: дефолтный sync-back (`SYNC_PATHS` включает `coint4/artifacts`) может падать, если локально есть root-owned директории внутри `coint4/artifacts/**`; для fetch лучше задавать узкий `SYNC_PATHS` под конкретный run-group.

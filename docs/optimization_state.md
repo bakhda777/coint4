@@ -55,6 +55,11 @@ Recent updates (2026-02-15):
 - Исполнение: только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh` (на этом сервере тяжёлое не запускаем).
 - Rollup индекс пересобран: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.
 
+### VPS confirmatory queue (clean_cycle_top10 shortlist: holdout+stress)
+- Очередь: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_confirm_shortlist/run_queue.csv` → `20/20 completed` (holdout + stress).
+- Исполнение: VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh` (с `SYNC_UP=1`, `STOP_AFTER=1`).
+- Результаты: `coint4/artifacts/wfa/runs_clean/20260215_confirm_shortlist/confirm/{holdout,stress}/...` (для shortlist валидации robust-метрики).
+
 ### VPS sweeps WFA (dd_sprint10 min_beta)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91/run_queue.csv` → `30/30 completed`.
 - Исполнение: только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh`.
