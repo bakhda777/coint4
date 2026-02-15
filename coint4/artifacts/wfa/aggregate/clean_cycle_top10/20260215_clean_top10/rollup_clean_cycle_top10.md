@@ -4,7 +4,7 @@
 - score_lambda_dd: 0.02
 - filters: status==completed, canonical_metrics_present==true
 - fixed_windows_fingerprint: eef1a68cab0c0af9dbb9bedbdbbe410066a5a650f4dbdc27e4568d12a7d51fa0
-- rows: 10
+- rows: 13
 
 ## Metrics source-of-truth
 
@@ -59,4 +59,7 @@ Annualization parameters (`periods_per_year` / `bar_minutes`) are recorded in `c
 | 8 | baseline | b04_20260122_relaxed8_nokpss_u250_churnfix_top50_sens_holdout_relaxed8_nokpss_20260122_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1 | 9.014018513951408 | -82.13105578476097 | 1114.7130215086654 | 7.371397398256188 | artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/b04_20260122_relaxed8_nokpss_u250_churnfix_top50_sens_holdout_relaxed8_nokpss_20260122_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1 |
 | 9 | baseline | b05_20260120_realcost_shortlist_holdout_relaxed8_nokpss_20260123_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p15 | 8.949843760534021 | -80.32265747000929 | 1107.5211531952737 | 7.343390611133835 | artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/b05_20260120_realcost_shortlist_holdout_relaxed8_nokpss_20260123_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p15 |
 | 10 | baseline | b06_20260123_relaxed8_nokpss_u250_churnfix_top50_churngrid_holdout_relaxed8_nokpss_20260123_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p15 | 8.949843760534021 | -80.32265747000929 | 1107.5211531952737 | 7.343390611133835 | artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/b06_20260123_relaxed8_nokpss_u250_churnfix_top50_churngrid_holdout_relaxed8_nokpss_20260123_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p15 |
+| 11 | sweep | s001_b07_ms0p1 | 0.0 | 0.0 | 0.0 | 0.0 | artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s001_b07_ms0p1 |
+| 12 | sweep | s002_b07_ms0p15 | 0.0 | 0.0 | 0.0 | 0.0 | artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s002_b07_ms0p15 |
+| 13 | sweep | s003_b07_ms0p2 | 0.0 | 0.0 | 0.0 | 0.0 | artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s003_b07_ms0p2 |
 
