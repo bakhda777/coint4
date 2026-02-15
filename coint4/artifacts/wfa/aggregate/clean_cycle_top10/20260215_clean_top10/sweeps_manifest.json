@@ -1,0 +1,65 @@
+[
+  {
+    "baseline_config_path": "configs/clean_cycle_top10/baseline/b07_20260125_realcost_churngrid_holdout_relaxed8_nokpss_20260125_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml",
+    "baseline_config_sha256": "49b5749967476b5a6e503292288a19e1a0a3fcf2b148ea9ab62fa518dc3c9396",
+    "config_path": "configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s001_b07_ms0p1.yaml",
+    "config_sha256": "4ef9bcdac8248210d470063775ed6bf84542c7b074c041997ab679cc99a6be42",
+    "run_group": "clean_cycle_top10",
+    "run_id": "s001_b07_ms0p1",
+    "run_name": "s001",
+    "status": "planned",
+    "sweep_params": [
+      {
+        "key": "backtest.min_spread_move_sigma",
+        "value": 0.1
+      }
+    ],
+    "sweep_tags": [
+      "ms0p1"
+    ],
+    "zip_keys": [],
+    "zip_mode": false
+  },
+  {
+    "baseline_config_path": "configs/clean_cycle_top10/baseline/b07_20260125_realcost_churngrid_holdout_relaxed8_nokpss_20260125_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml",
+    "baseline_config_sha256": "49b5749967476b5a6e503292288a19e1a0a3fcf2b148ea9ab62fa518dc3c9396",
+    "config_path": "configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s002_b07_ms0p15.yaml",
+    "config_sha256": "0d08588c10f2d39a1cc1248b2d4094c037986c2f8e2bca1dc3a9fe328089062b",
+    "run_group": "clean_cycle_top10",
+    "run_id": "s002_b07_ms0p15",
+    "run_name": "s002",
+    "status": "planned",
+    "sweep_params": [
+      {
+        "key": "backtest.min_spread_move_sigma",
+        "value": 0.15
+      }
+    ],
+    "sweep_tags": [
+      "ms0p15"
+    ],
+    "zip_keys": [],
+    "zip_mode": false
+  },
+  {
+    "baseline_config_path": "configs/clean_cycle_top10/baseline/b07_20260125_realcost_churngrid_holdout_relaxed8_nokpss_20260125_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml",
+    "baseline_config_sha256": "49b5749967476b5a6e503292288a19e1a0a3fcf2b148ea9ab62fa518dc3c9396",
+    "config_path": "configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s003_b07_ms0p2.yaml",
+    "config_sha256": "49b5749967476b5a6e503292288a19e1a0a3fcf2b148ea9ab62fa518dc3c9396",
+    "run_group": "clean_cycle_top10",
+    "run_id": "s003_b07_ms0p2",
+    "run_name": "s003",
+    "status": "planned",
+    "sweep_params": [
+      {
+        "key": "backtest.min_spread_move_sigma",
+        "value": 0.2
+      }
+    ],
+    "sweep_tags": [
+      "ms0p2"
+    ],
+    "zip_keys": [],
+    "zip_mode": false
+  }
+]

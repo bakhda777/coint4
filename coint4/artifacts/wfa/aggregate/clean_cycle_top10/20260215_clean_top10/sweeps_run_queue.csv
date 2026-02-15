@@ -1,0 +1,4 @@
+config_path,results_dir,status
+configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s001_b07_ms0p1.yaml,artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s001_b07_ms0p1,planned
+configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s002_b07_ms0p15.yaml,artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s002_b07_ms0p15,planned
+configs/clean_cycle_top10/sweeps/min_spread_move_sigma/s003_b07_ms0p2.yaml,artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/s003_b07_ms0p2,planned
