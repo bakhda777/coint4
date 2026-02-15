@@ -1,6 +1,6 @@
 # Журнал прогонов оптимизации (2026-02-15)
 
-Важно: сегодня тяжёлые прогоны не запускались (на этом сервере их не запускаем). Обновление касается только подготовки и фиксации clean-цикла TOP-10.
+Важно: тяжёлые прогоны сегодня выполнялись только на VPS `85.198.90.128` (на этом сервере тяжёлое не запускаем). Ниже: подготовка clean-цикла TOP-10 + VPS baseline очередь.
 
 ## Clean Cycle TOP-10 (prep): цель и источники истины
 
@@ -40,3 +40,11 @@
 
 1. Локально (из `coint4/`): подготовить sweeps (configs + queue) от победителя baseline (см. `docs/clean_cycle_top10.md`).
 2. На VPS `85.198.90.128`: прогон sweeps queue через `coint4/scripts/remote/run_server_job.sh`, затем `recompute_canonical_metrics.py` и `build_clean_rollup.py` (baseline + sweeps) для обновления `rollup_clean_cycle_top10.*`.
+
+## VPS baseline очередь: `20260215_baseline_queue10` (WFA)
+
+- Queue: `coint4/artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv` -> `10/10 completed`.
+- Запуск (локально, из `coint4/`):
+  - `SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv`
+- Sync-back (узко): на этой машине часть старых `artifacts/wfa/aggregate/*` была root-owned, поэтому полный `SYNC_PATHS='... coint4/artifacts ...'` падал на permissions; для fetch использован `SYNC_PATHS='coint4/artifacts/wfa/aggregate/20260215_baseline_queue10 coint4/artifacts/wfa/runs/20260215_baseline_queue10'`.
+- Rollup индекс обновлён: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.

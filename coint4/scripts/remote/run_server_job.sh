@@ -85,15 +85,23 @@ resolve_server_id() {
     return 1
   fi
 
-  api_get "servers" | python3 - "$target_name" "$target_ip" <<'PY'
+  # NOTE: Don't combine a pipe of JSON into `python3 -` with a heredoc of python code:
+  # the heredoc owns stdin and the JSON never reaches python. Fetch JSON to a temp file instead.
+  local tmp_servers_json
+  tmp_servers_json="$(mktemp)"
+  trap 'rm -f "$tmp_servers_json"' RETURN
+  api_get "servers" >"$tmp_servers_json"
+  python3 - "$target_name" "$target_ip" "$tmp_servers_json" <<'PY'
 import json
 import sys
 
 target_name = sys.argv[1].strip() or None
 target_ip = sys.argv[2].strip() or None
+servers_path = sys.argv[3]
 
 IP_KEYS = ("ip", "public_ip", "ipv4", "address", "ip_address")
-NESTED_KEYS = ("network", "networks", "addresses", "interfaces")
+# Serverspace API returns NICs under "nics" with "ip_address".
+NESTED_KEYS = ("network", "networks", "addresses", "interfaces", "nics")
 
 
 def _as_list(v):
@@ -151,7 +159,8 @@ def ip_matches(srv, ip):
 
 
 try:
-    data = json.load(sys.stdin)
+    with open(servers_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
 except Exception:
     sys.exit(1)
 

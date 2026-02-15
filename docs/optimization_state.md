@@ -10,7 +10,7 @@ Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 prep** (canon
 
 Recent updates (2026-02-15):
 
-### Clean Cycle TOP-10 kickoff (prep, без прогонов)
+### Clean Cycle TOP-10 kickoff (prep)
 - Цель: отделить decision-making от "старой партии" (`coint4/artifacts/wfa/runs/**`) и ранжировать только по `canonical_metrics.json`, пересчитанным из `equity_curve.csv`.
 - Док процесса и guardrails: `docs/clean_cycle_top10.md`.
 - Source of truth по константам цикла: `coint4/scripts/optimization/clean_cycle_top10/definitions.py` (`CYCLE_NAME=20260215_clean_top10`, `FIXED_WINDOWS.*`).
@@ -23,6 +23,11 @@ Recent updates (2026-02-15):
   - Baseline-only rollup построен: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)`.
   - Raw vs canonical diff: `over_threshold=0` (`compare_metrics.py`).
 - Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
+
+### VPS baseline WFA (queue10)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv` → `10/10 completed`.
+- Исполнение: только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh` (на этом сервере тяжёлое не запускаем).
+- Rollup индекс пересобран: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.
 
 Recent updates (2026-02-13):
 
