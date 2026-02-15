@@ -12,6 +12,7 @@
 - Никаких `git add -A`. Стадить только явные файлы.
 - 1 таск = 1 маленький атомарный коммит. Сообщения только: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
 - Не запускать тяжёлые WFA/бэктесты на этом хосте. Тяжёлое только на VPS.
+- Ограничение окружения: root-level `tools/` в этом репо не writable (root-owned). Новые helper-скрипты кладём в `coint4/scripts/vps/` и `coint4/scripts/dev/`.
 
 ---
 
@@ -63,7 +64,7 @@
 **Priority:** P2
 **Depends on:** US-002
 
-- [ ] Добавлен `tools/recompute_sharpe.py`.
+- [ ] Добавлен `coint4/scripts/optimization/recompute_sharpe.py`.
 - [ ] Скрипт умеет:
   - принимать `--runs-glob` или `--runs-root`,
   - читать `equity_curve.csv`,
@@ -74,7 +75,7 @@
 ### US-007: Secret scan перед коммитом (без хранения ключа в коде)
 **Priority:** P1
 
-- [ ] Добавлен `tools/dev/secret_scan_staged.sh`.
+- [ ] Добавлен `coint4/scripts/dev/secret_scan_staged.sh`.
 - [ ] Скрипт проверяет staged изменения и падает (exit 1), если:
   - в staged попали пути `.secrets/**` или другие запрещённые артефактные директории,
   - в staged diff встречается `X-API-KEY`, `SERVSPACE_API_KEY=` или 64-hex строка (консервативная защита).
@@ -83,7 +84,7 @@
 ### US-008: Serverspace API client (минимальный)
 **Priority:** P1
 
-- [ ] Добавлен `tools/serverspace_api.py`.
+- [ ] Добавлен `coint4/scripts/vps/serverspace_api.py`.
 - [ ] API base по умолчанию: `https://api.serverspace.ru/api/v1`.
 - [ ] Ключ берётся из `SERVSPACE_API_KEY` или из `.secrets/serverspace_api_key` (если env отсутствует).
 - [ ] Команды/режимы:
@@ -95,7 +96,7 @@
 ### US-009: SSH exec helper (tmux/single-session)
 **Priority:** P1
 
-- [ ] Добавлен `tools/vps_exec.py`.
+- [ ] Добавлен `coint4/scripts/vps/vps_exec.py`.
 - [ ] Поддержка:
   - запуск команды по SSH (`bash -lc`),
   - опционально: запуск команды внутри tmux session (создать, если нет),
@@ -106,7 +107,7 @@
 **Priority:** P1
 **Depends on:** US-009
 
-- [ ] Добавлен `tools/sync_to_vps.py`.
+- [ ] Добавлен `coint4/scripts/vps/sync_to_vps.py`.
 - [ ] Синхронизирует на VPS только нужные директории (код/скрипты/тесты/конфиги), исключая артефакты и `.secrets`.
 - [ ] На VPS пишет `SYNCED_FROM_COMMIT.txt` с локальным git SHA.
 - [ ] Скрипт возвращает non-zero при ошибке rsync/ssh.
@@ -115,7 +116,7 @@
 **Priority:** P1
 **Depends on:** US-009, US-010
 
-- [ ] Добавлен `tools/vps_verify.py`.
+- [ ] Добавлен `coint4/scripts/vps/vps_verify.py`.
 - [ ] Запускает на VPS быстрые проверки проекта (без WFA):
   - `make ci` (или эквивалент, если make недоступен),
   - логирует только нейтральную информацию.
@@ -124,7 +125,7 @@
 ### US-012: Manifest исторических прогонов (из run_queue.csv)
 **Priority:** P2
 
-- [ ] Добавлен `tools/build_wfa_manifest.py`.
+- [ ] Добавлен `coint4/scripts/vps/build_wfa_manifest.py`.
 - [ ] По умолчанию:
   - находит `coint4/artifacts/wfa/aggregate/**/run_queue.csv` локально,
   - выбирает статусы `planned,stalled` (без перезапуска completed),
@@ -135,7 +136,7 @@
 **Priority:** P1
 **Depends on:** US-009, US-012
 
-- [ ] Добавлен `tools/vps_run_wfa.py`.
+- [ ] Добавлен `coint4/scripts/vps/vps_run_wfa.py`.
 - [ ] Скрипт:
   - создаёт (или переиспользует) один tmux session (например `coint4-wfa`),
   - запускает последовательный проход по queue-файлам из manifest (без множества tmux окон),
@@ -145,7 +146,7 @@
 **Priority:** P1
 **Depends on:** US-009
 
-- [ ] Добавлен `tools/vps_fetch_results.py`.
+- [ ] Добавлен `coint4/scripts/vps/vps_fetch_results.py`.
 - [ ] По умолчанию скачивает только лёгкие результаты:
   - обновлённые `run_queue.csv`/логи watcher,
   - rollup `run_index.*` и sharpe summary CSV/JSON,
@@ -157,8 +158,8 @@
 **Priority:** P1
 **Depends on:** US-008, US-010, US-011, US-013, US-014
 
-- [ ] Добавлен `tools/vps_pipeline.py`.
-- [ ] Команда вида `coint4/.venv/bin/python tools/vps_pipeline.py --all` делает:
+- [ ] Добавлен `coint4/scripts/vps/vps_pipeline.py`.
+- [ ] Команда вида `python3 coint4/scripts/vps/vps_pipeline.py --all` делает:
   - power-on (Serverspace API), wait-for-ssh,
   - sync code,
   - verify stage,
