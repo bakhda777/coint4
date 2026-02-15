@@ -52,12 +52,6 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
-# Add project root to path for imports
-_project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_project_root / "src"))
-
-from coint2.ops.run_queue import RunQueueEntry, write_run_queue
-
 
 # --- Stress config overrides ---
 STRESS_OVERRIDES = {
@@ -207,6 +201,13 @@ def generate_permutations(
 
 
 def main() -> None:
+    # Local import so this module can be imported as a lightweight "sweep library"
+    # (e.g. by clean_cycle_top10 tools) without pulling in the whole project package.
+    _project_root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(_project_root / "src"))
+
+    from coint2.ops.run_queue import RunQueueEntry, write_run_queue
+
     parser = argparse.ArgumentParser(
         description="Generate WFA config permutations from base YAML + sweep spec"
     )
