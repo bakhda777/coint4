@@ -283,7 +283,13 @@ def main() -> int:
             ok += 1
             continue
 
-        out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        try:
+            out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except OSError as exc:
+            # Sync-back/rsync may leave some artifact dirs root-owned; don't let a single
+            # PermissionError abort the entire recompute batch.
+            failed.append(f"{run_dir}: failed to write canonical_metrics.json: {exc.__class__.__name__}: {exc}")
+            continue
         ok += 1
 
     total = len(run_dirs)

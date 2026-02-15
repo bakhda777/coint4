@@ -493,6 +493,15 @@ def main() -> int:
         help="Sorting mode: scalar score or multi-objective (sharpe desc, abs(dd) asc, pnl desc).",
     )
     parser.add_argument(
+        "--max-abs-dd",
+        type=float,
+        default=None,
+        help=(
+            "Optional DD gate: keep only rows with abs(canonical_max_drawdown_abs) <= this threshold. "
+            "Rows missing canonical_max_drawdown_abs are excluded when this gate is enabled."
+        ),
+    )
+    parser.add_argument(
         "--top-n-md",
         type=int,
         default=20,
@@ -566,6 +575,12 @@ def main() -> int:
     if not math.isfinite(lambda_dd) or lambda_dd < 0:
         raise SystemExit(f"--lambda-dd must be a finite non-negative float: {args.lambda_dd!r}")
 
+    max_abs_dd = args.max_abs_dd
+    if max_abs_dd is not None:
+        max_abs_dd = float(max_abs_dd)
+        if not math.isfinite(max_abs_dd) or max_abs_dd < 0:
+            raise SystemExit(f"--max-abs-dd must be a finite non-negative float: {args.max_abs_dd!r}")
+
     rows: List[_Row] = []
     skipped = 0
     for phase, entries in [("baseline", baseline_entries), ("sweep", sweeps_entries)]:
@@ -593,6 +608,15 @@ def main() -> int:
             if not args.include_missing_canonical and not canonical_present:
                 skipped += 1
                 continue
+
+            if max_abs_dd is not None:
+                dd = canonical.get("canonical_max_drawdown_abs")
+                if dd is None:
+                    skipped += 1
+                    continue
+                if abs(float(dd)) > max_abs_dd:
+                    skipped += 1
+                    continue
 
             run_name = _infer_run_name(entry=entry, phase=phase, idx=idx)
             run_group = str(entry.get("run_group") or "").strip()
@@ -647,6 +671,8 @@ def main() -> int:
         filters.append("status==completed")
     if not args.include_missing_canonical:
         filters.append("canonical_metrics_present==true")
+    if max_abs_dd is not None:
+        filters.append(f"abs(canonical_max_drawdown_abs)<={max_abs_dd:g}")
 
     _write_md(
         path=out_md,
