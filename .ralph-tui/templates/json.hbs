@@ -6,8 +6,9 @@
 - Work autonomously. If something is ambiguous, pick the safest default and record the decision in `.ralph-tui/progress.md`.
 - Keep diffs small and focused. One task = one commit.
 - Commit messages must be one of: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
-- Never commit generated artifacts/outputs/backtests. If needed, update `.gitignore` and untrack generated files (keep them on disk).
-- Before committing: review `git status --porcelain` and stage only relevant files (avoid accidental `git add -A`).
+- Never commit secrets. Serverspace API key must live only in `.secrets/serverspace_api_key` (ignored) and/or `SERVSPACE_API_KEY` (env). Never print it and never log request headers.
+- Never commit generated artifacts/outputs/backtests (e.g. `coint4/artifacts/**`, `coint4/outputs/**`, `outputs/**`, `.ralph-tui/iterations/**`, `*.pid`, `*.log`).
+- NEVER run `git add -A`. Stage only explicit files. Before committing: check `git status --porcelain` and `git diff --cached --name-only` to ensure only intended files are staged.
 - After finishing: update `.ralph-tui/progress.md` (max ~10 bullets, no long text), then commit.
 
 <promise>COMPLETE</promise>
