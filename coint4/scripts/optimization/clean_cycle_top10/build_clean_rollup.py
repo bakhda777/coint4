@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from scoring import DEFAULT_LAMBDA_DD, compute_score
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -263,14 +265,6 @@ def _is_completed(status: str) -> bool:
     return str(status or "").strip().lower() == "completed"
 
 
-def _compute_score(*, sharpe: Optional[float], dd_abs: Optional[float], lambda_dd: float) -> Optional[float]:
-    if sharpe is None or dd_abs is None:
-        return None
-    if not math.isfinite(sharpe) or not math.isfinite(dd_abs):
-        return None
-    return float(sharpe) - float(lambda_dd) * abs(float(dd_abs))
-
-
 @dataclass(frozen=True)
 class _Row:
     phase: str
@@ -454,7 +448,7 @@ def main() -> int:
         "--score-lambda-dd",
         dest="lambda_dd",
         type=float,
-        default=0.02,
+        default=DEFAULT_LAMBDA_DD,
         help="Score penalty weight for abs(drawdown): score = sharpe - lambda_dd * abs(dd).",
     )
     parser.add_argument(
@@ -575,12 +569,12 @@ def main() -> int:
             config_sha = str(entry.get("config_sha256") or "").strip()
             if not config_sha and config_raw:
                 cfg_path = _resolve_under_project(config_raw, project_root)
-                if cfg_path is not None and cfg_path.exists() and cfg_path.is_file():
-                    config_sha = _sha256_file(cfg_path)
+            if cfg_path is not None and cfg_path.exists() and cfg_path.is_file():
+                config_sha = _sha256_file(cfg_path)
 
-            score = _compute_score(
-                sharpe=canonical.get("canonical_sharpe"),
-                dd_abs=canonical.get("canonical_max_drawdown_abs"),
+            score = compute_score(
+                canonical_sharpe=canonical.get("canonical_sharpe"),
+                canonical_max_drawdown_abs=canonical.get("canonical_max_drawdown_abs"),
                 lambda_dd=lambda_dd,
             )
 
