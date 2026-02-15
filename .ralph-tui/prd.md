@@ -1,116 +1,167 @@
-# PRD: Автономная петля (Ralph Loop) для coint4
+# PRD: VPS loop (verify -> run -> fetch) + единый Sharpe для coint4
 
 ## Objective
-Сделать воспроизводимый автономный цикл разработки через `ralph-tui` + `codex`:
-- маленькие, осмысленные изменения,
-- один таск = один коммит,
-- короткий кросс-итерационный контекст в `.ralph-tui/progress.md`,
-- никаких тяжёлых WFA/бэктестов на этой машине.
+Полностью автономный цикл через `ralph-tui` + `codex`, который:
+- приводит Sharpe к одной канонической методике (код + тесты + утилиты),
+- готовит инфраструктуру для прогона исторических WFA-конфигов на VPS `85.198.90.128` (без лишних окон; tmux/single-session),
+- сначала проверяет корректность кода на VPS (репо/зависимости/линт/тесты),
+- запускает прогоны и затем забирает результаты обратно в **игнорируемую** директорию.
 
 ## Constraints
-- Запрещены тяжёлые прогоны WFA/оптимизаций/долгие бэктесты.
-- Не коммитить артефакты/выгрузки/выходы бэктестов.
-- Нельзя использовать `git add -A`; стадить только релевантные файлы.
-- Сообщения коммитов только: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
+- Никогда не коммитить: `.secrets/**`, `coint4/artifacts/**`, `coint4/outputs/**`, `outputs/**`, `.ralph-tui/iterations/**`, `*.pid`, `*.log`.
+- Никаких `git add -A`. Стадить только явные файлы.
+- 1 таск = 1 маленький атомарный коммит. Сообщения только: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
+- Не запускать тяжёлые WFA/бэктесты на этом хосте. Тяжёлое только на VPS.
 
 ---
 
-### US-001: Документация Ralph Loop (как запускать и какие правила)
+### US-001: Короткий context pack (как работать и где что лежит)
 **Priority:** P1
 
-- [ ] Добавлен документ `docs/ralph_loop.md` с описанием:
-  - как запускать headless loop,
-  - где лежат `.ralph-tui/prd.md`/`.ralph-tui/prd.json` и `.ralph-tui/progress.md`,
-  - правила маленьких диффов и коммитов,
-  - запрет на коммит артефактов.
-- [ ] В документе есть точная команда запуска:
-  - `ralph-tui run --no-tui --prd ./.ralph-tui/prd.json --agent codex --prompt ./.ralph-tui/templates/json.hbs`
+- [ ] Добавлен `docs/context_pack.md` (коротко, без простыней):
+  - каноническая формула Sharpe (annualization, ddof, rf),
+  - команды quick-check (локально/на VPS): `make ci`,
+  - pipeline: `verify -> run -> fetch`,
+  - куда складываются fetched результаты (игнорируемо),
+  - правила: не тащить секреты/артефакты в git.
 
-### US-002: Make target для smoke-тестов
+### US-002: Канонический модуль Sharpe
 **Priority:** P1
 
-- [ ] В корневом `Makefile` добавлена цель `make smoke`, которая запускает `pytest -q -m smoke` в `coint4/`.
-- [ ] `make help` показывает новую цель.
+- [ ] Добавлен модуль `coint4/src/coint2/core/sharpe.py`.
+- [ ] В модуле явно зафиксированы:
+  - Sharpe = sqrt(periods_per_year) * mean(excess_returns) / std(excess_returns, ddof=1)
+  - risk_free_rate по умолчанию 0 (в единицах per-period)
+  - поведение при std=0: возвращаем 0.0 (не NaN/inf)
+- [ ] Есть функция для Series returns и для equity-series (pct_change).
 
-### US-003: Make target для preflight
+### US-003: Performance API использует канонический Sharpe
+**Priority:** P1
+**Depends on:** US-002
+
+- [ ] `coint4/src/coint2/core/performance.py` использует `coint2.core.sharpe` (единый ddof/annualization/edge-cases).
+- [ ] Убрана внутренняя несогласованность ddof между функциями Sharpe.
+
+### US-004: Тесты на Sharpe (минимум 3 кейса)
+**Priority:** P1
+**Depends on:** US-002
+
+- [ ] Добавлен `coint4/tests/unit/test_sharpe.py`.
+- [ ] Минимум 3 кейса:
+  - константные returns -> Sharpe = 0.0
+  - известный массив returns -> ожидаемое значение (с допуском)
+  - проверка, что ddof=1 и annualization применяются как в спецификации
+
+### US-005: Run index пересчитывает Sharpe через канонический модуль
 **Priority:** P2
+**Depends on:** US-002
 
-- [ ] В корневом `Makefile` добавлена цель `make preflight`, которая запускает `coint4/scripts/run_preflight.py`.
-- [ ] Цель использует `coint4/.venv/bin/python` (как и остальные цели Makefile).
+- [ ] `coint4/src/coint2/ops/run_index.py` использует `coint2.core.sharpe` для пересчёта Sharpe из `equity_curve.csv`.
+- [ ] Поведение сохраняет текущую канонизацию: `sharpe_ratio_abs` (computed) предпочтительнее raw, если computed доступен.
 
-### US-004: CLI-скрипт валидации прод-конфига
+### US-006: Утилита пересчёта Sharpe по артефактам (локально и на VPS)
+**Priority:** P2
+**Depends on:** US-002
+
+- [ ] Добавлен `tools/recompute_sharpe.py`.
+- [ ] Скрипт умеет:
+  - принимать `--runs-glob` или `--runs-root`,
+  - читать `equity_curve.csv`,
+  - считать Sharpe канонически,
+  - писать summary CSV/JSON в указанный output (по умолчанию в игнорируемый `coint4/outputs/`).
+- [ ] По умолчанию скрипт НЕ переписывает артефакты; только отчёт.
+
+### US-007: Secret scan перед коммитом (без хранения ключа в коде)
 **Priority:** P1
 
-- [ ] Добавлен скрипт `coint4/scripts/validate_config.py`.
-- [ ] Команда `coint4/.venv/bin/python scripts/validate_config.py --config configs/main_2024.yaml` возвращает exit code 0 и печатает результат.
-- [ ] Для несуществующего файла или неподдерживаемого расширения скрипт возвращает exit code 1.
+- [ ] Добавлен `tools/dev/secret_scan_staged.sh`.
+- [ ] Скрипт проверяет staged изменения и падает (exit 1), если:
+  - в staged попали пути `.secrets/**` или другие запрещённые артефактные директории,
+  - в staged diff встречается `X-API-KEY`, `SERVSPACE_API_KEY=` или 64-hex строка (консервативная защита).
+- [ ] Скрипт НЕ печатает секреты (только нейтральные сообщения).
 
-### US-005: CLI-скрипт валидации search space
-**Priority:** P2
-
-- [ ] Добавлен скрипт `coint4/scripts/validate_search_space.py`.
-- [ ] Команда `coint4/.venv/bin/python scripts/validate_search_space.py --path configs/search_spaces/fast.yaml` возвращает exit code 0 и печатает результат.
-- [ ] Для несуществующего файла скрипт возвращает exit code 1.
-
-### US-006: Smoke-тесты для новых validation CLI
-**Priority:** P1
-**Depends on:** US-004, US-005
-
-- [ ] Добавлены smoke-тесты, которые проверяют exit code для `validate_config.py` и `validate_search_space.py`.
-- [ ] Тесты не требуют внешних данных и укладываются в лимиты smoke.
-
-### US-007: Make target validate-config
-**Priority:** P2
-**Depends on:** US-004
-
-- [ ] В `Makefile` добавлена цель `make validate-config`.
-- [ ] По умолчанию валидируется `coint4/configs/main_2024.yaml` (можно переопределить переменной `CONFIG=...`).
-
-### US-008: Make target validate-search-space
-**Priority:** P3
-**Depends on:** US-005
-
-- [ ] В `Makefile` добавлена цель `make validate-search-space`.
-- [ ] По умолчанию валидируется `coint4/configs/search_spaces/fast.yaml` (можно переопределить переменной `PATH=...` или `SPACE=...`).
-
-### US-009: Скрипт проверки git-гигиены (не тащим генерируемое в git)
+### US-008: Serverspace API client (минимальный)
 **Priority:** P1
 
-- [ ] Добавлен скрипт `coint4/scripts/dev/check_tracked_generated.sh`.
-- [ ] Скрипт падает (exit 1), если `git ls-files` находит что-то в:
-  - `coint4/artifacts/`, `coint4/outputs/`, `outputs/`, `.ralph-tui/iterations/`, `.ralph-tui/progress.md`, а также любые `*.pid`/`*.log`.
-- [ ] В чистом репо скрипт возвращает exit 0.
+- [ ] Добавлен `tools/serverspace_api.py`.
+- [ ] API base по умолчанию: `https://api.serverspace.ru/api/v1`.
+- [ ] Ключ берётся из `SERVSPACE_API_KEY` или из `.secrets/serverspace_api_key` (если env отсутствует).
+- [ ] Команды/режимы:
+  - list servers
+  - find server by IP `85.198.90.128` (печатает id + name + state)
+  - power on / shutdown (POST)
+- [ ] В логах/выводе НЕТ значения ключа.
 
-### US-010: Make target hygiene
-**Priority:** P2
+### US-009: SSH exec helper (tmux/single-session)
+**Priority:** P1
+
+- [ ] Добавлен `tools/vps_exec.py`.
+- [ ] Поддержка:
+  - запуск команды по SSH (`bash -lc`),
+  - опционально: запуск команды внутри tmux session (создать, если нет),
+  - режим проверки существования tmux session.
+- [ ] По умолчанию: user=root, host=85.198.90.128, key=`~/.ssh/id_ed25519`.
+
+### US-010: Sync code to VPS (без артефактов)
+**Priority:** P1
 **Depends on:** US-009
 
-- [ ] В `Makefile` добавлена цель `make hygiene`, запускающая `coint4/scripts/dev/check_tracked_generated.sh`.
+- [ ] Добавлен `tools/sync_to_vps.py`.
+- [ ] Синхронизирует на VPS только нужные директории (код/скрипты/тесты/конфиги), исключая артефакты и `.secrets`.
+- [ ] На VPS пишет `SYNCED_FROM_COMMIT.txt` с локальным git SHA.
+- [ ] Скрипт возвращает non-zero при ошибке rsync/ssh.
 
-### US-011: Обновить testing guide с новыми командами
-**Priority:** P3
+### US-011: VPS verify stage (быстрые проверки корректности)
+**Priority:** P1
+**Depends on:** US-009, US-010
 
-- [ ] `docs/testing_guide.md` обновлён: добавлены `make smoke`, `make preflight`, `make validate-config`, `make hygiene`.
+- [ ] Добавлен `tools/vps_verify.py`.
+- [ ] Запускает на VPS быстрые проверки проекта (без WFA):
+  - `make ci` (или эквивалент, если make недоступен),
+  - логирует только нейтральную информацию.
+- [ ] Скрипт фейлится с понятной ошибкой, если зависимости не установлены/команда не найдена.
 
-### US-012: Обновить quickstart с validate/smoke
-**Priority:** P3
-
-- [ ] `docs/quickstart.md` обновлён: добавлены быстрые команды `make smoke` и `make validate-config`.
-
-### US-013: README: упомянуть Ralph loop docs и быстрые проверки
-**Priority:** P3
-
-- [ ] В `README.md` добавлена короткая ссылка на `docs/ralph_loop.md`.
-- [ ] В quickstart/Dev commands упомянуты `make smoke` и `make hygiene`.
-
-### US-014: CI guard: запуск hygiene в GitHub Actions
-**Priority:** P4
-**Depends on:** US-010
-
-- [ ] В `.github/workflows/tests.yml` добавлен шаг `make hygiene` (достаточно в одном job).
-
-### US-015: Smoke-тест для dev hygiene скрипта
+### US-012: Manifest исторических прогонов (из run_queue.csv)
 **Priority:** P2
+
+- [ ] Добавлен `tools/build_wfa_manifest.py`.
+- [ ] По умолчанию:
+  - находит `coint4/artifacts/wfa/aggregate/**/run_queue.csv` локально,
+  - выбирает статусы `planned,stalled` (без перезапуска completed),
+  - пишет JSON manifest в игнорируемый `coint4/outputs/`.
+- [ ] Есть флаг `--include-completed` для полного прогона при необходимости.
+
+### US-013: VPS run stage (один tmux session, без размножения окон)
+**Priority:** P1
+**Depends on:** US-009, US-012
+
+- [ ] Добавлен `tools/vps_run_wfa.py`.
+- [ ] Скрипт:
+  - создаёт (или переиспользует) один tmux session (например `coint4-wfa`),
+  - запускает последовательный проход по queue-файлам из manifest (без множества tmux окон),
+  - пишет sentinel-файл `WFA_RUN_DONE.txt` в `coint4/outputs/` на VPS по завершению.
+
+### US-014: VPS fetch stage (без перетаскивания гигабайт по умолчанию)
+**Priority:** P1
 **Depends on:** US-009
 
-- [ ] Добавлен smoke-тест, который запускает `coint4/scripts/dev/check_tracked_generated.sh` и ожидает exit code 0.
+- [ ] Добавлен `tools/vps_fetch_results.py`.
+- [ ] По умолчанию скачивает только лёгкие результаты:
+  - обновлённые `run_queue.csv`/логи watcher,
+  - rollup `run_index.*` и sharpe summary CSV/JSON,
+  - любые отчёты из `coint4/outputs/`.
+- [ ] Скачивание кладёт в `coint4/outputs/vps_fetch/<timestamp>/` (игнорируемо).
+- [ ] Есть флаг `--include-runs` для полного rsync `artifacts/wfa/runs/**` (off by default).
+
+### US-015: End-to-end pipeline (power -> sync -> verify -> run -> fetch)
+**Priority:** P1
+**Depends on:** US-008, US-010, US-011, US-013, US-014
+
+- [ ] Добавлен `tools/vps_pipeline.py`.
+- [ ] Команда вида `coint4/.venv/bin/python tools/vps_pipeline.py --all` делает:
+  - power-on (Serverspace API), wait-for-ssh,
+  - sync code,
+  - verify stage,
+  - start run stage в tmux,
+  - fetch (если sentinel найден; иначе печатает, как проверить статус и повторить fetch).
+- [ ] Никаких секретов в выводе.
