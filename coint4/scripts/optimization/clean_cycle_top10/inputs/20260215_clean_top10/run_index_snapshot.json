@@ -1,0 +1,30 @@
+{
+  "columns": [
+    "run_id",
+    "run_group",
+    "results_dir",
+    "metrics_path",
+    "config_path",
+    "status",
+    "metrics_present",
+    "sharpe_ratio_abs",
+    "sharpe_ratio_abs_raw",
+    "sharpe_ratio_on_returns",
+    "total_pnl",
+    "max_drawdown_abs",
+    "max_drawdown_on_equity",
+    "total_trades",
+    "total_pairs_traded",
+    "total_costs",
+    "total_days",
+    "volatility",
+    "win_rate",
+    "best_pair_pnl",
+    "worst_pair_pnl",
+    "avg_pnl_per_pair"
+  ],
+  "generated_at_utc": "2026-02-15T20:37:21Z",
+  "row_count": 1666,
+  "sha256": "1b2c2d640139c3d4fedaf3243aa06fa4c3e3757d7b9a6ac9322f0f15357cb72d",
+  "source_path": "artifacts/wfa/aggregate/rollup/run_index.csv"
+}

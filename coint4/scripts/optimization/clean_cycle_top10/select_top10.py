@@ -264,6 +264,13 @@ def main() -> int:
         if not args.include_noncompleted and row.status.strip().lower() != "completed":
             continue
 
+        config_path_norm = _normalize_repo_relative_path(row.config_path)
+        resolved_cfg = _resolve_under_project(config_path_norm, project_root) if config_path_norm else None
+        # Baseline manifest must be reproducible: if the config file is missing,
+        # we cannot validate the walk_forward window or freeze config_sha256.
+        if not (resolved_cfg and resolved_cfg.exists() and resolved_cfg.is_file()):
+            continue
+
         results_path = _resolve_under_project(row.results_dir, project_root)
         canonical_present = False
         canonical: Dict[str, Optional[float]] = {
@@ -307,7 +314,7 @@ def main() -> int:
                 "run_group": row.run_group,
                 "run_id": row.run_id,
                 "results_dir": _normalize_repo_relative_path(row.results_dir),
-                "config_path": _normalize_repo_relative_path(row.config_path) or None,
+                "config_path": config_path_norm or None,
                 "status": row.status,
                 "rank_sharpe": rank_sharpe,
                 "rank_sharpe_source": rank_sharpe_source,
@@ -370,4 +377,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
