@@ -81,6 +81,13 @@ wf_results.json
 # Ralph TUI (local loop state)
 .ralph-tui/iterations/
 .ralph-tui/progress.md
+.ralph-tui/prd.json
+.ralph-tui/*.lock
+.ralph-tui/session*.json
+.ralph-tui/worktrees/
+
+# Local secrets (never commit)
+.secrets/
 
 # coint4 generated artifacts / outputs (do not commit)
 coint4/artifacts/

@@ -1,17 +1,12 @@
-# Project-local Ralph TUI configuration.
-
-agent = "codex"
-tracker = "json"
-prompt_template = "./.ralph-tui/templates/json.hbs"
-
-# Loop settings (0 = unlimited iterations)
 maxIterations = 0
 iterationDelay = 0
 outputDir = ".ralph-tui/iterations"
-progressFile = ".ralph-tui/progress.md"
-
-# Let the agent create meaningful commits with correct messages.
 autoCommit = false
+agent = "codex"
+tracker = "json"
+prompt_template = "./.ralph-tui/templates/json.hbs"
+progressFile = ".ralph-tui/progress.md"
+configVersion = "2.1"
 
 [agentOptions]
 fullAuto = true
