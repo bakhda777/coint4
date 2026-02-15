@@ -45,6 +45,15 @@
 - Никаких ключей/токенов в репозитории. `SERVSPACE_API_KEY`, `BYBIT_API_KEY`, `BYBIT_API_SECRET` задавать через env или локальные `.env` (не коммитить).
 - Если ключ когда-либо попадал в Git/логи, его нужно перевыпустить у провайдера.
 
+## Secrets & Infra
+- Serverspace Public API key хранить только локально:
+  - файл: `.secrets/serverspace_api_key` (chmod 600)
+  - env: `SERVSPACE_API_KEY`
+- Никогда не коммитить/не печатать ключ в stdout/stderr/логах. В коде/скриптах не логировать заголовки запросов.
+- Serverspace API base: `https://api.serverspace.ru` (auth header: `X-API-KEY: ...`).
+- Целевой VPS: `85.198.90.128`
+- Принцип исполнения: сначала `verify` (код/зависимости/тесты/линт на VPS), затем `run` (прогоны), затем `fetch` (забрать результаты обратно в игнорируемую директорию).
+
 ## Remote runs (Serverspace)
 - API docs: https://docs.serverspace.ru/public_api.html
 - Скрипт: `coint4/scripts/remote/run_server_job.sh`
