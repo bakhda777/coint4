@@ -1,0 +1,175 @@
+{
+  "name": "Автономная петля (Ralph Loop) для coint4",
+  "description": "Сделать воспроизводимый автономный цикл разработки через `ralph-tui` + `codex`: - маленькие, осмысленные изменения, - один таск = один коммит, - короткий кросс-итерационный контекст в `.ralph-tui/progress.md`, - никаких тяжёлых WFA/бэктестов на этой машине.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Документация Ralph Loop (как запускать и какие правила)",
+      "description": "Документация Ralph Loop (как запускать и какие правила)",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-002",
+      "title": "Make target для smoke-тестов",
+      "description": "Make target для smoke-тестов",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-003",
+      "title": "Make target для preflight",
+      "description": "Make target для preflight",
+      "acceptanceCriteria": [],
+      "priority": 3,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-004",
+      "title": "CLI-скрипт валидации прод-конфига",
+      "description": "CLI-скрипт валидации прод-конфига",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-005",
+      "title": "CLI-скрипт валидации search space",
+      "description": "CLI-скрипт валидации search space",
+      "acceptanceCriteria": [],
+      "priority": 4,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-006",
+      "title": "Smoke-тесты для новых validation CLI",
+      "description": "Smoke-тесты для новых validation CLI",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-004",
+        "US-005"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Make target validate-config",
+      "description": "Make target validate-config",
+      "acceptanceCriteria": [],
+      "priority": 4,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-004"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Make target validate-search-space",
+      "description": "Make target validate-search-space",
+      "acceptanceCriteria": [],
+      "priority": 3,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-005"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Скрипт проверки git-гигиены (не тащим генерируемое в git)",
+      "description": "Скрипт проверки git-гигиены (не тащим генерируемое в git)",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-010",
+      "title": "Make target hygiene",
+      "description": "Make target hygiene",
+      "acceptanceCriteria": [],
+      "priority": 4,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-009"
+      ]
+    },
+    {
+      "id": "US-011",
+      "title": "Обновить testing guide с новыми командами",
+      "description": "Обновить testing guide с новыми командами",
+      "acceptanceCriteria": [],
+      "priority": 3,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-012",
+      "title": "Обновить quickstart с validate/smoke",
+      "description": "Обновить quickstart с validate/smoke",
+      "acceptanceCriteria": [],
+      "priority": 3,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-013",
+      "title": "README: упомянуть Ralph loop docs и быстрые проверки",
+      "description": "README: упомянуть Ralph loop docs и быстрые проверки",
+      "acceptanceCriteria": [],
+      "priority": 3,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    },
+    {
+      "id": "US-014",
+      "title": "CI guard: запуск hygiene в GitHub Actions",
+      "description": "CI guard: запуск hygiene в GitHub Actions",
+      "acceptanceCriteria": [],
+      "priority": 4,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-010"
+      ]
+    },
+    {
+      "id": "US-015",
+      "title": "Smoke-тест для dev hygiene скрипта",
+      "description": "Smoke-тест для dev hygiene скрипта",
+      "acceptanceCriteria": [],
+      "priority": 4,
+      "passes": false,
+      "labels": [],
+      "dependsOn": [
+        "US-009"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-15T00:26:31.607Z",
+    "version": "1.0.0",
+    "sourcePrd": "prd.md"
+  }
+}
