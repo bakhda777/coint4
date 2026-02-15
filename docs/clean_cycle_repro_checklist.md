@@ -1,45 +1,57 @@
-# Clean Cycle: Check-лист воспроизводимости (clean-цикл)
+# Clean-цикл (SYNC_UP=1 -> VPS run -> sync_back): чек-лист воспроизводимости
 
-Цель: цикл должен повторяться одинаково на любом чистом клоне репозитория:
-`SYNC_UP=1` (tracked-only) -> `VPS run` -> `sync_back`, и Git не должен содержать тяжёлых/генерённых артефактов.
+Цель: повторяемый “clean” цикл исполнения WFA/очереди на VPS `85.198.90.128` с синхронизацией только нужных файлов, без случайного попадания тяжёлых артефактов в Git.
 
-## 0) Локально: чистота и гигиена репозитория
+## 0) Локальный preflight (перед VPS)
 
-1. `git status --porcelain` пустой (перед VPS-run).
-1. `make hygiene` проходит (нет трекаемых `outputs/`, `coint4/outputs/`, `coint4/data_downloaded/*` и больших blob'ов).
-1. (опционально) `make ci` проходит локально.
+1. Убедиться, что вы в корне репо: `pwd` -> `/home/claudeuser/coint4`.
+2. Проверить, что не стаджены тяжёлые/генерируемые артефакты:
+   - `bash coint4/scripts/remote/verify_clean_cycle.sh`
+3. Если планируется `SYNC_UP=1`, убедиться, что под ключевыми путями нет untracked (они не попадут на VPS при `SYNC_UP=1`):
+   - `bash coint4/scripts/remote/verify_clean_cycle.sh --sync-up`
+4. Если добавляли новые очереди/конфиги/доки: они должны быть tracked (иначе `SYNC_UP=1` их не синкнет).
+   - Проверка: `git status --porcelain`
 
-## 1) Локально: в Git есть всё необходимое для SYNC_UP=1
+## 1) Проверки кода (локально)
 
-`SYNC_UP=1` синкает на VPS только **tracked** файлы, поэтому:
+Из корня репозитория:
 
-1. Если добавлены новые конфиги/очереди/скрипты: они должны быть `git add <files>` и закоммичены до запуска (иначе не попадут на VPS).
-1. Для clean-cycle TOP-10: проверить tracked inputs (если актуально):
-   - `bash coint4/scripts/optimization/clean_cycle_top10/verify_tracked_inputs.sh coint4/configs/clean_cycle_top10/tracked_inputs_20260215_clean_top10.txt`
+- `make ci`
 
-## 2) VPS run: baseline/sweeps через remote helper
+Важно: на этом сервере `146.103.41.248` тяжёлые прогоны не запускаем.
 
-Рекомендуемый запуск (из `coint4/`):
+## 2) Remote run на VPS (рекомендуемый сценарий)
 
-```bash
-SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh \
-  bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv
-```
+Запускать из `coint4/` (app-root).
 
-Инварианты:
+1. Команда (пример под очередь):
+   - `SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash -lc 'echo RUN_HOST=$(hostname); bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/<group>/run_queue.csv'`
 
-1. `SYNC_UP=1` автоматически форсит `UPDATE_CODE=0` (избегаем конфликтов `git pull` на dirty worktree на VPS).
-1. По умолчанию `STOP_AFTER=1` выключает VPS после job. Не оставлять включённым без явной причины.
+Примечания:
 
-## 3) После sync_back: локальный пост-процессинг
+- `SYNC_UP=1` синкает на VPS только tracked файлы (`git ls-files` + `rsync`).
+- `STOP_AFTER=1` (default) должен выключать VPS по завершении.
+- `SYNC_BACK=1` (default) забирает назад `docs` и `coint4/artifacts` (и др. пути из `SYNC_PATHS`).
 
-Минимум:
+## 3) После sync_back (локально)
 
-1. Пересобрать rollup индекс:
-   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
-1. Если прогоны запускались вручную (не через watcher/queue-runner), синхронизировать статусы очереди:
-   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
-1. Обновить дневник/состояние:
-   - `docs/optimization_state.md`
-   - `docs/optimization_runs_YYYYMMDD.md`
+1. Если прогоны шли не через queue-runner/watcher и в `run_queue.csv` остались `planned`:
+   - `cd coint4`
+   - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
+2. Пересобрать rollup индекс:
+   - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+
+## 4) Git hygiene (перед коммитом)
+
+1. Никогда не делать `git add -A`. Добавлять только конкретные файлы.
+2. Перед коммитом:
+   - `git status --porcelain`
+   - `git diff --cached --name-only`
+   - `bash coint4/scripts/remote/verify_clean_cycle.sh`
+
+## 5) Быстрая проверка, что VPS выключился
+
+После завершения remote job:
+
+- `ssh root@85.198.90.128 "echo ok"` должно перестать отвечать (если `STOP_AFTER=1` реально отработал).
 

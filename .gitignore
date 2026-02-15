@@ -80,6 +80,9 @@ wf_results.json
 # Nested repo backup
 **/.git.bak/
 
+# Local backups
+tasks/**/*.bak.*
+
 # Ralph TUI (local loop state)
 .ralph-tui/iterations/
 .ralph-tui/progress.md
