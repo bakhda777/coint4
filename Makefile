@@ -23,6 +23,7 @@ help:
 	@echo "  make test-slow   Run pytest -m slow"
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
+	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
 	@echo "  make vps-baseline Run baseline WFA queue on VPS (uses run_server_job.sh + STOP_AFTER=1 + sync_back)"
 	@echo ""
 	@echo "Notes:"
@@ -56,6 +57,10 @@ lint:
 
 .PHONY: ci
 ci: lint test
+
+.PHONY: hygiene
+hygiene:
+	@python3 coint4/scripts/check_repo_hygiene.py
 
 .PHONY: vps-baseline
 vps-baseline:
