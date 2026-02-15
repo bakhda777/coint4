@@ -1,12 +1,22 @@
 # Optimization state
 
-Last updated: 2026-02-13
+Last updated: 2026-02-15
 
-Current stage: **Prod config v2 finalized**. Pruned universe v2 (168 пар) + pair_stop_loss_usd bug fix. Full-span validated.
+Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 prep** (canonical metrics + fixed windows; без тяжёлых прогонов на этом сервере).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
 **Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, HFTUSDC, HFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT, KDAUSDT
+
+Recent updates (2026-02-15):
+
+### Clean Cycle TOP-10 kickoff (prep, без прогонов)
+- Цель: отделить decision-making от "старой партии" (`coint4/artifacts/wfa/runs/**`) и ранжировать только по `canonical_metrics.json`, пересчитанным из `equity_curve.csv`.
+- Док процесса и guardrails: `docs/clean_cycle_top10.md`.
+- Source of truth по константам цикла: `coint4/scripts/optimization/clean_cycle_top10/definitions.py` (`CYCLE_NAME=20260215_clean_top10`, `FIXED_WINDOWS.*`).
+- Seed TOP-10: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_manifest.json`.
+  - Примечание: `select_top10.py` выбирает TOP-N *runs* из `run_index.csv` (без дедупликации по `config_sha256`) → сейчас 10 строк, 5 уникальных конфигов.
+- Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
 
 Recent updates (2026-02-13):
 
@@ -143,6 +153,7 @@ Recent updates (2026-01-31):
 - Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
+- Clean Cycle TOP-10 (cycle `20260215_clean_top10`): baseline queue -> canonical metrics -> `rollup_clean_cycle_top10.*` (см. `docs/optimization_runs_20260215.md`, `docs/clean_cycle_top10.md`). Heavy runs только на VPS `85.198.90.128`.
 - Зафиксировать DD-оптимум: `pair_stop_loss_usd=1.85` (multi-window worst-DD `-13.2%`, worst robust Sharpe `3.448`) и прогнать full-span holdout+stress для подтверждения.
 - Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
 - Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).
