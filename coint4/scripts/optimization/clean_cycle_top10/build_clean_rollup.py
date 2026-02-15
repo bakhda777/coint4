@@ -391,6 +391,36 @@ def _write_md(
     lines.append(f"- fixed_windows_fingerprint: {fixed_windows_fingerprint}")
     lines.append(f"- rows: {len(rows)}")
     lines.append("")
+    lines.append("## Metrics source-of-truth")
+    lines.append("")
+    lines.append("This rollup reads ONLY `canonical_metrics.json` from each `results_dir`:")
+    lines.append("")
+    lines.append("- `metrics.canonical_sharpe`")
+    lines.append("- `metrics.canonical_pnl_abs`")
+    lines.append("- `metrics.canonical_max_drawdown_abs`")
+    lines.append("")
+    lines.append(
+        "`canonical_metrics.json` is expected to be produced from `equity_curve.csv` via "
+        "`scripts/optimization/recompute_canonical_metrics.py` (see `coint2.core.canonical_metrics`)."
+    )
+    lines.append("")
+    lines.append("## Canonical Sharpe definition (`canonical_sharpe`)")
+    lines.append("")
+    lines.append("As implemented in `coint2.core.sharpe.annualized_sharpe_ratio_from_equity`:")
+    lines.append("")
+    lines.append("- returns: `(equity_t - equity_{t-1}) / equity_{t-1}`")
+    lines.append("- sharpe: `sqrt(periods_per_year) * mean(excess_returns) / std(excess_returns)`")
+    lines.append("- std: sample stdev (ddof=1); `risk_free_rate` is per-period (canonical_metrics uses 0.0)")
+    lines.append("")
+    lines.append(
+        "Annualization parameters (`periods_per_year` / `bar_minutes`) are recorded in "
+        "`canonical_metrics.json` under `meta.annualization`."
+    )
+    lines.append("")
+    lines.append("## Score definition (for sorting)")
+    lines.append("")
+    lines.append("`score = canonical_sharpe - lambda_dd * abs(canonical_max_drawdown_abs)`")
+    lines.append("")
     lines.append("## FIXED_WINDOWS.walk_forward (normalized)")
     lines.append("")
     lines.append("```json")
@@ -567,9 +597,8 @@ def main() -> int:
             config_path_out = _path_for_output(config_raw, project_root) if config_raw else ""
 
             config_sha = str(entry.get("config_sha256") or "").strip()
-            if not config_sha and config_raw:
-                cfg_path = _resolve_under_project(config_raw, project_root)
-            if cfg_path is not None and cfg_path.exists() and cfg_path.is_file():
+            cfg_path = _resolve_under_project(config_raw, project_root) if config_raw else None
+            if not config_sha and cfg_path is not None and cfg_path.exists() and cfg_path.is_file():
                 config_sha = _sha256_file(cfg_path)
 
             score = compute_score(
