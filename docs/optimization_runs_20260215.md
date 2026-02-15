@@ -39,10 +39,12 @@
 
 ## Sweeps post-processing (локально, после sync_back)
 
-- `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/sweeps_run_queue.csv`: `0/3` results_dir присутствуют локально (все 3 отсутствуют в `artifacts/wfa/runs_clean/.../opt_sweeps/*`), поэтому:
-  - `sync_queue_status.py --queue sweeps_run_queue.csv`: `no changes` (metrics_present=0, missing=3).
-  - `recompute_canonical_metrics.py` для sweeps results_dir: пропущено (нет директорий/`equity_curve.csv`).
-  - `build_clean_rollup.py` пересобран с baseline=`baseline_run_queue.csv` и sweeps=`sweeps_run_queue.csv`: rollup остаётся baseline-only (rows=10, sweeps skipped=3).
+- `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/sweeps_run_queue.csv`: `3/3 completed`, results_dir присутствуют локально.
+- `sync_queue_status.py --queue sweeps_run_queue.csv`: `no changes` (metrics_present=3, missing=0, skipped=0).
+- Канонические метрики пересчитаны в `canonical_metrics.json` для sweeps results_dir (3/3 OK):
+  - `coint4/scripts/optimization/recompute_canonical_metrics.py --bar-minutes 15` (в `equity_curve.csv` по sweeps только 1 точка, нет timestamp deltas).
+- Финальный clean rollup пересобран baseline+sweeps: `rollup_clean_cycle_top10.(csv|md)` (rows=13, skipped=0).
+- Raw vs canonical diff по итоговому rollup: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (selected=13, `compare_metrics.py`).
 
 ## Следующие шаги (для выполнения на VPS, не на этом сервере)
 
