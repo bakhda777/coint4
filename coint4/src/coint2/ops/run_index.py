@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import csv
 import json
-import math
 from dataclasses import asdict, dataclass
-from datetime import datetime
 from pathlib import Path
-from statistics import median
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+from coint2.core.sharpe import compute_sharpe_ratio_abs_from_equity_curve_csv
 
 
 @dataclass
@@ -80,62 +79,10 @@ def _compute_sharpe_from_equity_curve(
     *,
     days_per_year: float = 365.0,
 ) -> Optional[float]:
-    equity_path = results_dir / "equity_curve.csv"
-    if not equity_path.exists():
-        return None
-
-    deltas: List[float] = []
-    count = 0
-    mean = 0.0
-    m2 = 0.0
-
-    prev_ts: Optional[datetime] = None
-    prev_equity: Optional[float] = None
-
-    with equity_path.open(newline="") as handle:
-        reader = csv.reader(handle)
-        next(reader, None)  # header
-        for row in reader:
-            if len(row) < 2:
-                continue
-            try:
-                ts = datetime.fromisoformat(row[0].strip())
-                equity = float(row[1])
-            except (ValueError, TypeError):
-                continue
-
-            if prev_ts is not None and prev_equity is not None and prev_equity != 0:
-                ret = (equity - prev_equity) / prev_equity
-                count += 1
-
-                delta_sec = (ts - prev_ts).total_seconds()
-                if delta_sec > 0:
-                    deltas.append(delta_sec)
-
-                diff = ret - mean
-                mean += diff / count
-                m2 += diff * (ret - mean)
-
-            prev_ts = ts
-            prev_equity = equity
-
-    if count < 2:
-        return None
-
-    variance = m2 / (count - 1)
-    std = math.sqrt(variance) if variance > 0 else 0.0
-    if std == 0.0:
-        return 0.0
-
-    if not deltas:
-        return None
-
-    period_seconds = median(deltas)
-    if period_seconds <= 0:
-        return None
-
-    periods_per_year = days_per_year * (86400.0 / period_seconds)
-    return math.sqrt(periods_per_year) * mean / std
+    return compute_sharpe_ratio_abs_from_equity_curve_csv(
+        results_dir / "equity_curve.csv",
+        days_per_year=days_per_year,
+    )
 
 
 def _to_float(value: Optional[str]) -> Optional[float]:
