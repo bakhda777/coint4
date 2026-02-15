@@ -33,6 +33,7 @@
 - Канонические метрики пересчитаны из `equity_curve.csv` в `canonical_metrics.json` для baseline results_dir (10/10 OK): `coint4/scripts/optimization/recompute_canonical_metrics.py`.
 - Статусы очереди baseline синхронизированы: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_run_queue.csv` -> `10/10 completed` (`coint4/scripts/optimization/sync_queue_status.py`).
 - Baseline "заморожен": создан sentinel `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/BASELINE_FROZEN.txt` и проверен (`freeze_baseline.py` + `verify_baseline_frozen.py`).
+  - `verify_baseline_frozen.py`: OK; WARN только про дополнительные `walk_forward.*` ключи в исходных holdout-конфигах (`enabled/min_training_samples/pairs_file`), не влияющие на fingerprint `FIXED_WINDOWS`.
 - Построен baseline-only rollup (10 строк, сортировка по score): `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)` (`build_clean_rollup.py`).
 - Raw vs canonical diff: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (`compare_metrics.py`).
 

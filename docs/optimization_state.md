@@ -20,6 +20,7 @@ Recent updates (2026-02-15):
   - `baseline_run_queue.csv`: `10/10 completed`.
   - `canonical_metrics.json` записан для baseline results_dir (10/10).
   - Baseline freeze sentinel `BASELINE_FROZEN.txt` создан и проверен.
+  - `verify_baseline_frozen.py`: OK; WARN только про дополнительные `walk_forward.*` ключи в исходных holdout-конфигах (`enabled/min_training_samples/pairs_file`).
   - Baseline-only rollup построен: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)`.
   - Raw vs canonical diff: `over_threshold=0` (`compare_metrics.py`).
 - Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
