@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-15
 
-Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 prep** (canonical metrics + fixed windows; без тяжёлых прогонов на этом сервере).
+Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -16,6 +16,13 @@ Recent updates (2026-02-15):
 - Source of truth по константам цикла: `coint4/scripts/optimization/clean_cycle_top10/definitions.py` (`CYCLE_NAME=20260215_clean_top10`, `FIXED_WINDOWS.*`).
 - Seed TOP-10: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_manifest.json`.
   - Примечание: `select_top10.py` выбирает TOP-N *runs* из `run_index.csv` (без дедупликации по `config_sha256`) → сейчас 10 строк, 5 уникальных конфигов.
+- Baseline post-processing (локально, после sync_back) для цикла `20260216_clean_top10`:
+  - `baseline_run_queue.csv`: `10/10 completed` (синхронизация статусов не требовалась).
+  - `canonical_metrics.json` записан для baseline results_dir (10/10) через `recompute_canonical_metrics.py --bar-minutes 15` (в `equity_curve.csv` только 1 точка, нет timestamp deltas).
+  - Baseline freeze sentinel `BASELINE_FROZEN.txt` создан и проверен (OK; WARN только про дополнительные `walk_forward.*` ключи в baseline-конфигах).
+  - Построен baseline-only rollup (rows=10): `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260216_clean_top10/rollup_clean_cycle_top10.(csv|md)` (явный opt-in `--allow-baseline-only`).
+  - Raw vs canonical diff: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (selected=10, `compare_metrics.py`).
+  - Важно: все baseline метрики вышли `0` (0 сделок; `equity_curve.csv` содержит только стартовую точку) → перед sweeps нужно проверить, что baseline batch действительно прогонялся корректно.
 - Baseline post-processing (локально, после sync_back):
   - `baseline_run_queue.csv`: `10/10 completed`.
   - `canonical_metrics.json` записан для baseline results_dir (10/10).
@@ -26,6 +33,7 @@ Recent updates (2026-02-15):
   - Sweeps post-processing (локально): `sweeps_run_queue.csv` -> `3/3 completed`, `canonical_metrics.json` записан для sweeps results_dir (3/3).
     - Примечание: в sweeps `equity_curve.csv` содержит только 1 точку (нет timestamp deltas), поэтому canonical пересчитан с явным `--bar-minutes 15`; метрики sweeps = 0 (0 сделок).
 - Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
+  - Для цикла `20260216_clean_top10`: `docs/optimization_runs_20260216.md`.
 
 ### VPS baseline WFA (queue10)
 - Очередь: `coint4/artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv` → `10/10 completed`.
@@ -172,7 +180,7 @@ Recent updates (2026-01-31):
 - Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
-- Clean Cycle TOP-10 (cycle `20260215_clean_top10`): baseline-only rollup построен; следующий шаг — sweeps от победителя baseline на VPS `85.198.90.128`, затем `sync_back` + canonical metrics + rebuild `rollup_clean_cycle_top10.*` (см. `docs/optimization_runs_20260215.md`, `docs/clean_cycle_top10.md`).
+- Clean Cycle TOP-10 (cycle `20260216_clean_top10`): baseline post-processing сделан, но метрики baseline = 0 → сначала проверить корректность baseline batch, затем только делать sweeps на VPS `85.198.90.128` и пересобрать финальный `rollup_clean_cycle_top10.*` (см. `docs/optimization_runs_20260216.md`, `docs/clean_cycle_top10.md`).
 - Зафиксировать DD-оптимум: `pair_stop_loss_usd=1.85` (multi-window worst-DD `-13.2%`, worst robust Sharpe `3.448`) и прогнать full-span holdout+stress для подтверждения.
 - Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
 - Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).
