@@ -73,8 +73,9 @@ def wait_for_ssh(*, user: str, host: str, key: str, timeout_sec: int = 900) -> N
     raise RuntimeError("SSH not ready after timeout")
 
 
-def _run_py(script: str, args: List[str]) -> None:
-    subprocess.run([sys.executable, str(_script_path(script))] + args, check=True)
+def _run_py(script: str, args: List[str]) -> int:
+    cp = subprocess.run([sys.executable, str(_script_path(script))] + args, check=False)
+    return cp.returncode
 
 
 def _remote_file_exists(*, user: str, host: str, key: str, path: str) -> bool:
@@ -156,7 +157,7 @@ def main(argv: List[str]) -> int:
         print("[vps_pipeline] ssh ready")
 
     if args.sync:
-        _run_py(
+        rc = _run_py(
             "sync_to_vps.py",
             [
                 "--host",
@@ -169,9 +170,11 @@ def main(argv: List[str]) -> int:
                 args.remote_repo_dir,
             ],
         )
+        if rc != 0:
+            return rc
 
     if args.verify:
-        _run_py(
+        rc = _run_py(
             "vps_verify.py",
             [
                 "--host",
@@ -184,14 +187,18 @@ def main(argv: List[str]) -> int:
                 args.remote_repo_dir,
             ],
         )
+        if rc != 0:
+            return rc
 
     manifest_path: Optional[Path] = None
     if args.run:
         app_root = _app_root()
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         manifest_path = app_root / "outputs" / f"wfa_manifest_{stamp}.json"
-        _run_py("build_wfa_manifest.py", ["--output", str(manifest_path)])
-        _run_py(
+        rc = _run_py("build_wfa_manifest.py", ["--output", str(manifest_path)])
+        if rc != 0:
+            return rc
+        rc = _run_py(
             "vps_run_wfa.py",
             [
                 "--host",
@@ -208,6 +215,8 @@ def main(argv: List[str]) -> int:
                 str(manifest_path),
             ],
         )
+        if rc != 0:
+            return rc
 
     if args.fetch:
         sentinel = f"{args.remote_repo_dir.rstrip('/')}/coint4/outputs/WFA_RUN_DONE.txt"
@@ -217,7 +226,7 @@ def main(argv: List[str]) -> int:
             print(f"[vps_pipeline] attach: ssh -i {args.key} {args.user}@{args.host} 'tmux attach -t {args.tmux_session}'")
             print("[vps_pipeline] fetch later: python3 coint4/scripts/vps/vps_fetch_results.py")
             return 0
-        _run_py(
+        rc = _run_py(
             "vps_fetch_results.py",
             [
                 "--host",
@@ -231,6 +240,8 @@ def main(argv: List[str]) -> int:
             ]
             + (["--include-runs"] if args.include_runs else []),
         )
+        if rc != 0:
+            return rc
 
     return 0
 
