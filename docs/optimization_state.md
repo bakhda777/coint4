@@ -30,6 +30,11 @@ Recent updates (2026-02-15):
 - Исполнение: только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh` (на этом сервере тяжёлое не запускаем).
 - Rollup индекс пересобран: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.
 
+### VPS sweeps WFA (dd_sprint10 min_beta)
+- Очередь: `coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91/run_queue.csv` → `30/30 completed`.
+- Исполнение: только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `scripts/optimization/watch_wfa_queue.sh`.
+- Примечание: на VPS `git pull` падал из-за dirty worktree, поэтому запуск делался с `SYNC_UP=1` (rsync tracked файлов) и `UPDATE_CODE=0`.
+
 Recent updates (2026-02-13):
 
 ### DD Analysis & Fix (pair_stop_loss_usd + pruned_v2)

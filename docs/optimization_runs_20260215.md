@@ -49,3 +49,13 @@
   - `SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv`
 - Sync-back (узко): на этой машине часть старых `artifacts/wfa/aggregate/*` была root-owned, поэтому полный `SYNC_PATHS='... coint4/artifacts ...'` падал на permissions; для fetch использован `SYNC_PATHS='coint4/artifacts/wfa/aggregate/20260215_baseline_queue10 coint4/artifacts/wfa/runs/20260215_baseline_queue10'`.
 - Rollup индекс обновлён: `coint4/artifacts/wfa/aggregate/rollup/run_index.(csv|json|md)`.
+
+## VPS sweeps: `20260214_budget1000_dd_sprint10_minbeta_slusd1p91` (WFA)
+
+- Queue: `coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91/run_queue.csv` -> `30/30 completed`.
+- Последний запуск watcher на VPS: `2026-02-15T18:55:40Z .. 2026-02-15T18:57:42Z` (см. `coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91/run_queue.watch.log`).
+- Запуск (локально, из `coint4/`):
+  - `SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91/run_queue.csv`
+  - Причина `SYNC_UP=1`: на VPS `git pull` падал из-за dirty worktree (merge would overwrite local changes).
+- Sync-back (узко, из-за root-owned старых директории в локальном `coint4/artifacts/**`):
+  - `SYNC_PATHS='docs coint4/artifacts/wfa/aggregate/20260214_budget1000_dd_sprint10_minbeta_slusd1p91 coint4/artifacts/wfa/runs/20260214_budget1000_dd_sprint10_minbeta_slusd1p91'`
