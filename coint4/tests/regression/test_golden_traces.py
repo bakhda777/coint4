@@ -10,10 +10,10 @@ from pathlib import Path
 import json
 
 
-def generate_golden_traces():
+def generate_golden_traces(base_dir: Path | None = None):
     """Generate baseline traces for regression testing."""
-    
-    Path("artifacts/baseline_traces").mkdir(parents=True, exist_ok=True)
+    base_dir = base_dir or Path("artifacts/baseline_traces")
+    base_dir.mkdir(parents=True, exist_ok=True)
     
     # Create synthetic golden data
     dates = pd.date_range('2024-01-01', periods=1000, freq='15min')
@@ -38,7 +38,7 @@ def generate_golden_traces():
     }
     
     # Save golden trace
-    with open("artifacts/baseline_traces/btc_eth_reference.json", 'w') as f:
+    with open(base_dir / "btc_eth_reference.json", 'w') as f:
         json.dump(btc_eth_trace, f)
     
     # ETH/USDT pair
@@ -57,21 +57,22 @@ def generate_golden_traces():
         }
     }
     
-    with open("artifacts/baseline_traces/eth_usdt_reference.json", 'w') as f:
+    with open(base_dir / "eth_usdt_reference.json", 'w') as f:
         json.dump(eth_usdt_trace, f)
     
     print("Generated 2 golden traces")
     return True
 
 
-def load_golden_trace(pair: str, engine: str = 'reference') -> dict:
+def load_golden_trace(pair: str, engine: str = 'reference', base_dir: Path | None = None) -> dict:
     """Load golden trace for comparison."""
+    base_dir = base_dir or Path("artifacts/baseline_traces")
     filename = f"{pair.replace('/', '_').lower()}_{engine}.json"
-    path = Path(f"artifacts/baseline_traces/{filename}")
+    path = base_dir / filename
     
     if not path.exists():
         # Generate if not exists
-        generate_golden_traces()
+        generate_golden_traces(base_dir=base_dir)
     
     if path.exists():
         with open(path, 'r') as f:
@@ -146,9 +147,10 @@ def compare_traces(golden: dict, current: dict, tolerance: float = 0.001) -> dic
 class TestGoldenTraces:
     """Test suite for golden trace regression."""
     
-    def test_btc_eth_trace(self):
+    def test_btc_eth_trace(self, tmp_path):
         """Test BTC/ETH pair against golden trace."""
-        golden = load_golden_trace('btc_eth', 'reference')
+        base_dir = tmp_path / "baseline_traces"
+        golden = load_golden_trace('btc_eth', 'reference', base_dir=base_dir)
         assert golden is not None, "Golden trace not found"
         
         # Simulate current trace (in real test, would run actual backtest)
@@ -166,9 +168,10 @@ class TestGoldenTraces:
         assert results['pnl_rmse'] < 0.1, f"PnL RMSE too high: {results['pnl_rmse']:.3f}"
         assert results['entry_exit_match'] >= 0.95, f"Entry/exit match too low: {results['entry_exit_match']:.1%}"
     
-    def test_eth_usdt_trace(self):
+    def test_eth_usdt_trace(self, tmp_path):
         """Test ETH/USDT pair against golden trace."""
-        golden = load_golden_trace('eth_usdt', 'reference')
+        base_dir = tmp_path / "baseline_traces"
+        golden = load_golden_trace('eth_usdt', 'reference', base_dir=base_dir)
         assert golden is not None, "Golden trace not found"
         
         # Simulate current trace
@@ -182,9 +185,10 @@ class TestGoldenTraces:
         assert results['positions_match'] >= 0.999, "Positions should match exactly"
         assert results['pnl_rmse'] < 0.02, f"PnL RMSE too high: {results['pnl_rmse']:.3f}"
     
-    def test_empty_trace_handling(self):
+    def test_empty_trace_handling(self, tmp_path):
         """Test handling of empty traces."""
-        golden = load_golden_trace('btc_eth', 'reference')
+        base_dir = tmp_path / "baseline_traces"
+        golden = load_golden_trace('btc_eth', 'reference', base_dir=base_dir)
         
         empty_current = {
             'positions': [],
@@ -243,14 +247,16 @@ class TestGoldenTraces:
             assert results['pnl_rmse'] < 0.5
 
 
-def test_generate_golden_traces():
+def test_generate_golden_traces(tmp_path):
     """Test golden trace generation."""
-    result = generate_golden_traces()
+    # Write into a temp directory to avoid permissions issues in repo artifacts/.
+    base_dir = tmp_path / "baseline_traces"
+    result = generate_golden_traces(base_dir=base_dir)
     assert result is True
     
     # Check files exist
-    assert Path("artifacts/baseline_traces/btc_eth_reference.json").exists()
-    assert Path("artifacts/baseline_traces/eth_usdt_reference.json").exists()
+    assert (base_dir / "btc_eth_reference.json").exists()
+    assert (base_dir / "eth_usdt_reference.json").exists()
 
 
 if __name__ == "__main__":
