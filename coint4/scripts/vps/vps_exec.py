@@ -94,8 +94,10 @@ def main(argv: List[str]) -> int:
             raise SystemExit("Missing command")
         cmd = " ".join(args.command).strip()
         cp = ssh_exec(target, cmd, check=False)
-        print(cp.stdout, end="")
-        print(cp.stderr, end="")
+        if cp.stdout:
+            print(cp.stdout, end="")
+        if cp.stderr:
+            print(cp.stderr, end="")
         return cp.returncode
 
     if args.cmd == "tmux-has":
