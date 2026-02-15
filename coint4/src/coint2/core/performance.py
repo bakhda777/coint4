@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 
+from coint2.core.sharpe import annualized_sharpe_ratio
+
 
 def sharpe_ratio_on_returns(
     pnl: pd.Series,
@@ -18,11 +20,11 @@ def sharpe_ratio_on_returns(
     if capital == 0 or pnl.empty:
         return float('nan')
     returns = pnl / capital
-    excess_returns = returns - risk_free_rate
-    if excess_returns.std(ddof=0) == 0:
-        return float('nan')
-    daily_sharpe = excess_returns.mean() / excess_returns.std(ddof=0)
-    return daily_sharpe * np.sqrt(annualizing_factor)
+    return annualized_sharpe_ratio(
+        returns,
+        annualizing_factor,
+        risk_free_rate=risk_free_rate,
+    )
 
 def max_drawdown_on_equity(equity_curve: pd.Series) -> float:
     """
@@ -50,12 +52,7 @@ def sharpe_ratio(returns: pd.Series, annualizing_factor: float) -> float:
         Annualized Sharpe ratio. Returns ``0.0`` if the standard deviation of
         ``returns`` is zero.
     """
-
-    if returns.std() == 0:
-        return 0.0
-
-    # Assume risk free rate is zero
-    return np.sqrt(annualizing_factor) * returns.mean() / returns.std()
+    return annualized_sharpe_ratio(returns, annualizing_factor)
 
 
 def max_drawdown(cumulative_pnl: pd.Series) -> float:
