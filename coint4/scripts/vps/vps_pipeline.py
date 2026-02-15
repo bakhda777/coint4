@@ -130,9 +130,23 @@ def main(argv: List[str]) -> int:
         server_id = args.server_id
         if not server_id:
             match = serverspace.find_server_by_ip(api_base=api_base, api_key=api_key, ip=args.host)
-            if match is None:
-                raise RuntimeError(f"Could not find Serverspace server by IP: {args.host}")
-            server_id = match.server_id
+            if match is not None:
+                server_id = match.server_id
+            else:
+                # Some API accounts do not expose IP fields in /servers. If there's only one
+                # server in the account, use it as a safe default.
+                servers = serverspace.list_servers(api_base=api_base, api_key=api_key)
+                if len(servers) == 1:
+                    srv = servers[0]
+                    server_id = str(
+                        srv.get("id")
+                        or srv.get("uuid")
+                        or srv.get("server_id")
+                        or srv.get("serverId")
+                        or ""
+                    ).strip()
+                if not server_id:
+                    raise RuntimeError(f"Could not resolve Serverspace server id (ip={args.host}). Use --server-id.")
         serverspace.power_on(api_base=api_base, api_key=api_key, server_id=server_id)
         print(f"[vps_pipeline] power-on ok id={server_id}")
 
