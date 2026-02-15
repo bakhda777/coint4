@@ -128,21 +128,33 @@ def find_server_by_ip(*, api_base: str, api_key: str, ip: str) -> Optional[Serve
 
 
 def power_on(*, api_base: str, api_key: str, server_id: str) -> None:
-    _request_json(
-        method="POST",
-        url=f"{api_base}/servers/{server_id}/power/on",
-        api_key=api_key,
-        body={"server_id": server_id},
-    )
+    try:
+        _request_json(
+            method="POST",
+            url=f"{api_base}/servers/{server_id}/power/on",
+            api_key=api_key,
+            body={"server_id": server_id},
+        )
+    except RuntimeError as e:
+        # Serverspace returns HTTP 400 with message "The server is already on".
+        if "already on" in str(e).lower():
+            return
+        raise
 
 
 def shutdown(*, api_base: str, api_key: str, server_id: str) -> None:
-    _request_json(
-        method="POST",
-        url=f"{api_base}/servers/{server_id}/power/shutdown",
-        api_key=api_key,
-        body={"server_id": server_id},
-    )
+    try:
+        _request_json(
+            method="POST",
+            url=f"{api_base}/servers/{server_id}/power/shutdown",
+            api_key=api_key,
+            body={"server_id": server_id},
+        )
+    except RuntimeError as e:
+        # Serverspace may return an error if the server is already stopped.
+        if "already" in str(e).lower() and "off" in str(e).lower():
+            return
+        raise
 
 
 def main(argv: List[str]) -> int:
@@ -194,4 +206,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-
