@@ -40,6 +40,9 @@ def _load_serverspace_module() -> Any:
     if spec is None or spec.loader is None:
         raise RuntimeError("Failed to load serverspace_api.py")
     mod = importlib.util.module_from_spec(spec)
+    # dataclasses (and other libs) may look up the module by name during import time
+    # via sys.modules[__module__]; register before exec_module.
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
