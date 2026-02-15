@@ -23,6 +23,7 @@ Recent updates (2026-02-15):
   - `verify_baseline_frozen.py`: OK; WARN только про дополнительные `walk_forward.*` ключи в исходных holdout-конфигах (`enabled/min_training_samples/pairs_file`).
   - Baseline-only rollup построен: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)`.
   - Raw vs canonical diff: `over_threshold=0` (`compare_metrics.py`).
+  - Sweeps post-processing (локально): `sweeps_run_queue.csv` присутствует, но `results_dir` для sweeps не найден локально (`0/3`, статусы остаются `planned`), поэтому финальный rollup остаётся baseline-only (10 строк; sweeps `skipped=3`).
 - Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
 
 ### VPS baseline WFA (queue10)

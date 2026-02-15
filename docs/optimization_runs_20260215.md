@@ -37,6 +37,13 @@
 - Построен baseline-only rollup (10 строк, сортировка по score): `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)` (`build_clean_rollup.py`).
 - Raw vs canonical diff: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (`compare_metrics.py`).
 
+## Sweeps post-processing (локально, после sync_back)
+
+- `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/sweeps_run_queue.csv`: `0/3` results_dir присутствуют локально (все 3 отсутствуют в `artifacts/wfa/runs_clean/.../opt_sweeps/*`), поэтому:
+  - `sync_queue_status.py --queue sweeps_run_queue.csv`: `no changes` (metrics_present=0, missing=3).
+  - `recompute_canonical_metrics.py` для sweeps results_dir: пропущено (нет директорий/`equity_curve.csv`).
+  - `build_clean_rollup.py` пересобран с baseline=`baseline_run_queue.csv` и sweeps=`sweeps_run_queue.csv`: rollup остаётся baseline-only (rows=10, sweeps skipped=3).
+
 ## Следующие шаги (для выполнения на VPS, не на этом сервере)
 
 1. Локально (из `coint4/`): подготовить sweeps (configs + queue) от победителя baseline (см. `docs/clean_cycle_top10.md`).
