@@ -19,3 +19,6 @@ sandbox = "workspace-write"
 
 [trackerOptions]
 path = ".ralph-tui/prd.json"
+
+[parallel]
+mode = "never"
