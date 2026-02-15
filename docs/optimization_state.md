@@ -16,6 +16,12 @@ Recent updates (2026-02-15):
 - Source of truth по константам цикла: `coint4/scripts/optimization/clean_cycle_top10/definitions.py` (`CYCLE_NAME=20260215_clean_top10`, `FIXED_WINDOWS.*`).
 - Seed TOP-10: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_manifest.json`.
   - Примечание: `select_top10.py` выбирает TOP-N *runs* из `run_index.csv` (без дедупликации по `config_sha256`) → сейчас 10 строк, 5 уникальных конфигов.
+- Baseline post-processing (локально, после sync_back):
+  - `baseline_run_queue.csv`: `10/10 completed`.
+  - `canonical_metrics.json` записан для baseline results_dir (10/10).
+  - Baseline freeze sentinel `BASELINE_FROZEN.txt` создан и проверен.
+  - Baseline-only rollup построен: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)`.
+  - Raw vs canonical diff: `over_threshold=0` (`compare_metrics.py`).
 - Дневник/следующие шаги: `docs/optimization_runs_20260215.md`.
 
 Recent updates (2026-02-13):
@@ -153,7 +159,7 @@ Recent updates (2026-01-31):
 - Legacy: план paper/forward (не используем; paper trading не делаем): `docs/paper_forward_plan_20260131.md`.
 
 Next steps:
-- Clean Cycle TOP-10 (cycle `20260215_clean_top10`): baseline queue -> canonical metrics -> `rollup_clean_cycle_top10.*` (см. `docs/optimization_runs_20260215.md`, `docs/clean_cycle_top10.md`). Heavy runs только на VPS `85.198.90.128`.
+- Clean Cycle TOP-10 (cycle `20260215_clean_top10`): baseline-only rollup построен; следующий шаг — sweeps от победителя baseline на VPS `85.198.90.128`, затем `sync_back` + canonical metrics + rebuild `rollup_clean_cycle_top10.*` (см. `docs/optimization_runs_20260215.md`, `docs/clean_cycle_top10.md`).
 - Зафиксировать DD-оптимум: `pair_stop_loss_usd=1.85` (multi-window worst-DD `-13.2%`, worst robust Sharpe `3.448`) и прогнать full-span holdout+stress для подтверждения.
 - Live cutover кандидата: см. `docs/production_checklist.md` и `AGENTS.md`.
 - Если extended OOS обязателен для $1000: текущие попытки (tradeability+basecap3) дали отрицательные метрики → целесообразнее фиксировать stop‑condition и переходить к live cutover (paper не делаем).

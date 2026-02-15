@@ -28,8 +28,15 @@
 | 3 | 7 | 8.792 | -60.7 | 1151.4 | `e2c2a21c0f95432d0ed0bb6ff9140882fd9610a518a76acb8a2f8a2d04e51925` | `holdout_relaxed8_nokpss_20260125_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml` |
 | 1 | 10 | 8.792 | -60.7 | 1151.4 | `b3ea7cdaab7071ba50f5e260ab85069a53dc7c230f43594af4708d7f2e9957c7` | `holdout_relaxed8_nokpss_20260129_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2_r0p01_maxpos15.yaml` |
 
+## Baseline post-processing (локально, после sync_back)
+
+- Канонические метрики пересчитаны из `equity_curve.csv` в `canonical_metrics.json` для baseline results_dir (10/10 OK): `coint4/scripts/optimization/recompute_canonical_metrics.py`.
+- Статусы очереди baseline синхронизированы: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_run_queue.csv` -> `10/10 completed` (`coint4/scripts/optimization/sync_queue_status.py`).
+- Baseline "заморожен": создан sentinel `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/BASELINE_FROZEN.txt` и проверен (`freeze_baseline.py` + `verify_baseline_frozen.py`).
+- Построен baseline-only rollup (10 строк, сортировка по score): `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)` (`build_clean_rollup.py`).
+- Raw vs canonical diff: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (`compare_metrics.py`).
+
 ## Следующие шаги (для выполнения на VPS, не на этом сервере)
 
-1. Локально (из `coint4/`): snapshot/select/validate/init + baseline configs + baseline queue (см. `docs/clean_cycle_top10.md`).
-2. На VPS `85.198.90.128`: прогон baseline queue через `coint4/scripts/remote/run_server_job.sh`, затем `recompute_canonical_metrics.py` и `build_clean_rollup.py` для `rollup_clean_cycle_top10.*`.
-3. Далее: sweeps от победителя baseline (внутри clean-цикла, с теми же `FIXED_WINDOWS`).
+1. Локально (из `coint4/`): подготовить sweeps (configs + queue) от победителя baseline (см. `docs/clean_cycle_top10.md`).
+2. На VPS `85.198.90.128`: прогон sweeps queue через `coint4/scripts/remote/run_server_job.sh`, затем `recompute_canonical_metrics.py` и `build_clean_rollup.py` (baseline + sweeps) для обновления `rollup_clean_cycle_top10.*`.
