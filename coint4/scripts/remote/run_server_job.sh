@@ -19,6 +19,13 @@ SERVER_WORK_DIR=${SERVER_WORK_DIR:-"/opt/coint4/coint4"}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_LOCAL_REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 LOCAL_REPO_DIR=${LOCAL_REPO_DIR:-"${DEFAULT_LOCAL_REPO_DIR}"}
+
+# Local-only convenience: if SERVSPACE_API_KEY isn't exported, read it from the gitignored secret file.
+# Never echo this value.
+if [[ -z "${API_KEY}" && -f "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key" ]]; then
+  API_KEY="$(tr -d '\n' < "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key")"
+fi
+
 UPDATE_CODE=${UPDATE_CODE:-"1"}
 SYNC_BACK=${SYNC_BACK:-"1"}
 SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
@@ -64,19 +71,85 @@ resolve_server_id() {
     echo "$SERVER_ID"
     return 0
   fi
-  if [[ -z "$SERVER_NAME" ]]; then
-    echo "SERVER_ID or SERVER_NAME is required (set env var)." >&2
-    return 1
-  fi
   if [[ -z "$API_KEY" ]]; then
-    echo "SERVSPACE_API_KEY is required to resolve SERVER_NAME." >&2
+    echo "SERVSPACE_API_KEY is required to resolve server id (set env var or create .secrets/serverspace_api_key)." >&2
     return 1
   fi
-  api_get "servers" | python3 - "$SERVER_NAME" <<'PY'
+
+  local target_name target_ip
+  target_name="${SERVER_NAME}"
+  target_ip="${SERVER_IP}"
+
+  if [[ -z "$target_name" && -z "$target_ip" ]]; then
+    echo "SERVER_ID, SERVER_NAME, or SERVER_IP is required (set env var)." >&2
+    return 1
+  fi
+
+  api_get "servers" | python3 - "$target_name" "$target_ip" <<'PY'
 import json
 import sys
 
-name = sys.argv[1]
+target_name = sys.argv[1].strip() or None
+target_ip = sys.argv[2].strip() or None
+
+IP_KEYS = ("ip", "public_ip", "ipv4", "address", "ip_address")
+NESTED_KEYS = ("network", "networks", "addresses", "interfaces")
+
+
+def _as_list(v):
+    if isinstance(v, list):
+        return v
+    if isinstance(v, dict):
+        return list(v.values())
+    return []
+
+
+def collect_ips(srv):
+    ips = []
+    for k in IP_KEYS:
+        v = srv.get(k)
+        if isinstance(v, str):
+            ips.append(v)
+        elif isinstance(v, list):
+            ips.extend([x for x in v if isinstance(x, str)])
+
+    for k in NESTED_KEYS:
+        v = srv.get(k)
+        for item in _as_list(v):
+            if isinstance(item, str):
+                ips.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            for kk in IP_KEYS:
+                vv = item.get(kk)
+                if isinstance(vv, str):
+                    ips.append(vv)
+
+    # Deduplicate while keeping order.
+    out = []
+    for ip in ips:
+        if ip and ip not in out:
+            out.append(ip)
+    return out
+
+
+def get_id(srv):
+    for key in ("id", "uuid", "server_id"):
+        v = srv.get(key)
+        if isinstance(v, (str, int)) and str(v):
+            return str(v)
+    return None
+
+
+def name_matches(srv, name):
+    return srv.get("name") == name or srv.get("hostname") == name
+
+
+def ip_matches(srv, ip):
+    return ip in collect_ips(srv)
+
+
 try:
     data = json.load(sys.stdin)
 except Exception:
@@ -94,11 +167,18 @@ if not isinstance(data, list):
 for srv in data:
     if not isinstance(srv, dict):
         continue
-    if srv.get("name") == name or srv.get("hostname") == name:
-        for key in ("id", "uuid", "server_id"):
-            if key in srv:
-                print(srv[key])
-                sys.exit(0)
+
+    if target_name and name_matches(srv, target_name):
+        sid = get_id(srv)
+        if sid:
+            print(sid)
+            sys.exit(0)
+
+    if target_ip and ip_matches(srv, target_ip):
+        sid = get_id(srv)
+        if sid:
+            print(sid)
+            sys.exit(0)
 print("")
 PY
 }

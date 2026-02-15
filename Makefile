@@ -65,9 +65,5 @@ vps-baseline:
 		test -f .secrets/serverspace_api_key || { echo "Missing SERVSPACE_API_KEY and .secrets/serverspace_api_key" >&2; exit 1; }; \
 		export SERVSPACE_API_KEY="$$(tr -d '\\n' < .secrets/serverspace_api_key)"; \
 	fi; \
-	if [[ -z "$${SERVER_ID:-}" && -z "$${SERVER_NAME:-}" ]]; then \
-		echo "Set SERVER_ID or SERVER_NAME to use Serverspace power on/off." >&2; \
-		exit 1; \
-	fi; \
 	SYNC_UP="$${SYNC_UP:-1}" STOP_AFTER="$${STOP_AFTER:-1}" bash coint4/scripts/remote/run_server_job.sh \
 		bash scripts/optimization/watch_wfa_queue.sh --queue "$(VPS_WFA_QUEUE)"
