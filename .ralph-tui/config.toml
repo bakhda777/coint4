@@ -1,12 +1,13 @@
+configVersion = "2.1"
 maxIterations = 0
 iterationDelay = 0
 outputDir = ".ralph-tui/iterations"
-autoCommit = false
 agent = "codex"
 tracker = "json"
 prompt_template = "./.ralph-tui/templates/json.hbs"
 progressFile = ".ralph-tui/progress.md"
-configVersion = "2.1"
+autoCommit = false
+subagentTracingDetail = "minimal"
 
 [agentOptions]
 fullAuto = true

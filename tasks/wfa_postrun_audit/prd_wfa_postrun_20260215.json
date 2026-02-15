@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "id": "WFA_POSTRUN_AUDIT_20260215",
+    "title": "WFA post-run audit (prove what actually ran) + package results",
+    "agent": "codex",
+    "tracker": "json",
+    "constraints": [
+      "DO NOT start new WFA/backtests",
+      "read-only inspection only; may create NEW report files only",
+      "NO git commit",
+      "do not print or log secrets",
+      "prefer deterministic evidence: timestamps, CPU time, file mtimes, logs"
+    ],
+    "target_vps": "85.198.90.128",
+    "working_dir": "/opt/coint4/coint4"
+  },
+  "tasks": [
+    {
+      "id": "T01",
+      "title": "Prove last run actually executed (not fake DONE)",
+      "acceptance": [
+        "Collect evidence of real compute: CPU time, process history, log timelines",
+        "If evidence contradicts 'run happened', clearly state why"
+      ],
+      "steps": [
+        "On VPS: confirm sentinel exists and capture mtime + contents: /opt/coint4/coint4/outputs/WFA_RUN_DONE.txt",
+        "On VPS: find newest run_queue.watch.log ending near sentinel; capture last 20 lines",
+        "On VPS: summarize run_queue.csv completion counts for the window used previously (start=2026-02-13T07:28:51Z end=sentinel mtime)",
+        "On VPS: prove compute happened using at least TWO independent signals:",
+        "  A) sum CPU time for relevant processes from logs if available (run_queue.watch.log contains CPU stats) OR",
+        "  B) use OS accounting: journalctl (if enabled), /var/log/sysstat/sar* (if present), or /var/log/sa/sa* to show CPU usage bands during the run window",
+        "  C) check mtime distribution of equity_curve.csv across a random sample of 30 completed runs; mtimes clustered in the run window = good sign",
+        "If sar/sysstat unavailable, use /proc/stat snapshots are not historical; then rely on log CPU lines + mtime clustering as primary proof"
+      ]
+    },
+    {
+      "id": "T02",
+      "title": "Confirm sharpe_ratio_abs is canonical Sharpe implementation",
+      "acceptance": [
+        "Point to exact code lines generating sharpe_ratio_abs in strategy_metrics.csv",
+        "Demonstrate lightweight re-check for TOP-5 using equity_curve.csv without rewriting artifacts"
+      ],
+      "steps": [
+        "On VPS: locate generator of strategy_metrics.csv in src/coint2/pipeline/walk_forward_orchestrator.py and capture the exact line where sharpe_abs is assigned",
+        "On VPS: locate performance.sharpe_ratio implementation in src/coint2/core/performance.py and show it calls annualized_sharpe_ratio from src/coint2/core/sharpe.py",
+        "Run a small read-only script to recompute canonical Sharpe from equity_curve.csv for TOP-5 runs and show diffs are near-zero"
+      ]
+    },
+    {
+      "id": "T03",
+      "title": "Generate single Markdown post-run report (DONE + metrics + anomalies)",
+      "acceptance": [
+        "One Markdown file created locally (gitignored) with required sections",
+        "Includes: DONE evidence, where results live, TOP-3 Sharpe & TOP-3 PnL, duplicate-metrics note, 8 missing results_dir rows with mapping"
+      ],
+      "steps": [
+        "Write report to: coint4/outputs/post_run/wfa_postrun_audit_20260215.md (local repo path on this machine OR /opt/coint4/coint4/... if writing on VPS is preferred)",
+        "Include completion statement completed=614/614 with the exact window definition used",
+        "Include the 8 rows where results_dir doesn't exist and map each to the real existing directory"
+      ]
+    },
+    {
+      "id": "T04",
+      "title": "Build fresh run_index_canonical CSV for completed runs (no reruns)",
+      "optional": true,
+      "acceptance": [
+        "CSV placed next to existing rollup without deleting anything",
+        "Uses canonical Sharpe when equity_curve.csv exists; also keep raw Sharpe column"
+      ],
+      "steps": [
+        "Read completed rows from run_queue.csv for the same window and resolve known results_dir mismatches via a mapping table",
+        "For each run: read strategy_metrics.csv; compute canonical Sharpe from equity_curve.csv when present; write CSV to artifacts/wfa/aggregate/rollup/run_index_canonical_<stamp>.csv"
+      ]
+    }
+  ]
+}

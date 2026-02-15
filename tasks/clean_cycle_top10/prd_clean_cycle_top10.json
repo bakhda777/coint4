@@ -1,0 +1,366 @@
+{
+  "title": "Clean Optimization Cycle на базе TOP-10 прогонов (isolated baseline + clean sweeps)",
+  "goal": "Взять TOP-10 прогонов из старой партии (leaderboard/run_index), воспроизвести их как baseline в новом изолированном clean-контуре на фиксированных окнах и с единым каноническим пересчётом метрик (Sharpe/DD/PnL). Дальше выполнять оптимизационные свипы только внутри clean-контура, опираясь на baseline и новые clean-прогоны, не используя старую партию как источник истины.",
+  "constraints": [
+    "Сейчас НЕ запускать WFA/бэктесты/тяжёлые прогоны: только чтение, планирование и подготовка скриптов/конфигов/доков.",
+    "Не делать git commit в рамках этой задачи (создаём только PRD JSON).",
+    "Не трогать и не удалять старые артефакты: старая партия используется только для выбора initial TOP-10.",
+    "Новые результаты должны жить отдельно под CLEAN_ROOT (и под отдельным aggregate dir для маленьких индексов/манифестов).",
+    "Baseline после получения должен быть защищён от перезаписи (freeze + отказ от overwrite по умолчанию).",
+    "Метрики Sharpe/DD/PnL должны считаться одним каноническим методом и фиксироваться в canonical_* полях без перезаписи strategy_metrics.csv.",
+    "Не логировать и не печатать секреты (ключи/токены/заголовки запросов).",
+    "Каждый таск должен быть маленьким и проверяемым (обычно 1–3 файла), без тяжёлых вычислений внутри PR."
+  ],
+  "definitions": {
+    "DATESTAMP": "20260215",
+    "CLEAN_ROOT": "coint4/artifacts/wfa/runs_clean/20260215_clean_top10",
+    "BASELINE_DIR": "coint4/artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10",
+    "OPT_DIR": "coint4/artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps",
+    "CLEAN_AGG_DIR": "coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10",
+    "TOP10_SOURCE": {
+      "run_index_csv": "coint4/artifacts/wfa/aggregate/rollup/run_index.csv",
+      "run_index_md": "coint4/artifacts/wfa/aggregate/rollup/run_index.md",
+      "primary_rank": "sharpe_ratio_abs",
+      "fallback_rank": "sharpe_ratio_abs_raw",
+      "dd_field": "max_drawdown_abs"
+    },
+    "FIXED_WINDOWS": {
+      "selection_rule": "Безопасный дефолт: взять окна из лучшего (top-1) конфига среди TOP-10. Если среди TOP-10 окна различаются, зафиксировать самое частое сочетание окон и явно записать его здесь.",
+      "resolved_on": "2026-02-15",
+      "resolution_note": "Проверено по TOP-10 из run_index.csv: у всех 10 одинаковые параметры walk_forward.",
+      "walk_forward": {
+        "start_date": "2024-05-01",
+        "end_date": "2024-12-31",
+        "training_period_days": 90,
+        "testing_period_days": 30,
+        "step_size_days": 30,
+        "max_steps": 5,
+        "gap_minutes": 15,
+        "refit_frequency": "weekly"
+      },
+      "invariant_checks": [
+        "Все baseline и clean-свипы должны иметь строго эти walk_forward поля.",
+        "Для queue-прогонов max_steps должен быть явно задан и max_steps<=5."
+      ]
+    },
+    "CANONICAL_METRICS": {
+      "source_of_truth": "equity_curve.csv + coint4/src/coint2/core/sharpe.py",
+      "sharpe": {
+        "function": "coint4/src/coint2/core/sharpe.py::annualized_sharpe_ratio_from_equity",
+        "risk_free_rate": 0.0,
+        "ddof": 1,
+        "annualization": {
+          "mode": "fixed_by_bar_minutes",
+          "days_per_year": 365,
+          "bar_minutes": 15,
+          "periods_per_year": 35040
+        },
+        "notes": [
+          "Не использовать инференс частоты из equity timestamps для clean-контуров: annualization фиксированная.",
+          "Если timeframe/bar_minutes отличается от 15, скрипт должен требовать явное --bar-minutes или --periods-per-year."
+        ]
+      },
+      "pnl": {
+        "source": "equity_curve.csv",
+        "definition": "canonical_pnl_abs = equity_last - equity_first"
+      },
+      "drawdown": {
+        "source": "equity_curve.csv",
+        "definition": "canonical_max_drawdown_abs = min_t(equity_t - peak_equity_to_t) (<=0)"
+      },
+      "outputs": {
+        "per_run_file": "canonical_metrics.json",
+        "rollup_file": "canonical_metrics_rollup.csv",
+        "never_modify": [
+          "strategy_metrics.csv",
+          "equity_curve.csv"
+        ],
+        "refuse_overwrite_default": true
+      }
+    },
+    "BASELINE_FREEZE": {
+      "mechanism": "sentinel + refuse-overwrite",
+      "sentinel_file": "BASELINE_FROZEN.txt",
+      "sentinel_location": "BASELINE_DIR",
+      "required_in_sentinel": [
+        "DATESTAMP",
+        "baseline_manifest_sha256",
+        "FIXED_WINDOWS.walk_forward",
+        "created_at_utc"
+      ]
+    },
+    "OPTIMIZATION_SCORE": {
+      "mode": "scalar_score",
+      "formula": "score = canonical_sharpe - lambda_dd * abs(canonical_max_drawdown_abs)",
+      "lambda_dd_default": 0.02,
+      "notes": [
+        "lambda_dd параметризуемый (CLI/конфиг), чтобы можно было менять компромисс Sharpe vs DD без переписывания кода.",
+        "Альтернатива (опционально): multi-objective сортировка (sharpe desc, abs(dd) asc, pnl desc)."
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "C01",
+      "title": "Зафиксировать источник TOP-10 (snapshot run_index)",
+      "acceptance": [
+        "Есть скрипт snapshot-а, который пишет JSON со ссылкой на исходный run_index и sha256 файла.",
+        "Snapshot включает: source_path, sha256, generated_at_utc, row_count, columns.",
+        "По умолчанию скрипт отказывается перезаписывать существующий snapshot без явного флага."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/snapshot_run_index.py` (CLI: --run-index, --output, --refuse-overwrite/--overwrite).",
+        "Считать sha256 исходного `TOP10_SOURCE.run_index_csv` и записать snapshot в `CLEAN_AGG_DIR/source_snapshot.json`.",
+        "Не читать/не печатать никакие env vars и секреты в stdout/stderr."
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "Селектор TOP-10 и baseline_manifest (детерминированно)",
+      "acceptance": [
+        "Создаётся `baseline_manifest.json` (или .csv) со списком ровно 10 записей, без ручных правок.",
+        "Каждая запись содержит: run_group, run_id, results_dir, config_path (если есть), sharpe/pnl/dd, trades/costs, equity_present, config_sha256.",
+        "Ранжирование: canonical_sharpe если есть, иначе `sharpe_ratio_abs`, иначе `sharpe_ratio_abs_raw`.",
+        "Если DD поле доступно, есть опциональный фильтр по abs(DD) через CLI-параметр.",
+        "Выход воспроизводим: повторный запуск на том же входе даёт идентичный manifest (порядок и значения)."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/select_top10.py` (вход: snapshot/run_index.csv; выход: `CLEAN_AGG_DIR/baseline_manifest.json`).",
+        "Реализовать устойчивую сортировку и tie-breakers (например: sharpe desc, abs(dd) asc, pnl desc, run_group+run_id asc).",
+        "Для каждой записи вычислить `config_sha256` по содержимому `config_path` (относительно app-root `coint4/`).",
+        "Проверять наличие `equity_curve.csv` и `strategy_metrics.csv` внутри `results_dir`; проставлять `equity_present` и `metrics_present` флаги."
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "Валидатор baseline_manifest + проверка FIXED_WINDOWS совместимости",
+      "acceptance": [
+        "Есть валидатор manifest-а, который проверяет обязательные поля и существование путей (где возможно).",
+        "Валидатор извлекает `walk_forward` из 10 конфигов и проверяет, что они совпадают с `FIXED_WINDOWS.walk_forward` (или печатает отчёт и падает).",
+        "Есть режим `--report-only`, который не падает, а печатает сводку отличий."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/validate_manifest.py` (CLI: --manifest, --fixed-windows-json/--use-definitions, --strict/--report-only).",
+        "Реализовать извлечение `walk_forward` из YAML без тяжёлых зависимостей (достаточно безопасного YAML loader, уже используемого в проекте).",
+        "Добавить в отчёт частоты окон среди TOP-10 (должно быть 10/10 для текущего набора)."
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "Инициализация clean-структуры (CLEAN_ROOT + aggregate)",
+      "acceptance": [
+        "Есть команда/скрипт, создающий директории `CLEAN_ROOT`, `BASELINE_DIR`, `OPT_DIR`, `CLEAN_AGG_DIR` без запуска прогонов.",
+        "Скрипт ничего не удаляет и не перезаписывает содержимое, если директории уже существуют (по умолчанию).",
+        "Добавляется короткий README (текстовый) с указанием FIXED_WINDOWS и правилами overwrite."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/init_clean_cycle.py` (CLI: --root/--datestamp, --refuse-overwrite).",
+        "Создать директории из `definitions` и записать `CLEAN_AGG_DIR/README_clean_cycle_top10.txt` (или .md) с краткими правилами.",
+        "Убедиться, что скрипт не трогает `coint4/artifacts/wfa/runs/**` (старую партию)."
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "Защита baseline от перезаписи (freeze sentinel + guard)",
+      "acceptance": [
+        "После freeze создаётся `BASELINE_DIR/BASELINE_FROZEN.txt` с required полями из `BASELINE_FREEZE.required_in_sentinel`.",
+        "Любой runner/скрипт, пишущий в `BASELINE_DIR`, по умолчанию отказывается работать при наличии sentinel (нужно явное --allow-overwrite).",
+        "Есть утилита для проверки целостности: сравнить sha256 manifest-а/конфигов с тем, что записано в sentinel."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/freeze_baseline.py` (CLI: --manifest, --baseline-dir, --refuse-overwrite).",
+        "Добавить общий guard-хелпер `coint4/scripts/optimization/clean_cycle_top10/baseline_guard.py`, который проверяет sentinel и отказывает без флага.",
+        "Добавить `verify_baseline_frozen.py` для проверки sha256 и соответствия `FIXED_WINDOWS`."
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "Gitignore для clean run артефактов (тяжёлые не в Git)",
+      "acceptance": [
+        "В `.gitignore` добавлены правила, исключающие `coint4/artifacts/wfa/runs_clean/**` (baseline/opt артефакты).",
+        "При этом маленькие файлы (manifest/rollup) живут в `CLEAN_AGG_DIR` и могут быть в Git.",
+        "Нет правил, которые случайно заденут старые `coint4/artifacts/wfa/runs/**` или `coint4/artifacts/wfa/aggregate/**`."
+      ],
+      "steps": [
+        "Обновить `.gitignore` в корне репо: игнорировать `coint4/artifacts/wfa/runs_clean/`.",
+        "Явно не игнорировать `coint4/artifacts/wfa/aggregate/clean_cycle_top10/` (если требуется исключение).",
+        "Добавить короткую заметку в `docs/clean_cycle_top10.md` о том, что в Git держим только маленькие индексы/manifest/docs."
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "Canonical metrics recompute (sharpe/dd/pnl) без перезаписи legacy файлов",
+      "acceptance": [
+        "Есть `coint4/scripts/optimization/recompute_canonical_metrics.py` (или аналог) с CLI: принять список run_dir или manifest.",
+        "Скрипт читает `equity_curve.csv`, пересчитывает canonical_sharpe/canonical_pnl_abs/canonical_max_drawdown_abs и пишет `canonical_metrics.json` рядом.",
+        "Sharpe считается через `coint4/src/coint2/core/sharpe.py` и фиксированную annualization (periods_per_year=35040 для 15min).",
+        "Скрипт не перезаписывает `strategy_metrics.csv` и по умолчанию отказывается перезаписывать существующий `canonical_metrics.json`."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/recompute_canonical_metrics.py` (CLI: --run-dir, --manifest, --bar-minutes/--periods-per-year, --refuse-overwrite/--overwrite).",
+        "Использовать `annualized_sharpe_ratio_from_equity` из `coint4/src/coint2/core/sharpe.py` и явно задавать `periods_per_year`.",
+        "Реализовать расчёт PnL и DD из equity curve (без pandas, чтобы зависимость была лёгкой).",
+        "Записывать метаданные расчёта (rf, ddof, periods_per_year, bar_minutes, computed_at_utc, source_paths) в `canonical_metrics.json`."
+      ]
+    },
+    {
+      "id": "C08",
+      "title": "Мини-валидатор raw vs canonical метрик (diff report)",
+      "acceptance": [
+        "Есть скрипт, который для набора run_dir печатает сравнение raw метрик (strategy_metrics.csv / run_index.csv) vs canonical_metrics.json.",
+        "Поддерживается выборка (например: top-5 + random-5) и пороги расхождений.",
+        "В режиме `--dry-run` скрипт только печатает, что будет сравнивать (без чтения больших деревьев)."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/compare_metrics.py` (CLI: --manifest/--runs-root/--run-dir, --sample, --thresholds, --dry-run).",
+        "Сравнить хотя бы: sharpe, pnl, dd (с указанием источников и формул).",
+        "Сделать вывод пригодным для копипасты в `docs/optimization_runs_YYYYMMDD.md`."
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "Clean rollup индекс (baseline + sweeps) на canonical_*",
+      "acceptance": [
+        "Есть генератор `rollup_clean_cycle_top10.csv` в `CLEAN_AGG_DIR`, который использует canonical_metrics.json как источник истины.",
+        "В rollup есть поля: run_name/run_id, config_path, config_sha256, results_dir, canonical_sharpe, canonical_pnl_abs, canonical_max_drawdown_abs, score, FIXED_WINDOWS fingerprint.",
+        "Rollup сортируется детерминированно и имеет явные фильтры (например: только completed, только canonical_present)."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/build_clean_rollup.py` (CLI: --baseline-manifest, --sweeps-manifest, --output-csv, --score-lambda-dd).",
+        "Реализовать score по `OPTIMIZATION_SCORE` и добавить multi-objective сортировку как опцию.",
+        "Выводить также короткий `rollup_clean_cycle_top10.md` (top-N таблица) в `CLEAN_AGG_DIR`."
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Генерация baseline-конфигов (10 yaml) с нормализацией окон",
+      "acceptance": [
+        "Создан каталог `coint4/configs/clean_cycle_top10/baseline/` с 10 YAML конфигами для baseline.",
+        "Каждый baseline YAML гарантированно содержит `walk_forward` поля ровно как в `FIXED_WINDOWS.walk_forward`.",
+        "Конфиги генерируются скриптом (не вручную), с `--dry-run` режимом.",
+        "Скрипт не меняет оригинальные конфиги старой партии."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/make_baseline_configs.py` (CLI: --manifest, --out-dir, --fixed-windows, --dry-run).",
+        "Логика: скопировать исходный config, затем патчить `walk_forward.*` в FIXED_WINDOWS и добавить минимальный `meta.clean_cycle_id` (опционально).",
+        "Именовать конфиги стабильно: `b01_<run_slug>.yaml` ... `b10_<run_slug>.yaml`."
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "Baseline run_queue (10 entries) для совместимости с queue/watcher",
+      "acceptance": [
+        "Создан `CLEAN_AGG_DIR/baseline_run_queue.csv` с 10 записями (config_path, results_dir, status).",
+        "Все results_dir направлены внутрь `BASELINE_DIR` и не пересекаются между собой.",
+        "Статус по умолчанию `planned` и совместим с `coint4/scripts/optimization/run_wfa_queue.py`.",
+        "Есть `--dry-run` режим генерации очереди."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/build_baseline_queue.py` (CLI: --configs-dir, --baseline-dir, --output, --dry-run).",
+        "Результаты именовать стабильно: `BASELINE_DIR/b01_<slug>/` ... `b10_<slug>/`.",
+        "Добавить проверку guardrail: `walk_forward.max_steps` явно задан и <=5."
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "Runner baseline/sweeps с dry-run и отказом от overwrite",
+      "acceptance": [
+        "Есть `coint4/scripts/vps/run_clean_batch.py`, который принимает queue/manifest и умеет `--dry-run` без запуска WFA.",
+        "В режиме без dry-run runner запускает по очереди, пишет логи в results_dir, обновляет status в queue (planned->running->completed/stalled).",
+        "Для baseline по умолчанию включён `--refuse-overwrite` и учитывается `BASELINE_FROZEN.txt`.",
+        "Runner не использует старые outputs как источник истины: всегда запускает по YAML + новый results_dir."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/vps/run_clean_batch.py` (CLI: --queue, --runner, --project-root, --dry-run, --refuse-overwrite/--allow-overwrite).",
+        "По умолчанию использовать runner `coint4/run_wfa_fullcpu.sh` и передавать ему `<config> <results_dir>`.",
+        "Интегрировать `baseline_guard` (из C05), чтобы baseline нельзя было перезаписать случайно.",
+        "Добавить в dry-run печать команд и целевых путей, но без запуска."
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "Определить и зафиксировать схему оптимизации (score и фильтры)",
+      "acceptance": [
+        "В коде или в `docs/clean_cycle_top10.md` зафиксированы: формула score, lambda_dd (default), и правила сортировки/фильтрации.",
+        "Score вычисляется строго из canonical_* метрик (не из старой партии).",
+        "Есть CLI-параметр для изменения lambda_dd без правки кода."
+      ],
+      "steps": [
+        "Добавить небольшой модуль `coint4/scripts/optimization/clean_cycle_top10/scoring.py` или реализовать score внутри `build_clean_rollup.py` (C09) с параметром `--lambda-dd`.",
+        "Зафиксировать в документации, что оптимизация смотрит только на baseline+clean rollup.",
+        "Добавить unit-тест на score (минимальный, без данных), если тестовая инфраструктура уже есть."
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "Генератор sweep-конфигов (YAML) только от baseline",
+      "acceptance": [
+        "Есть каталог `coint4/configs/clean_cycle_top10/sweeps/` и генератор, создающий sweep YAML-ы из baseline (например, от лучшего baseline).",
+        "Все sweep-конфиги принудительно используют `FIXED_WINDOWS.walk_forward`.",
+        "Есть `sweeps_manifest.json` (или csv) с перечислением sweep-конфигов и их параметров (для воспроизводимости).",
+        "Генерация не требует тяжёлых вычислений и имеет `--dry-run`."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/make_sweep_configs.py` (CLI: --baseline-config, --sweep-spec, --out-dir, --manifest-out, --dry-run).",
+        "Использовать существующий `coint4/scripts/optimization/generate_configs.py` как библиотеку/подпроцесс, чтобы не переписывать grid logic.",
+        "Поддержать zip-ключи для связанных параметров (если есть даты/окна, не делать декартово произведение)."
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "Sweep run_queue + интеграция с runner (OPT_DIR)",
+      "acceptance": [
+        "Создан `CLEAN_AGG_DIR/sweeps_run_queue.csv` для sweep-конфигов (planned по умолчанию).",
+        "Все results_dir направлены внутрь `OPT_DIR` и не пересекаются между собой.",
+        "Runner (C12) умеет запускать sweeps по этой очереди и не затрагивает baseline freeze."
+      ],
+      "steps": [
+        "Добавить `coint4/scripts/optimization/clean_cycle_top10/build_sweeps_queue.py` (CLI: --sweeps-manifest/--configs-dir, --opt-dir, --output, --dry-run).",
+        "Стабильно именовать results_dir: `OPT_DIR/s01_<slug>/` ...",
+        "Добавить проверку, что sweep configs имеют FIXED_WINDOWS и max_steps<=5."
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "Агрегатор clean результатов: rollup_clean_cycle + отчёт",
+      "acceptance": [
+        "Генерируется `CLEAN_AGG_DIR/rollup_clean_cycle_top10.csv` и `CLEAN_AGG_DIR/rollup_clean_cycle_top10.md`.",
+        "В отчёте явно указано: какие окна, какая формула Sharpe, какие файлы считаются source-of-truth (canonical_metrics.json).",
+        "Агрегатор не читает старые `artifacts/wfa/runs/**` как источник метрик (только для выбора initial TOP-10 через manifest)."
+      ],
+      "steps": [
+        "Расширить/дополнить `build_clean_rollup.py` (C09) генерацией markdown отчёта и явными фильтрами (completed/canonical_present).",
+        "Сделать вывод пригодным для быстрых сравнений baseline vs sweeps (top-N, best-by-score, best-by-sharpe, best-by-dd).",
+        "Добавить в rollup колонку `source=baseline|sweep`."
+      ]
+    },
+    {
+      "id": "C17",
+      "title": "Документация clean цикла и запрет “смотреть на старую партию”",
+      "acceptance": [
+        "Создан `docs/clean_cycle_top10.md` с явными путями (CLEAN_ROOT/BASELINE_DIR/OPT_DIR/CLEAN_AGG_DIR) и `FIXED_WINDOWS`.",
+        "В документе явно прописано: старая партия используется только для выбора initial TOP-10, дальше оптимизация опирается только на baseline+clean.",
+        "Есть раздел: как запускать heavy runs на VPS 85.198.90.128 через `coint4/scripts/remote/run_server_job.sh` и выключать VPS после (STOP_AFTER=1)."
+      ],
+      "steps": [
+        "Добавить `docs/clean_cycle_top10.md` с описанием процесса A–F, включая freeze и canonical metrics.",
+        "Добавить примеры команд только в виде dry-run/подготовки + отдельный блок 'Команды запуска (после подготовки)' без выполнения в PR.",
+        "Синхронизировать терминологию: baseline_manifest, canonical_metrics.json, rollup_clean_cycle."
+      ]
+    },
+    {
+      "id": "C18",
+      "title": "Обновить optimization_state и дневник прогонов (без запусков)",
+      "acceptance": [
+        "Обновлён `docs/optimization_state.md`: добавлен раздел Clean Cycle TOP-10 с текущим статусом и следующими шагами.",
+        "Создан/дополнен `docs/optimization_runs_20260215.md` как дневник, фиксирующий план и точки контроля (без результатов прогонов).",
+        "Документы не содержат секретов и не ссылаются на старую партию как на источник истины для метрик."
+      ],
+      "steps": [
+        "Добавить краткий roadmap в `docs/optimization_state.md` (что уже подготовлено, что запускать на VPS, что агрегировать).",
+        "Создать `docs/optimization_runs_20260215.md` с шаблоном записи прогонов (даты, команды, группы, замечания).",
+        "Вставить ссылку на `docs/clean_cycle_top10.md` как единую точку описания clean цикла."
+      ]
+    }
+  ]
+}

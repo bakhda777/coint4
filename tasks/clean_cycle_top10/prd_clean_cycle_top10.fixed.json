@@ -1,0 +1,189 @@
+{
+  "name": "clean_cycle_top10",
+  "branchName": "feature/clean_cycle_top10",
+  "userStories": [
+    {
+      "id": "C01",
+      "title": "Зафиксировать источник TOP-10 (snapshot run_index)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C02",
+      "title": "Селектор TOP-10 и baseline_manifest (детерминированно)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C03",
+      "title": "Валидатор baseline_manifest + проверка FIXED_WINDOWS совместимости",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C04",
+      "title": "Инициализация clean-структуры (CLEAN_ROOT + aggregate)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C05",
+      "title": "Защита baseline от перезаписи (freeze sentinel + guard)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C06",
+      "title": "Gitignore для clean run артефактов (тяжёлые не в Git)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C07",
+      "title": "Canonical metrics recompute (sharpe/dd/pnl) без перезаписи legacy файлов",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C08",
+      "title": "Мини-валидатор raw vs canonical метрик (diff report)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C09",
+      "title": "Clean rollup индекс (baseline + sweeps) на canonical_*",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C10",
+      "title": "Генерация baseline-конфигов (10 yaml) с нормализацией окон",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C11",
+      "title": "Baseline run_queue (10 entries) для совместимости с queue/watcher",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C12",
+      "title": "Runner baseline/sweeps с dry-run и отказом от overwrite",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C13",
+      "title": "Определить и зафиксировать схему оптимизации (score и фильтры)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C14",
+      "title": "Генератор sweep-конфигов (YAML) только от baseline",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C15",
+      "title": "Sweep run_queue + интеграция с runner (OPT_DIR)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C16",
+      "title": "Агрегатор clean результатов: rollup_clean_cycle + отчёт",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C17",
+      "title": "Документация clean цикла и запрет “смотреть на старую партию”",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "C18",
+      "title": "Обновить optimization_state и дневник прогонов (без запусков)",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-02-15T14:26:12.992Z"
+  }
+}

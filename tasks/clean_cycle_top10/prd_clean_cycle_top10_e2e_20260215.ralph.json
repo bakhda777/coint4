@@ -1,0 +1,214 @@
+{
+  "name": "clean_cycle_top10: первый end-to-end clean цикл (baseline -> sweeps -> canonical rollup)",
+  "description": "Цель: сделать первый \"боевой\" clean-цикл TOP-10 и зафиксировать его как эталонный процесс.\n\nИнварианты:\n- Старая партия используется только для initial TOP-10 (snapshot run_index + baseline_manifest).\n- Дальше решения принимаются только по clean-прогонам (runs_clean) и canonical_metrics.json.\n- Тяжёлые прогоны НЕ выполнять на этом сервере; heavy execution только на VPS 85.198.90.128 через scripts/remote/run_server_job.sh (STOP_AFTER=1).\n- В Git не коммитим тяжёлые артефакты из artifacts/wfa/runs_clean/**; в Git остаются только configs/**, aggregate/** (манифесты/очереди/rollup) и docs/**.\n\nИсточник команд и правил: docs/clean_cycle_top10.md + coint4/scripts/optimization/clean_cycle_top10/definitions.py.",
+  "branchName": "feature/clean_cycle_top10_e2e_20260215",
+  "userStories": [
+    {
+      "id": "E2E01",
+      "title": "Локальный preflight: make ci и sanity-check ограничений",
+      "description": "Запускать из root репозитория; тяжёлые прогоны не запускать.",
+      "acceptanceCriteria": [
+        "Команда `make ci` проходит (lint + test).",
+        "Не выполнялись WFA/бэктесты/прочие тяжёлые прогоны локально."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "local",
+        "ci"
+      ],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "E2E02",
+      "title": "Зафиксировать вход: snapshot run_index + baseline_manifest + validate_manifest",
+      "description": "Запускать из app-root `coint4/`.\n\nКоманды (пример):\n- snapshot: scripts/optimization/clean_cycle_top10/snapshot_run_index.py\n- select TOP-10: scripts/optimization/clean_cycle_top10/select_top10.py\n- validate: scripts/optimization/clean_cycle_top10/validate_manifest.py --use-definitions",
+      "acceptanceCriteria": [
+        "Создан `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/run_index_snapshot.json` (sha256 + shape).",
+        "Создан `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_manifest.json` (ровно 10 записей, детерминированный порядок).",
+        "validate_manifest проходит в strict режиме и подтверждает совместимость walk_forward с FIXED_WINDOWS."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "local",
+        "freeze-input",
+        "baseline"
+      ],
+      "dependsOn": [
+        "E2E01"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "E2E03",
+      "title": "Подготовка baseline: init_clean_cycle + baseline configs + baseline_run_queue",
+      "description": "Запускать из app-root `coint4/`. baseline_run_queue.csv строим из baseline конфигов, results_dir направляем в BASELINE_DIR (runs_clean).",
+      "acceptanceCriteria": [
+        "init_clean_cycle создал `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/{baseline_top10,opt_sweeps}` и README в `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/README_clean_cycle_top10.md`.",
+        "Сгенерированы 10 baseline YAML в `coint4/configs/clean_cycle_top10/baseline/` (walk_forward нормализован под FIXED_WINDOWS).",
+        "Создан `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/baseline_run_queue.csv` (10 строк, status=planned, results_dir под runs_clean/.../baseline_top10)."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "local",
+        "baseline",
+        "queue"
+      ],
+      "dependsOn": [
+        "E2E02"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "E2E04",
+      "title": "Git-подготовка для SYNC_UP=1: коммит только маленьких артефактов baseline",
+      "description": "Цель: чтобы baseline очередь/конфиги/манифесты гарантированно уехали на VPS (SYNC_UP=1 rsync’ит только tracked файлы).",
+      "acceptanceCriteria": [
+        "В коммит попали только: `coint4/configs/clean_cycle_top10/**`, `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/**`, `docs/**` (если обновлялись).",
+        "Тяжёлые каталоги `coint4/artifacts/wfa/runs_clean/**` не staged и не коммитятся.",
+        "`git status --porcelain` чистый перед запуском на VPS."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "git",
+        "sync-up"
+      ],
+      "dependsOn": [
+        "E2E03"
+      ]
+    },
+    {
+      "id": "E2E05",
+      "title": "VPS baseline run: run_server_job.sh + watch_wfa_queue.sh (STOP_AFTER=1) + sync_back",
+      "description": "Heavy execution. Запускать baseline очередь на VPS 85.198.90.128 через `coint4/scripts/remote/run_server_job.sh`.\n\nРекомендации:\n- Если локальные изменения ещё не в origin: `SYNC_UP=1`.\n- В конце VPS должен выключиться (STOP_AFTER=1 default).",
+      "acceptanceCriteria": [
+        "baseline_run_queue.csv на VPS отработал до конца: все planned -> completed (или зафиксированы stalled с причиной).",
+        "В `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/**` появились результаты (strategy_metrics.csv и equity_curve.csv для completed).",
+        "После завершения job VPS выключен (STOP_AFTER=1): SSH перестаёт отвечать."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "vps",
+        "baseline",
+        "heavy"
+      ],
+      "dependsOn": [
+        "E2E04"
+      ]
+    },
+    {
+      "id": "E2E06",
+      "title": "Baseline post-processing (локально): canonical metrics + freeze + baseline rollup + docs",
+      "description": "После sync_back.\n\nДействия:\n- пересчитать canonical_metrics.json из equity_curve.csv для baseline results_dir;\n- при необходимости синхронизировать статусы в baseline_run_queue.csv;\n- заморозить baseline (freeze_baseline.py) и проверить sentinel (verify_baseline_frozen.py);\n- построить baseline-only rollup_clean_cycle_top10 (build_clean_rollup.py);\n- сравнить raw vs canonical (compare_metrics.py);\n- обновить docs/optimization_state.md и docs/optimization_runs_20260215.md.",
+      "acceptanceCriteria": [
+        "Для всех completed baseline runs существует `canonical_metrics.json` (legacy файлы не модифицировались).",
+        "Создан `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/baseline_top10/BASELINE_FROZEN.txt` и verify_baseline_frozen проходит.",
+        "Создан/обновлён baseline rollup: `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)` (baseline без sweeps допускается).",
+        "Обновлены `docs/optimization_state.md` и `docs/optimization_runs_20260215.md` (зафиксированы итоги baseline)."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "local",
+        "metrics",
+        "freeze",
+        "rollup",
+        "docs"
+      ],
+      "dependsOn": [
+        "E2E05"
+      ]
+    },
+    {
+      "id": "E2E07",
+      "title": "Подготовка sweeps: выбрать baseline winner -> make_sweep_configs -> sweeps_run_queue + коммит",
+      "description": "Выбор baseline winner делаем только по clean rollup (canonical_*).\n\nДействия:\n- выбрать baseline конфиг-победитель (по rollup_clean_cycle_top10);\n- сгенерировать sweep YAML + sweeps_manifest.json (make_sweep_configs.py);\n- собрать sweeps_run_queue.csv (build_sweeps_queue.py) с results_dir в OPT_DIR;\n- закоммитить только маленькие артефакты (configs + aggregate + docs при необходимости).",
+      "acceptanceCriteria": [
+        "Сгенерированы sweep-конфиги в `coint4/configs/clean_cycle_top10/sweeps/**` и `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/sweeps_manifest.json`.",
+        "Создан `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/sweeps_run_queue.csv` (status=planned, results_dir под runs_clean/.../opt_sweeps).",
+        "Коммит содержит только configs/aggregate/docs; нет `coint4/artifacts/wfa/runs_clean/**`."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "local",
+        "sweeps",
+        "queue",
+        "git"
+      ],
+      "dependsOn": [
+        "E2E06"
+      ]
+    },
+    {
+      "id": "E2E08",
+      "title": "VPS sweeps run: run_server_job.sh + watch_wfa_queue.sh (STOP_AFTER=1) + sync_back",
+      "description": "Heavy execution. Запускать sweeps очередь на VPS 85.198.90.128 через `coint4/scripts/remote/run_server_job.sh`.",
+      "acceptanceCriteria": [
+        "sweeps_run_queue.csv на VPS отработал до конца: planned -> completed (или зафиксированы stalled).",
+        "В `coint4/artifacts/wfa/runs_clean/20260215_clean_top10/opt_sweeps/**` появились результаты (strategy_metrics.csv и equity_curve.csv для completed).",
+        "После завершения job VPS выключен (STOP_AFTER=1): SSH перестаёт отвечать."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "vps",
+        "sweeps",
+        "heavy"
+      ],
+      "dependsOn": [
+        "E2E07"
+      ]
+    },
+    {
+      "id": "E2E09",
+      "title": "Sweeps post-processing (локально): canonical metrics + финальный clean rollup + docs",
+      "description": "После sync_back.\n\nДействия:\n- пересчитать canonical_metrics.json для sweeps results_dir;\n- при необходимости sync_queue_status по sweeps_run_queue.csv;\n- собрать финальный rollup baseline+sweeps (build_clean_rollup.py);\n- сравнить raw vs canonical (compare_metrics.py);\n- обновить `docs/optimization_state.md` и дневник `docs/optimization_runs_20260215.md` итогами цикла.",
+      "acceptanceCriteria": [
+        "Для всех completed sweeps runs существует `canonical_metrics.json`.",
+        "Обновлены `coint4/artifacts/wfa/aggregate/clean_cycle_top10/20260215_clean_top10/rollup_clean_cycle_top10.(csv|md)` (baseline + sweeps, сортировка по score).",
+        "Обновлены `docs/optimization_state.md` и `docs/optimization_runs_20260215.md` (итоги baseline + sweeps, выбран TOP-N)."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "local",
+        "metrics",
+        "rollup",
+        "docs"
+      ],
+      "dependsOn": [
+        "E2E08"
+      ]
+    },
+    {
+      "id": "E2E10",
+      "title": "Финальный чек-лист воспроизводимости clean-цикла",
+      "description": "Проверить, что цикл можно повторить (SYNC_UP=1 + VPS run + sync_back) и что Git не содержит тяжёлых артефактов.",
+      "acceptanceCriteria": [
+        "В Git зафиксированы только маленькие артефакты: snapshot/manifest/queues/rollup + configs + docs.",
+        "Clean rollup опирается только на `runs_clean/**` и `canonical_metrics.json` (без использования старой партии как источника истины).",
+        "baseline guard/freeze реально предотвращает перезапись baseline по умолчанию."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "checklist"
+      ],
+      "dependsOn": [
+        "E2E09"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-15T14:35:37Z",
+    "updatedAt": "2026-02-15T15:18:06.014Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/clean_cycle_top10/prd_clean_cycle_top10.json"
+  }
+}

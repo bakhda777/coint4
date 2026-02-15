@@ -7,6 +7,54 @@
 - Рабочее приложение (Poetry/CLI/скрипты): `coint4/` (то есть `/home/claudeuser/coint4/coint4`)
 - Документация: `docs/` (в корне репо). Для удобства в app-root есть ссылка `coint4/docs -> ../docs`.
 
+## Ralph TUI: PRD (JSON tracker)
+`ralph tui` с `tracker=json` читает PRD из файла JSON (по умолчанию: `.ralph-tui/prd.json`, см. `.ralph-tui/config.toml:trackerOptions.path`). Этот JSON должен быть в **ralph-формате**, иначе UI/трекер не сможет загрузить задачи.
+
+### Канонический формат PRD JSON
+Top-level:
+- `name` (string) — название эпика/задачи.
+- `description` (string, optional) — короткое описание/контекст.
+- `branchName` (string) — ветка (например, `feature/<slug>` или `main`).
+- `userStories` (array) — список задач, которые показывает `ralph tui`.
+- `metadata` (object, optional) — произвольные метаданные; обычно `createdAt/updatedAt/version/sourcePrd`.
+
+`userStories[]`:
+- `id` (string) — уникальный ID (например, `C01` или `US-001`).
+- `title` (string) — заголовок.
+- `description` (string) — короткое описание.
+- `acceptanceCriteria` (array[string]) — критерии приёмки (можно `[]`).
+- `priority` (int) — чем меньше, тем выше приоритет (обычно 1..5).
+- `passes` (bool) — `true` = задача считается выполненной в трекере.
+- `labels` (array[string], optional) — теги (можно `[]`).
+- `dependsOn` (array[string]) — зависимости по `id` (можно `[]`).
+- `completionNotes` (string, optional) — заметка по факту выполнения.
+
+Правило: если нужен “богатый” PRD со `constraints/definitions/steps`, хранить его отдельным файлом (например, `prd_<name>.spec.json` или `prd_<name>.md`), а PRD для `ralph tui` держать в ralph-формате.
+
+Минимальный пример:
+```json
+{
+  "name": "example_epic",
+  "description": "Короткий контекст (опционально).",
+  "branchName": "feature/example_epic",
+  "userStories": [
+    {
+      "id": "C01",
+      "title": "Сделать X",
+      "description": "",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": false,
+      "labels": [],
+      "dependsOn": []
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-02-15T00:00:00.000Z"
+  }
+}
+```
+
 ## Единые команды (проверки)
 Из корня репозитория:
 - `make setup` (требует Poetry; ставит зависимости в `coint4/.venv`)
