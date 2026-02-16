@@ -392,6 +392,7 @@ def _generate_sweep_queue(
     configs_dir_rel: str,
     queue_dir_rel: str,
     runs_dir_rel: str,
+    seen_signatures: Optional[set[str]] = None,
 ) -> Path:
     sys.path.insert(0, str(app_root / "src"))
     from coint2.ops.run_queue import RunQueueEntry, write_run_queue  # type: ignore
@@ -407,6 +408,7 @@ def _generate_sweep_queue(
     queue_dir = app_root / queue_dir_rel / run_group
 
     entries: List[RunQueueEntry] = []
+    seen = set(seen_signatures or set())
 
     base_name = base_config_path.name
     for start_date, end_date in windows:
@@ -419,13 +421,32 @@ def _generate_sweep_queue(
             set_nested(holdout_cfg, "walk_forward.start_date", start_date)
             set_nested(holdout_cfg, "walk_forward.end_date", end_date)
             set_nested(holdout_cfg, knob_key, value)
+            if not _is_valid_config_combo(holdout_cfg):
+                continue
+            holdout_sig = _config_signature(holdout_cfg)
+            if holdout_sig in seen:
+                continue
 
             holdout_name = _build_filename(base_name, sweep_tags, "holdout")
             holdout_yaml = configs_dir / f"{holdout_name}.yaml"
             holdout_results_dir = f"{runs_dir_rel}/{run_group}/{holdout_name}"
 
+            stress_cfg = json.loads(json.dumps(holdout_cfg))
+            for skey, sval in STRESS_OVERRIDES.items():
+                set_nested(stress_cfg, skey, sval)
+            if not _is_valid_config_combo(stress_cfg):
+                continue
+            stress_sig = _config_signature(stress_cfg)
+            if stress_sig in seen:
+                continue
+            stress_name = _build_filename(base_name, sweep_tags, "stress")
+            stress_yaml = configs_dir / f"{stress_name}.yaml"
+            stress_results_dir = f"{runs_dir_rel}/{run_group}/{stress_name}"
+
             configs_dir.mkdir(parents=True, exist_ok=True)
             holdout_yaml.write_text(yaml.dump(holdout_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+            stress_yaml.write_text(yaml.dump(stress_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+
             entries.append(
                 RunQueueEntry(
                     config_path=str(holdout_yaml.relative_to(app_root)),
@@ -433,14 +454,6 @@ def _generate_sweep_queue(
                     status="planned",
                 )
             )
-
-            stress_cfg = json.loads(json.dumps(holdout_cfg))
-            for skey, sval in STRESS_OVERRIDES.items():
-                set_nested(stress_cfg, skey, sval)
-            stress_name = _build_filename(base_name, sweep_tags, "stress")
-            stress_yaml = configs_dir / f"{stress_name}.yaml"
-            stress_results_dir = f"{runs_dir_rel}/{run_group}/{stress_name}"
-            stress_yaml.write_text(yaml.dump(stress_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
             entries.append(
                 RunQueueEntry(
                     config_path=str(stress_yaml.relative_to(app_root)),
@@ -449,7 +462,15 @@ def _generate_sweep_queue(
                 )
             )
 
+            seen.add(holdout_sig)
+            seen.add(stress_sig)
+
     queue_path = queue_dir / "run_queue.csv"
+    if not entries:
+        raise ValueError(
+            f"Queue generation produced 0 entries for run_group={run_group} "
+            "(all candidates were duplicates or invalid combinations)."
+        )
     write_run_queue(queue_path, entries)
     return queue_path
 
@@ -497,6 +518,125 @@ def _candidate_values(
     # Stable de-dup with rounding to avoid float jitter in filenames.
     rounded = [round(v, 10) for v in values]
     return _unique(rounded)
+
+
+def _safe_knob_index(raw: Any, *, knobs_count: int, default: int = 0) -> int:
+    if knobs_count <= 0:
+        return 0
+    try:
+        idx = int(raw)
+    except (TypeError, ValueError):
+        idx = int(default)
+    if idx < 0 or idx >= knobs_count:
+        return max(0, min(int(default), knobs_count - 1))
+    return idx
+
+
+def _next_alternative_knob_index(*, knobs_count: int, exclude_index: Optional[int], start_index: int = 0) -> int:
+    if knobs_count <= 0:
+        return 0
+    if knobs_count == 1:
+        return 0
+    start = int(start_index) % knobs_count
+    for shift in range(knobs_count):
+        idx = (start + shift) % knobs_count
+        if exclude_index is not None and idx == int(exclude_index):
+            continue
+        return idx
+    return 0
+
+
+def _branch_candidate_offsets(*, candidates: List[int], branch: str) -> List[int]:
+    base = sorted(_unique(int(x) for x in candidates))
+    if not base:
+        return []
+    if branch != "local_refine":
+        return base
+    if len(base) <= 3:
+        return base
+    center_idx = min(range(len(base)), key=lambda i: abs(base[i]))
+    left_idx = max(0, center_idx - 1)
+    right_idx = min(len(base) - 1, center_idx + 1)
+    return _unique([base[left_idx], base[center_idx], base[right_idx]])
+
+
+def _config_signature(cfg: Dict[str, Any]) -> str:
+    return json.dumps(cfg, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _get_optional_float(cfg: Dict[str, Any], dotted_key: str) -> Optional[float]:
+    try:
+        value = get_nested(cfg, dotted_key)
+    except KeyError:
+        return None
+    return _to_float(value)
+
+
+def _is_valid_config_combo(cfg: Dict[str, Any]) -> bool:
+    try:
+        start = str(get_nested(cfg, "walk_forward.start_date"))
+        end = str(get_nested(cfg, "walk_forward.end_date"))
+        if start > end:
+            return False
+    except KeyError:
+        pass
+
+    risk = _get_optional_float(cfg, "portfolio.risk_per_position_pct")
+    if risk is not None and not (0.0 < float(risk) <= 1.0):
+        return False
+
+    max_var = _get_optional_float(cfg, "backtest.max_var_multiplier")
+    if max_var is not None and float(max_var) < 1.0:
+        return False
+
+    stop_usd = _get_optional_float(cfg, "backtest.pair_stop_loss_usd")
+    if stop_usd is not None and float(stop_usd) <= 0.0:
+        return False
+
+    daily_stop = _get_optional_float(cfg, "backtest.portfolio_daily_stop_pct")
+    if daily_stop is not None and not (0.0 < float(daily_stop) < 1.0):
+        return False
+
+    z_entry = _get_optional_float(cfg, "backtest.zscore_entry_threshold")
+    if z_entry is not None and float(z_entry) <= 0.0:
+        return False
+    z_exit = _get_optional_float(cfg, "backtest.zscore_exit")
+    if z_exit is not None and float(z_exit) < 0.0:
+        return False
+    if z_entry is not None and z_exit is not None and abs(float(z_exit)) > abs(float(z_entry)):
+        return False
+
+    return True
+
+
+def _collect_seen_config_signatures(
+    *,
+    app_root: Path,
+    queue_dir_rel: str,
+    run_group_prefix: str,
+    exclude_run_group: Optional[str] = None,
+) -> set[str]:
+    queue_root = app_root / queue_dir_rel
+    if not queue_root.exists():
+        return set()
+
+    seen: set[str] = set()
+    pattern = f"{run_group_prefix}_r*_*"
+    for queue_path in sorted(queue_root.glob(f"{pattern}/run_queue.csv")):
+        run_group = queue_path.parent.name
+        if exclude_run_group and run_group == exclude_run_group:
+            continue
+        for cfg_rel in _queue_config_paths(queue_path):
+            cfg_path = _resolve_under_root(cfg_rel, root=app_root)
+            if not cfg_path.exists():
+                continue
+            try:
+                payload = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                seen.add(_config_signature(payload))
+    return seen
 
 
 def _ensure_tracked_for_sync_up(
@@ -836,6 +976,83 @@ def _render_final_report(*, state: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _derive_next_queue_plan(
+    *,
+    next_round: int,
+    knobs_count: int,
+    previous_result: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if knobs_count <= 0:
+        return {
+            "round": int(next_round),
+            "branch": "fallback_knob",
+            "knob_index": 0,
+            "reason": "no_knobs_configured",
+        }
+
+    prev = previous_result if isinstance(previous_result, dict) else {}
+    prev_round = int(prev.get("round") or 0)
+    prev_improved = bool(prev.get("improved") or False)
+    prev_knob = _safe_knob_index(prev.get("knob_index"), knobs_count=knobs_count, default=0)
+
+    if int(next_round) <= 1:
+        return {
+            "round": int(next_round),
+            "branch": "fallback_knob",
+            "knob_index": 0,
+            "reason": "initial_round",
+        }
+
+    if prev_round == int(next_round) - 1 and prev_improved:
+        return {
+            "round": int(next_round),
+            "branch": "local_refine",
+            "knob_index": prev_knob,
+            "reason": "winner_improved_previous_round",
+        }
+
+    alt_idx = _next_alternative_knob_index(
+        knobs_count=knobs_count,
+        exclude_index=prev_knob if prev_round == int(next_round) - 1 else None,
+        start_index=prev_knob + 1 if prev_round == int(next_round) - 1 else 0,
+    )
+    return {
+        "round": int(next_round),
+        "branch": "fallback_knob",
+        "knob_index": int(alt_idx),
+        "reason": "no_improvement_or_no_winner_previous_round",
+    }
+
+
+def _normalize_queue_plan(
+    *,
+    raw_plan: Any,
+    current_round: int,
+    knobs_count: int,
+    fallback_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    plan = raw_plan if isinstance(raw_plan, dict) else {}
+    if int(plan.get("round") or -1) != int(current_round):
+        plan = fallback_plan
+
+    branch = str(plan.get("branch") or "").strip()
+    if branch not in {"local_refine", "fallback_knob"}:
+        branch = str(fallback_plan.get("branch") or "fallback_knob")
+
+    knob_index = _safe_knob_index(
+        plan.get("knob_index"),
+        knobs_count=knobs_count,
+        default=int(fallback_plan.get("knob_index") or 0),
+    )
+    reason = str(plan.get("reason") or fallback_plan.get("reason") or "").strip() or "unspecified"
+    return {
+        "round": int(current_round),
+        "branch": branch,
+        "knob_index": int(knob_index),
+        "reason": reason,
+    }
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Budget1000 autopilot: VPS WFA sweeps + robust selection")
     parser.add_argument(
@@ -944,6 +1161,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "done": False,
             "final_report": None,
             "round_context": None,
+            "next_queue_plan": None,
+            "last_round_result": None,
         }
         _save_state(state_path, state)
 
@@ -959,15 +1178,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     current_round = int(state.get("round") or 1)
-    knob_index = int(state.get("knob_index") or 0)
 
     env_py = os.environ.copy()
     env_py["PYTHONPATH"] = str(app_root / "src")
 
     rollup_run_index = app_root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
 
-    improved_in_round = False
     while current_round <= max_rounds:
+        improved_in_round = False
         round_context = state.get("round_context")
         if not isinstance(round_context, dict) or int(round_context.get("round") or -1) != current_round:
             round_context = {
@@ -979,8 +1197,48 @@ def main(argv: Optional[List[str]] = None) -> int:
             _save_state(state_path, state)
         round_best_before = _compact_best((round_context or {}).get("best_before_round"))
 
-        while knob_index < len(knobs):
-            knob = knobs[knob_index]
+        fallback_plan = _derive_next_queue_plan(
+            next_round=current_round,
+            knobs_count=len(knobs),
+            previous_result=state.get("last_round_result") if isinstance(state.get("last_round_result"), dict) else None,
+        )
+        round_plan = _normalize_queue_plan(
+            raw_plan=state.get("next_queue_plan"),
+            current_round=current_round,
+            knobs_count=len(knobs),
+            fallback_plan=fallback_plan,
+        )
+        state["next_queue_plan"] = round_plan
+        state["knob_index"] = int(round_plan.get("knob_index") or 0)
+        _save_state(state_path, state)
+
+        attempt_specs: List[Tuple[int, str, str]] = [
+            (
+                int(round_plan.get("knob_index") or 0),
+                str(round_plan.get("branch") or "fallback_knob"),
+                str(round_plan.get("reason") or "unspecified"),
+            )
+        ]
+        if str(round_plan.get("branch") or "") == "local_refine" and len(knobs) > 1:
+            alt_idx = _next_alternative_knob_index(
+                knobs_count=len(knobs),
+                exclude_index=int(round_plan.get("knob_index") or 0),
+                start_index=int(round_plan.get("knob_index") or 0) + 1,
+            )
+            if alt_idx != int(round_plan.get("knob_index") or 0):
+                attempt_specs.append((int(alt_idx), "fallback_knob", "fallback_after_local_refine_empty"))
+
+        selection: Optional[SelectionResult] = None
+        run_group = ""
+        queue_path: Optional[Path] = None
+        used_knob_index = int(round_plan.get("knob_index") or 0)
+        used_knob_key = ""
+        used_branch = str(round_plan.get("branch") or "fallback_knob")
+        used_plan_reason = str(round_plan.get("reason") or "unspecified")
+        last_queue_error: Optional[str] = None
+
+        for attempt_knob_index, attempt_branch, attempt_reason in attempt_specs:
+            knob = knobs[attempt_knob_index]
             if not isinstance(knob, dict):
                 raise SystemExit("Each knob must be a mapping with key/op/step/candidates")
             knob_key = str(knob.get("key") or "").strip()
@@ -989,7 +1247,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             candidates = knob.get("candidates") or []
             if not knob_key or op not in {"add", "mul"} or step <= 0 or not isinstance(candidates, list):
                 raise SystemExit(f"Invalid knob definition: {knob}")
+
             candidates_int = [int(x) for x in candidates]
+            effective_candidates = _branch_candidate_offsets(candidates=candidates_int, branch=attempt_branch)
+            if not effective_candidates:
+                last_queue_error = (
+                    f"knob={knob_key}: no effective candidates after branch={attempt_branch} normalization"
+                )
+                continue
+
             min_value = _to_float(knob.get("min")) if "min" in knob else None
             max_value = _to_float(knob.get("max")) if "max" in knob else None
 
@@ -1005,10 +1271,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 current=current_value,
                 op=op,
                 step=step,
-                candidates=candidates_int,
+                candidates=effective_candidates,
                 min_value=min_value,
                 max_value=max_value,
             )
+            if not values:
+                last_queue_error = f"knob={knob_key}: value grid is empty after min/max clipping"
+                continue
 
             knob_slug = short_key_for_tag(knob_key)
             run_group = f"{run_group_prefix}_r{current_round:02d}_{knob_slug}"
@@ -1018,11 +1287,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             expected_spec = {
                 "run_group": run_group,
                 "base_config_path": base_config_path,
+                "queue_branch": attempt_branch,
                 "knob": {
                     "key": knob_key,
                     "op": op,
                     "step": step,
                     "candidates": candidates_int,
+                    "effective_candidates": effective_candidates,
                     "values": values,
                     "current_value": current_value,
                 },
@@ -1038,31 +1309,41 @@ def main(argv: Optional[List[str]] = None) -> int:
                     return False
                 if not isinstance(payload, dict):
                     return False
-                for key in ("run_group", "base_config_path", "windows"):
+                for key in ("run_group", "base_config_path", "windows", "queue_branch"):
                     if payload.get(key) != expected_spec.get(key):
                         return False
                 knob_payload = payload.get("knob")
                 if not isinstance(knob_payload, dict):
                     return False
-                for key in ("key", "op", "step", "candidates", "values"):
+                for key in ("key", "op", "step", "candidates", "effective_candidates", "values"):
                     if knob_payload.get(key) != expected_spec["knob"].get(key):
                         return False
                 return True
 
             if not queue_path.exists() or not _spec_matches():
-                # (Re)generate queue/configs when missing, or when the queue exists but was built
-                # from a different base_config_path/knob grid (e.g. after a coordinate-ascent update).
-                queue_path = _generate_sweep_queue(
+                # Rebuild queue from current round plan, skipping duplicates and invalid combos.
+                seen_signatures = _collect_seen_config_signatures(
                     app_root=app_root,
-                    run_group=run_group,
-                    base_config_path=base_cfg_path,
-                    windows=windows,
-                    knob_key=knob_key,
-                    knob_values=values,
-                    configs_dir_rel=configs_dir_rel,
                     queue_dir_rel=queue_dir_rel,
-                    runs_dir_rel=runs_dir_rel,
+                    run_group_prefix=run_group_prefix,
+                    exclude_run_group=run_group,
                 )
+                try:
+                    queue_path = _generate_sweep_queue(
+                        app_root=app_root,
+                        run_group=run_group,
+                        base_config_path=base_cfg_path,
+                        windows=windows,
+                        knob_key=knob_key,
+                        knob_values=values,
+                        configs_dir_rel=configs_dir_rel,
+                        queue_dir_rel=queue_dir_rel,
+                        runs_dir_rel=runs_dir_rel,
+                        seen_signatures=seen_signatures,
+                    )
+                except ValueError as exc:
+                    last_queue_error = str(exc)
+                    continue
 
                 _dump_json(
                     spec_path,
@@ -1072,12 +1353,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                     },
                 )
 
+            queue_configs = _queue_config_paths(queue_path)
+            if not queue_configs:
+                last_queue_error = f"Queue has 0 entries: {queue_path}"
+                continue
+
             # Ensure queue + configs are tracked for SYNC_UP=1.
             # NOTE: SYNC_UP=1 uploads only `git ls-files` => stage every referenced config file
             # (not just the directory pathspec), otherwise VPS execution will see missing configs.
             tracked_paths: List[Path] = []
             tracked_paths.append(Path("coint4") / queue_path.relative_to(app_root))
-            for cfg_rel in _queue_config_paths(queue_path):
+            for cfg_rel in queue_configs:
                 tracked_paths.append(Path("coint4") / cfg_rel)
             _ensure_tracked_for_sync_up(
                 repo_root=repo_root,
@@ -1126,46 +1412,64 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dd_target_pct=dd_target_pct,
                 dd_penalty=dd_penalty,
             )
+            used_knob_index = int(attempt_knob_index)
+            used_knob_key = knob_key
+            used_branch = attempt_branch
+            used_plan_reason = attempt_reason
+            break
 
-            prev_score = _best_score(state)
-            improved = bool(selection.score > prev_score + float(min_improvement))
-            if improved:
-                improved_in_round = True
-                state["current_best"] = {
-                    "updated_at_utc": _utc_now_iso(),
-                    "run_group": selection.run_group,
-                    "variant_id": selection.variant_id,
-                    "score": selection.score,
-                    "worst_robust_sharpe": selection.worst_robust_sharpe,
-                    "avg_robust_sharpe": selection.avg_robust_sharpe,
-                    "worst_dd_pct": selection.worst_dd_pct,
-                    "avg_dd_pct": selection.avg_dd_pct,
-                    "windows": selection.windows,
-                    "sample_config_path": selection.sample_config_path,
-                }
-                state["best_score"] = float(selection.score)
-                state["no_improvement_streak"] = 0
-                state["stop_reason"] = None
-                state["base_config_path"] = selection.sample_config_path
-
-            state.setdefault("history", []).append(
-                {
-                    "at_utc": _utc_now_iso(),
-                    "round": current_round,
-                    "knob_index": knob_index,
-                    "knob_key": knob_key,
-                    "run_group": run_group,
-                    "best_variant_id": selection.variant_id,
-                    "best_score": selection.score,
-                    "best_worst_robust_sharpe": selection.worst_robust_sharpe,
-                    "best_worst_dd_pct": selection.worst_dd_pct,
-                    "improved": improved,
-                }
+        if selection is None:
+            raise SystemExit(
+                f"Unable to build/execute non-empty queue for round={current_round}: {last_queue_error or 'unknown_error'}"
             )
 
-            knob_index += 1
-            state["knob_index"] = knob_index
-            _save_state(state_path, state)
+        prev_score = _best_score(state)
+        improved = bool(selection.score > prev_score + float(min_improvement))
+        if improved:
+            improved_in_round = True
+            state["current_best"] = {
+                "updated_at_utc": _utc_now_iso(),
+                "run_group": selection.run_group,
+                "variant_id": selection.variant_id,
+                "score": selection.score,
+                "worst_robust_sharpe": selection.worst_robust_sharpe,
+                "avg_robust_sharpe": selection.avg_robust_sharpe,
+                "worst_dd_pct": selection.worst_dd_pct,
+                "avg_dd_pct": selection.avg_dd_pct,
+                "windows": selection.windows,
+                "sample_config_path": selection.sample_config_path,
+            }
+            state["best_score"] = float(selection.score)
+            state["no_improvement_streak"] = 0
+            state["stop_reason"] = None
+            state["base_config_path"] = selection.sample_config_path
+
+        state.setdefault("history", []).append(
+            {
+                "at_utc": _utc_now_iso(),
+                "round": current_round,
+                "knob_index": used_knob_index,
+                "knob_key": used_knob_key,
+                "queue_branch": used_branch,
+                "queue_plan_reason": used_plan_reason,
+                "run_group": run_group,
+                "best_variant_id": selection.variant_id,
+                "best_score": selection.score,
+                "best_worst_robust_sharpe": selection.worst_robust_sharpe,
+                "best_worst_dd_pct": selection.worst_dd_pct,
+                "improved": improved,
+            }
+        )
+        state["knob_index"] = int(used_knob_index)
+        state["last_round_result"] = {
+            "round": current_round,
+            "knob_index": int(used_knob_index),
+            "knob_key": used_knob_key,
+            "branch": used_branch,
+            "improved": bool(improved),
+            "run_group": run_group,
+        }
+        _save_state(state_path, state)
 
         # End of round.
         stop_by_no_improvement = _apply_no_improvement_round(
@@ -1182,6 +1486,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             stopped_by_no_improvement=stop_by_no_improvement,
             stop_reason=state.get("stop_reason"),
         )
+        next_queue_plan = None
+        if str(decision.get("action") or "") == "continue":
+            next_queue_plan = _derive_next_queue_plan(
+                next_round=current_round + 1,
+                knobs_count=len(knobs),
+                previous_result=state.get("last_round_result") if isinstance(state.get("last_round_result"), dict) else None,
+            )
+        state["next_queue_plan"] = next_queue_plan
         round_payload = {
             "generated_at_utc": _utc_now_iso(),
             "controller_group": controller_group,
@@ -1196,6 +1508,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             ),
             "delta_worst_dd_pct": _metric_delta(before=round_best_before, after=round_best_after, key="worst_dd_pct"),
             "decision": decision,
+            "queue_plan": {
+                "requested": round_plan,
+                "executed": {
+                    "knob_index": int(used_knob_index),
+                    "knob_key": used_knob_key,
+                    "branch": used_branch,
+                    "reason": used_plan_reason,
+                    "run_group": run_group,
+                },
+                "next_round_plan": next_queue_plan,
+            },
         }
         _write_round_analysis(controller_dir=controller_dir, payload=round_payload)
 
@@ -1210,11 +1533,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             break
 
         # New round around the updated best.
-        improved_in_round = False
         current_round += 1
-        knob_index = 0
         state["round"] = current_round
-        state["knob_index"] = knob_index
+        state["knob_index"] = _safe_knob_index(
+            (next_queue_plan or {}).get("knob_index") if isinstance(next_queue_plan, dict) else 0,
+            knobs_count=len(knobs),
+            default=0,
+        )
         state["round_context"] = {
             "round": current_round,
             "started_at_utc": _utc_now_iso(),

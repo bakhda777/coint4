@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def _load_autopilot_module():
@@ -176,3 +177,90 @@ def test_write_round_analysis_creates_json_and_md(tmp_path: Path) -> None:
     assert "Round 02 analysis" in md_text
     assert "delta_score" in md_text
     assert "continue_to_next_round" in md_text
+
+
+def test_branch_candidate_offsets_local_refine_and_fallback() -> None:
+    mod = _load_autopilot_module()
+    assert mod._branch_candidate_offsets(candidates=[-4, -2, 0, 2, 4], branch="local_refine") == [-2, 0, 2]
+    assert mod._branch_candidate_offsets(candidates=[-4, -2, 0, 2, 4], branch="fallback_knob") == [-4, -2, 0, 2, 4]
+
+
+def test_derive_next_queue_plan_local_refine_when_previous_improved() -> None:
+    mod = _load_autopilot_module()
+    plan = mod._derive_next_queue_plan(
+        next_round=3,
+        knobs_count=4,
+        previous_result={
+            "round": 2,
+            "improved": True,
+            "knob_index": 2,
+        },
+    )
+    assert plan["round"] == 3
+    assert plan["branch"] == "local_refine"
+    assert plan["knob_index"] == 2
+
+
+def test_derive_next_queue_plan_fallback_when_previous_not_improved() -> None:
+    mod = _load_autopilot_module()
+    plan = mod._derive_next_queue_plan(
+        next_round=3,
+        knobs_count=4,
+        previous_result={
+            "round": 2,
+            "improved": False,
+            "knob_index": 2,
+        },
+    )
+    assert plan["round"] == 3
+    assert plan["branch"] == "fallback_knob"
+    assert plan["knob_index"] != 2
+
+
+def test_is_valid_config_combo_rejects_invalid_pairs() -> None:
+    mod = _load_autopilot_module()
+    cfg = {
+        "walk_forward": {"start_date": "2024-05-01", "end_date": "2023-04-30"},
+        "portfolio": {"risk_per_position_pct": 0.015},
+        "backtest": {
+            "zscore_entry_threshold": 0.8,
+            "zscore_exit": 0.9,
+            "max_var_multiplier": 1.01,
+            "pair_stop_loss_usd": 4.0,
+            "portfolio_daily_stop_pct": 0.02,
+        },
+    }
+    assert mod._is_valid_config_combo(cfg) is False
+
+    cfg["walk_forward"] = {"start_date": "2023-04-30", "end_date": "2024-05-01"}
+    cfg["backtest"]["zscore_exit"] = 0.05
+    assert mod._is_valid_config_combo(cfg) is True
+
+
+def test_collect_seen_config_signatures_uses_run_group_prefix(tmp_path: Path) -> None:
+    mod = _load_autopilot_module()
+    app_root = tmp_path / "app"
+    queue_dir = app_root / "artifacts" / "wfa" / "aggregate" / "grp_r01_risk"
+    cfg_dir = app_root / "configs" / "x"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg_a = {"walk_forward": {"start_date": "2023-01-01", "end_date": "2023-12-31"}, "backtest": {"zscore_exit": 0.05}}
+    cfg_b = {"walk_forward": {"start_date": "2023-01-01", "end_date": "2023-12-31"}, "backtest": {"zscore_exit": 0.07}}
+    (cfg_dir / "a.yaml").write_text(yaml.safe_dump(cfg_a), encoding="utf-8")
+    (cfg_dir / "b.yaml").write_text(yaml.safe_dump(cfg_b), encoding="utf-8")
+
+    queue_path = queue_dir / "run_queue.csv"
+    queue_path.write_text(
+        "config_path,results_dir,status\n"
+        "configs/x/a.yaml,artifacts/wfa/runs_clean/grp/a,planned\n"
+        "configs/x/b.yaml,artifacts/wfa/runs_clean/grp/b,planned\n",
+        encoding="utf-8",
+    )
+
+    seen = mod._collect_seen_config_signatures(
+        app_root=app_root,
+        queue_dir_rel="artifacts/wfa/aggregate",
+        run_group_prefix="grp",
+    )
+    assert len(seen) == 2
