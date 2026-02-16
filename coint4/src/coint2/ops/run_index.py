@@ -61,8 +61,19 @@ def _infer_group(results_dir: Path, project_root: Path) -> Tuple[str, str]:
         parts = rel.parts
         if len(parts) >= 4 and parts[0:3] == ("artifacts", "wfa", "runs"):
             run_group = parts[3]
+        elif len(parts) >= 4 and parts[0:3] == ("artifacts", "wfa", "runs_clean"):
+            run_group = parts[3]
     except ValueError:
         run_group = ""
+
+    # Some pipelines store holdout/stress as a folder and the leaf is the base id.
+    # Normalize into the same `holdout_<id>` / `stress_<id>` convention expected by
+    # robust rankers.
+    parent = results_dir.parent.name.strip().lower()
+    if parent in {"holdout", "stress"}:
+        prefix = f"{parent}_"
+        if not run_id.startswith(prefix):
+            run_id = f"{prefix}{run_id}"
     return run_id, run_group
 
 
@@ -138,6 +149,33 @@ def load_run_queues(
     return queue_map
 
 
+def _load_canonical_metrics(canonical_path: Path) -> Dict[str, Optional[float]]:
+    try:
+        payload = json.loads(canonical_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, dict):
+        return {}
+
+    def _num(key: str) -> Optional[float]:
+        value = metrics.get(key)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "canonical_sharpe": _num("canonical_sharpe"),
+        "canonical_pnl_abs": _num("canonical_pnl_abs"),
+        "canonical_max_drawdown_abs": _num("canonical_max_drawdown_abs"),
+    }
+
+
 def build_run_index(
     runs_dir: Path, queue_paths: Iterable[Path], project_root: Path
 ) -> List[RunIndexEntry]:
@@ -174,9 +212,57 @@ def build_run_index(
         )
         entries[results_abs] = entry
 
+    # Fast-path: populate metrics for all queue-referenced results dirs (runs and runs_clean).
+    # This avoids relying on `runs_dir` being "the right root" when different pipelines write
+    # to different trees (e.g. artifacts/wfa/runs_clean/**).
+    for results_abs, entry in list(entries.items()):
+        results_path = Path(results_abs)
+        metrics_path = results_path / "strategy_metrics.csv"
+        if not metrics_path.exists():
+            continue
+
+        metrics = _load_metrics(metrics_path)
+        entry.metrics_present = True
+        entry.metrics_path = _relative_path(metrics_path, project_root)
+        entry.sharpe_ratio_abs_raw = metrics.get("sharpe_ratio_abs")
+        entry.sharpe_ratio_on_returns = metrics.get("sharpe_ratio_on_returns")
+
+        computed_sharpe = _compute_sharpe_from_equity_curve(results_path)
+        entry.sharpe_ratio_abs = (
+            computed_sharpe if computed_sharpe is not None else entry.sharpe_ratio_abs_raw
+        )
+        entry.total_pnl = metrics.get("total_pnl")
+        entry.max_drawdown_abs = metrics.get("max_drawdown_abs")
+        entry.max_drawdown_on_equity = metrics.get("max_drawdown_on_equity")
+        entry.total_trades = metrics.get("total_trades")
+        entry.total_pairs_traded = metrics.get("total_pairs_traded")
+        entry.total_costs = metrics.get("total_costs")
+        entry.total_days = metrics.get("total_days")
+        entry.volatility = metrics.get("volatility")
+        entry.win_rate = metrics.get("win_rate")
+        entry.best_pair_pnl = metrics.get("best_pair_pnl")
+        entry.worst_pair_pnl = metrics.get("worst_pair_pnl")
+        entry.avg_pnl_per_pair = metrics.get("avg_pnl_per_pair")
+
+        canonical_path = results_path / "canonical_metrics.json"
+        if canonical_path.exists():
+            canonical = _load_canonical_metrics(canonical_path)
+            canonical_sharpe = canonical.get("canonical_sharpe")
+            canonical_pnl_abs = canonical.get("canonical_pnl_abs")
+            canonical_max_dd_abs = canonical.get("canonical_max_drawdown_abs")
+            if canonical_sharpe is not None:
+                entry.sharpe_ratio_abs = canonical_sharpe
+            if canonical_pnl_abs is not None:
+                entry.total_pnl = canonical_pnl_abs
+            if canonical_max_dd_abs is not None:
+                entry.max_drawdown_abs = canonical_max_dd_abs
+
     for metrics_path in runs_dir.rglob("strategy_metrics.csv"):
         results_path = metrics_path.parent
         results_abs = _normalize_path(results_path, project_root)
+        if results_abs in entries:
+            # Already processed from a run_queue entry.
+            continue
         metrics = _load_metrics(metrics_path)
         run_id, run_group = _infer_group(results_path, project_root)
         entry = entries.get(results_abs)
@@ -228,6 +314,19 @@ def build_run_index(
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
         entry.worst_pair_pnl = metrics.get("worst_pair_pnl")
         entry.avg_pnl_per_pair = metrics.get("avg_pnl_per_pair")
+
+        canonical_path = results_path / "canonical_metrics.json"
+        if canonical_path.exists():
+            canonical = _load_canonical_metrics(canonical_path)
+            canonical_sharpe = canonical.get("canonical_sharpe")
+            canonical_pnl_abs = canonical.get("canonical_pnl_abs")
+            canonical_max_dd_abs = canonical.get("canonical_max_drawdown_abs")
+            if canonical_sharpe is not None:
+                entry.sharpe_ratio_abs = canonical_sharpe
+            if canonical_pnl_abs is not None:
+                entry.total_pnl = canonical_pnl_abs
+            if canonical_max_dd_abs is not None:
+                entry.max_drawdown_abs = canonical_max_dd_abs
 
     return list(entries.values())
 

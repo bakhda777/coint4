@@ -23,3 +23,14 @@
 - Raw vs canonical diff: `missing_raw=0`, `missing_canonical=0`, `over_threshold=0` (selected=10, `compare_metrics.py`).
 
 Наблюдение (важно): все baseline метрики получились нулевыми (0 сделок; `strategy_metrics.csv` = 0 и `equity_curve.csv` состоит из стартовой точки). Перед sweeps нужно убедиться, что baseline batch на VPS действительно отработал корректно (а не завершился ранним no-op).
+
+## Budget1000 autopilot (VPS WFA -> postprocess -> selection)
+
+Команда (из repo root):
+- `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --reset`
+
+Итог:
+- Отчёт: `docs/budget1000_autopilot_final_20260216.md` (завершение по `max_rounds=3`).
+- Best candidate (из отчёта): `risk_per_position_pct=0.015`, `pair_stop_loss_usd=4.5`, `max_var_multiplier=1.0035`.
+- Очереди: `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_r{01,02,03}_{risk,slusd,vm}/run_queue.csv` (9 очередей, по 30 runs каждая).
+- Каждый remote job запускался через `run_server_job.sh` с `STOP_AFTER=1` (VPS выключался после выполнения).

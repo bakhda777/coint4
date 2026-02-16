@@ -1,0 +1,47 @@
+{
+  "name": "budget1000_autopilot: VPS WFA -> postprocess -> stop-condition",
+  "description": "Цель: автоматизировать цикл оптимизации для budget=$1000 (без выхода в live): прогонять WFA-очереди на VPS, пересчитывать канонические метрики, выбирать лучший баланс Sharpe/DD и остановиться по stop-condition, когда улучшать уже нечего.\n\nИнварианты:\n- Heavy execution НЕ запускать на этом сервере. Только на VPS 85.198.90.128 через `coint4/scripts/remote/run_server_job.sh` (по умолчанию `STOP_AFTER=1`).\n- Источник метрик: `canonical_metrics.json` (из `equity_curve.csv`) + rollup `artifacts/wfa/aggregate/rollup/run_index.csv`.\n- Не коммитить тяжёлое: `coint4/artifacts/wfa/runs_clean/**` и `coint4/artifacts/wfa/runs/**`.\n\nВходы/настройка:\n- Конфиг автопилота: `coint4/configs/autopilot/budget1000.yaml`.\n- Base config: `coint4/configs/prod_final_budget1000.yaml` (или укажи другой best-so-far в config.base_config).\n\nВыход:\n- Итоговый отчёт: `docs/budget1000_autopilot_final_YYYYMMDD.md`.\n- Controller state: `coint4/artifacts/wfa/aggregate/<controller_group>/state.json`.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "AP01",
+      "title": "Запустить budget1000 автопилот до stop-condition (VPS WFA -> postprocess -> selection)",
+      "description": "Запусти автопилот и дождись завершения. Он сам:\n- генерирует очереди `artifacts/wfa/aggregate/<run_group>/run_queue.csv`,\n- гоняет WFA на VPS,\n- делает sync_back,\n- пересчитывает `canonical_metrics.json`,\n- пересобирает rollup `artifacts/wfa/aggregate/rollup/run_index.csv`,\n- выбирает best и останавливается, когда круг по knobs не даёт улучшений.\n\nКоманда (из repo root):\n- `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --reset`\n\nЕсли прервалось и нужно продолжить:\n- `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --resume`",
+      "acceptanceCriteria": [
+        "Создан/обновлён controller state: `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json`.",
+        "Сформирован итоговый отчёт: `docs/budget1000_autopilot_final_YYYYMMDD.md`.",
+        "После каждого remote job VPS выключается (STOP_AFTER=1)."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "vps",
+        "orchestrator",
+        "budget1000"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "AP02",
+      "title": "Зафиксировать итог в optimization_state.md (ссылка на отчёт + лучший конфиг/параметры)",
+      "description": "После завершения автопилота: добавить короткий блок в `docs/optimization_state.md`:\n- ссылка на `docs/budget1000_autopilot_final_YYYYMMDD.md`,\n- лучший variant_id/config_path,\n- ключевые параметры и метрики (score, worst_robust_sharpe, worst_dd_pct).",
+      "acceptanceCriteria": [
+        "`docs/optimization_state.md` обновлён: есть ссылка на итоговый отчёт и резюме best candidate."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "docs"
+      ],
+      "dependsOn": [
+        "AP01"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-15T00:00:00.000Z",
+    "updatedAt": "2026-02-15T23:57:33.691Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/budget1000_autopilot/prd_budget1000_autopilot.ralph.json"
+  }
+}

@@ -1,0 +1,979 @@
+#!/usr/bin/env python3
+"""Budget $1000 optimization autopilot (VPS WFA -> canonical metrics -> robust ranking).
+
+Goal: reduce manual loop "run -> wait -> ask Codex -> generate next queue".
+This tool performs a coordinate-ascent style micro-sweep over a list of knobs:
+  - generate multi-window holdout+stress queue (small)
+  - run it on VPS via scripts/remote/run_server_job.sh (STOP_AFTER=1)
+  - post-process locally (sync statuses, canonical_metrics.json, rollup run_index)
+  - select best by worst-window robust Sharpe with DD + sanity gates
+  - stop when a full round yields no improvement
+
+Outputs (canonical locations; see AGENTS.md):
+  - queues (tracked):     coint4/artifacts/wfa/aggregate/<run_group>/run_queue.csv
+  - configs (tracked):    coint4/configs/budget1000_autopilot/<run_group>/*.yaml
+  - heavy artifacts:      coint4/artifacts/wfa/runs_clean/<run_group>/**   (do NOT commit)
+  - controller state:     coint4/artifacts/wfa/aggregate/<controller>/state.json
+  - final report (docs):  docs/budget1000_autopilot_final_YYYYMMDD.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import yaml
+
+
+_OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
+
+
+STRESS_OVERRIDES: Dict[str, Any] = {
+    "backtest.commission_pct": 0.0006,
+    "backtest.commission_rate_per_leg": 0.0006,
+    "backtest.slippage_pct": 0.001,
+    "backtest.slippage_stress_multiplier": 2.0,
+}
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _resolve_app_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_repo_root(app_root: Path) -> Path:
+    # Repo root is parent of coint4/ (app-root dir).
+    return app_root.parent
+
+
+def _resolve_under_root(path: str, *, root: Path) -> Path:
+    raw = str(path or "").strip()
+    if not raw:
+        raise ValueError("empty path")
+    p = Path(raw)
+    if p.is_absolute():
+        return p
+    return root / raw
+
+
+def _venv_python(app_root: Path) -> Path:
+    candidate = app_root / ".venv" / "bin" / "python"
+    if candidate.exists():
+        return candidate
+    candidate = app_root / ".venv" / "bin" / "python3"
+    if candidate.exists():
+        return candidate
+    return Path(sys.executable)
+
+
+def _run(cmd: List[str], *, cwd: Path, env: dict, check: bool = True) -> int:
+    proc = subprocess.run(cmd, cwd=str(cwd), env=env, check=False)
+    if check and proc.returncode != 0:
+        raise SystemExit(proc.returncode)
+    return int(proc.returncode)
+
+
+def _git(cmd: List[str], *, repo_root: Path, check: bool = True) -> str:
+    proc = subprocess.run(
+        ["git", *cmd],
+        cwd=str(repo_root),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if check and proc.returncode != 0:
+        raise SystemExit(proc.stderr.strip() or f"git {' '.join(cmd)} failed rc={proc.returncode}")
+    return proc.stdout
+
+
+def _unique(items: Iterable[Any]) -> List[Any]:
+    seen: set[Any] = set()
+    out: List[Any] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def set_nested(cfg: Dict[str, Any], dotted_key: str, value: Any) -> None:
+    parts = dotted_key.split(".")
+    node: Dict[str, Any] = cfg
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
+    node[parts[-1]] = value
+
+
+def get_nested(cfg: Dict[str, Any], dotted_key: str) -> Any:
+    parts = dotted_key.split(".")
+    node: Any = cfg
+    for part in parts:
+        if not isinstance(node, dict) or part not in node:
+            raise KeyError(dotted_key)
+        node = node[part]
+    return node
+
+
+def encode_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "T" if value else "F"
+    if isinstance(value, float):
+        return str(value).replace(".", "p").replace("-", "m")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        if re.match(r"\d{4}-\d{2}-\d{2}", value):
+            return value.replace("-", "")
+        return value.replace(".", "p").replace("-", "m")
+    if value is None:
+        return "null"
+    return str(value).replace(".", "p").replace("-", "m")
+
+
+def short_key_for_tag(dotted_key: str) -> str:
+    short_keys = {
+        "walk_forward.start_date": "oos",
+        "walk_forward.end_date": "to",
+        "walk_forward.max_steps": "ms",
+        "portfolio.risk_per_position_pct": "risk",
+        "portfolio.max_active_positions": "maxpos",
+        "backtest.zscore_entry_threshold": "z",
+        "backtest.zscore_exit": "exit",
+        "backtest.min_spread_move_sigma": "ms",
+        "backtest.pair_stop_loss_usd": "slusd",
+        "backtest.pair_stop_loss_zscore": "slz",
+        "backtest.stop_loss_multiplier": "slm",
+        "backtest.time_stop_multiplier": "ts",
+        "backtest.portfolio_daily_stop_pct": "dstop",
+        "backtest.max_var_multiplier": "vm",
+        "filter_params.min_beta": "min_beta",
+        "pair_selection.min_correlation": "corr",
+        "pair_selection.coint_pvalue_threshold": "pv",
+    }
+    return short_keys.get(dotted_key, dotted_key.split(".")[-1])
+
+
+def make_tag(dotted_key: str, value: Any) -> str:
+    return f"{short_key_for_tag(dotted_key)}{encode_value(value)}"
+
+
+def _variant_id(base_id: str) -> str:
+    return _OOS_RE.sub("", base_id)
+
+
+def _parse_window(base_id: str) -> str:
+    m = _OOS_RE.search(base_id)
+    if not m:
+        return "-"
+    return f"{m.group(1)}-{m.group(2)}"
+
+
+def _kind_and_base_id(run_id: str) -> Tuple[Optional[str], str]:
+    if run_id.startswith("holdout_"):
+        return "holdout", run_id[len("holdout_") :]
+    if run_id.startswith("stress_"):
+        return "stress", run_id[len("stress_") :]
+    return None, run_id
+
+
+@dataclass(frozen=True)
+class _RunIndexRow:
+    run_id: str
+    run_group: str
+    config_path: str
+    results_dir: str
+    status: str
+    metrics_present: bool
+    sharpe: Optional[float]
+    dd_pct: Optional[float]
+    trades: Optional[float]
+    pairs: Optional[float]
+
+
+@dataclass(frozen=True)
+class SelectionResult:
+    run_group: str
+    variant_id: str
+    score: float
+    worst_robust_sharpe: float
+    avg_robust_sharpe: float
+    worst_dd_pct: float
+    avg_dd_pct: float
+    windows: int
+    sample_config_path: str
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _to_bool(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _load_run_index(run_index_path: Path) -> List[_RunIndexRow]:
+    import csv
+
+    rows: List[_RunIndexRow] = []
+    with run_index_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            rows.append(
+                _RunIndexRow(
+                    run_id=(row.get("run_id") or "").strip(),
+                    run_group=(row.get("run_group") or "").strip(),
+                    config_path=(row.get("config_path") or "").strip(),
+                    results_dir=(row.get("results_dir") or "").strip(),
+                    status=(row.get("status") or "").strip(),
+                    metrics_present=_to_bool(row.get("metrics_present") or ""),
+                    sharpe=_to_float(row.get("sharpe_ratio_abs") or ""),
+                    dd_pct=_to_float(row.get("max_drawdown_on_equity") or ""),
+                    trades=_to_float(row.get("total_trades") or ""),
+                    pairs=_to_float(row.get("total_pairs_traded") or ""),
+                )
+            )
+    return rows
+
+
+def select_best_multiwindow(
+    *,
+    run_index_path: Path,
+    run_group: str,
+    min_windows: int,
+    min_trades: int,
+    min_pairs: int,
+    max_dd_pct: Optional[float],
+    dd_target_pct: Optional[float],
+    dd_penalty: float,
+) -> SelectionResult:
+    rows = _load_run_index(run_index_path)
+    rows = [r for r in rows if r.run_group == run_group]
+
+    paired: Dict[str, Dict[str, _RunIndexRow]] = {}
+    for r in rows:
+        kind, base_id = _kind_and_base_id(r.run_id)
+        if kind not in {"holdout", "stress"}:
+            continue
+        if not r.metrics_present:
+            continue
+        if r.sharpe is None or r.dd_pct is None:
+            continue
+        if r.status.lower() != "completed":
+            continue
+        paired.setdefault(base_id, {})[kind] = r
+
+    windows_by_variant: Dict[str, List[Tuple[str, float, float, _RunIndexRow]]] = {}
+    for base_id, pair in paired.items():
+        h = pair.get("holdout")
+        s = pair.get("stress")
+        if h is None or s is None:
+            continue
+
+        robust_sharpe = min(float(h.sharpe), float(s.sharpe))
+        dd_pct = max(abs(float(h.dd_pct)), abs(float(s.dd_pct)))
+        window = _parse_window(base_id)
+        variant = _variant_id(base_id)
+        windows_by_variant.setdefault(variant, []).append((window, robust_sharpe, dd_pct, h))
+
+    candidates: List[SelectionResult] = []
+    for variant, items in windows_by_variant.items():
+        if len(items) < max(1, int(min_windows)):
+            continue
+        worst_dd = max(item[2] for item in items)
+        if max_dd_pct is not None and worst_dd > max(0.0, float(max_dd_pct)):
+            continue
+
+        holdout_rows = [item[3] for item in items]
+        min_tr = min(int(r.trades or 0.0) for r in holdout_rows)
+        min_pr = min(int(r.pairs or 0.0) for r in holdout_rows)
+        if min_tr < int(min_trades) or min_pr < int(min_pairs):
+            continue
+
+        worst_robust = min(item[1] for item in items)
+        avg_robust = sum(item[1] for item in items) / len(items)
+        avg_dd = sum(item[2] for item in items) / len(items)
+        penalty = 0.0
+        if dd_target_pct is not None:
+            penalty = max(0.0, float(worst_dd) - float(dd_target_pct)) * max(0.0, float(dd_penalty))
+        score = float(worst_robust) - float(penalty)
+        sample_cfg = holdout_rows[0].config_path
+        candidates.append(
+            SelectionResult(
+                run_group=run_group,
+                variant_id=variant,
+                score=score,
+                worst_robust_sharpe=float(worst_robust),
+                avg_robust_sharpe=float(avg_robust),
+                worst_dd_pct=float(worst_dd),
+                avg_dd_pct=float(avg_dd),
+                windows=len(items),
+                sample_config_path=sample_cfg,
+            )
+        )
+
+    if not candidates:
+        raise SystemExit(
+            f"No candidates matched for run_group={run_group} (check gates/sanity or ensure rollup is rebuilt)."
+        )
+
+    candidates.sort(
+        key=lambda c: (c.score, c.worst_robust_sharpe, c.avg_robust_sharpe, -c.worst_dd_pct),
+        reverse=True,
+    )
+    return candidates[0]
+
+
+def _dump_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _build_filename(base_name: str, sweep_tags: List[str], kind: str) -> str:
+    clean = base_name
+    for prefix in ("holdout_", "stress_"):
+        if clean.startswith(prefix):
+            clean = clean[len(prefix) :]
+            break
+    if clean.endswith(".yaml"):
+        clean = clean[:-5]
+
+    has_oos_sweep = any(t.startswith("oos") for t in sweep_tags)
+    if has_oos_sweep:
+        clean = re.sub(r"_oos\d{8}_\d{8}", "", clean)
+
+    suffix = "_".join(sweep_tags) if sweep_tags else ""
+    if suffix:
+        return f"{kind}_{clean}_{suffix}"
+    return f"{kind}_{clean}"
+
+
+def _generate_sweep_queue(
+    *,
+    app_root: Path,
+    run_group: str,
+    base_config_path: Path,
+    windows: List[Tuple[str, str]],
+    knob_key: str,
+    knob_values: List[Any],
+    configs_dir_rel: str,
+    queue_dir_rel: str,
+    runs_dir_rel: str,
+) -> Path:
+    sys.path.insert(0, str(app_root / "src"))
+    from coint2.ops.run_queue import RunQueueEntry, write_run_queue  # type: ignore
+
+    if not base_config_path.exists():
+        raise SystemExit(f"Base config not found: {base_config_path}")
+
+    base_cfg = yaml.safe_load(base_config_path.read_text(encoding="utf-8"))
+    if not isinstance(base_cfg, dict):
+        raise SystemExit(f"Invalid YAML (expected dict): {base_config_path}")
+
+    configs_dir = app_root / configs_dir_rel / run_group
+    queue_dir = app_root / queue_dir_rel / run_group
+
+    entries: List[RunQueueEntry] = []
+
+    base_name = base_config_path.name
+    for start_date, end_date in windows:
+        # OOS tag in the same convention as generate_configs.py
+        oos_tag = f"oos{encode_value(start_date)}_{encode_value(end_date)}"
+        for value in knob_values:
+            sweep_tags = [oos_tag, make_tag(knob_key, value)]
+
+            holdout_cfg = json.loads(json.dumps(base_cfg))  # cheap deep copy (dict-only)
+            set_nested(holdout_cfg, "walk_forward.start_date", start_date)
+            set_nested(holdout_cfg, "walk_forward.end_date", end_date)
+            set_nested(holdout_cfg, knob_key, value)
+
+            holdout_name = _build_filename(base_name, sweep_tags, "holdout")
+            holdout_yaml = configs_dir / f"{holdout_name}.yaml"
+            holdout_results_dir = f"{runs_dir_rel}/{run_group}/{holdout_name}"
+
+            configs_dir.mkdir(parents=True, exist_ok=True)
+            holdout_yaml.write_text(yaml.dump(holdout_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+            entries.append(
+                RunQueueEntry(
+                    config_path=str(holdout_yaml.relative_to(app_root)),
+                    results_dir=holdout_results_dir,
+                    status="planned",
+                )
+            )
+
+            stress_cfg = json.loads(json.dumps(holdout_cfg))
+            for skey, sval in STRESS_OVERRIDES.items():
+                set_nested(stress_cfg, skey, sval)
+            stress_name = _build_filename(base_name, sweep_tags, "stress")
+            stress_yaml = configs_dir / f"{stress_name}.yaml"
+            stress_results_dir = f"{runs_dir_rel}/{run_group}/{stress_name}"
+            stress_yaml.write_text(yaml.dump(stress_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+            entries.append(
+                RunQueueEntry(
+                    config_path=str(stress_yaml.relative_to(app_root)),
+                    results_dir=stress_results_dir,
+                    status="planned",
+                )
+            )
+
+    queue_path = queue_dir / "run_queue.csv"
+    write_run_queue(queue_path, entries)
+    return queue_path
+
+
+def _queue_is_fully_completed(queue_path: Path, *, app_root: Path) -> bool:
+    """Return True if every queue entry is completed and has local metrics present.
+
+    This allows safe re-runs/resumes without re-spending VPS time when results are already synced back.
+    """
+    sys.path.insert(0, str(app_root / "src"))
+    from coint2.ops.run_queue import load_run_queue  # type: ignore
+
+    entries = load_run_queue(queue_path)
+    if not entries:
+        return False
+
+    for entry in entries:
+        if (entry.status or "").strip().lower() != "completed":
+            return False
+        results_dir = (entry.results_dir or "").strip()
+        if not results_dir:
+            return False
+        results_path = _resolve_under_root(results_dir, root=app_root)
+        if not (results_path / "strategy_metrics.csv").exists():
+            return False
+    return True
+
+
+def _candidate_values(
+    *, current: float, op: str, step: float, candidates: List[int], min_value: Optional[float], max_value: Optional[float]
+) -> List[float]:
+    values: List[float] = []
+    for i in candidates:
+        if op == "add":
+            v = float(current) + float(i) * float(step)
+        elif op == "mul":
+            v = float(current) * (1.0 + float(i) * float(step))
+        else:
+            raise ValueError(f"Unsupported op: {op!r} (expected 'add' or 'mul')")
+        if min_value is not None:
+            v = max(float(min_value), v)
+        if max_value is not None:
+            v = min(float(max_value), v)
+        values.append(v)
+    # Stable de-dup with rounding to avoid float jitter in filenames.
+    rounded = [round(v, 10) for v in values]
+    return _unique(rounded)
+
+
+def _ensure_tracked_for_sync_up(
+    *,
+    repo_root: Path,
+    paths_rel_repo: List[Path],
+    auto_stage: bool,
+) -> None:
+    if not paths_rel_repo:
+        return
+
+    missing: List[Path] = []
+    for p in paths_rel_repo:
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(p)],
+            cwd=str(repo_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            missing.append(p)
+
+    if missing and not auto_stage:
+        formatted = "\n".join(f"- {p}" for p in missing[:50])
+        raise SystemExit(
+            "SYNC_UP=1 requires files to be tracked (git add / commit). Missing:\n"
+            + formatted
+            + ("\n- ... (more)" if len(missing) > 50 else "")
+        )
+
+    if missing:
+        _git(["add", "--"] + [str(p) for p in missing], repo_root=repo_root, check=True)
+
+
+def _queue_config_paths(queue_path: Path) -> List[str]:
+    import csv
+
+    out: List[str] = []
+    with queue_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            p = (row.get("config_path") or "").strip()
+            if p:
+                out.append(p)
+    return _unique(out)
+
+
+def _run_vps_queue(
+    *,
+    repo_root: Path,
+    run_group: str,
+    queue_rel_app_root: str,
+    sync_up: bool,
+    stop_after: bool,
+) -> None:
+    script_path = repo_root / "coint4" / "scripts" / "remote" / "run_server_job.sh"
+    if not script_path.exists():
+        raise SystemExit(f"Missing remote runner: {script_path}")
+
+    env = os.environ.copy()
+    env["SYNC_UP"] = "1" if sync_up else "0"
+    env["STOP_AFTER"] = "1" if stop_after else "0"
+    env["SYNC_BACK"] = "1"
+    # Fetch only what we need to avoid rsync writing into root-owned dirs.
+    env["SYNC_PATHS"] = " ".join(
+        [
+            f"coint4/artifacts/wfa/runs_clean/{run_group}",
+            f"coint4/artifacts/wfa/aggregate/{run_group}",
+        ]
+    )
+
+    cmd = [
+        "bash",
+        str(script_path),
+        "bash",
+        "scripts/optimization/watch_wfa_queue.sh",
+        "--queue",
+        queue_rel_app_root,
+    ]
+    _run(cmd, cwd=repo_root, env=env, check=True)
+
+
+def _load_state(state_path: Path) -> Dict[str, Any]:
+    if not state_path.exists():
+        return {}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _save_state(state_path: Path, state: Dict[str, Any]) -> None:
+    state["updated_at_utc"] = _utc_now_iso()
+    _dump_json(state_path, state)
+
+
+def _final_report_path(*, repo_root: Path) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return repo_root / "docs" / f"budget1000_autopilot_final_{stamp}.md"
+
+
+def _render_final_report(*, state: Dict[str, Any]) -> str:
+    best = state.get("current_best") or {}
+    history = state.get("history") or []
+    lines: List[str] = []
+    lines.append("# Budget $1000 autopilot: итог")
+    lines.append("")
+    lines.append(f"Generated at (UTC): {state.get('updated_at_utc') or _utc_now_iso()}")
+    lines.append("")
+    lines.append("## Лучший найденный кандидат (stop-condition достигнут)")
+    lines.append("")
+    lines.append(f"- run_group: `{best.get('run_group','')}`")
+    lines.append(f"- variant_id: `{best.get('variant_id','')}`")
+    lines.append(f"- score: `{best.get('score','')}`")
+    lines.append(f"- worst-window robust Sharpe: `{best.get('worst_robust_sharpe','')}`")
+    lines.append(f"- worst-window DD pct: `{best.get('worst_dd_pct','')}`")
+    lines.append(f"- sample config: `{best.get('sample_config_path','')}`")
+    lines.append("")
+    lines.append("## История шагов (суммарно)")
+    lines.append("")
+    if not history:
+        lines.append("- (нет записей)")
+    else:
+        for item in history[-50:]:
+            lines.append(
+                "- {run_group} | knob={knob} | score={score:.3f} | improved={improved}".format(
+                    run_group=item.get("run_group", ""),
+                    knob=item.get("knob_key", ""),
+                    score=float(item.get("best_score") or 0.0),
+                    improved=bool(item.get("improved") or False),
+                )
+            )
+        if len(history) > 50:
+            lines.append(f"- ... ({len(history) - 50} older)")
+    lines.append("")
+    lines.append("## Примечания")
+    lines.append("")
+    lines.append("- База: multi-window worst-case robust Sharpe = min_window(min(holdout, stress)).")
+    lines.append("- Score (если включён dd_penalty): score = worst_robust_sharpe - dd_penalty * max(0, worst_dd_pct - dd_target_pct).")
+    lines.append("- Heavy execution выполняется только на VPS через run_server_job.sh (STOP_AFTER=1).")
+    lines.append("- Heavy артефакты `coint4/artifacts/wfa/runs_clean/**` не коммитить.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Budget1000 autopilot: VPS WFA sweeps + robust selection")
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Autopilot YAML config (relative to app-root coint4/ unless absolute).",
+    )
+    parser.add_argument("--resume", action="store_true", help="Resume from controller state if present.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset controller state (creates a timestamped .bak copy if state.json exists).",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Generate next queue only; do not run VPS.")
+    args = parser.parse_args(argv)
+
+    app_root = _resolve_app_root()
+    repo_root = _resolve_repo_root(app_root)
+    py = _venv_python(app_root)
+
+    config_path = _resolve_under_root(args.config, root=app_root)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if not isinstance(cfg, dict):
+        raise SystemExit(f"Invalid YAML config: {config_path}")
+
+    base_config_rel = str(cfg.get("base_config") or "").strip()
+    if not base_config_rel:
+        raise SystemExit("config.base_config is required")
+
+    run_group_prefix = str(cfg.get("run_group_prefix") or "").strip()
+    if not run_group_prefix:
+        raise SystemExit("config.run_group_prefix is required (e.g. 20260215_budget1000_ap)")
+
+    controller_group = str(cfg.get("controller_group") or f"{run_group_prefix}_autopilot").strip()
+    controller_dir = app_root / "artifacts" / "wfa" / "aggregate" / controller_group
+    state_path = controller_dir / "state.json"
+
+    selection_cfg = cfg.get("selection") or {}
+    max_dd_pct_raw = selection_cfg.get("max_dd_pct", None)
+    max_dd_pct = None if max_dd_pct_raw is None else float(max_dd_pct_raw)
+    dd_target_pct_raw = selection_cfg.get("dd_target_pct", None)
+    dd_target_pct = None if dd_target_pct_raw is None else float(dd_target_pct_raw)
+    dd_penalty = float(selection_cfg.get("dd_penalty") or 0.0)
+    min_windows = int(selection_cfg.get("min_windows") or 3)
+    min_trades = int(selection_cfg.get("min_trades") or 10)
+    min_pairs = int(selection_cfg.get("min_pairs") or 1)
+
+    search_cfg = cfg.get("search") or {}
+    max_rounds = int(search_cfg.get("max_rounds") or 3)
+    min_improvement = float(search_cfg.get("min_improvement") or 0.02)
+    knobs = search_cfg.get("knobs") or []
+    if not isinstance(knobs, list) or not knobs:
+        raise SystemExit("config.search.knobs must be a non-empty list")
+
+    windows_cfg = cfg.get("windows") or []
+    if not isinstance(windows_cfg, list) or not windows_cfg:
+        raise SystemExit("config.windows must be a non-empty list of [start,end] pairs")
+    windows: List[Tuple[str, str]] = []
+    for item in windows_cfg:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise SystemExit("config.windows entries must be [start_date,end_date]")
+        windows.append((str(item[0]), str(item[1])))
+
+    exec_cfg = cfg.get("execution") or {}
+    sync_up = bool(exec_cfg.get("sync_up", True))
+    stop_after = bool(exec_cfg.get("stop_after", True))
+    bar_minutes = float(exec_cfg.get("bar_minutes") or 15.0)
+    overwrite_canonical = bool(exec_cfg.get("overwrite_canonical", True))
+
+    git_cfg = cfg.get("git") or {}
+    auto_stage = bool(git_cfg.get("auto_stage", True))
+
+    configs_dir_rel = str(cfg.get("configs_dir") or "configs/budget1000_autopilot").strip()
+    queue_dir_rel = str(cfg.get("queue_dir") or "artifacts/wfa/aggregate").strip()
+    runs_dir_rel = str(cfg.get("runs_dir") or "artifacts/wfa/runs_clean").strip()
+
+    state: Dict[str, Any] = {}
+    if args.reset and state_path.exists():
+        backup = state_path.with_suffix(state_path.suffix + f".bak_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+        backup.write_text(state_path.read_text(encoding="utf-8"), encoding="utf-8")
+    elif state_path.exists() and not args.resume:
+        raise SystemExit(f"State already exists: {state_path} (use --resume or --reset)")
+
+    if args.resume and not args.reset:
+        state = _load_state(state_path)
+
+    if not state:
+        state = {
+            "schema_version": 1,
+            "created_at_utc": _utc_now_iso(),
+            "updated_at_utc": _utc_now_iso(),
+            "config_path": str(config_path.relative_to(app_root)) if config_path.is_relative_to(app_root) else str(config_path),
+            "controller_group": controller_group,
+            "run_group_prefix": run_group_prefix,
+            "base_config_path": base_config_rel,
+            "round": 1,
+            "knob_index": 0,
+            "current_best": None,
+            "history": [],
+            "done": False,
+            "final_report": None,
+        }
+        _save_state(state_path, state)
+
+    if state.get("done") is True:
+        print(f"[autopilot] done=true, nothing to do (state: {state_path})")
+        return 0
+
+    current_round = int(state.get("round") or 1)
+    knob_index = int(state.get("knob_index") or 0)
+
+    env_py = os.environ.copy()
+    env_py["PYTHONPATH"] = str(app_root / "src")
+
+    rollup_run_index = app_root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+
+    improved_in_round = False
+    while current_round <= max_rounds:
+        while knob_index < len(knobs):
+            knob = knobs[knob_index]
+            if not isinstance(knob, dict):
+                raise SystemExit("Each knob must be a mapping with key/op/step/candidates")
+            knob_key = str(knob.get("key") or "").strip()
+            op = str(knob.get("op") or "").strip()
+            step = float(knob.get("step") or 0.0)
+            candidates = knob.get("candidates") or []
+            if not knob_key or op not in {"add", "mul"} or step <= 0 or not isinstance(candidates, list):
+                raise SystemExit(f"Invalid knob definition: {knob}")
+            candidates_int = [int(x) for x in candidates]
+            min_value = _to_float(knob.get("min")) if "min" in knob else None
+            max_value = _to_float(knob.get("max")) if "max" in knob else None
+
+            # IMPORTANT: always derive base_config_path from state so coordinate-ascent
+            # updates apply immediately within the same process run.
+            base_config_path = str(state.get("base_config_path") or base_config_rel)
+            base_cfg_path = _resolve_under_root(base_config_path, root=app_root)
+            base_cfg = yaml.safe_load(base_cfg_path.read_text(encoding="utf-8"))
+            if not isinstance(base_cfg, dict):
+                raise SystemExit(f"Invalid base YAML: {base_cfg_path}")
+            current_value = float(get_nested(base_cfg, knob_key))
+            values = _candidate_values(
+                current=current_value,
+                op=op,
+                step=step,
+                candidates=candidates_int,
+                min_value=min_value,
+                max_value=max_value,
+            )
+
+            knob_slug = short_key_for_tag(knob_key)
+            run_group = f"{run_group_prefix}_r{current_round:02d}_{knob_slug}"
+            queue_path = app_root / queue_dir_rel / run_group / "run_queue.csv"
+            spec_path = queue_path.parent / "sweep_spec.json"
+
+            expected_spec = {
+                "run_group": run_group,
+                "base_config_path": base_config_path,
+                "knob": {
+                    "key": knob_key,
+                    "op": op,
+                    "step": step,
+                    "candidates": candidates_int,
+                    "values": values,
+                    "current_value": current_value,
+                },
+                "windows": windows,
+            }
+
+            def _spec_matches() -> bool:
+                if not spec_path.exists():
+                    return False
+                try:
+                    payload = json.loads(spec_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    return False
+                if not isinstance(payload, dict):
+                    return False
+                for key in ("run_group", "base_config_path", "windows"):
+                    if payload.get(key) != expected_spec.get(key):
+                        return False
+                knob_payload = payload.get("knob")
+                if not isinstance(knob_payload, dict):
+                    return False
+                for key in ("key", "op", "step", "candidates", "values"):
+                    if knob_payload.get(key) != expected_spec["knob"].get(key):
+                        return False
+                return True
+
+            if not queue_path.exists() or not _spec_matches():
+                # (Re)generate queue/configs when missing, or when the queue exists but was built
+                # from a different base_config_path/knob grid (e.g. after a coordinate-ascent update).
+                queue_path = _generate_sweep_queue(
+                    app_root=app_root,
+                    run_group=run_group,
+                    base_config_path=base_cfg_path,
+                    windows=windows,
+                    knob_key=knob_key,
+                    knob_values=values,
+                    configs_dir_rel=configs_dir_rel,
+                    queue_dir_rel=queue_dir_rel,
+                    runs_dir_rel=runs_dir_rel,
+                )
+
+                _dump_json(
+                    spec_path,
+                    {
+                        "generated_at_utc": _utc_now_iso(),
+                        **expected_spec,
+                    },
+                )
+
+            # Ensure queue + configs are tracked for SYNC_UP=1.
+            # NOTE: SYNC_UP=1 uploads only `git ls-files` => stage every referenced config file
+            # (not just the directory pathspec), otherwise VPS execution will see missing configs.
+            tracked_paths: List[Path] = []
+            tracked_paths.append(Path("coint4") / queue_path.relative_to(app_root))
+            for cfg_rel in _queue_config_paths(queue_path):
+                tracked_paths.append(Path("coint4") / cfg_rel)
+            _ensure_tracked_for_sync_up(
+                repo_root=repo_root,
+                paths_rel_repo=tracked_paths,
+                auto_stage=auto_stage,
+            )
+
+            if args.dry_run:
+                print(f"[autopilot] dry-run: generated/ready queue: {queue_path.relative_to(app_root)}")
+                return 0
+
+            # Run on VPS (heavy) unless the queue is already completed locally.
+            if _queue_is_fully_completed(queue_path, app_root=app_root):
+                print(f"[autopilot] queue already completed, skipping VPS run: {queue_path.relative_to(app_root)}")
+            else:
+                _run_vps_queue(
+                    repo_root=repo_root,
+                    run_group=run_group,
+                    queue_rel_app_root=str(queue_path.relative_to(app_root)),
+                    sync_up=sync_up,
+                    stop_after=stop_after,
+                )
+
+            # Local postprocess: canonical metrics + rollup rebuild.
+            post_cmd = [
+                str(py),
+                "scripts/optimization/postprocess_queue.py",
+                "--queue",
+                str(queue_path.relative_to(app_root)),
+                "--bar-minutes",
+                str(bar_minutes),
+                "--build-rollup",
+            ]
+            if overwrite_canonical:
+                post_cmd.append("--overwrite-canonical")
+            _run(post_cmd, cwd=app_root, env=env_py, check=True)
+
+            # Selection for this sweep.
+            selection = select_best_multiwindow(
+                run_index_path=rollup_run_index,
+                run_group=run_group,
+                min_windows=min_windows,
+                min_trades=min_trades,
+                min_pairs=min_pairs,
+                max_dd_pct=max_dd_pct,
+                dd_target_pct=dd_target_pct,
+                dd_penalty=dd_penalty,
+            )
+
+            prev_best = state.get("current_best") or {}
+            prev_score = float(prev_best.get("score") or float("-inf"))
+            improved = bool(selection.score > prev_score + float(min_improvement))
+            if improved:
+                improved_in_round = True
+                state["current_best"] = {
+                    "updated_at_utc": _utc_now_iso(),
+                    "run_group": selection.run_group,
+                    "variant_id": selection.variant_id,
+                    "score": selection.score,
+                    "worst_robust_sharpe": selection.worst_robust_sharpe,
+                    "avg_robust_sharpe": selection.avg_robust_sharpe,
+                    "worst_dd_pct": selection.worst_dd_pct,
+                    "avg_dd_pct": selection.avg_dd_pct,
+                    "windows": selection.windows,
+                    "sample_config_path": selection.sample_config_path,
+                }
+                state["base_config_path"] = selection.sample_config_path
+
+            state.setdefault("history", []).append(
+                {
+                    "at_utc": _utc_now_iso(),
+                    "round": current_round,
+                    "knob_index": knob_index,
+                    "knob_key": knob_key,
+                    "run_group": run_group,
+                    "best_variant_id": selection.variant_id,
+                    "best_score": selection.score,
+                    "best_worst_robust_sharpe": selection.worst_robust_sharpe,
+                    "best_worst_dd_pct": selection.worst_dd_pct,
+                    "improved": improved,
+                }
+            )
+
+            knob_index += 1
+            state["knob_index"] = knob_index
+            _save_state(state_path, state)
+
+        # End of round.
+        if not improved_in_round:
+            state["done"] = True
+            report_path = _final_report_path(repo_root=repo_root)
+            state["final_report"] = str(report_path.relative_to(repo_root))
+            _save_state(state_path, state)
+            _write_text(report_path, _render_final_report(state=state))
+            print(f"[autopilot] stop-condition reached, report: {report_path}")
+            return 0
+
+        # New round around the updated best.
+        improved_in_round = False
+        current_round += 1
+        knob_index = 0
+        state["round"] = current_round
+        state["knob_index"] = knob_index
+        _save_state(state_path, state)
+
+    # Safety cap: reached max_rounds.
+    state["done"] = True
+    report_path = _final_report_path(repo_root=repo_root)
+    state["final_report"] = str(report_path.relative_to(repo_root))
+    _save_state(state_path, state)
+    _write_text(report_path, _render_final_report(state=state))
+    print(f"[autopilot] max_rounds reached, report: {report_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,6 +1,6 @@
 # Optimization state
 
-Last updated: 2026-02-15
+Last updated: 2026-02-16
 
 Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
 
@@ -22,6 +22,17 @@ DD-gate для $1000:
 Sanity-gates (анти no-op, минимальные):
 - `total_trades >= 10` и (если метрика присутствует) `total_pairs_traded >= 1`.
 - `equity_curve.csv` должен содержать минимум 2 точки (иначе Sharpe/DD по curve не определены, а `sharpe_ratio_abs` в канонизации может стать 0).
+
+Recent updates (2026-02-16):
+
+### Budget1000 autopilot (VPS WFA -> postprocess -> max_rounds)
+- Конфиг автопилота: `coint4/configs/autopilot/budget1000.yaml`.
+- Controller state: `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json`.
+- Итоговый отчёт: `docs/budget1000_autopilot_final_20260216.md` (завершение по `max_rounds=3`, не по stop-condition).
+- Выполнено 9 очередей (3 раунда × 3 knobs): `20260215_budget1000_ap_r{01,02,03}_{risk,slusd,vm}` (по 30 run'ов на очередь: 3 окна × 5 значений × holdout+stress).
+- Best candidate (DD gate отключён, использовался soft penalty `dd_target_pct=0.15`, `dd_penalty=5.0`):
+  - knobs: `risk_per_position_pct=0.015`, `pair_stop_loss_usd=4.5`, `max_var_multiplier=1.0035`
+  - score: `2.357`, worst robust Sharpe: `3.310`, worst DD: `34.1%` (DD-gate `<=15%` НЕ проходит).
 
 Recent updates (2026-02-15):
 
