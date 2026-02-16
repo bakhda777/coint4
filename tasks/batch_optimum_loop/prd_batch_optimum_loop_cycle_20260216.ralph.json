@@ -24,7 +24,7 @@
         "ranking"
       ],
       "dependsOn": [],
-      "completionNotes": "BL-ANL review (2026-02-16 UTC)\n\nFresh run/log reviewed\n- iteration_log: .ralph-tui/iterations/7f8a7bab_2026-02-16_08-52-34_BL-EXEC.log\n- latest_run_group: 20260216_budget1000_bl5_r05_corr\n- queue_status_by_prefix: completed=336, planned=6, malformed=0, stalled=0, total=342\n- executor_stop_reason: max_rounds_reached: max_rounds=5\n\nComparison slice #1 (current prefix: 20260216_budget1000_bl5_)\n- DD-first winner: run_group=20260216_budget1000_bl5_r05_corr, variant=prod_final_budget1000_risk0p006_slusd1p91_risk0p006_vm1p0075_corr0p34_pv0p39_corr0p28_min_beta0p0005_vm1p0095_slusd2p16_corr0p26\n- metrics: score=4.313827, worst_robust_sharpe=4.340944, worst_dd_pct=0.111937\n- runner-up: run_group=20260216_budget1000_bl5_r02_slusd (score=4.256558, worst_robust_sharpe=4.327677, worst_dd_pct=0.115080).\n- interpretation: correlation step improved score while keeping DD under hard gate; room for further DD tightening still exists.\n\nComparison slice #2 (global completed pool: 20260216_budget1000_bl*)\n- global DD-first top: 20260216_budget1000_bl5_r05_corr (same metrics).\n- global second: 20260216_budget1000_bl5_r02_slusd (score=4.256558).\n- previous leaders now behind: 20260216_budget1000_bl4_r03_min_beta (score=4.107323), 20260216_budget1000_bl4_r04_risk (score=4.061203).\n- decision: improvement space remains open; continue loop with new prefix.\n\nForbidden contour signal (from bl5 winner, holdout+stress x 3 windows)\n- top pair concentration: GMTUSDT-HOOKUSDT reached 16.78% abs-PnL share in 20231001-20240930 window.\n- top symbol shares: HOOKUSDT=6.43%, ARKMUSDT=5.04%, FTTUSDT=5.03%, GMTUSDT=4.88%.\n- safe default: run baseline profile first; if concentration trigger repeats, rerun with concentration_v3 profile.\n\nNext batch config and launch parameters\n- run_group_prefix: 20260216_budget1000_bl6\n- config: configs/autopilot/budget1000_batch_loop_bridge06_20260216.yaml\n- controller_group: 20260216_budget1000_bl6_autopilot\n- batch policy: min_queue_entries=60 (>=10 variants per round; 3 windows x holdout+stress).\n- coarse policy: no micro precision; zero-offset is excluded from candidate offsets.\n- guardrail: backtest.max_var_multiplier STRICT > 1.0 (min=1.001).\n\nKnobs for next round\n1) backtest.max_var_multiplier\n2) backtest.pair_stop_loss_usd\n3) portfolio.risk_per_position_pct\n4) pair_selection.coint_pvalue_threshold\n5) pair_selection.min_correlation\n6) filter_params.min_beta\n\nDirections covered from source PRD\n1) batch loop >=10\n2) coarse quantization policy\n3) risk/slusd/vm knobs\n4) pair_selection/filter_params knobs\n5) forbidden symbols/pairs contour\n6) DD-first gates with min_windows/trades/pairs sanity\n\nExact launch command for BL-EXEC\ncd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge06_20260216.yaml --reset\n"
+      "completionNotes": "BL-ANL review (2026-02-16 UTC)\n\nFresh run/log reviewed\n- iteration_log: .ralph-tui/iterations/7f8a7bab_2026-02-16_10-19-27_BL-EXEC.log\n- latest_run_group: 20260216_budget1000_bl6_r06_min_beta\n- latest_run_status: completed=72, planned=0, malformed=0, stalled=0, total=72\n- prefix_status (20260216_budget1000_bl6): completed=426, planned=12, malformed=0, stalled=0, total=438\n- executor_stop_reason: max_rounds_reached: max_rounds=6\n\nComparison slice #1 (current prefix: 20260216_budget1000_bl6_)\n- DD-first winner (bridge06 scoring): run_group=20260216_budget1000_bl6_r01_vm, variant=prod_final_budget1000_risk0p006_slusd1p91_risk0p006_vm1p0075_corr0p34_pv0p39_corr0p28_min_beta0p0005_vm1p0095_slusd2p16_corr0p26_vm1p0035.\n- metrics: score=4.344741, worst_robust_sharpe=4.387447, worst_dd_pct=0.102669.\n- prefix runner-up by score: run_group=20260216_budget1000_bl6_r05_corr (score=4.227313, worst_robust_sharpe=4.270019, worst_dd_pct=0.102669).\n- latest run_group (r06_min_beta) best score=3.039154; no improvement vs prefix winner.\n\nComparison slice #2 (global completed pool: 20260216_budget1000_bl*)\n- global top: run_group=20260216_budget1000_bl6_r01_vm (same metrics as prefix winner).\n- global second distinct run_group: 20260216_budget1000_bl6_r05_corr (score=4.227313).\n- previous cycle leader now behind on current DD-penalty scale: 20260216_budget1000_bl5_r05_corr (score=4.149953).\n- decision: improvement space remains open, continue loop with new prefix.\n\nForbidden contour signal (winner bl6_r01_vm, holdout+stress x 3 windows)\n- max pair concentration: GMTUSDT-HOOKUSDT = 11.66% abs-PnL share.\n- max symbol concentration: AXSUSDT = 13.28% abs-PnL share.\n- safe default policy: baseline first pass; switch profile when pair>=12% or symbol>=10%.\n\nNext batch config and launch parameters\n- run_group_prefix: 20260216_budget1000_bl7\n- config: configs/autopilot/budget1000_batch_loop_bridge07_20260216.yaml\n- controller_group: 20260216_budget1000_bl7_autopilot\n- batch policy: min_queue_entries=60 (>=10 variants per round; 3 windows x holdout+stress).\n- coarse policy: no micro precision; zero-offset is excluded from candidate offsets.\n- guardrail: backtest.max_var_multiplier STRICT > 1.0 (min=1.001).\n\nKnobs for next round\n1) backtest.max_var_multiplier\n2) backtest.portfolio_daily_stop_pct\n3) backtest.pair_stop_loss_usd\n4) portfolio.risk_per_position_pct\n5) pair_selection.min_correlation\n6) pair_selection.coint_pvalue_threshold\n7) filter_params.min_beta\n\nDirections covered from source PRD\n1) batch loop >=10\n2) coarse quantization policy\n3) risk/slusd/vm plus daily-stop risk contour\n4) pair_selection/filter_params knobs\n5) forbidden symbols/pairs contour\n6) DD-first gates with min_windows/trades/pairs sanity\n\nExact launch command for BL-EXEC\ncd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge07_20260216.yaml --reset\n"
     },
     {
       "id": "BL-EXEC",
@@ -76,7 +76,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-16T00:00:00Z",
-    "updatedAt": "2026-02-16T15:18:04.440Z",
+    "updatedAt": "2026-02-16T16:59:38Z",
     "version": "1.0.0",
     "sourcePrd": "tasks/batch_optimum_loop/prd_batch_optimum_loop_20260216.ralph.json",
     "loopProtocol": "State-machine на status flags: старт BL-ANL=false, BL-EXEC=true, BL-CLOSE=false; аналитик открывает исполнителя (BL-EXEC=false), исполнитель возвращает цикл аналитику (BL-ANL=false). Финальное завершение только через BL-CLOSE после стоп-фразы аналитика.",
@@ -96,30 +96,30 @@
       "BA-005 tests + docs + dry-run"
     ],
     "latestAnalystReview": {
-      "iterationLog": ".ralph-tui/iterations/7f8a7bab_2026-02-16_08-52-34_BL-EXEC.log",
-      "latestRunGroup": "20260216_budget1000_bl5_r05_corr",
+      "iterationLog": ".ralph-tui/iterations/7f8a7bab_2026-02-16_10-19-27_BL-EXEC.log",
+      "latestRunGroup": "20260216_budget1000_bl6_r06_min_beta",
       "latestRunStatus": {
-        "completed": 336,
-        "planned": 6,
+        "completed": 72,
+        "planned": 0,
         "malformed": 0,
         "stalled": 0,
-        "total": 342
+        "total": 72
       },
       "currentPrefixBest": {
-        "run_group": "20260216_budget1000_bl5_r05_corr",
-        "score": 4.3138266654735435,
-        "worst_robust_sharpe": 4.340944419893576,
-        "worst_dd_pct": 0.11193698245857377
+        "run_group": "20260216_budget1000_bl6_r01_vm",
+        "score": 4.344741131868277,
+        "worst_robust_sharpe": 4.3874465813016625,
+        "worst_dd_pct": 0.10266909058958658
       },
       "globalCompletedBest": {
-        "run_group": "20260216_budget1000_bl5_r05_corr",
-        "score": 4.3138266654735435,
-        "worst_robust_sharpe": 4.340944419893576,
-        "worst_dd_pct": 0.11193698245857377,
-        "note": "second_is_20260216_budget1000_bl5_r02_slusd_score4p256558"
+        "run_group": "20260216_budget1000_bl6_r01_vm",
+        "score": 4.344741131868277,
+        "worst_robust_sharpe": 4.3874465813016625,
+        "worst_dd_pct": 0.10266909058958658,
+        "note": "second_is_20260216_budget1000_bl6_r05_corr_score4p227313"
       },
-      "recommendedNextConfig": "configs/autopilot/budget1000_batch_loop_bridge06_20260216.yaml",
-      "recommendedRunGroupPrefix": "20260216_budget1000_bl6"
+      "recommendedNextConfig": "configs/autopilot/budget1000_batch_loop_bridge07_20260216.yaml",
+      "recommendedRunGroupPrefix": "20260216_budget1000_bl7"
     },
     "latestExecutorReview": {
       "executedAt": "2026-02-16T15:11:09Z",
