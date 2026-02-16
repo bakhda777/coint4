@@ -24,6 +24,8 @@ help:
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
 	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
+	@echo "  make secret-scan Run staged secret scan (forbidden paths + sensitive patterns)"
+	@echo "  make install-hooks Configure git pre-commit hook for staged secret scan"
 	@echo "  make vps-baseline Run baseline WFA queue on VPS (uses run_server_job.sh + STOP_AFTER=1 + sync_back)"
 	@echo ""
 	@echo "Notes:"
@@ -61,6 +63,16 @@ ci: lint test
 .PHONY: hygiene
 hygiene:
 	@python3 coint4/scripts/check_repo_hygiene.py
+
+.PHONY: secret-scan
+secret-scan:
+	@bash coint4/scripts/dev/secret_scan_staged.sh
+
+.PHONY: install-hooks
+install-hooks:
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/pre-commit
+	@echo "Configured git hooksPath=.githooks"
 
 .PHONY: vps-baseline
 vps-baseline:
