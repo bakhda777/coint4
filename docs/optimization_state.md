@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-16
 
-Current stage: **Prod config v2 finalized** + **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
+Current stage: **Budget1000 closed-loop autopilot завершён по stop-condition** + **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -51,6 +51,20 @@ Recent updates (2026-02-16):
   - max_rounds best: `score=2.357188`, `worst_robust_sharpe=3.310223`, `worst_dd_pct=0.340607` (DD gate `<=0.25` не проходит).
   - follow-up fallback: `score=1.646785`, `worst_robust_sharpe=2.288574`, `worst_dd_pct=0.230224` (DD gate `<=0.25` проходит).
   - Δ (follow-up - max_rounds): `score=-0.710403`, `worst_robust_sharpe=-1.021648`, `worst_dd_pct=-0.110383` (улучшение DD на `11.04` п.п.).
+
+### Budget1000 closed-loop autopilot (APF-05: resume до done=true)
+- Конфиг: `coint4/configs/autopilot/budget1000_closed_loop_20260216.yaml`.
+- Controller state: `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`.
+- Статус: `done=true`.
+- Stop reason: `no_improvement_streak_reached: streak=1, rounds=1, min_improvement=0.02`.
+- Heavy выполнен только через `coint4/scripts/remote/run_server_job.sh` на `85.198.90.128`; VPS выключался автоматически после каждого раунда (`STOP_AFTER=1`).
+- Выполнены run_group: `20260216_budget1000_cl_r01_risk`, `20260216_budget1000_cl_r02_risk`, `20260216_budget1000_cl_r03_risk`.
+- Лучший кандидат closed-loop:
+  - run_group: `20260216_budget1000_cl_r02_risk`
+  - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_risk0p009`
+  - metrics: `score=2.856356`, `worst_robust_sharpe=3.269438`, `worst_dd_pct=0.201635`
+  - sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
+- Итоговый отчёт: `docs/budget1000_autopilot_final_20260216.md`.
 
 Recent updates (2026-02-15):
 

@@ -70,3 +70,28 @@ DD-first фиксация best-кандидата для продолжения 
 Итог сравнения:
 - DD-first follow-up улучшил worst DD на `11.04` п.п. относительно max_rounds-цикла (`0.340607 -> 0.230224`) и дал прохождение DD-gate `<=0.25`.
 - Цена улучшения DD: `score` ниже на `0.710403`, worst-window robust Sharpe ниже на `1.021648`.
+
+## Budget1000 closed-loop autopilot (resume до done=true)
+
+Команда (из `coint4/`):
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_closed_loop_20260216.yaml --resume`
+
+Что выполнено:
+- Heavy шаги шли только через `scripts/remote/run_server_job.sh` на `85.198.90.128`.
+- Выполнены очереди: `20260216_budget1000_cl_r01_risk`, `20260216_budget1000_cl_r02_risk`, `20260216_budget1000_cl_r03_risk`.
+- После каждого remote job VPS выключался автоматически (`STOP_AFTER=1`, API shutdown).
+- Локальный postprocess/rollup выполнен автопилотом после каждого раунда; финальный `run_index` пересобран до `entries=1932`.
+
+Итог контроллера:
+- State: `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`
+- `done=true`
+- `stop_reason=no_improvement_streak_reached: streak=1, rounds=1, min_improvement=0.02`
+- Финальный отчёт: `docs/budget1000_autopilot_final_20260216.md`
+
+Лучший кандидат closed-loop:
+- run_group: `20260216_budget1000_cl_r02_risk`
+- variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_risk0p009`
+- score: `2.856356`
+- worst_robust_sharpe: `3.269438`
+- worst_dd_pct: `0.201635`
+- sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
