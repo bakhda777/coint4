@@ -31,6 +31,9 @@ SYNC_BACK=${SYNC_BACK:-"1"}
 SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
 # If local repo is ahead of origin or git push isn't available, sync tracked files up to VPS.
 SYNC_UP=${SYNC_UP:-"0"}
+# SYNC_UP_MODE=tracked  -> sync all git-tracked files.
+# SYNC_UP_MODE=code     -> sync tracked files, excluding artifacts/outputs/logs/pids.
+SYNC_UP_MODE=${SYNC_UP_MODE:-"tracked"}
 STOP_AFTER=${STOP_AFTER:-"1"}
 # If SERVSPACE_API_KEY isn't available, you can still shut down via SSH after syncing back.
 STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
@@ -294,10 +297,26 @@ sync_up() {
 
   local sha
   sha="$(git -C "$LOCAL_REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
-  echo "[server] syncing tracked files from ${LOCAL_REPO_DIR} -> ${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}"
+  echo "[server] syncing files (${SYNC_UP_MODE}) from ${LOCAL_REPO_DIR} -> ${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}"
 
   ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "mkdir -p '${SERVER_REPO_DIR}'"
-  git -C "$LOCAL_REPO_DIR" ls-files -z | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
+  if [[ "$SYNC_UP_MODE" == "tracked" ]]; then
+    git -C "$LOCAL_REPO_DIR" ls-files -z | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
+  elif [[ "$SYNC_UP_MODE" == "code" ]]; then
+    git -C "$LOCAL_REPO_DIR" ls-files -z \
+      | while IFS= read -r -d '' rel_path; do
+          case "$rel_path" in
+            coint4/artifacts/*|coint4/outputs/*|outputs/*|.ralph-tui/iterations/*|*.log|*.pid)
+              continue
+              ;;
+          esac
+          printf '%s\0' "$rel_path"
+        done \
+      | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
+  else
+    echo "Unsupported SYNC_UP_MODE=${SYNC_UP_MODE}. Use tracked or code." >&2
+    exit 1
+  fi
 
   if [[ -n "$sha" ]]; then
     ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "echo '${sha}' > '${SERVER_REPO_DIR}/SYNCED_FROM_COMMIT.txt'"
