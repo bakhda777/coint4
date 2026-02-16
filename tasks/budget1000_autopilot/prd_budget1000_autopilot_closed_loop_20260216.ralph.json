@@ -1,0 +1,194 @@
+{
+  "name": "budget1000_autopilot_closed_loop: прогон -> анализ -> перестройка -> повтор до no-improvement",
+  "description": "Цель: запускать WFA-автопилот циклом до точки, в которой улучшения больше недостижимы по заданным правилам. Обязательный цикл: VPS прогон очереди -> sync_back/postprocess -> анализ дельты к best-so-far -> перестройка следующей очереди -> повтор. Heavy execution выполняется только на VPS 85.198.90.128 через scripts/remote/run_server_job.sh с STOP_AFTER=1. Тяжелые артефакты из artifacts/wfa/runs/** и artifacts/wfa/runs_clean/** не коммитить.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "APL-01",
+      "title": "Ввести явный stop-condition no-improvement в контроллере автопилота",
+      "description": "Добавить/актуализировать логику завершения цикла по отсутствию улучшений: если best score не улучшается на заданный минимум в течение N раундов подряд, контроллер завершает цикл с done=true и фиксирует stop_reason.",
+      "acceptanceCriteria": [
+        "В коде/конфиге автопилота поддержан параметризуемый stop-condition no-improvement (порог улучшения и длина streak).",
+        "В state.json контроллера фиксируются поля best_score, no_improvement_streak и stop_reason.",
+        "При достижении условия no-improvement цикл завершает работу с done=true без ручного вмешательства.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "autopilot",
+        "controller",
+        "stop-condition"
+      ],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-02",
+      "title": "Сохранить round-by-round анализ улучшений",
+      "description": "На каждом раунде сохранять компактный артефакт анализа (JSON/MD): best до раунда, best после раунда, delta score, delta worst_robust_sharpe, delta worst_dd_pct, решение по следующему раунду.",
+      "acceptanceCriteria": [
+        "Для каждого раунда создается файл анализа в artifacts/wfa/aggregate/<controller_group>/.",
+        "В анализе есть сравнение previous best vs current best и формализованное решение continue/stop.",
+        "Артефакт анализа используется как вход для генерации следующей очереди.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "analysis",
+        "metrics",
+        "rollup"
+      ],
+      "dependsOn": [
+        "APL-01"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-03",
+      "title": "Реализовать перестройку очереди на основе анализа раунда",
+      "description": "После анализа раунда автопилот формирует следующую очередь: локальный sweep вокруг winner или fallback-ветка по альтернативному knob, исключая дубли и невалидные комбинации.",
+      "acceptanceCriteria": [
+        "Следующая очередь генерируется автоматически и зависит от результатов предыдущего раунда.",
+        "В новой очереди отсутствуют точные дубли уже прогнанных конфигов текущего controller_group.",
+        "Правило выбора ветки (local refine vs fallback knob) явно зафиксировано в коде/документации.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "queue",
+        "mutation",
+        "search"
+      ],
+      "dependsOn": [
+        "APL-02"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-04",
+      "title": "Подготовить отдельный closed-loop конфиг и инициализировать цикл",
+      "description": "Создать новый конфиг автопилота для closed-loop цикла (отдельные run_group_prefix/controller_group), стартовать от актуального best sample config и запустить reset-инициализацию контроллера.",
+      "acceptanceCriteria": [
+        "Создан конфиг `coint4/configs/autopilot/budget1000_closed_loop_20260216.yaml`.",
+        "Заданы уникальные `run_group_prefix` и `controller_group`, не пересекающиеся с предыдущими циклами.",
+        "После `--reset` создан state.json нового controller_group.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "config",
+        "bootstrap"
+      ],
+      "dependsOn": [
+        "APL-03"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-05",
+      "title": "Гонять VPS-цикл до автоматической остановки по stop-condition",
+      "description": "Запускать `autopilot_budget1000.py --resume` до тех пор, пока контроллер не выставит done=true по stop-condition (или исчерпанию пространства поиска), с выполнением heavy только через run_server_job.sh.",
+      "acceptanceCriteria": [
+        "Все heavy-прогоны выполняются через `coint4/scripts/remote/run_server_job.sh` на 85.198.90.128.",
+        "Для каждого remote job включен `STOP_AFTER=1` (VPS выключается по завершении).",
+        "Финальное состояние контроллера: done=true и заполнен stop_reason.",
+        "Если сеть/SSH/API недоступны, story не помечается как pass до фактического завершения VPS-цикла.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "vps",
+        "execution",
+        "loop"
+      ],
+      "dependsOn": [
+        "APL-04"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-06",
+      "title": "Синхронизировать статусы очередей и пересобрать canonical rollup",
+      "description": "После завершения цикла привести очереди в консистентное состояние и пересобрать единый индекс run_index, чтобы итоговый выбор опирался на актуальные метрики.",
+      "acceptanceCriteria": [
+        "Для всех run_group текущего controller_group выполнен sync_queue_status.py.",
+        "Пересобран `coint4/artifacts/wfa/aggregate/rollup/run_index.csv`.",
+        "В очередях цикла нет записей со статусом running/stalled.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "queue",
+        "rollup",
+        "consistency"
+      ],
+      "dependsOn": [
+        "APL-05"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-07",
+      "title": "Зафиксировать финального winner и отчёт closed-loop цикла",
+      "description": "Выбрать финального кандидата по DD-first правилам и worst-window robust Sharpe, сохранить итоговый отчёт с метриками, stop_reason и сравнением с baseline цикла.",
+      "acceptanceCriteria": [
+        "Сохранён отчёт `docs/budget1000_autopilot_closed_loop_final_20260216.md`.",
+        "В отчёте есть winner: variant_id, sample_config_path, score, worst_robust_sharpe, worst_dd_pct.",
+        "В отчёте явно указан stop_reason и объяснение, почему дальнейшие улучшения признаны недостижимыми.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "report",
+        "winner",
+        "dd-first"
+      ],
+      "dependsOn": [
+        "APL-06"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APL-08",
+      "title": "Обновить optimization_state и дневник прогонов по итогам closed-loop",
+      "description": "Обновить docs после завершения цикла: текущее состояние, следующий шаг, ссылки на финальный отчёт и ключевые метрики/сравнение с предыдущим циклом.",
+      "acceptanceCriteria": [
+        "Обновлён `docs/optimization_state.md` с итогом closed-loop цикла и next step.",
+        "Обновлён дневник `docs/optimization_runs_20260216.md` (или создан файл по фактической дате запуска).",
+        "Добавлена ссылка на `docs/budget1000_autopilot_closed_loop_final_20260216.md`.",
+        "Quality gate: `make lint` проходит.",
+        "Quality gate: `make test` проходит."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "docs",
+        "state"
+      ],
+      "dependsOn": [
+        "APL-07"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-16T00:00:00.000Z",
+    "updatedAt": "2026-02-16T08:18:32.000Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/budget1000_autopilot/prd_budget1000_autopilot_closed_loop_20260216.ralph.json",
+    "basedOn": "tasks/budget1000_autopilot/prd_budget1000_autopilot_followup_20260216.ralph.json"
+  }
+}
