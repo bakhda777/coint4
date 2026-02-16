@@ -122,3 +122,15 @@ DD-first фиксация best-кандидата для продолжения 
 
 Примечание по Git-политике:
 - Коммит `coint4/artifacts/**` блокируется pre-commit hook в этом репозитории, поэтому изменения артефактов фиксируются в рабочем дереве локально, а в Git сохраняется только журнальная запись.
+
+## Post-cycle consistency update (closed-loop finalize, 2026-02-16 09:20Z)
+
+Команды (из `coint4/`):
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r01_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_slusd/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_vm/run_queue.csv`
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+
+Результат:
+- Синхронизирована одна несогласованная очередь текущего цикла: `20260216_budget1000_cl_r02_risk/run_queue.csv` (`6/6 -> completed`).
+- Для `r01_risk`, `r02_slusd`, `r03_risk`, `r03_vm` изменений статусов не потребовалось.
+- Canonical rollup `coint4/artifacts/wfa/aggregate/rollup/run_index.{csv,json,md}` пересобран до `Run index entries: 2106`.
+- Для финального выбора зафиксировано правило: использовать обновлённый `run_index` вместе с контроллерным winner из `state.json` (`run_group=20260216_budget1000_cl_r01_risk`, `score=2.6059259347`).

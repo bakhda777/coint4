@@ -25,6 +25,16 @@ Sanity-gates (анти no-op, минимальные):
 
 Recent updates (2026-02-16):
 
+### Post-cycle consistency (closed-loop finalize)
+- Проверен state `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`: `done=true`, `stop_reason=max_rounds_reached: max_rounds=3`, history run_group = `r01_risk -> r02_slusd -> r03_vm`.
+- Выполнен адресный sync очередей цикла:
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r01_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_slusd/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_vm/run_queue.csv`
+- Изменения в статусах: `20260216_budget1000_cl_r02_risk/run_queue.csv` обновлён `6/6 -> completed`; в остальных очередях изменений нет.
+- Пересобран canonical rollup:
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+  - `run_index` после пересборки: `2106` записей.
+- Для финального выбора использовать актуальный `run_index` и winner из текущего state: `run_group=20260216_budget1000_cl_r01_risk`, `score=2.6059259347`.
+
 ### Budget1000 autopilot (VPS WFA -> postprocess -> max_rounds)
 - Конфиг автопилота: `coint4/configs/autopilot/budget1000.yaml`.
 - Controller state: `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json`.
