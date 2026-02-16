@@ -34,3 +34,24 @@
 - Best candidate (из отчёта): `risk_per_position_pct=0.015`, `pair_stop_loss_usd=4.5`, `max_var_multiplier=1.0035`.
 - Очереди: `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_r{01,02,03}_{risk,slusd,vm}/run_queue.csv` (9 очередей, по 30 runs каждая).
 - Каждый remote job запускался через `run_server_job.sh` с `STOP_AFTER=1` (VPS выключался после выполнения).
+
+## Budget1000 autopilot follow-up (APF-03: post-sync_back rollup + DD-first фиксация)
+
+Команда постпроцесса (из `coint4/`):
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/postprocess_queue.py --queue artifacts/wfa/aggregate/20260216_budget1000_ap2_r01_risk/run_queue.csv --bar-minutes 15 --overwrite-canonical --build-rollup --print-rank-multiwindow --rank-contains 20260216_budget1000_ap2`
+
+Факт после sync_back:
+- Rollup пересобран (`run_index.csv`, entries=1890).
+- Очередь `20260216_budget1000_ap2_r01_risk` осталась в состоянии `planned=30` (`metrics_present=False` для всех строк) — completed-run'ов нет.
+- Прямое ранжирование по `20260216_budget1000_ap2` вернуло `No variants matched`.
+
+DD-first фиксация best-кандидата для продолжения follow-up (fallback из завершённых `budget1000_ap_r*`):
+- run_group: `20260215_budget1000_ap_r03_slusd`
+- variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5`
+- score: `1.646785`
+- worst_robust_sharpe: `2.288574`
+- worst_dd_pct: `0.230224` (DD gate `<=0.25` проходит)
+- sample_config_path: `coint4/configs/budget1000_autopilot/20260215_budget1000_ap_r03_slusd/holdout_prod_final_budget1000_oos20220601_20230430_risk0p019_oos20220601_20230430_slusd6p5_oos20220601_20230430_slusd4p5_oos20220601_20230430_vm1p0035_oos20220601_20230430_risk0p015_oos20220601_20230430_slusd2p5.yaml`
+
+Отдельный итоговый файл follow-up:
+- `docs/budget1000_autopilot_followup_final_20260216.md`

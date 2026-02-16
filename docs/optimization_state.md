@@ -36,6 +36,18 @@ Recent updates (2026-02-16):
   - knobs: `risk_per_position_pct=0.015`, `pair_stop_loss_usd=4.5`, `max_var_multiplier=1.0035`
   - metrics: `score=2.357188`, `worst_robust_sharpe=3.310223`, `worst_dd_pct=0.340607` (34.1%; DD-gate `<=15%` НЕ проходит).
 
+### Budget1000 autopilot follow-up (APF-03: post-sync_back, DD-first)
+- Follow-up queue: `coint4/artifacts/wfa/aggregate/20260216_budget1000_ap2_r01_risk/run_queue.csv`.
+- Выполнен локальный постпроцесс и пересборка canonical rollup (`run_index.csv`, entries=1890).
+- Текущее состояние follow-up очереди: `planned=30`, `metrics_present=False` (completed-run'ов нет).
+- Ранжирование с DD-first ограничениями (`min_windows=3`, `max_dd_pct=0.25`) по `20260216_budget1000_ap2*` вернуло `No variants matched`.
+- Зафиксирован fallback-кандидат для продолжения follow-up (из последней завершённой autopilot-семьи):
+  - run_group: `20260215_budget1000_ap_r03_slusd`
+  - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5`
+  - metrics: `score=1.646785`, `worst_robust_sharpe=2.288574`, `worst_dd_pct=0.230224` (DD gate `<=0.25` проходит).
+  - sample_config_path: `coint4/configs/budget1000_autopilot/20260215_budget1000_ap_r03_slusd/holdout_prod_final_budget1000_oos20220601_20230430_risk0p019_oos20220601_20230430_slusd6p5_oos20220601_20230430_slusd4p5_oos20220601_20230430_vm1p0035_oos20220601_20230430_risk0p015_oos20220601_20230430_slusd2p5.yaml`
+- Итоговый follow-up отчёт: `docs/budget1000_autopilot_followup_final_20260216.md`.
+
 Recent updates (2026-02-15):
 
 ### Clean Cycle TOP-10 kickoff (prep)
