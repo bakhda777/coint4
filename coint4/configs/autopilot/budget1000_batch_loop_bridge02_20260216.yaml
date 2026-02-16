@@ -1,0 +1,104 @@
+# Budget $1000 batch-loop bridge02 config (BL-ANL recommendation, 2026-02-16).
+#
+# Objective:
+# - Keep robust Sharpe frontier from BL round while improving DD toward <=0.14 benchmark zone.
+# - Use coarse sweeps only and keep queue size >=10 after dedup.
+
+base_config: configs/budget_20260213_1000_dd_sprint08_stoplossusd_micro/holdout_prod_final_budget1000_oos20220601_20230430_risk0p006_slusd1p91.yaml
+
+windows:
+  - ["2022-06-01", "2023-04-30"]
+  - ["2023-10-01", "2024-09-30"]
+  - ["2024-05-01", "2025-06-30"]
+
+# <run_group_prefix>_r<round>_<knob>
+run_group_prefix: "20260216_budget1000_bl2"
+controller_group: "20260216_budget1000_bl2_autopilot"
+
+configs_dir: "configs/budget1000_autopilot"
+queue_dir: "artifacts/wfa/aggregate"
+runs_dir: "artifacts/wfa/runs_clean"
+
+execution:
+  sync_up: true
+  stop_after: true
+  bar_minutes: 15
+  overwrite_canonical: true
+
+git:
+  auto_stage: true
+
+selection:
+  min_windows: 3
+  min_trades: 10
+  min_pairs: 20
+
+  # DD-first tightening versus BL round.
+  max_dd_pct: 0.18
+  dd_target_pct: 0.14
+  dd_penalty: 10.0
+
+search:
+  max_rounds: 0
+  no_improvement_rounds: 2
+  min_improvement: 0.02
+  require_all_knobs_before_stop: true
+
+  # Batch policy: must keep >=10 candidates after dedup (target >=12).
+  min_queue_entries: 12
+
+  # Coarse grid only (no micro-thousandth sweeps).
+  knobs:
+    - key: "portfolio.risk_per_position_pct"
+      op: "add"
+      step: 0.001
+      candidates: [-1, 0, 1, 2, 3]
+      min: 0.005
+      max: 0.010
+
+    - key: "backtest.pair_stop_loss_usd"
+      op: "add"
+      step: 0.25
+      candidates: [-2, -1, 0, 1, 2, 3]
+      min: 1.50
+      max: 3.00
+
+    - key: "backtest.max_var_multiplier"
+      op: "add"
+      step: 0.002
+      candidates: [0, 1, 2, 3, 4]
+      # Guardrail: strict > 1.0.
+      min: 1.001
+      max: 1.020
+
+    - key: "pair_selection.min_correlation"
+      op: "add"
+      step: 0.02
+      candidates: [-2, -1, 0, 1]
+      min: 0.28
+      max: 0.38
+
+    - key: "pair_selection.coint_pvalue_threshold"
+      op: "add"
+      step: 0.05
+      candidates: [-2, -1, 0, 1]
+      min: 0.20
+      max: 0.40
+
+    - key: "filter_params.min_beta"
+      op: "add"
+      step: 0.0005
+      candidates: [-1, 0, 1, 2]
+      min: 0.0005
+      max: 0.0030
+
+# Forbidden symbols/pairs contour (analyst rule, manual profile switch before rerun).
+forbidden_profiles:
+  baseline:
+    exclude_symbols: []
+  memes_v1:
+    exclude_symbols: ["1000PEPEUSDT", "1000BONKUSDT", "WIFUSDT", "DOGEUSDT"]
+
+forbidden_policy:
+  rerun_if_pair_pnl_concentration_pct_ge: 35
+  profile_on_trigger: memes_v1
