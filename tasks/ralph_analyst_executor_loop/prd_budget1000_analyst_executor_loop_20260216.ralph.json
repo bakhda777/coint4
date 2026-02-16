@@ -1,0 +1,112 @@
+{
+  "name": "budget1000_analyst_executor_loop: непрерывный цикл аналитик -> исполнитель до исчерпания улучшений",
+  "description": "Loop на уровне статусов задач в ralph tui. Аналитик после каждого запуска анализирует последний прогон, сравнивает его со всеми актуальными completed-прогонами, формирует рекомендации на следующий запуск и передает их исполнителю. Исполнитель запускает прогон. После этого цикл возвращается к аналитику. Все задачи считаются завершенными только если аналитик явно фиксирует, что пространство улучшений исчерпано.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "RL-ANL",
+      "title": "Аналитик: анализ последнего прогона и рекомендация параметров следующего запуска",
+      "description": "На каждом цикле аналитик должен взять самый свежий лог ralph/итерации, проверить качество последнего запуска, сравнить с актуальными completed-прогонами и выдать следующий набор параметров/фильтров/гейтов.",
+      "acceptanceCriteria": [
+        "Определен самый свежий лог итерации ralph (`.ralph-tui/iterations`, сортировка по времени) и зафиксированы ключевые события: ошибки, stop_reason, фактический winner, несовпадения state vs rollup.",
+        "Перед сравнением выполнена актуализация статусов очередей для run_group текущего цикла (если есть `planned` после ручного запуска), затем пересобран canonical rollup: `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`.",
+        "Сравнение выполнено минимум в двух срезах через `scripts/optimization/rank_multiwindow_robust_runs.py`: (1) актуальный loop/prefix, (2) общий пул `budget1000_*` completed-прогонов.",
+        "В `completionNotes` задачи `RL-ANL` записаны рекомендации для следующего запуска: `run_group_prefix`, список изменяемых knob/фильтров, значения/диапазоны, DD/Sharpe-гейты и точная команда запуска.",
+        "Разрешено менять любые фильтры и параметры (включая risk, pair_stop_loss_usd, max_var_multiplier, гейты ranking/selection, min/max ограничения), если изменение обосновано сравнением с актуальными прогонами.",
+        "Если улучшения еще возможны, аналитик завершает текущую итерацию так: `RL-ANL.passes=true`, `RL-EXEC.passes=false`, `RL-CLOSE.passes=false`.",
+        "Если улучшения исчерпаны, аналитик обязан дословно записать в `completionNotes`: `мы перепробовали все что можно, как еще улучшить я не знаю`, затем выставить `RL-ANL.passes=true`, `RL-EXEC.passes=true`, `RL-CLOSE.passes=false` и передать управление финализатору `RL-CLOSE`."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "loop",
+        "analyst",
+        "ranking",
+        "recommendation"
+      ],
+      "dependsOn": [],
+      "completionNotes": "Аналитический цикл (2026-02-16, RL-ANL)\n\nReviewed latest ralph iteration log:\n- .ralph-tui/iterations/695f0314_2026-02-16_04-22-14_APLI-04.log\n\nКлючевые события:\n- stop_reason (controller state): max_rounds_reached: max_rounds=3\n- state.current_best указывает на r01_risk, но после sync+rollup фактический winner по completed-группам префикса 20260216_budget1000_cl_* = 20260216_budget1000_cl_r02_risk\n- Последний фактически выполненный запуск по run.log mtime: 20260216_budget1000_cl_r03_vm\n- Качество последнего запуска (r03_vm): best score=2.600161, worst_robust_sharpe=2.735524, worst_dd_pct=0.166920\n- Delta к текущему winner (r02_risk): score=-0.256194, worst_robust_sharpe=-0.533914, worst_dd_pct=-0.034715\n- Аномалия: в r03_vm осталось 6 stalled (все vm1p0). Причина в run.log: ValidationError `backtest.max_var_multiplier` должен быть строго > 1.0\n\nКонсистентность перед сравнением:\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r01_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r02_slusd/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_risk/run_queue.csv --queue artifacts/wfa/aggregate/20260216_budget1000_cl_r03_vm/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup\n- Rollup rebuilt: run_index entries = 2106\n\nСравнение (срез #1: текущий prefix):\n- Команда: PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --contains 20260216_budget1000_cl --min-windows 3 --min-trades 10 --min-pairs 1 --max-dd-pct 0.25 --top 12\n- По robust Sharpe лидер: 20260216_budget1000_cl_r02_slusd (worst_robust_sharpe=3.377, worst_dd_pct=0.245)\n- По DD-first score (dd_target=0.15, dd_penalty=8) лидер: 20260216_budget1000_cl_r02_risk (score=2.856356, worst_robust_sharpe=3.269438, worst_dd_pct=0.201635)\n\nСравнение (срез #2: глобальный пул budget1000_* completed):\n- Команда: PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --contains budget1000_ --min-windows 3 --min-trades 10 --min-pairs 1 --max-dd-pct 0.25 --top 20\n- Глобальный benchmark: 20260213_budget1000_dd_sprint08_stoplossusd_micro, variant prod_final_budget1000_risk0p006_slusd1p91\n  (score=3.530254, worst_robust_sharpe=3.530254, worst_dd_pct=0.132205)\n\nРекомендация для следующего запуска (improvement still possible):\n- run_group_prefix: 20260216_budget1000_cl_bridge01\n- base candidate: configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml\n- knobs / значения:\n  - portfolio.risk_per_position_pct: [0.006, 0.007, 0.008, 0.009, 0.010]\n  - backtest.pair_stop_loss_usd: [1.75, 1.85, 1.91, 2.05, 2.25]\n  - backtest.max_var_multiplier: фиксировать на 1.0035 в этом раунде; если делать sweep, только >1.0 (например [1.0015, 1.0035, 1.0055])\n- filters / gates (DD-first tightened):\n  - min_windows=3\n  - min_trades>=10\n  - min_pairs>=20\n  - max_dd_pct<=0.22\n  - dd_target_pct=0.14\n  - dd_penalty=10.0\n  - pre-queue guard: reject configs where backtest.max_var_multiplier<=1.0\n- точная команда запуска (после подготовки нового autopilot-конфига):\n  - cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_closed_loop_bridge_20260216.yaml --reset\n\nСтатус перехода цикла:\n- improvement space remains => RL-ANL.passes=true, RL-EXEC.passes=false, RL-CLOSE.passes=false"
+    },
+    {
+      "id": "RL-EXEC",
+      "title": "Исполнитель: запуск прогона по рекомендации аналитика",
+      "description": "Исполнитель берет последнюю рекомендацию из `RL-ANL.completionNotes`, формирует/обновляет очередь и запускает прогон. После завершения возвращает цикл обратно аналитику.",
+      "acceptanceCriteria": [
+        "Запуск выполняется строго по последней рекомендации аналитика из `RL-ANL.completionNotes` без произвольного изменения параметров.",
+        "Heavy execution выполняется только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` с `STOP_AFTER=1`.",
+        "После завершения прогона выполнены пост-шаги консистентности: `sync_queue_status.py` для соответствующей очереди и `build_run_index.py` для rollup.",
+        "В `completionNotes` задачи `RL-EXEC` зафиксированы: run_group, статус выполнения, ключевые метрики и путь к очереди/конфигу.",
+        "При успешном завершении выставлены статусы: `RL-EXEC.passes=true`, `RL-ANL.passes=false`, `RL-CLOSE.passes=false` (возврат цикла к аналитику).",
+        "Если запуск не завершен/невалиден, `RL-EXEC.passes=false`, причина и блокер записаны в `completionNotes`."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "loop",
+        "executor",
+        "vps",
+        "run"
+      ],
+      "dependsOn": [
+        "RL-ANL"
+      ]
+    },
+    {
+      "id": "RL-CLOSE",
+      "title": "Финализатор loop: закрытие только по явному вердикту аналитика",
+      "description": "Единственная задача, которая может финально завершить цикл. Должна запускаться только когда аналитик явно подтвердил исчерпание пространства улучшений.",
+      "acceptanceCriteria": [
+        "В `RL-ANL.completionNotes` дословно присутствует фраза: `мы перепробовали все что можно, как еще улучшить я не знаю`.",
+        "Перед закрытием проверено, что `RL-ANL.passes=true` и `RL-EXEC.passes=true`.",
+        "Если хотя бы одно условие не выполнено, `RL-CLOSE.passes=false` и loop продолжается.",
+        "Если условия выполнены, `RL-CLOSE.passes=true`; после этого `RL-ANL` и `RL-EXEC` не переводятся обратно в `false`."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "loop",
+        "finalizer",
+        "guardrail"
+      ],
+      "dependsOn": [
+        "RL-ANL",
+        "RL-EXEC"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-16T10:00:00Z",
+    "updatedAt": "2026-02-16T09:55:14Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/ralph_analyst_executor_loop/prd_budget1000_analyst_executor_loop_20260216.ralph.json",
+    "loopProtocol": "State-machine на status flags: старт `RL-ANL=false`, `RL-EXEC=true`, `RL-CLOSE=false`; аналитик открывает исполнителя (`RL-EXEC=false`), исполнитель возвращает цикл аналитику (`RL-ANL=false`). Финальное завершение только через `RL-CLOSE` после стоп-фразы аналитика.",
+    "statusTransitions": [
+      "START: RL-ANL=false, RL-EXEC=true, RL-CLOSE=false",
+      "ANALYST_CONTINUE: RL-ANL=true, RL-EXEC=false, RL-CLOSE=false",
+      "EXECUTOR_DONE: RL-ANL=false, RL-EXEC=true, RL-CLOSE=false",
+      "ANALYST_EXHAUSTED: RL-ANL=true, RL-EXEC=true, RL-CLOSE=false",
+      "FINALIZE: RL-ANL=true, RL-EXEC=true, RL-CLOSE=true"
+    ],
+    "latestRalphRunReviewed": {
+      "sessionId": "695f0314-90b0-4559-b0a6-4946dd07a753",
+      "lastIteration": "APLI-04",
+      "lastIterationLog": ".ralph-tui/iterations/695f0314_2026-02-16_04-22-14_APLI-04.log",
+      "notes": "В последнем цикле обнаруживался разнобой state vs rollup; для финального решения winner использовать полный `run_index` по completed-группам после sync статусов."
+    },
+    "seedNextRunRecommendation": {
+      "fromLatestClosedLoop": {
+        "run_group": "20260216_budget1000_cl_r02_risk",
+        "variant_hint": "prod_final_budget1000_*_risk0p009",
+        "worst_robust_sharpe": 3.2694375191,
+        "worst_dd_pct": 0.2016352476
+      },
+      "fromGlobalCompletedBenchmark": {
+        "run_group": "20260213_budget1000_dd_sprint08_stoplossusd_micro",
+        "variant_hint": "risk0p006 + slusd1p85..1p91",
+        "worst_robust_sharpe": 3.53,
+        "worst_dd_pct": 0.132
+      },
+      "firstSearchHint": "Для следующего раунда протестировать мост между текущим winner и историческим глобальным бенчмарком: расширить risk вниз к 0.006..0.010 и slusd в район 1.75..2.25, сохраняя DD-gate <= 0.25."
+    }
+  }
+}
