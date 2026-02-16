@@ -37,7 +37,10 @@ def _load_api_key() -> str:
         return key
     key_path = _repo_root() / ".secrets" / "serverspace_api_key"
     if key_path.exists():
-        return key_path.read_text(encoding="utf-8").strip()
+        file_key = key_path.read_text(encoding="utf-8").strip()
+        if file_key:
+            return file_key
+        raise RuntimeError(".secrets/serverspace_api_key is empty")
     raise RuntimeError("SERVSPACE_API_KEY not set and .secrets/serverspace_api_key not found")
 
 
@@ -87,12 +90,21 @@ def list_servers(*, api_base: str, api_key: str) -> List[Dict[str, Any]]:
 
 
 def _iter_possible_ips(server: Dict[str, Any]) -> Iterable[str]:
-    for key in ("ip", "ipv4", "public_ip", "publicIp", "public_ip_address", "publicIpAddress"):
+    for key in (
+        "ip",
+        "ipv4",
+        "ip_address",
+        "address",
+        "public_ip",
+        "publicIp",
+        "public_ip_address",
+        "publicIpAddress",
+    ):
         value = server.get(key)
         if isinstance(value, str):
             yield value
     # Some APIs embed addresses as lists/dicts.
-    for key in ("addresses", "networks", "ips", "ipAddresses"):
+    for key in ("addresses", "networks", "ips", "ipAddresses", "nics", "interfaces"):
         value = server.get(key)
         if isinstance(value, list):
             for item in value:
@@ -152,7 +164,8 @@ def shutdown(*, api_base: str, api_key: str, server_id: str) -> None:
         )
     except RuntimeError as e:
         # Serverspace may return an error if the server is already stopped.
-        if "already" in str(e).lower() and "off" in str(e).lower():
+        text = str(e).lower()
+        if "already" in text and ("off" in text or "stopped" in text or "shutdown" in text):
             return
         raise
 
