@@ -663,6 +663,105 @@ def _normalize_stop_state(state: Dict[str, Any]) -> None:
         state["stop_reason"] = text or None
 
 
+def _compact_best(best: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(best, dict):
+        return None
+    return {
+        "run_group": str(best.get("run_group") or ""),
+        "variant_id": str(best.get("variant_id") or ""),
+        "score": _to_float(best.get("score")),
+        "worst_robust_sharpe": _to_float(best.get("worst_robust_sharpe")),
+        "worst_dd_pct": _to_float(best.get("worst_dd_pct")),
+        "sample_config_path": str(best.get("sample_config_path") or ""),
+    }
+
+
+def _metric_delta(*, before: Optional[Dict[str, Any]], after: Optional[Dict[str, Any]], key: str) -> Optional[float]:
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return None
+    b = _to_float(before.get(key))
+    a = _to_float(after.get(key))
+    if b is None or a is None:
+        return None
+    return float(a - b)
+
+
+def _round_decision(
+    *,
+    current_round: int,
+    max_rounds: int,
+    stopped_by_no_improvement: bool,
+    stop_reason: Optional[str],
+) -> Dict[str, Any]:
+    if stopped_by_no_improvement:
+        return {
+            "action": "stop",
+            "reason": str(stop_reason or "no_improvement_streak_reached"),
+            "next_round": None,
+        }
+    if int(current_round) >= int(max_rounds):
+        return {
+            "action": "stop",
+            "reason": f"max_rounds_reached: max_rounds={int(max_rounds)}",
+            "next_round": None,
+        }
+    return {
+        "action": "continue",
+        "reason": "continue_to_next_round",
+        "next_round": int(current_round) + 1,
+    }
+
+
+def _format_metric(value: Any) -> str:
+    v = _to_float(value)
+    if v is None:
+        return "n/a"
+    return f"{float(v):.6f}"
+
+
+def _render_best_compact(best: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(best, dict):
+        return "n/a"
+    run_group = str(best.get("run_group") or "")
+    variant_id = str(best.get("variant_id") or "")
+    score = _format_metric(best.get("score"))
+    robust = _format_metric(best.get("worst_robust_sharpe"))
+    dd = _format_metric(best.get("worst_dd_pct"))
+    return (
+        f"run_group=`{run_group}`, variant_id=`{variant_id}`, "
+        f"score=`{score}`, worst_robust_sharpe=`{robust}`, worst_dd_pct=`{dd}`"
+    )
+
+
+def _render_round_analysis_md(payload: Dict[str, Any]) -> str:
+    decision = payload.get("decision") if isinstance(payload.get("decision"), dict) else {}
+    lines: List[str] = []
+    lines.append(f"# Round {int(payload.get('round') or 0):02d} analysis")
+    lines.append("")
+    lines.append(f"- generated_at_utc: `{payload.get('generated_at_utc') or ''}`")
+    lines.append(f"- best_before_round: {_render_best_compact(payload.get('best_before_round'))}")
+    lines.append(f"- best_after_round: {_render_best_compact(payload.get('best_after_round'))}")
+    lines.append(f"- delta_score: `{_format_metric(payload.get('delta_score'))}`")
+    lines.append(f"- delta_worst_robust_sharpe: `{_format_metric(payload.get('delta_worst_robust_sharpe'))}`")
+    lines.append(f"- delta_worst_dd_pct: `{_format_metric(payload.get('delta_worst_dd_pct'))}`")
+    lines.append(f"- decision: `{decision.get('action') or ''}`")
+    lines.append(f"- decision_reason: `{decision.get('reason') or ''}`")
+    lines.append(f"- next_round: `{decision.get('next_round')}`")
+    return "\n".join(lines) + "\n"
+
+
+def _write_round_analysis(
+    *,
+    controller_dir: Path,
+    payload: Dict[str, Any],
+) -> None:
+    round_num = int(payload.get("round") or 0)
+    out_dir = controller_dir / "round_analysis"
+    base = out_dir / f"round_{round_num:02d}"
+    _dump_json(base.with_suffix(".json"), payload)
+    _write_text(base.with_suffix(".md"), _render_round_analysis_md(payload))
+
+
 def _apply_no_improvement_round(
     *,
     state: Dict[str, Any],
@@ -844,6 +943,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "stop_reason": None,
             "done": False,
             "final_report": None,
+            "round_context": None,
         }
         _save_state(state_path, state)
 
@@ -868,6 +968,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     improved_in_round = False
     while current_round <= max_rounds:
+        round_context = state.get("round_context")
+        if not isinstance(round_context, dict) or int(round_context.get("round") or -1) != current_round:
+            round_context = {
+                "round": current_round,
+                "started_at_utc": _utc_now_iso(),
+                "best_before_round": _compact_best(state.get("current_best")),
+            }
+            state["round_context"] = round_context
+            _save_state(state_path, state)
+        round_best_before = _compact_best((round_context or {}).get("best_before_round"))
+
         while knob_index < len(knobs):
             knob = knobs[knob_index]
             if not isinstance(knob, dict):
@@ -1057,18 +1168,46 @@ def main(argv: Optional[List[str]] = None) -> int:
             _save_state(state_path, state)
 
         # End of round.
-        if _apply_no_improvement_round(
+        stop_by_no_improvement = _apply_no_improvement_round(
             state=state,
             improved_in_round=improved_in_round,
             no_improvement_rounds=no_improvement_rounds,
             min_improvement=min_improvement,
-        ):
+        )
+
+        round_best_after = _compact_best(state.get("current_best"))
+        decision = _round_decision(
+            current_round=current_round,
+            max_rounds=max_rounds,
+            stopped_by_no_improvement=stop_by_no_improvement,
+            stop_reason=state.get("stop_reason"),
+        )
+        round_payload = {
+            "generated_at_utc": _utc_now_iso(),
+            "controller_group": controller_group,
+            "round": current_round,
+            "best_before_round": round_best_before,
+            "best_after_round": round_best_after,
+            "delta_score": _metric_delta(before=round_best_before, after=round_best_after, key="score"),
+            "delta_worst_robust_sharpe": _metric_delta(
+                before=round_best_before,
+                after=round_best_after,
+                key="worst_robust_sharpe",
+            ),
+            "delta_worst_dd_pct": _metric_delta(before=round_best_before, after=round_best_after, key="worst_dd_pct"),
+            "decision": decision,
+        }
+        _write_round_analysis(controller_dir=controller_dir, payload=round_payload)
+
+        if stop_by_no_improvement:
             report_path = _final_report_path(repo_root=repo_root)
             state["final_report"] = str(report_path.relative_to(repo_root))
             _save_state(state_path, state)
             _write_text(report_path, _render_final_report(state=state))
             print(f"[autopilot] stop-condition reached ({state.get('stop_reason')}), report: {report_path}")
             return 0
+        if current_round >= max_rounds:
+            break
 
         # New round around the updated best.
         improved_in_round = False
@@ -1076,6 +1215,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         knob_index = 0
         state["round"] = current_round
         state["knob_index"] = knob_index
+        state["round_context"] = {
+            "round": current_round,
+            "started_at_utc": _utc_now_iso(),
+            "best_before_round": _compact_best(state.get("current_best")),
+        }
         _save_state(state_path, state)
 
     # Safety cap: reached max_rounds.
