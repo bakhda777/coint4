@@ -7,7 +7,7 @@ This tool performs a coordinate-ascent style micro-sweep over a list of knobs:
   - run it on VPS via scripts/remote/run_server_job.sh (STOP_AFTER=1)
   - post-process locally (sync statuses, canonical_metrics.json, rollup run_index)
   - select best by worst-window robust Sharpe with DD + sanity gates
-  - stop when a full round yields no improvement
+  - stop when there is no sufficient improvement for N rounds in a row
 
 Outputs (canonical locations; see AGENTS.md):
   - queues (tracked):     coint4/artifacts/wfa/aggregate/<run_group>/run_queue.csv
@@ -509,6 +509,23 @@ def _ensure_tracked_for_sync_up(
         return
 
     missing: List[Path] = []
+    ignored_blocking: List[Path] = []
+    ignored_controller_state: List[Path] = []
+
+    def _is_ignored_by_git(path_rel_repo: Path) -> bool:
+        proc = subprocess.run(
+            ["git", "check-ignore", "-q", "--", str(path_rel_repo)],
+            cwd=str(repo_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return proc.returncode == 0
+
+    def _is_controller_state(path_rel_repo: Path) -> bool:
+        p = path_rel_repo.as_posix().lstrip("/")
+        return p.startswith("coint4/artifacts/wfa/aggregate/") and p.endswith("/state.json")
+
     for p in paths_rel_repo:
         tracked = subprocess.run(
             ["git", "ls-files", "--error-unmatch", str(p)],
@@ -517,8 +534,32 @@ def _ensure_tracked_for_sync_up(
             stderr=subprocess.DEVNULL,
             check=False,
         )
-        if tracked.returncode != 0:
-            missing.append(p)
+        if tracked.returncode == 0:
+            continue
+        if _is_ignored_by_git(p):
+            if _is_controller_state(p):
+                ignored_controller_state.append(p)
+            else:
+                ignored_blocking.append(p)
+            continue
+        missing.append(p)
+
+    if ignored_blocking:
+        formatted = "\n".join(f"- {p}" for p in ignored_blocking[:50])
+        raise SystemExit(
+            "SYNC_UP=1 cannot auto-stage ignored files. Remove them from tracked list or update .gitignore. Ignored:\n"
+            + formatted
+            + ("\n- ... (more)" if len(ignored_blocking) > 50 else "")
+        )
+
+    if ignored_controller_state:
+        formatted = "\n".join(f"- {p}" for p in ignored_controller_state[:20])
+        print(
+            "[autopilot] skip git-add for ignored controller state (local-only):\n"
+            + formatted
+            + ("\n- ... (more)" if len(ignored_controller_state) > 20 else ""),
+            file=sys.stderr,
+        )
 
     if missing and not auto_stage:
         formatted = "\n".join(f"- {p}" for p in missing[:50])
@@ -594,6 +635,56 @@ def _save_state(state_path: Path, state: Dict[str, Any]) -> None:
     _dump_json(state_path, state)
 
 
+def _best_score(state: Dict[str, Any]) -> float:
+    score = _to_float(state.get("best_score"))
+    if score is not None:
+        return float(score)
+    best = state.get("current_best")
+    if isinstance(best, dict):
+        score = _to_float(best.get("score"))
+        if score is not None:
+            return float(score)
+    return float("-inf")
+
+
+def _normalize_stop_state(state: Dict[str, Any]) -> None:
+    best_score = _best_score(state)
+    state["best_score"] = None if best_score == float("-inf") else float(best_score)
+    try:
+        streak = int(state.get("no_improvement_streak") or 0)
+    except (TypeError, ValueError):
+        streak = 0
+    state["no_improvement_streak"] = max(0, streak)
+    reason = state.get("stop_reason")
+    if reason is None:
+        state["stop_reason"] = None
+    else:
+        text = str(reason).strip()
+        state["stop_reason"] = text or None
+
+
+def _apply_no_improvement_round(
+    *,
+    state: Dict[str, Any],
+    improved_in_round: bool,
+    no_improvement_rounds: int,
+    min_improvement: float,
+) -> bool:
+    if improved_in_round:
+        state["no_improvement_streak"] = 0
+        return False
+    streak = int(state.get("no_improvement_streak") or 0) + 1
+    state["no_improvement_streak"] = streak
+    if streak < int(no_improvement_rounds):
+        return False
+    state["done"] = True
+    state["stop_reason"] = (
+        "no_improvement_streak_reached: "
+        f"streak={streak}, rounds={int(no_improvement_rounds)}, min_improvement={float(min_improvement):.6g}"
+    )
+    return True
+
+
 def _final_report_path(*, repo_root: Path) -> Path:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     return repo_root / "docs" / f"budget1000_autopilot_final_{stamp}.md"
@@ -606,6 +697,9 @@ def _render_final_report(*, state: Dict[str, Any]) -> str:
     lines.append("# Budget $1000 autopilot: итог")
     lines.append("")
     lines.append(f"Generated at (UTC): {state.get('updated_at_utc') or _utc_now_iso()}")
+    lines.append(f"stop_reason: `{state.get('stop_reason') or ''}`")
+    lines.append(f"best_score: `{state.get('best_score')}`")
+    lines.append(f"no_improvement_streak: `{state.get('no_improvement_streak')}`")
     lines.append("")
     lines.append("## Лучший найденный кандидат (stop-condition достигнут)")
     lines.append("")
@@ -693,6 +787,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     search_cfg = cfg.get("search") or {}
     max_rounds = int(search_cfg.get("max_rounds") or 3)
     min_improvement = float(search_cfg.get("min_improvement") or 0.02)
+    no_improvement_rounds = int(search_cfg.get("no_improvement_rounds") or 1)
+    if no_improvement_rounds < 1:
+        raise SystemExit("config.search.no_improvement_rounds must be >= 1")
     knobs = search_cfg.get("knobs") or []
     if not isinstance(knobs, list) or not knobs:
         raise SystemExit("config.search.knobs must be a non-empty list")
@@ -741,10 +838,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             "round": 1,
             "knob_index": 0,
             "current_best": None,
+            "best_score": None,
             "history": [],
+            "no_improvement_streak": 0,
+            "stop_reason": None,
             "done": False,
             "final_report": None,
         }
+        _save_state(state_path, state)
+
+    before_normalize = json.dumps(state, sort_keys=True)
+    _normalize_stop_state(state)
+    if state.get("done") is not True and state.get("stop_reason") is not None:
+        state["stop_reason"] = None
+    if before_normalize != json.dumps(state, sort_keys=True):
         _save_state(state_path, state)
 
     if state.get("done") is True:
@@ -909,8 +1016,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 dd_penalty=dd_penalty,
             )
 
-            prev_best = state.get("current_best") or {}
-            prev_score = float(prev_best.get("score") or float("-inf"))
+            prev_score = _best_score(state)
             improved = bool(selection.score > prev_score + float(min_improvement))
             if improved:
                 improved_in_round = True
@@ -926,6 +1032,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                     "windows": selection.windows,
                     "sample_config_path": selection.sample_config_path,
                 }
+                state["best_score"] = float(selection.score)
+                state["no_improvement_streak"] = 0
+                state["stop_reason"] = None
                 state["base_config_path"] = selection.sample_config_path
 
             state.setdefault("history", []).append(
@@ -948,13 +1057,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             _save_state(state_path, state)
 
         # End of round.
-        if not improved_in_round:
-            state["done"] = True
+        if _apply_no_improvement_round(
+            state=state,
+            improved_in_round=improved_in_round,
+            no_improvement_rounds=no_improvement_rounds,
+            min_improvement=min_improvement,
+        ):
             report_path = _final_report_path(repo_root=repo_root)
             state["final_report"] = str(report_path.relative_to(repo_root))
             _save_state(state_path, state)
             _write_text(report_path, _render_final_report(state=state))
-            print(f"[autopilot] stop-condition reached, report: {report_path}")
+            print(f"[autopilot] stop-condition reached ({state.get('stop_reason')}), report: {report_path}")
             return 0
 
         # New round around the updated best.
@@ -967,11 +1080,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Safety cap: reached max_rounds.
     state["done"] = True
+    state["stop_reason"] = f"max_rounds_reached: max_rounds={max_rounds}"
     report_path = _final_report_path(repo_root=repo_root)
     state["final_report"] = str(report_path.relative_to(repo_root))
     _save_state(state_path, state)
     _write_text(report_path, _render_final_report(state=state))
-    print(f"[autopilot] max_rounds reached, report: {report_path}")
+    print(f"[autopilot] max_rounds reached ({state.get('stop_reason')}), report: {report_path}")
     return 0
 
 

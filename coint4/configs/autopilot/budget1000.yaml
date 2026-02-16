@@ -52,6 +52,8 @@ selection:
 
 search:
   max_rounds: 3
+  # Stop when there is no >=min_improvement gain for N rounds in a row.
+  no_improvement_rounds: 1
   min_improvement: 0.02
 
   # Each knob is a small sweep around the current best value.
