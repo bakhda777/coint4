@@ -78,25 +78,28 @@ DD-first фиксация best-кандидата для продолжения 
 
 Что выполнено:
 - Heavy шаги шли только через `scripts/remote/run_server_job.sh` на `85.198.90.128`.
-- Выполнены очереди: `20260216_budget1000_cl_r01_risk`, `20260216_budget1000_cl_r02_risk`, `20260216_budget1000_cl_r03_risk`.
+- История контроллера (`state.history`): `20260216_budget1000_cl_r01_risk -> 20260216_budget1000_cl_r02_slusd -> 20260216_budget1000_cl_r03_vm`.
+- Для финального сравнения учтены все completed run_group префикса `20260216_budget1000_cl_*`: `r01_risk`, `r02_slusd`, `r02_risk`, `r03_vm`, `r03_risk`.
 - После каждого remote job VPS выключался автоматически (`STOP_AFTER=1`, API shutdown).
 - Локальный postprocess/rollup выполнен автопилотом после каждого раунда; финальный `run_index` пересобран до `entries=1932`.
 
 Итог контроллера:
 - State: `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`
 - `done=true`
-- `stop_reason=no_improvement_streak_reached: streak=1, rounds=1, min_improvement=0.02`
+- `stop_reason=max_rounds_reached: max_rounds=3`
+- Best-in-state (на момент остановки контроллера): `run_group=20260216_budget1000_cl_r01_risk`, `score=2.6059259347`
 - Финальные отчёты:
   - closed-loop финал: `docs/budget1000_autopilot_closed_loop_final_20260216.md`
   - controller summary: `docs/budget1000_autopilot_final_20260216.md`
 
-Лучший кандидат closed-loop:
+Финальный winner по всем раундам adaptive-loop (`20260216_budget1000_cl_*`, DD-first score):
 - run_group: `20260216_budget1000_cl_r02_risk`
 - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_risk0p009`
 - score: `2.856356`
 - worst_robust_sharpe: `3.269438`
 - worst_dd_pct: `0.201635`
 - sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
+- Ближайшие альтернативы по score: `r02_slusd=2.620854`, `r01_risk=2.605926`.
 
 Сравнение с предыдущим циклом (`20260216_budget1000_ap2_autopilot`, baseline из `docs/budget1000_autopilot_followup_final_20260216.md`):
 - предыдущий цикл (APF-04 fallback): `score=1.646785`, `worst_robust_sharpe=2.288574`, `worst_dd_pct=0.230224`.
@@ -133,4 +136,6 @@ DD-first фиксация best-кандидата для продолжения 
 - Синхронизирована одна несогласованная очередь текущего цикла: `20260216_budget1000_cl_r02_risk/run_queue.csv` (`6/6 -> completed`).
 - Для `r01_risk`, `r02_slusd`, `r03_risk`, `r03_vm` изменений статусов не потребовалось.
 - Canonical rollup `coint4/artifacts/wfa/aggregate/rollup/run_index.{csv,json,md}` пересобран до `Run index entries: 2106`.
-- Для финального выбора зафиксировано правило: использовать обновлённый `run_index` вместе с контроллерным winner из `state.json` (`run_group=20260216_budget1000_cl_r01_risk`, `score=2.6059259347`).
+- Зафиксирован финальный выбор по всем раундам префикса `20260216_budget1000_cl_*`: `run_group=20260216_budget1000_cl_r02_risk`, `score=2.8563555379`, `worst_robust_sharpe=3.2694375191`, `worst_dd_pct=0.2016352476`.
+- Причина остановки adaptive-loop остаётся контроллерной (`state.json`): `max_rounds_reached: max_rounds=3`.
+- Следующий шаг: confirmatory holdout+stress replay winner-конфига на VPS через `coint4/scripts/remote/run_server_job.sh` (`STOP_AFTER=1`), затем обновление `configs/prod_final_budget1000.yaml`.

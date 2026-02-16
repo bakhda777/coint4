@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-16
 
-Current stage: **Budget1000 closed-loop autopilot завершён по stop-condition (`done=true`)**; финальный winner зафиксирован в `docs/budget1000_autopilot_closed_loop_final_20260216.md`. Параллельно идёт **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
+Current stage: **Budget1000 closed-loop adaptive-loop завершён (`done=true`) с `stop_reason=max_rounds_reached: max_rounds=3`**; финальный winner по всем completed раундам префикса `20260216_budget1000_cl_*` — `run_group=20260216_budget1000_cl_r02_risk` (`score=2.856356`). Параллельно идёт **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -33,7 +33,7 @@ Recent updates (2026-02-16):
 - Пересобран canonical rollup:
   - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` после пересборки: `2106` записей.
-- Для финального выбора использовать актуальный `run_index` и winner из текущего state: `run_group=20260216_budget1000_cl_r01_risk`, `score=2.6059259347`.
+- Для финального выбора использовать актуальный `run_index` по всем completed run_group префикса `20260216_budget1000_cl_*` (не только `current_best` из state): итоговый winner `run_group=20260216_budget1000_cl_r02_risk`, `score=2.8563555379`, `worst_robust_sharpe=3.2694375191`, `worst_dd_pct=0.2016352476`.
 
 ### Budget1000 autopilot (VPS WFA -> postprocess -> max_rounds)
 - Конфиг автопилота: `coint4/configs/autopilot/budget1000.yaml`.
@@ -66,9 +66,10 @@ Recent updates (2026-02-16):
 - Конфиг: `coint4/configs/autopilot/budget1000_closed_loop_20260216.yaml`.
 - Controller state: `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`.
 - Статус: `done=true`.
-- Stop reason: `no_improvement_streak_reached: streak=1, rounds=1, min_improvement=0.02`.
+- Stop reason (факт из `state.json`): `max_rounds_reached: max_rounds=3`.
 - Heavy выполнен только через `coint4/scripts/remote/run_server_job.sh` на `85.198.90.128`; VPS выключался автоматически после каждого раунда (`STOP_AFTER=1`).
-- Выполнены run_group: `20260216_budget1000_cl_r01_risk`, `20260216_budget1000_cl_r02_risk`, `20260216_budget1000_cl_r03_risk`.
+- История контроллера (`state.history`): `20260216_budget1000_cl_r01_risk -> 20260216_budget1000_cl_r02_slusd -> 20260216_budget1000_cl_r03_vm`.
+- Для финального сравнения (после sync статусов) учтены все completed run_group префикса: `r01_risk`, `r02_slusd`, `r02_risk`, `r03_vm`, `r03_risk`.
 - Лучший кандидат closed-loop:
   - run_group: `20260216_budget1000_cl_r02_risk`
   - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_risk0p009`
