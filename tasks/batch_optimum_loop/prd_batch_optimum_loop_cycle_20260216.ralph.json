@@ -16,7 +16,7 @@
         "Если улучшения исчерпаны: в `completionNotes` дословно записано `мы перепробовали все что можно, как еще улучшить я не знаю`, затем `BL-ANL.passes=true`, `BL-EXEC.passes=true`, `BL-CLOSE.passes=false`."
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "labels": [
         "loop",
         "analyst",
@@ -39,7 +39,7 @@
         "При неуспехе: `BL-EXEC.passes=false`, `BL-ANL.passes=false`, `BL-CLOSE.passes=false` (явный возврат к аналитику с блокером)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "labels": [
         "loop",
         "executor",
@@ -49,7 +49,7 @@
       "dependsOn": [
         "BL-ANL"
       ],
-      "completionNotes": "BL-EXEC execution report (2026-02-16 UTC)\n\nLaunch per BL-ANL recommendation\n- Source of truth for exact command: `BL-ANL.completionNotes` in `tasks/batch_optimum_loop/prd_batch_optimum_loop_cycle_20260216.ralph.json`.\n- Executed command (exact):\n  cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge05_20260216.yaml --reset\n- Pre-run blocker resolved: VPS disk full during `SYNC_UP` (`No space left on device`). Freed remote transient directories (`/opt/coint4/coint4/artifacts/wfa/runs/*`, `/opt/coint4/.venv`, cache dirs), then re-ran the same command with no knob changes.\n\nExecuted run_groups (prefix: 20260216_budget1000_bl5)\n- 20260216_budget1000_bl5_r01_vm: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl5_r02_slusd: queue_size=66, completed=66, stalled=0, planned=0\n- 20260216_budget1000_bl5_r02_vm: queue_size=6, completed=0, stalled=0, planned=6\n- 20260216_budget1000_bl5_r03_risk: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl5_r04_pv: queue_size=60, completed=60, stalled=0, planned=0\n- 20260216_budget1000_bl5_r05_corr: queue_size=66, completed=66, stalled=0, planned=0\n- Total across generated queues: queue_size=342, completed=336, stalled=0, planned=6\n\nPost-sync (explicit manual step)\n- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl5_r*/run_queue.csv` (executed per-queue for all `bl5_r*`).\n- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`\n- Result: queue statuses synchronized; rollup rebuilt (`run_index entries=3267`).\n\nKey metrics\n- stop_reason: max_rounds_reached: max_rounds=5\n- best run_group: 20260216_budget1000_bl5_r05_corr\n- best score: 4.3138266654735435\n- best worst-window robust Sharpe: 4.340944419893576\n- best worst-window DD pct: 0.11193698245857377\n- report: docs/budget1000_autopilot_final_20260216.md\n\nCycle handoff\n- Execution successful; returning control to analyst for next recommendation."
+      "completionNotes": "BL-EXEC execution report (2026-02-16 UTC)\n\nLaunch per BL-ANL recommendation\n- `BL-ANL.completionNotes` in `.ralph-tui/prd.json` contained placeholder `Completed by agent`.\n- Safe default decision: used exact launch from tracked cycle PRD (`tasks/batch_optimum_loop/prd_batch_optimum_loop_cycle_20260216.ralph.json`) and `metadata.latestAnalystReview` (same config/prefix, no knob changes).\n- Executed command (exact):\n  cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge07_20260216.yaml --reset\n\nExecuted run_groups (prefix: 20260216_budget1000_bl7)\n- 20260216_budget1000_bl7_r01_vm: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl7_r02_dstop: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl7_r02_vm: queue_size=6, completed=0, stalled=0, planned=6\n- 20260216_budget1000_bl7_r03_slusd: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl7_r04_risk: queue_size=66, completed=66, stalled=0, planned=0\n- 20260216_budget1000_bl7_r05_corr: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl7_r06_min_beta: queue_size=72, completed=72, stalled=0, planned=0\n- 20260216_budget1000_bl7_r06_pv: queue_size=54, completed=0, stalled=0, planned=54\n- 20260216_budget1000_bl7_r07_vm: queue_size=54, completed=0, stalled=0, planned=54\n- Total across prefix queues: queue_size=540, completed=426, stalled=0, planned=114\n\nPost-sync (explicit manual step)\n- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl7_r*/run_queue.csv` (executed per-queue for all `bl7_r*` files).\n- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`\n- Result: statuses synchronized; rollup rebuilt (`run_index entries=4245`).\n\nKey metrics\n- stop_reason: search_space_exhausted on round 7 (no viable non-duplicate candidates for `r07_min_beta`)\n- best run_group in prefix: 20260216_budget1000_bl7_r01_vm\n- best score: 4.0728837229327555\n- best worst-window robust Sharpe: 4.204080607616322\n- best worst-window DD pct: 0.10228871581575368\n- report: docs/budget1000_autopilot_final_20260216.md\n\nBlockers\n- None (execution and post-sync completed successfully).\n\nCycle handoff\n- Execution successful; returning control to analyst for next recommendation.\n"
     },
     {
       "id": "BL-CLOSE",
@@ -76,7 +76,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-16T00:00:00Z",
-    "updatedAt": "2026-02-16T16:59:38Z",
+    "updatedAt": "2026-02-16T18:33:41Z",
     "version": "1.0.0",
     "sourcePrd": "tasks/batch_optimum_loop/prd_batch_optimum_loop_20260216.ralph.json",
     "loopProtocol": "State-machine на status flags: старт BL-ANL=false, BL-EXEC=true, BL-CLOSE=false; аналитик открывает исполнителя (BL-EXEC=false), исполнитель возвращает цикл аналитику (BL-ANL=false). Финальное завершение только через BL-CLOSE после стоп-фразы аналитика.",
@@ -122,21 +122,21 @@
       "recommendedRunGroupPrefix": "20260216_budget1000_bl7"
     },
     "latestExecutorReview": {
-      "executedAt": "2026-02-16T15:11:09Z",
-      "runGroupPrefix": "20260216_budget1000_bl5",
-      "executedRunGroup": "20260216_budget1000_bl5_r05_corr",
-      "stopReason": "max_rounds_reached: max_rounds=5",
+      "executedAt": "2026-02-16T18:33:41Z",
+      "runGroupPrefix": "20260216_budget1000_bl7",
+      "executedRunGroup": "20260216_budget1000_bl7_r06_min_beta",
+      "stopReason": "search_space_exhausted: round=7, reason=Queue generation produced 0 entries for run_group=20260216_budget1000_bl7_r07_min_beta (all candidates were duplicates or invalid combinations).",
       "queueStatus": {
-        "completed": 336,
+        "completed": 426,
         "stalled": 0,
-        "planned": 6,
-        "total": 342
+        "planned": 114,
+        "total": 540
       },
       "best": {
-        "run_group": "20260216_budget1000_bl5_r05_corr",
-        "score": 4.3138266654735435,
-        "worst_robust_sharpe": 4.340944419893576,
-        "worst_dd_pct": 0.11193698245857377
+        "run_group": "20260216_budget1000_bl7_r01_vm",
+        "score": 4.0728837229327555,
+        "worst_robust_sharpe": 4.204080607616322,
+        "worst_dd_pct": 0.10228871581575368
       },
       "reportPath": "docs/budget1000_autopilot_final_20260216.md"
     }
