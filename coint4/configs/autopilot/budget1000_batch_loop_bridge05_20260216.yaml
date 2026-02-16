@@ -1,0 +1,110 @@
+# Budget $1000 batch-loop bridge05 config (BL-ANL recommendation, 2026-02-16).
+#
+# Objective:
+# - Continue from the current DD-first global leader in bl4.
+# - Recover from the truncated bl4_r05 queue by switching to a clean run_group_prefix.
+# - Keep coarse sweeps with batch-size >=10 and explicit vm>1.0 guardrail.
+
+base_config: configs/budget1000_autopilot/20260216_budget1000_bl4_r03_min_beta/holdout_prod_final_budget1000_risk0p006_slusd1p91_risk0p006_vm1p0075_corr0p34_pv0p39_corr0p28_oos20220601_20230430_min_beta0p0005.yaml
+
+windows:
+  - ["2022-06-01", "2023-04-30"]
+  - ["2023-10-01", "2024-09-30"]
+  - ["2024-05-01", "2025-06-30"]
+
+# <run_group_prefix>_r<round>_<knob>
+run_group_prefix: "20260216_budget1000_bl5"
+controller_group: "20260216_budget1000_bl5_autopilot"
+
+configs_dir: "configs/budget1000_autopilot"
+queue_dir: "artifacts/wfa/aggregate"
+runs_dir: "artifacts/wfa/runs_clean"
+
+execution:
+  sync_up: true
+  stop_after: true
+  bar_minutes: 15
+  overwrite_canonical: true
+
+git:
+  auto_stage: true
+
+selection:
+  min_windows: 3
+  min_trades: 200
+  min_pairs: 20
+
+  # Keep DD-first pressure while allowing robust Sharpe growth.
+  max_dd_pct: 0.15
+  dd_target_pct: 0.11
+  dd_penalty: 14.0
+
+search:
+  max_rounds: 5
+  no_improvement_rounds: 2
+  min_improvement: 0.02
+  require_all_knobs_before_stop: true
+
+  # 10 variants x 3 windows x (holdout+stress) = 60 queue entries.
+  min_queue_entries: 60
+
+  # Coarse-only grids. Offsets exclude 0 to avoid duplicate baseline configs
+  # inside the same run_group_prefix.
+  knobs:
+    - key: "backtest.max_var_multiplier"
+      op: "add"
+      step: 0.002
+      candidates: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      # Guardrail: strict > 1.0.
+      min: 1.001
+      max: 1.036
+
+    - key: "backtest.pair_stop_loss_usd"
+      op: "add"
+      step: 0.25
+      candidates: [-2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      min: 1.25
+      max: 4.16
+
+    - key: "portfolio.risk_per_position_pct"
+      op: "add"
+      step: 0.001
+      candidates: [-2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      min: 0.004
+      max: 0.017
+
+    - key: "pair_selection.coint_pvalue_threshold"
+      op: "add"
+      step: 0.04
+      candidates: [-4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8]
+      min: 0.20
+      max: 0.63
+
+    - key: "pair_selection.min_correlation"
+      op: "add"
+      step: 0.02
+      candidates: [-4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8]
+      min: 0.22
+      max: 0.48
+
+    - key: "filter_params.min_beta"
+      op: "add"
+      step: 0.0005
+      candidates: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      min: 0.0005
+      max: 0.0070
+
+# Forbidden symbols/pairs contour (manual profile switch + rerun policy).
+forbidden_profiles:
+  baseline:
+    exclude_symbols: []
+  memes_v1:
+    exclude_symbols: ["1000PEPEUSDT", "1000BONKUSDT", "WIFUSDT", "DOGEUSDT"]
+  concentration_v2:
+    exclude_symbols: ["GMTUSDT", "HOOKUSDT", "FTTUSDT", "AXSUSDT"]
+
+forbidden_policy:
+  rerun_if_pair_pnl_concentration_pct_ge: 20
+  rerun_if_excluded_symbol_abs_pnl_share_pct_ge: 10
+  profile_on_trigger: concentration_v2
+  secondary_profile: memes_v1
