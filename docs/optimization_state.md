@@ -426,3 +426,18 @@ Notes:
 - 2026-01-17: next5_fast completed for pair_sweep_20260117_corr0p7_pv0p01_top200_kpss0p02_hl0p2_20_z0p85_exit0p12 (PnL 623.38, Sharpe 0.4579, DD -230.50).
 - 2026-01-17: next5_fast completed for pair_sweep_20260117_ssd4000_corr0p65_pv0p02_top400_z0p85_exit0p12 (PnL 61.89, Sharpe 0.2783, DD -25.44).
 - 2026-01-17: next5_fast completed for pair_sweep_20260117_corr0p7_hurst0p5_kpss0p02_cross1_z0p85_exit0p12 (PnL 747.15, Sharpe 0.5444, DD -130.58).
+
+## Update 2026-02-16 16:45Z (BL-EXEC bridge06 complete)
+
+Текущее состояние:
+- Исполнен batch-loop `20260216_budget1000_bl6` по `configs/autopilot/budget1000_batch_loop_bridge06_20260216.yaml`.
+- Remote heavy runs проведены на `85.198.90.128` через `scripts/remote/run_server_job.sh`, `STOP_AFTER=1`.
+- Контроллер завершился по `max_rounds_reached: max_rounds=6`.
+- Prefix queue status: `completed=426`, `planned=12`, `stalled=0`, `total=438`.
+- Best текущего цикла: `20260216_budget1000_bl6_r01_vm` (`score=4.3447411319`, `worst_robust_sharpe=4.3874465813`, `worst_dd_pct=0.1026690906`).
+- Обнаружен planned-only fallback queue `20260216_budget1000_bl6_r02_vm` (`planned=12`) без исполнения; это ожидаемо при fallback-ветке контроллера.
+- Выполнен post-sync: `sync_queue_status.py` для `bl6_r*` и `build_run_index.py`.
+- Rollup обновлён: `coint4/artifacts/wfa/aggregate/rollup/run_index.*` (`entries=3705`).
+
+Что дальше:
+- Передать цикл аналитику для сравнения `bl6` против completed-пула и подготовки `bl7` (или стоп-вердикта по PRD guardrail).

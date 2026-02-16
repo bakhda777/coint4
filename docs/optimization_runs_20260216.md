@@ -139,3 +139,25 @@ DD-first фиксация best-кандидата для продолжения 
 - Зафиксирован финальный выбор по всем раундам префикса `20260216_budget1000_cl_*`: `run_group=20260216_budget1000_cl_r02_risk`, `score=2.8563555379`, `worst_robust_sharpe=3.2694375191`, `worst_dd_pct=0.2016352476`.
 - Причина остановки adaptive-loop остаётся контроллерной (`state.json`): `max_rounds_reached: max_rounds=3`.
 - Следующий шаг: confirmatory holdout+stress replay winner-конфига на VPS через `coint4/scripts/remote/run_server_job.sh` (`STOP_AFTER=1`), затем обновление `configs/prod_final_budget1000.yaml`.
+
+## Batch loop execution (BL-EXEC bridge06, 2026-02-16 16:45Z)
+
+Команда запуска (из `coint4/`):
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge06_20260216.yaml --reset`
+
+Что выполнено:
+- Heavy execution выполнен только на VPS `85.198.90.128` через `scripts/remote/run_server_job.sh` с `STOP_AFTER=1`.
+- Выполнены раунды: `20260216_budget1000_bl6_r01_vm`, `..._r02_slusd`, `..._r03_risk`, `..._r04_pv`, `..._r05_corr`, `..._r06_min_beta`.
+- После завершения каждого remote-шага VPS выключался автоматически (API shutdown).
+- После блока прогонов выполнен post-sync: `sync_queue_status.py` по `bl6_r*` и `build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`.
+
+Итоги `bl6`:
+- stop reason: `max_rounds_reached: max_rounds=6`.
+- Prefix queue status: `completed=426`, `planned=12`, `stalled=0`, `total=438`.
+- Planned-only fallback queue: `20260216_budget1000_bl6_r02_vm` (`planned=12`, не исполнялась контроллером).
+- Best candidate: `run_group=20260216_budget1000_bl6_r01_vm`, `score=4.3447411319`, `worst_robust_sharpe=4.3874465813`, `worst_dd_pct=0.1026690906`.
+- Canonical rollup пересобран до `Run index entries: 3705`.
+
+Артефакты/отчёты:
+- Controller state: `coint4/artifacts/wfa/aggregate/20260216_budget1000_bl6_autopilot/state.json`.
+- Final report: `docs/budget1000_autopilot_final_20260216.md`.
