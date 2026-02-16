@@ -59,13 +59,19 @@ def tmux_exec(t: SSHTarget, session: str, cmd: str, *, create: bool = True) -> N
 
     if create:
         remote = (
-            f"tmux has-session -t {q_session} 2>/dev/null && "
-            f"tmux send-keys -t {q_session} {q_cmd} C-m || "
-            f"tmux new-session -d -s {q_session} {q_cmd}"
+            f"tmux has-session -t {q_session} 2>/dev/null || "
+            f"tmux new-session -d -s {q_session}; "
+            f"tmux send-keys -t {q_session} {q_cmd} C-m"
         )
     else:
         remote = f"tmux send-keys -t {q_session} {q_cmd} C-m"
     ssh_exec(t, remote, check=True)
+
+
+def _join_command(parts: List[str]) -> str:
+    if parts and parts[0] == "--":
+        parts = parts[1:]
+    return " ".join(parts).strip()
 
 
 def main(argv: List[str]) -> int:
@@ -92,7 +98,9 @@ def main(argv: List[str]) -> int:
     if args.cmd == "exec":
         if not args.command:
             raise SystemExit("Missing command")
-        cmd = " ".join(args.command).strip()
+        cmd = _join_command(args.command)
+        if not cmd:
+            raise SystemExit("Missing command")
         cp = ssh_exec(target, cmd, check=False)
         if cp.stdout:
             print(cp.stdout, end="")
@@ -107,7 +115,9 @@ def main(argv: List[str]) -> int:
     if args.cmd == "tmux-exec":
         if not args.command:
             raise SystemExit("Missing command")
-        cmd = " ".join(args.command).strip()
+        cmd = _join_command(args.command)
+        if not cmd:
+            raise SystemExit("Missing command")
         tmux_exec(target, args.session, cmd, create=not args.no_create)
         return 0
 
