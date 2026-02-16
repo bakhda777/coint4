@@ -86,7 +86,9 @@ DD-first фиксация best-кандидата для продолжения 
 - State: `coint4/artifacts/wfa/aggregate/20260216_budget1000_cl_autopilot/state.json`
 - `done=true`
 - `stop_reason=no_improvement_streak_reached: streak=1, rounds=1, min_improvement=0.02`
-- Финальный отчёт: `docs/budget1000_autopilot_final_20260216.md`
+- Финальные отчёты:
+  - closed-loop финал: `docs/budget1000_autopilot_closed_loop_final_20260216.md`
+  - controller summary: `docs/budget1000_autopilot_final_20260216.md`
 
 Лучший кандидат closed-loop:
 - run_group: `20260216_budget1000_cl_r02_risk`
@@ -95,6 +97,14 @@ DD-first фиксация best-кандидата для продолжения 
 - worst_robust_sharpe: `3.269438`
 - worst_dd_pct: `0.201635`
 - sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
+
+Сравнение с предыдущим циклом (`20260216_budget1000_ap2_autopilot`, baseline из `docs/budget1000_autopilot_followup_final_20260216.md`):
+- предыдущий цикл (APF-04 fallback): `score=1.646785`, `worst_robust_sharpe=2.288574`, `worst_dd_pct=0.230224`.
+- closed-loop winner: `score=2.856356`, `worst_robust_sharpe=3.269438`, `worst_dd_pct=0.201635`.
+- Δ (closed-loop - previous): `score=+1.209570`, `worst_robust_sharpe=+0.980863`, `worst_dd_pct=-0.028588` (улучшение DD на `2.86` п.п.).
+
+Следующий шаг после закрытия цикла:
+- Выполнить confirmatory holdout+stress replay финального winner на VPS (`run_server_job.sh`, `STOP_AFTER=1`) и затем обновить `configs/prod_final_budget1000.yaml` под зафиксированный winner-конфиг.
 
 ## Queue status sync + canonical rollup refresh (post-cycle consistency)
 

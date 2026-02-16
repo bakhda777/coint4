@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-16
 
-Current stage: **Budget1000 closed-loop autopilot завершён по stop-condition** + **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
+Current stage: **Budget1000 closed-loop autopilot завершён по stop-condition (`done=true`)**; финальный winner зафиксирован в `docs/budget1000_autopilot_closed_loop_final_20260216.md`. Параллельно идёт **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -64,7 +64,17 @@ Recent updates (2026-02-16):
   - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_risk0p009`
   - metrics: `score=2.856356`, `worst_robust_sharpe=3.269438`, `worst_dd_pct=0.201635`
   - sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
-- Итоговый отчёт: `docs/budget1000_autopilot_final_20260216.md`.
+- Итоговые отчёты:
+  - closed-loop финал: `docs/budget1000_autopilot_closed_loop_final_20260216.md`
+  - controller summary: `docs/budget1000_autopilot_final_20260216.md`
+- Сравнение с предыдущим циклом (`20260216_budget1000_ap2_autopilot`, baseline из follow-up):
+  - предыдущий цикл (APF-04 fallback): `score=1.646785`, `worst_robust_sharpe=2.288574`, `worst_dd_pct=0.230224`.
+  - closed-loop winner: `score=2.856356`, `worst_robust_sharpe=3.269438`, `worst_dd_pct=0.201635`.
+  - Δ (closed-loop - previous): `score=+1.209570`, `worst_robust_sharpe=+0.980863`, `worst_dd_pct=-0.028588` (улучшение DD на `2.86` п.п.).
+
+### Следующий шаг (после closed-loop)
+- Зафиксировать winner-конфиг в рабочем cutover-пакете и выполнить confirmatory holdout+stress replay на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` (`STOP_AFTER=1`) перед обновлением `configs/prod_final_budget1000.yaml`.
+- По clean-cycle: верифицировать причину baseline no-op (`0` сделок) и только после этого запускать sweeps.
 
 Recent updates (2026-02-15):
 
