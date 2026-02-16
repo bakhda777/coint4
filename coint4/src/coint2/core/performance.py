@@ -8,6 +8,11 @@ import pandas as pd  # type: ignore
 from coint2.core.sharpe import annualized_sharpe_ratio
 
 
+def _canonical_period_sharpe(returns: np.ndarray) -> float:
+    """Compute non-annualized Sharpe using the canonical implementation."""
+    return annualized_sharpe_ratio(returns, 1.0)
+
+
 def sharpe_ratio_on_returns(
     pnl: pd.Series,
     capital: float,
@@ -214,8 +219,8 @@ def deflated_sharpe_ratio(
     if len(returns) < 2:
         return 0.0
         
-    # Calculate standard Sharpe ratio
-    sr = np.mean(returns) / (np.std(returns) + 1e-10)
+    # Use canonical Sharpe definition (sample std, ddof=1).
+    sr = _canonical_period_sharpe(returns)
     
     # Number of observations
     T = len(returns)
@@ -262,8 +267,8 @@ def probabilistic_sharpe_ratio(
     if len(returns) < 2:
         return 0.0
         
-    # Calculate observed Sharpe ratio
-    sr = np.mean(returns) / (np.std(returns) + 1e-10)
+    # Use canonical Sharpe definition (sample std, ddof=1).
+    sr = _canonical_period_sharpe(returns)
     
     # Number of observations
     T = len(returns)
