@@ -1,0 +1,97 @@
+{
+  "name": "budget1000_autopilot_followup: DD-first цикл после результата 2026-02-16",
+  "description": "Цель: продолжить budget1000-автопилот с учётом уже достигнутого best-кандидата и снизить worst DD без потери устойчивого Sharpe. Предыдущий цикл (`20260215_budget1000_ap_autopilot`) завершился по `max_rounds=3`; в rollup есть 6 stalled run'ов в `20260215_budget1000_ap_r03_vm`.\n\nПодход follow-up:\n- Стартовать от найденного best sample config из `state.json`.\n- Переключить отбор в DD-first режим (жёстче penalty + ограничение DD).\n- Расширить knobs на risk/slusd/vm + portfolio_daily_stop_pct.\n- Выполнять heavy только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` с `STOP_AFTER=1`.\n- После прогонов обновить rollup и документацию (`optimization_state` + дневник).\n\nВажно: не коммитить тяжёлые артефакты из `coint4/artifacts/wfa/runs_clean/**` и `coint4/artifacts/wfa/runs/**`.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "APF-01",
+      "title": "Подготовить follow-up конфиг автопилота (DD-first) с новыми knobs",
+      "description": "Создать отдельный конфиг `coint4/configs/autopilot/budget1000_followup_20260216.yaml` на базе текущего best sample config из `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json`. В конфиге задать новый `run_group_prefix`/`controller_group`, чтобы не перетирать прошлый цикл. Обновить `selection` и `search.knobs`: оставить `portfolio.risk_per_position_pct`, `backtest.pair_stop_loss_usd`, `backtest.max_var_multiplier` и добавить `backtest.portfolio_daily_stop_pct`.",
+      "acceptanceCriteria": [
+        "Создан файл `coint4/configs/autopilot/budget1000_followup_20260216.yaml`.",
+        "`base_config` указывает на best sample config из `coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json`.",
+        "Установлены уникальные имена: `run_group_prefix=20260216_budget1000_ap2` и `controller_group=20260216_budget1000_ap2_autopilot`.",
+        "DD-first selection настроен: `min_windows=3`, `max_dd_pct=0.25`, `dd_target_pct=0.15`, `dd_penalty=8.0`.",
+        "`search.knobs` содержит минимум 4 ключа: `portfolio.risk_per_position_pct`, `backtest.pair_stop_loss_usd`, `backtest.max_var_multiplier`, `backtest.portfolio_daily_stop_pct`."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "autopilot",
+        "config",
+        "dd"
+      ],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "APF-02",
+      "title": "Запустить follow-up автопилот на VPS и довести очереди до консистентного статуса",
+      "description": "Запустить `autopilot_budget1000.py` с новым конфигом (`--reset`), heavy только через `run_server_job.sh`. Если после цикла остаются `stalled`, выполнить добор `planned,stalled` (через watcher или повторный `--resume`) до консистентного состояния очередей.",
+      "acceptanceCriteria": [
+        "Создан и обновлён `coint4/artifacts/wfa/aggregate/20260216_budget1000_ap2_autopilot/state.json`.",
+        "Автопилот завершился с `done=true`.",
+        "Для групп `20260216_budget1000_ap2_*` в `run_queue.csv` нет записей `running`.",
+        "Все remote job запускались через `coint4/scripts/remote/run_server_job.sh` с `STOP_AFTER=1`."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "vps",
+        "execution",
+        "queue"
+      ],
+      "dependsOn": [
+        "APF-01"
+      ],
+      "completionNotes": "Blocked in current sandbox: run_server_job.sh could not resolve api.serverspace.ru and direct SSH to 85.198.90.128 is denied (Operation not permitted). Safe default applied: no local heavy run; queue left planned for VPS execution in a network-enabled environment."
+    },
+    {
+      "id": "APF-03",
+      "title": "Пересобрать canonical rollup и зафиксировать best-кандидата follow-up цикла",
+      "description": "После sync_back выполнить постпроцесс/пересборку индекса и выбрать лучший кандидат по worst-window robust Sharpe с DD-first ограничениями. Отдельно сохранить итог отчёта в уникальный follow-up файл, чтобы не перезаписать предыдущий отчёт автопилота.",
+      "acceptanceCriteria": [
+        "Пересобран `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` после follow-up прогонов.",
+        "Зафиксированы метрики best-кандидата: `score`, `worst_robust_sharpe`, `worst_dd_pct`, `sample_config_path`.",
+        "Итог автопилота сохранён в `docs/budget1000_autopilot_followup_final_20260216.md` (копия/перенос из стандартного отчёта допустим).",
+        "Если DD gate (`max_dd_pct=0.25`) не выполнен, в отчёте явно указана причина и следующий план по knobs."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "metrics",
+        "rollup",
+        "report"
+      ],
+      "dependsOn": [
+        "APF-02"
+      ]
+    },
+    {
+      "id": "APF-04",
+      "title": "Обновить optimization_state и дневник прогонов по итогам follow-up",
+      "description": "После завершения follow-up цикла обновить `docs/optimization_state.md` и дневник прогонов, с ссылкой на новый итоговый отчёт и сравнением с циклом 2026-02-16 (max_rounds=3).",
+      "acceptanceCriteria": [
+        "`docs/optimization_state.md` обновлён: добавлен блок follow-up со ссылкой на новый отчёт и best-кандидатом.",
+        "Обновлён дневник `docs/optimization_runs_20260216.md` (или создан новый файл по фактической дате запуска).",
+        "Явно отражено сравнение: предыдущий цикл `20260215_budget1000_ap_autopilot` vs follow-up `20260216_budget1000_ap2_autopilot`."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "docs"
+      ],
+      "dependsOn": [
+        "APF-03"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-16T00:00:00.000Z",
+    "updatedAt": "2026-02-16T06:02:39.937Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/budget1000_autopilot/prd_budget1000_autopilot_followup_20260216.ralph.json",
+    "basedOn": "tasks/budget1000_autopilot/prd_budget1000_autopilot.ralph.json",
+    "previousState": "coint4/artifacts/wfa/aggregate/20260215_budget1000_ap_autopilot/state.json"
+  }
+}
