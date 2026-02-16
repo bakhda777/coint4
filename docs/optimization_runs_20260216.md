@@ -1,4 +1,4 @@
-# Optimization runs — cycle `20260216_clean_top10` (written 2026-02-15)
+# Optimization runs — cycle `20260216_clean_top10` (written 2026-02-16)
 
 Контекст: baseline batch clean-cycle TOP-10 (`20260216_clean_top10`) был выполнен на VPS и затем `sync_back` на эту машину. Ниже — локальная пост-обработка (без тяжёлых прогонов).
 
@@ -53,5 +53,20 @@ DD-first фиксация best-кандидата для продолжения 
 - worst_dd_pct: `0.230224` (DD gate `<=0.25` проходит)
 - sample_config_path: `coint4/configs/budget1000_autopilot/20260215_budget1000_ap_r03_slusd/holdout_prod_final_budget1000_oos20220601_20230430_risk0p019_oos20220601_20230430_slusd6p5_oos20220601_20230430_slusd4p5_oos20220601_20230430_vm1p0035_oos20220601_20230430_risk0p015_oos20220601_20230430_slusd2p5.yaml`
 
-Отдельный итоговый файл follow-up:
+Новый итоговый файл follow-up:
 - `docs/budget1000_autopilot_followup_final_20260216.md`
+
+## Сравнение циклов: `20260215_budget1000_ap_autopilot` vs `20260216_budget1000_ap2_autopilot`
+
+| Метрика | Цикл `20260215_budget1000_ap_autopilot` (`max_rounds=3`) | Follow-up `20260216_budget1000_ap2_autopilot` |
+| --- | --- | --- |
+| Итоговый отчёт | `docs/budget1000_autopilot_final_20260216.md` | `docs/budget1000_autopilot_followup_final_20260216.md` |
+| Best source | `20260215_budget1000_ap_r03_risk` | fallback `20260215_budget1000_ap_r03_slusd` |
+| Score | `2.357188` | `1.646785` |
+| Worst-window robust Sharpe | `3.310223` | `2.288574` |
+| Worst-window DD pct | `0.340607` (DD gate `<=0.25` FAIL) | `0.230224` (DD gate `<=0.25` PASS) |
+| Состояние follow-up run_group `20260216_budget1000_ap2_r01_risk` | n/a | `planned=30`, `completed=0`, `metrics_present=False` |
+
+Итог сравнения:
+- DD-first follow-up улучшил worst DD на `11.04` п.п. относительно max_rounds-цикла (`0.340607 -> 0.230224`) и дал прохождение DD-gate `<=0.25`.
+- Цена улучшения DD: `score` ниже на `0.710403`, worst-window robust Sharpe ниже на `1.021648`.
