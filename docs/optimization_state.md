@@ -31,8 +31,10 @@ Recent updates (2026-02-16):
 - Итоговый отчёт: `docs/budget1000_autopilot_final_20260216.md` (завершение по `max_rounds=3`, не по stop-condition).
 - Выполнено 9 очередей (3 раунда × 3 knobs): `20260215_budget1000_ap_r{01,02,03}_{risk,slusd,vm}` (по 30 run'ов на очередь: 3 окна × 5 значений × holdout+stress).
 - Best candidate (DD gate отключён, использовался soft penalty `dd_target_pct=0.15`, `dd_penalty=5.0`):
+  - variant_id: `prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015`
+  - config_path (sample): `coint4/configs/budget1000_autopilot/20260215_budget1000_ap_r03_risk/holdout_prod_final_budget1000_oos20220601_20230430_risk0p019_oos20220601_20230430_slusd6p5_oos20220601_20230430_slusd4p5_oos20220601_20230430_vm1p0035_oos20220601_20230430_risk0p015.yaml`
   - knobs: `risk_per_position_pct=0.015`, `pair_stop_loss_usd=4.5`, `max_var_multiplier=1.0035`
-  - score: `2.357`, worst robust Sharpe: `3.310`, worst DD: `34.1%` (DD-gate `<=15%` НЕ проходит).
+  - metrics: `score=2.357188`, `worst_robust_sharpe=3.310223`, `worst_dd_pct=0.340607` (34.1%; DD-gate `<=15%` НЕ проходит).
 
 Recent updates (2026-02-15):
 
