@@ -95,3 +95,20 @@ DD-first фиксация best-кандидата для продолжения 
 - worst_robust_sharpe: `3.269438`
 - worst_dd_pct: `0.201635`
 - sample_config_path: `coint4/configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml`
+
+## Queue status sync + canonical rollup refresh (post-cycle consistency)
+
+Команды (из `coint4/`):
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py`
+- `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+
+Что обновлено:
+- Синхронизированы статусы `planned -> completed` в 3 очередях:
+  - `coint4/artifacts/wfa/aggregate/20260116_ssd_topn_refine/run_queue.csv` (4/4)
+  - `coint4/artifacts/wfa/aggregate/20260122_budget1000_top50_top30_scaled_caps/run_queue.csv` (4/4)
+  - `coint4/artifacts/wfa/aggregate/20260123_budget1000_oos20240101_20240630_top50_maxnot40_lowrisk_maxpairsgrid/run_queue.csv` (16/16)
+- Пересобран canonical rollup: `coint4/artifacts/wfa/aggregate/rollup/run_index.{csv,json,md}`.
+- Новый размер индекса: `Run index entries: 2058`.
+
+Примечание по Git-политике:
+- Коммит `coint4/artifacts/**` блокируется pre-commit hook в этом репозитории, поэтому изменения артефактов фиксируются в рабочем дереве локально, а в Git сохраняется только журнальная запись.
