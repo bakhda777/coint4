@@ -1,0 +1,102 @@
+# Budget $1000 batch-loop bridge config (BL-ANL recommendation, 2026-02-16).
+#
+# Objective:
+# - Keep DD-first discipline from closed-loop cycle.
+# - Bridge current winner (risk~0.009, slusd~2.5) toward global completed benchmark
+#   region (risk~0.006, slusd~1.85..1.91) using coarse, batch-size sweeps.
+
+base_config: configs/budget1000_autopilot/20260216_budget1000_cl_r02_risk/holdout_prod_final_budget1000_risk0p019_slusd6p5_slusd4p5_vm1p0035_risk0p015_slusd2p5_risk0p011_oos20220601_20230430_risk0p009.yaml
+
+windows:
+  - ["2022-06-01", "2023-04-30"]
+  - ["2023-10-01", "2024-09-30"]
+  - ["2024-05-01", "2025-06-30"]
+
+# <run_group_prefix>_r<round>_<knob>
+run_group_prefix: "20260216_budget1000_bl"
+controller_group: "20260216_budget1000_bl_autopilot"
+
+configs_dir: "configs/budget1000_autopilot"
+queue_dir: "artifacts/wfa/aggregate"
+runs_dir: "artifacts/wfa/runs_clean"
+
+execution:
+  sync_up: true
+  stop_after: true
+  bar_minutes: 15
+  overwrite_canonical: true
+
+git:
+  auto_stage: true
+
+selection:
+  min_windows: 3
+  min_trades: 10
+  min_pairs: 20
+
+  # DD-first tightening for bridge round.
+  max_dd_pct: 0.22
+  dd_target_pct: 0.14
+  dd_penalty: 10.0
+
+search:
+  max_rounds: 0
+  no_improvement_rounds: 2
+  min_improvement: 0.02
+  require_all_knobs_before_stop: true
+
+  # Batch policy: must keep >=10 candidates after dedup (here target >=12).
+  min_queue_entries: 12
+
+  # Coarse grid only (no micro-thousandth overfitting).
+  knobs:
+    - key: "portfolio.risk_per_position_pct"
+      op: "add"
+      step: 0.001
+      candidates: [-3, -2, -1, 0, 1, 2]
+      min: 0.006
+      max: 0.012
+
+    - key: "backtest.pair_stop_loss_usd"
+      op: "add"
+      step: 0.25
+      candidates: [-3, -2, -1, 0, 1, 2]
+      min: 1.50
+      max: 3.00
+
+    - key: "backtest.max_var_multiplier"
+      op: "add"
+      step: 0.002
+      candidates: [-1, 0, 1, 2, 3]
+      # Guardrail: strict > 1.0 (exclude vm=1.0 from search space).
+      min: 1.001
+      max: 1.020
+
+    - key: "pair_selection.min_correlation"
+      op: "add"
+      step: 0.02
+      candidates: [-2, -1, 0, 1, 2]
+      min: 0.30
+      max: 0.40
+
+    - key: "pair_selection.coint_pvalue_threshold"
+      op: "add"
+      step: 0.05
+      candidates: [-2, -1, 0, 1]
+      min: 0.20
+      max: 0.45
+
+    - key: "filter_params.min_beta"
+      op: "add"
+      step: 0.0005
+      candidates: [-1, 0, 1, 2]
+      min: 0.0005
+      max: 0.0030
+
+# Analyst policy for forbidden symbols/pairs (manual profile switch before run,
+# then rerun the same config under a separate run_group if concentration remains high).
+forbidden_profiles:
+  baseline:
+    exclude_symbols: []
+  memes_v1:
+    exclude_symbols: ["1000PEPEUSDT", "1000BONKUSDT", "WIFUSDT", "DOGEUSDT"]

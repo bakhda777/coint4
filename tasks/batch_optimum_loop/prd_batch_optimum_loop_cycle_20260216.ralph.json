@@ -1,0 +1,118 @@
+{
+  "name": "batch_optimum_loop_cycle: аналитик -> исполнитель -> финализатор",
+  "description": "Итеративный цикл для достижения целей batch_optimum_loop: батчи >=10, coarse sweep без микро-точности, расширение knobs на фильтры/риск и контур запрещённых пар.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "BL-ANL",
+      "title": "Аналитик: формирование следующего батча и правил отбора",
+      "description": "На каждом раунде аналитик берёт самый свежий run/log, сравнивает его с completed-пулом и формирует следующий батч-конфиг с явными параметрами запуска.",
+      "acceptanceCriteria": [
+        "Определён последний run_group/лог и выполнено сравнение минимум в двух срезах: текущий prefix и общий completed-пул.",
+        "В `completionNotes` записана точная команда запуска следующего раунда + `run_group_prefix` + список изменяемых knobs.",
+        "В рекомендацию включены: batch-size >= 10, coarse-сетка (без избыточной точности), guardrail `backtest.max_var_multiplier > 1.0`.",
+        "В рекомендацию включены минимум 5 направлений из source PRD: batch loop, coarse-квантование, risk/slusd/vm, фильтры pair_selection/filter_params, forbidden symbols/pairs.",
+        "Если улучшения ещё возможны: `BL-ANL.passes=true`, `BL-EXEC.passes=false`, `BL-CLOSE.passes=false`.",
+        "Если улучшения исчерпаны: в `completionNotes` дословно записано `мы перепробовали все что можно, как еще улучшить я не знаю`, затем `BL-ANL.passes=true`, `BL-EXEC.passes=true`, `BL-CLOSE.passes=false`."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "loop",
+        "analyst",
+        "batch",
+        "ranking"
+      ],
+      "dependsOn": [],
+      "completionNotes": "BL-ANL review (2026-02-16 UTC)\n\nFresh run/log reviewed\n- iteration_log: .ralph-tui/iterations/3b182488_2026-02-16_04-50-09_RL-ANL.log\n- latest_run_group: 20260216_budget1000_cl_r03_vm\n- queue_status: completed=18, stalled=6 (of 24)\n- blocker: stalled runs use backtest.max_var_multiplier=1.0, but validator requires >1.0 (see artifacts/wfa/runs_clean/20260216_budget1000_cl_r03_vm/*vm1p0/run.log)\n\nComparison slice #1 (current prefix: 20260216_budget1000_cl_)\n- best completed variant: run_group=20260216_budget1000_cl_r02_slusd, worst_robust_sh=3.377, worst_dd_pct=0.245\n- latest vm round: run_group=20260216_budget1000_cl_r03_vm, best worst_robust_sh=2.736, worst_dd_pct=0.167\n\nComparison slice #2 (global completed pool: budget1000_*)\n- benchmark: run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro\n- benchmark variant zone: risk=0.006, pair_stop_loss_usd=1.85..1.91\n- benchmark metrics: worst_robust_sh=3.530, worst_dd_pct=0.132\n\nNext batch config and launch parameters\n- run_group_prefix: 20260216_budget1000_bl\n- config: configs/autopilot/budget1000_batch_loop_bridge01_20260216.yaml\n- batch policy: min_queue_entries=12 (>=10 unique candidates after dedup)\n- coarse policy: risk step=0.001, slusd step=0.25, vm step=0.002, filter steps=0.02/0.05/0.0005\n- guardrail: backtest.max_var_multiplier STRICT > 1.0 (min=1.001)\n\nKnobs / directions for next round\n1) Batch loop: enforce queue size >=10 via min_queue_entries=12 and fallback knob rotation\n2) Coarse quantization only (no micro-thousandth sweeps)\n3) Core risk knobs: portfolio.risk_per_position_pct, backtest.pair_stop_loss_usd, backtest.max_var_multiplier\n4) Filters: pair_selection.min_correlation, pair_selection.coint_pvalue_threshold, filter_params.min_beta\n5) Forbidden symbols/pairs contour: use profiles baseline=[] and memes_v1=[1000PEPEUSDT,1000BONKUSDT,WIFUSDT,DOGEUSDT]; if pair-PnL concentration >35% in one of these symbols, rerun with memes_v1 profile\n6) DD-first gates: min_windows=3, min_pairs=20, max_dd_pct<=0.22, dd_target_pct=0.14, dd_penalty=10.0\n\nExact VPS launch command (heavy only on 85.198.90.128)\ncd coint4 && SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash -lc 'PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge01_20260216.yaml --reset'"
+    },
+    {
+      "id": "BL-EXEC",
+      "title": "Исполнитель: запуск батча и пост-обработка",
+      "description": "Исполнитель запускает рекомендованный батч строго по `BL-ANL.completionNotes`, выполняет пост-синхронизацию статусов/rollup и возвращает цикл аналитику.",
+      "acceptanceCriteria": [
+        "Запуск выполнен строго по последней рекомендации аналитика без произвольных изменений.",
+        "Heavy execution запускается только на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` с `STOP_AFTER=1`.",
+        "После прогона выполнены `sync_queue_status.py` и `build_run_index.py` для актуального пула.",
+        "В `completionNotes` зафиксированы run_group, размер батча, статус completed/stalled/planned, ключевые метрики и блокеры (если есть).",
+        "При успехе: `BL-EXEC.passes=true`, `BL-ANL.passes=false`, `BL-CLOSE.passes=false`.",
+        "При неуспехе: `BL-EXEC.passes=false`, `BL-ANL.passes=false`, `BL-CLOSE.passes=false` (явный возврат к аналитику с блокером)."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "loop",
+        "executor",
+        "vps",
+        "run"
+      ],
+      "dependsOn": [
+        "BL-ANL"
+      ]
+    },
+    {
+      "id": "BL-CLOSE",
+      "title": "Финализатор: закрытие цикла по явному стоп-вердикту",
+      "description": "Финально закрывает цикл только когда аналитик явно зафиксировал исчерпание пространства улучшений.",
+      "acceptanceCriteria": [
+        "В `BL-ANL.completionNotes` есть точная фраза: `мы перепробовали все что можно, как еще улучшить я не знаю`.",
+        "Перед закрытием проверено: `BL-ANL.passes=true` и `BL-EXEC.passes=true`.",
+        "Если условие не выполнено: `BL-CLOSE.passes=false` и цикл продолжается.",
+        "Если условие выполнено: `BL-CLOSE.passes=true`; после этого `BL-ANL`/`BL-EXEC` обратно в `false` не переводятся."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "loop",
+        "finalizer",
+        "guardrail"
+      ],
+      "dependsOn": [
+        "BL-ANL",
+        "BL-EXEC"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-16T00:00:00Z",
+    "updatedAt": "2026-02-16T10:18:14Z",
+    "version": "1.0.0",
+    "sourcePrd": "tasks/batch_optimum_loop/prd_batch_optimum_loop_20260216.ralph.json",
+    "loopProtocol": "State-machine на status flags: старт BL-ANL=false, BL-EXEC=true, BL-CLOSE=false; аналитик открывает исполнителя (BL-EXEC=false), исполнитель возвращает цикл аналитику (BL-ANL=false). Финальное завершение только через BL-CLOSE после стоп-фразы аналитика.",
+    "statusTransitions": [
+      "START: BL-ANL=false, BL-EXEC=true, BL-CLOSE=false",
+      "ANALYST_CONTINUE: BL-ANL=true, BL-EXEC=false, BL-CLOSE=false",
+      "EXECUTOR_DONE: BL-ANL=false, BL-EXEC=true, BL-CLOSE=false",
+      "EXECUTOR_FAILED: BL-ANL=false, BL-EXEC=false, BL-CLOSE=false",
+      "ANALYST_EXHAUSTED: BL-ANL=true, BL-EXEC=true, BL-CLOSE=false",
+      "FINALIZE: BL-ANL=true, BL-EXEC=true, BL-CLOSE=true"
+    ],
+    "objectiveChecklist": [
+      "BA-001 batch >=10",
+      "BA-002 coarse precision policy",
+      "BA-003 filters + risk knobs",
+      "BA-004 forbidden pairs/symbols contour",
+      "BA-005 tests + docs + dry-run"
+    ],
+    "latestAnalystReview": {
+      "iterationLog": ".ralph-tui/iterations/3b182488_2026-02-16_04-50-09_RL-ANL.log",
+      "latestRunGroup": "20260216_budget1000_cl_r03_vm",
+      "latestRunStatus": {
+        "completed": 18,
+        "stalled": 6,
+        "total": 24
+      },
+      "currentPrefixBest": {
+        "run_group": "20260216_budget1000_cl_r02_slusd",
+        "worst_robust_sharpe": 3.377,
+        "worst_dd_pct": 0.245
+      },
+      "globalCompletedBest": {
+        "run_group": "20260213_budget1000_dd_sprint08_stoplossusd_micro",
+        "worst_robust_sharpe": 3.53,
+        "worst_dd_pct": 0.132
+      },
+      "recommendedNextConfig": "configs/autopilot/budget1000_batch_loop_bridge01_20260216.yaml"
+    }
+  }
+}
