@@ -16,7 +16,7 @@
         "Если улучшения исчерпаны: в `completionNotes` дословно записано `мы перепробовали все что можно, как еще улучшить я не знаю`, затем `BL-ANL.passes=true`, `BL-EXEC.passes=true`, `BL-CLOSE.passes=false`."
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "labels": [
         "loop",
         "analyst",
@@ -39,7 +39,7 @@
         "При неуспехе: `BL-EXEC.passes=false`, `BL-ANL.passes=false`, `BL-CLOSE.passes=false` (явный возврат к аналитику с блокером)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "labels": [
         "loop",
         "executor",
@@ -49,7 +49,7 @@
       "dependsOn": [
         "BL-ANL"
       ],
-      "completionNotes": "BL-EXEC execution report (2026-02-16 UTC)\n\nLaunch per BL-ANL recommendation\n- Source command: latest analyst recommendation from `.ralph-tui/iterations/7f8a7bab_2026-02-16_06-23-23_BL-ANL.log` (in `.ralph-tui/prd.json` the `BL-ANL.completionNotes` field was overwritten to `Completed by agent`, so exact command was recovered from the latest BL-ANL iteration log as safe default).\n- Attempted exact command:\n  cd coint4 && SYNC_UP=1 STOP_AFTER=1 bash scripts/remote/run_server_job.sh bash -lc 'PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge02_20260216.yaml --reset'\n- Blocker observed: nested `run_server_job.sh` from inside VPS session had no `SERVSPACE_API_KEY` on remote side, so exact command stopped before queue execution.\n- Safe fallback (same config, no knob changes):\n  cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge02_20260216.yaml --reset\n  Heavy execution still ran only on VPS `85.198.90.128` via `scripts/remote/run_server_job.sh` with `STOP_AFTER=1` each round.\n\nExecuted run_groups (prefix: 20260216_budget1000_bl2)\n- 20260216_budget1000_bl2_r01_risk: queue_size=30, completed=30, stalled=0, planned=0\n- 20260216_budget1000_bl2_r02_slusd: queue_size=30, completed=30, stalled=0, planned=0\n- 20260216_budget1000_bl2_r03_vm: queue_size=24, completed=24, stalled=0, planned=0\n- Total batch: queue_size=84, completed=84, stalled=0, planned=0\n\nPost-sync (manual BL-EXEC step)\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl2_r01_risk/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl2_r02_slusd/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl2_r03_vm/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup\n- Result: no queue status changes needed; rollup rebuilt (run_index entries=2280).\n\nKey metrics\n- stop_reason: max_rounds_reached (max_rounds=3)\n- best run_group: 20260216_budget1000_bl2_r03_vm\n- best score: 3.5888\n- best worst-window robust Sharpe: 3.5888\n- best worst-window DD pct: 0.1329\n\nCycle handoff\n- BL-EXEC complete, returning cycle to BL-ANL.\n"
+      "completionNotes": "BL-EXEC execution report (2026-02-16 UTC)\n\nLaunch per BL-ANL recommendation\n- Source of truth for exact command: `tasks/batch_optimum_loop/prd_batch_optimum_loop_cycle_20260216.ralph.json` (`BL-ANL.completionNotes`).\n- Ambiguity handled safely: `.ralph-tui/prd.json` had placeholder `Completed by agent` for `BL-ANL.completionNotes`; used tracked PRD recommendation without changing knobs.\n- Executed command (exact):\n  cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge03_20260216.yaml --reset\n\nExecuted run_groups (prefix: 20260216_budget1000_bl3)\n- 20260216_budget1000_bl3_r01_corr: queue_size=60, completed=60, stalled=0, planned=0\n- 20260216_budget1000_bl3_r02_min_beta: queue_size=54, completed=0, stalled=0, planned=54\n- 20260216_budget1000_bl3_r02_pv: queue_size=54, completed=0, stalled=0, planned=54\n- 20260216_budget1000_bl3_r02_risk: queue_size=54, completed=0, stalled=0, planned=54\n- 20260216_budget1000_bl3_r02_slusd: queue_size=54, completed=0, stalled=0, planned=54\n- 20260216_budget1000_bl3_r02_vm: queue_size=54, completed=0, stalled=0, planned=54\n- Total across generated queues: queue_size=330, completed=60, stalled=0, planned=270\n\nPost-sync (explicit manual step)\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r01_corr/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r02_min_beta/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r02_pv/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r02_risk/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r02_slusd/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl3_r02_vm/run_queue.csv\n- PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup\n- Result: queue statuses consistent; rollup rebuilt (run_index entries=2610).\n\nKey metrics / blocker\n- best run_group: 20260216_budget1000_bl3_r01_corr\n- best score: 3.4337673148458445\n- best worst-window robust Sharpe: 3.5887747337991924\n- best worst-window DD pct: 0.132917284912779\n- stop_reason: search_space_exhausted at round=2 (Queue too small: 54 < min_queue_entries=60 for `..._r02_vm/run_queue.csv`).\n\nCycle handoff\n- BL-EXEC done; returning loop control to BL-ANL for next recommendation (including decision on `min_queue_entries` policy vs search-space width)."
     },
     {
       "id": "BL-CLOSE",
@@ -76,7 +76,7 @@
   ],
   "metadata": {
     "createdAt": "2026-02-16T00:00:00Z",
-    "updatedAt": "2026-02-16T12:05:54Z",
+    "updatedAt": "2026-02-16T12:25:05Z",
     "version": "1.0.0",
     "sourcePrd": "tasks/batch_optimum_loop/prd_batch_optimum_loop_20260216.ralph.json",
     "loopProtocol": "State-machine на status flags: старт BL-ANL=false, BL-EXEC=true, BL-CLOSE=false; аналитик открывает исполнителя (BL-EXEC=false), исполнитель возвращает цикл аналитику (BL-ANL=false). Финальное завершение только через BL-CLOSE после стоп-фразы аналитика.",
@@ -115,6 +115,24 @@
       },
       "recommendedNextConfig": "configs/autopilot/budget1000_batch_loop_bridge03_20260216.yaml",
       "recommendedRunGroupPrefix": "20260216_budget1000_bl3"
+    },
+    "latestExecutorReview": {
+      "executedAt": "2026-02-16T12:25:05Z",
+      "runGroupPrefix": "20260216_budget1000_bl3",
+      "executedRunGroup": "20260216_budget1000_bl3_r01_corr",
+      "stopReason": "search_space_exhausted: round=2, queue too small (54 < min_queue_entries=60)",
+      "queueStatus": {
+        "completed": 60,
+        "stalled": 0,
+        "planned": 270,
+        "total": 330
+      },
+      "best": {
+        "run_group": "20260216_budget1000_bl3_r01_corr",
+        "score": 3.4337673148458445,
+        "worst_robust_sharpe": 3.5887747337991924,
+        "worst_dd_pct": 0.132917284912779
+      }
     }
   }
 }
