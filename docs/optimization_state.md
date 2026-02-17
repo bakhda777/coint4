@@ -1,8 +1,8 @@
 # Optimization state
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17
 
-Current stage: **Budget1000 closed-loop adaptive-loop завершён (`done=true`) с `stop_reason=max_rounds_reached: max_rounds=3`**; финальный winner по всем completed раундам префикса `20260216_budget1000_cl_*` — `run_group=20260216_budget1000_cl_r02_risk` (`score=2.856356`). Параллельно идёт **Clean Cycle TOP-10 baseline post-processing** (cycle `20260216_clean_top10`; baseline метрики вышли нулевыми, перед sweeps нужна проверка исполнения).
+Current stage: **Batch-loop BL9 executor pass завершён (`run_group_prefix=20260216_budget1000_bl9`) с `stop_reason=search_space_exhausted` на round=5 (`r05_pv` queue generation produced 0 entries)**; лучший кандидат в BL9 — `run_group=20260216_budget1000_bl9_r01_vm` (`score=4.062140`, `worst_robust_sharpe=4.365635`, `worst_dd_pct=0.111861`). Цикл возвращён аналитику (`BL-ANL=false`, `BL-EXEC=true`, `BL-CLOSE=false`).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -22,6 +22,21 @@ DD-gate для $1000:
 Sanity-gates (анти no-op, минимальные):
 - `total_trades >= 10` и (если метрика присутствует) `total_pairs_traded >= 1`.
 - `equity_curve.csv` должен содержать минимум 2 точки (иначе Sharpe/DD по curve не определены, а `sharpe_ratio_abs` в канонизации может стать 0).
+
+Recent updates (2026-02-17):
+
+### Batch loop BL9 (executor pass, bridge09)
+- Запуск выполнен командой:
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000_batch_loop_bridge09_20260216.yaml --reset`
+- Heavy execution: только VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` с `STOP_AFTER=1` (shutdown после каждого раунда подтверждён).
+- Исполненные раунды BL9: `r01_vm`, `r02_max_pairs`, `r03_corr`, `r04_pv` (каждый `72/72 completed`).
+- Явный post-sync после прогона:
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260216_budget1000_bl9_r*/run_queue.csv`
+  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+- Prefix totals (`20260216_budget1000_bl9_r*`): `completed=288`, `stalled=0`, `planned=228`, `total=516`.
+- Stop reason (controller state): `search_space_exhausted: round=5, reason=Queue generation produced 0 entries for run_group=20260216_budget1000_bl9_r05_pv`.
+- Отчёт: `docs/budget1000_autopilot_final_20260217.md`.
+- Блокер/уточнение: `BL-ANL.completionNotes` содержал placeholder `Completed by agent`; исполнитель использовал safe default из `metadata.latestAnalystReview.recommendedNextConfig` и предыдущего progress log.
 
 Recent updates (2026-02-16):
 
