@@ -1,0 +1,131 @@
+# Budget $1000 batch-loop bridge10 config (BL-ANL recommendation, 2026-02-17).
+#
+# Objective:
+# - Continue from the strongest completed candidate after BL9 stop.
+# - Keep batch-size >= 10 with coarse-only grids.
+# - Expand tuning over risk/slusd/vm, pair filters, and forbidden profile policy.
+
+base_config: configs/budget1000_autopilot/20260216_budget1000_bl9_r01_vm/holdout_prod_final_budget1000_risk0p006_slusd1p91_risk0p006_vm1p0075_corr0p34_pv0p39_corr0p28_min_beta0p0005_vm1p0095_slusd2p16_corr0p26_vm1p0035_oos20231001_20240930_vm1p0065.yaml
+
+windows:
+  - ["2022-06-01", "2023-04-30"]
+  - ["2023-10-01", "2024-09-30"]
+  - ["2024-05-01", "2025-06-30"]
+
+# <run_group_prefix>_r<round>_<knob>
+run_group_prefix: "20260217_budget1000_bl10"
+controller_group: "20260217_budget1000_bl10_autopilot"
+
+configs_dir: "configs/budget1000_autopilot"
+queue_dir: "artifacts/wfa/aggregate"
+runs_dir: "artifacts/wfa/runs_clean"
+
+execution:
+  sync_up: true
+  stop_after: true
+  bar_minutes: 15
+  overwrite_canonical: true
+
+git:
+  auto_stage: true
+
+selection:
+  min_windows: 3
+  min_trades: 200
+  min_pairs: 20
+
+  # DD-first policy with slightly stricter target DD.
+  max_dd_pct: 0.14
+  dd_target_pct: 0.09
+  dd_penalty: 18.0
+
+batch_policy:
+  target_variants_per_knob: 12
+  target_queue_entries: 72
+  coarse_only: true
+
+search:
+  max_rounds: 9
+  no_improvement_rounds: 2
+  min_improvement: 0.02
+  require_all_knobs_before_stop: true
+
+  # 12 variants x 3 windows x (holdout+stress) => 72 queue entries.
+  min_queue_entries: 72
+
+  # Coarse grids only (no micro-precision). Offset 0 intentionally excluded.
+  knobs:
+    - key: "portfolio.risk_per_position_pct"
+      op: "add"
+      step: 0.001
+      candidates: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      min: 0.003
+      max: 0.016
+
+    - key: "backtest.pair_stop_loss_usd"
+      op: "add"
+      step: 0.35
+      candidates: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      min: 1.1
+      max: 5.5
+
+    - key: "backtest.max_var_multiplier"
+      op: "add"
+      step: 0.0035
+      candidates: [-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+      # Guardrail: STRICT > 1.0.
+      min: 1.001
+      max: 1.06
+
+    - key: "pair_selection.max_pairs"
+      op: "add"
+      step: 3
+      candidates: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      min: 12
+      max: 60
+
+    - key: "pair_selection.min_correlation"
+      op: "add"
+      step: 0.025
+      candidates: [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7]
+      min: 0.12
+      max: 0.55
+
+    - key: "pair_selection.coint_pvalue_threshold"
+      op: "add"
+      step: 0.025
+      candidates: [-4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8]
+      min: 0.15
+      max: 0.65
+
+    - key: "filter_params.min_beta"
+      op: "add"
+      step: 0.002
+      candidates: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+      min: 0.0005
+      max: 0.03
+
+    - key: "filter_params.max_hurst_exponent"
+      op: "add"
+      step: 0.02
+      candidates: [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7]
+      min: 0.6
+      max: 0.95
+
+# Forbidden symbols/pairs contour (policy section for executor runbook and review).
+forbidden_profiles:
+  baseline:
+    exclude_symbols: []
+  memes_v2:
+    exclude_symbols: ["1000PEPEUSDT", "1000BONKUSDT", "WIFUSDT", "DOGEUSDT", "BOMEUSDT"]
+  concentration_v6:
+    exclude_symbols: ["AXSUSDT", "FTTUSDT", "GMTUSDT", "HOOKUSDT", "ARKMUSDT", "AXLUSDT", "GODSUSDT", "WIFUSDT", "1000PEPEUSDT"]
+    exclude_pairs: ["GMTUSDT-HOOKUSDT", "FTTUSDT-KSMUSDT", "AXSUSDT-CRVUSDT", "ARKMUSDT-AXLUSDT", "WIFUSDT-DOGEUSDT"]
+
+forbidden_policy:
+  profile_cycle_order: ["baseline", "memes_v2", "concentration_v6"]
+  enforce_profile_logging: true
+  rerun_if_pair_pnl_concentration_pct_ge: 10
+  rerun_if_excluded_symbol_abs_pnl_share_pct_ge: 8
+  profile_on_trigger: concentration_v6
+  secondary_profile: memes_v2
