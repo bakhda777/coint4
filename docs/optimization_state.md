@@ -1,8 +1,8 @@
 # Optimization state
 
-Last updated: 2026-02-17
+Last updated: 2026-02-20
 
-Current stage: **Batch-loop BL9 executor pass завершён (`run_group_prefix=20260216_budget1000_bl9`) с `stop_reason=search_space_exhausted` на round=5 (`r05_pv` queue generation produced 0 entries)**; лучший кандидат в BL9 — `run_group=20260216_budget1000_bl9_r01_vm` (`score=4.062140`, `worst_robust_sharpe=4.365635`, `worst_dd_pct=0.111861`). Цикл возвращён аналитику (`BL-ANL=false`, `BL-EXEC=true`, `BL-CLOSE=false`).
+Current stage: **US-LOOP-004 (docs + live export) завершён после fail-closed stop в US-LOOP-003**: `decision_id=us-loop-003-stop-20260220T0149Z-infra-block`, `stop_reason=INFRA_BLOCKED_SANDBOX_NETWORK: codex backend and serverspace api unreachable; powered runner repeats RC4`. Финальный winner для live-экспорта остаётся baseline `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro` (`run_id=holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`, `score=3.530254`, `worst_dd_pct=0.132205`).
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
@@ -22,6 +22,35 @@ DD-gate для $1000:
 Sanity-gates (анти no-op, минимальные):
 - `total_trades >= 10` и (если метрика присутствует) `total_pairs_traded >= 1`.
 - `equity_curve.csv` должен содержать минимум 2 точки (иначе Sharpe/DD по curve не определены, а `sharpe_ratio_abs` в канонизации может стать 0).
+
+Recent updates (2026-02-20):
+
+### US-LOOP-004 finalization (docs + winner export for live)
+- Финальный stop зафиксирован как fail-closed по валидному LLM-решению: `decision_id=us-loop-003-stop-20260220T0149Z-infra-block`.
+- Stop reason: `INFRA_BLOCKED_SANDBOX_NETWORK: codex backend and serverspace api unreachable; powered runner repeats RC4`.
+- Winner для cutover/live зафиксирован без изменений относительно baseline US-LOOP-002:
+  - `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro`
+  - `run_id=holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91` (paired stress: `stress_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`)
+  - `score=3.530254` (`worst_robust_sharpe`), `worst_dd_pct=0.132205`.
+- Почему winner: лучший `worst_robust_sharpe` при выполнении gate (`max_dd_pct<=0.14`, `min_windows=3`, `min_trades>=200`, `min_pairs>=20`), tie-break сохранён за baseline sprint08 для continuity.
+- Источники для оператора:
+  - `docs/best_params_latest.yaml`
+  - `docs/final_report_latest.md`
+  - `docs/optimization_runs_20260219.md`
+- Экспортирован кандидат prod-конфига для live: `coint4/configs/prod_final_budget1000_bestparams_20260219.yaml`.
+
+### Baseline refresh before next loop
+- Пересобран canonical rollup:
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+  - `run_index` после пересборки: `1800` записей.
+- Проверено покрытие `runs_clean` в `run_index.csv`: `20` строк, `20/20 status=completed`, `20/20 metrics_present=true`.
+- Baseline snapshot (global multi-window robust ranking, DD-gate `<=0.14`) остаётся прежним:
+  - `worst_robust_sharpe=3.530254`, `worst_dd_pct=0.132205`, `windows=3`.
+  - baseline выбран как `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro`, `variant_id=prod_final_budget1000_risk0p006_slusd1p91`.
+  - worst-window pair: `holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91` + `stress_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`.
+- Примечание по tie-break: у `20260214_budget1000_dd_sprint09_hurst_slusd1p91` тот же `worst_robust_sharpe`; для continuity оставлен baseline из sprint08 (`20260213...`).
+- Snapshot по `runs_clean` (`20260215_confirm_shortlist`): `10/10` пар имеют `robust_sharpe=0` и `PnL=0` (no-op), поэтому clean-shortlist не используется как baseline для нового loop до разбора причины no-op.
+- Дневник блока: `docs/optimization_runs_20260220.md`.
 
 Recent updates (2026-02-17):
 
