@@ -23,6 +23,7 @@ help:
 	@echo "  make test-slow   Run pytest -m slow"
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
+	@echo "  make preflight-loop Run loop preflight (remote policy + secrets + SSH + hygiene/lint/test)"
 	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
 	@echo "  make secret-scan Run staged secret scan (forbidden paths + sensitive patterns)"
 	@echo "  make install-hooks Configure git pre-commit hook for staged secret scan"
@@ -59,6 +60,10 @@ lint:
 
 .PHONY: ci
 ci: lint test
+
+.PHONY: preflight-loop
+preflight-loop:
+	@bash coint4/scripts/optimization/preflight_loop_ops.sh
 
 .PHONY: hygiene
 hygiene:
