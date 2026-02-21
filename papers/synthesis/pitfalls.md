@@ -1,0 +1,294 @@
+# Pitfalls
+
+- Generated at: 2026-02-21T23:01:00.860845+00:00
+
+- Cards processed: 30
+
+- 6-часовая торговля и активные стопы повышают зависимость от turnover/slippage.
+- mentions: 1
+- supporting papers: 02be0d66faf9
+- Edge может деградировать, т.к. отклонения уменьшаются со временем; нужен мониторинг/адаптация порогов и аллокации.
+- mentions: 1
+- supporting papers: f99b19bdd518
+- Leverage, встроенный в perpetuals, может усиливать drawdown при затяжном расхождении perp-spot.
+- mentions: 1
+- supporting papers: f99b19bdd518
+- RL-цепочка обычно чувствительна к качеству reward; без явной формализации штрафов за DD и транзакции может ухудшаться практический Sharpe.
+- mentions: 1
+- supporting papers: 1f91257d37bc
+- Robustness не отмечен как подтверждённый, поэтому переносимость сценариев ограничена.
+- mentions: 1
+- supporting papers: 2a7e243462cc
+- out_of_sample=false в keyword_hits, значит OOS-устойчивость из контекста не подтверждена.
+- mentions: 1
+- supporting papers: 61d2446d1ce6
+- Асимметрия 70/30 опирается на положительный дрейф крипторынка и может повышать рыночную экспозицию.
+- mentions: 1
+- supporting papers: 02be0d66faf9
+- Без walk-forward-глубины из статьи нельзя считать WFA-результаты воспроизводимыми для долгого интервала.
+- mentions: 1
+- supporting papers: c2647cc7ae3e
+- Без дополнительного regime-фильтра есть риск переизбытка сделок и ухудшения DD из-за шума на входах.
+- mentions: 1
+- supporting papers: 169fe985ca18
+- Без локальной калибровки результаты статьи нельзя перенести 1:1 в эксплуатацию.
+- mentions: 1
+- supporting papers: 46435471cec2
+- Без полного фрагмента не указаны параметры оценки, критерии устойчивости и обработка выбросов/ликвидности.
+- mentions: 1
+- supporting papers: 67fc845695f0
+- Более строгая семантика исполнения может уменьшать «красивые» backtest-метрики.
+- mentions: 1
+- supporting papers: 2f00d1bbe406
+- В input нет results/conclusion snippets, поэтому размер практического эффекта не извлекается.
+- mentions: 1
+- supporting papers: 231896601fcd
+- В input отсутствуют method/results/conclusion snippets, поэтому нельзя извлечь численные эффекты по Sharpe/DD.
+- mentions: 1
+- supporting papers: 5b0f2157af60
+- В keyword_hits нет явного акцента на slippage/transaction_costs для этой статьи.
+- mentions: 1
+- supporting papers: c50273f8c577
+- В доступном тексте нет числовых результатов по Sharpe, DD и детализации objective-функции.
+- mentions: 1
+- supporting papers: 46435471cec2
+- В доступных данных нет численных результатов, метрик Sharpe/DD и деталей backtest-пайплайна.
+- mentions: 1
+- supporting papers: c569f159fabe
+- В крипто-деривативах funding может существенно смещать net PnL и DD, если его не учитывать (в метаданных отмечены funding/crypto).
+- mentions: 1
+- supporting papers: 19d1852f85ea
+- В метаданных явно не отмечен out_of_sample, значит есть риск переобучения и завышенной оптимистической оценки.
+- mentions: 1
+- supporting papers: 1f91257d37bc
+- В переданном фрагменте нет детально описанной торговой стратегии pair-trading, входов/выходов и количественных результатов по Sharpe или drawdown.
+- mentions: 1
+- supporting papers: 310942e06875
+- В предоставленном контексте не видно явного OOS/WFA-процесса; без walk-forward есть риск переобучения на одном режиме.
+- mentions: 1
+- supporting papers: 072130146eb9
+- В предоставленном контексте отсутствуют конкретные численные результаты Sharpe, DD и turnover.
+- mentions: 1
+- supporting papers: b67984949e17
+- В предоставленном фрагменте нет деталей про качество/точность оценок VaR/ES и сравнение с базовыми методами.
+- mentions: 1
+- supporting papers: 243c9ce7f858
+- В текущем фрагменте отсутствуют численные результаты и метрики эффективности по каждому алгоритму.
+- mentions: 1
+- supporting papers: 5a6f4e60d49e
+- Входная информация не раскрывает формулу построения стратегического кэпитала и точный механизм валидации по кросс-средам.
+- mentions: 1
+- supporting papers: de03aa93a208
+- Выводы вероятно завязаны на конкретном наборе параметров и рынке, а переносимость на текущие пары/временной ряд не гарантирована.
+- mentions: 1
+- supporting papers: fd3ff852e63a
+- Высокая модельная сложность требует дополнительных проверок на переобучение и режимные сдвиги.
+- mentions: 1
+- supporting papers: b67984949e17
+- Высокая фокусировка на макро- и экологическом аспектах повышает риск чрезмерной теоретизации без прямой трансляции в исполнимую сигнальную схему.
+- mentions: 1
+- supporting papers: 310942e06875
+- Высокий turnover/частые ребалансы могут превратить «высокую Sharpe» до издержек в слабый net-результат.
+- mentions: 1
+- supporting papers: f99b19bdd518
+- Даже после screening остается значимый риск переобучения.
+- mentions: 1
+- supporting papers: 2f00d1bbe406
+- Данные только дневные; без явной детализации высокочастотной реализации качество сигнала может не переноситься в live.
+- mentions: 1
+- supporting papers: de03aa93a208
+- Для WFA-использования может потребоваться дополнительная защита от переобучения на сложной высокоразмерной системе.
+- mentions: 1
+- supporting papers: 67fc845695f0
+- Для этой статьи нет method/results/conclusion snippets, поэтому выводы ограничены индикаторами из keyword_hits.
+- mentions: 1
+- supporting papers: 61d2446d1ce6
+- Если игнорировать trading costs, сигнал по отклонению может быть нерабочим (нужен вход только за пределами cost-bounds).
+- mentions: 1
+- supporting papers: f99b19bdd518
+- Если оба фактора интегрированные, mean-reversion может ослабнуть; без контроля стационарности сигналов Sharpe может резко просесть.
+- mentions: 1
+- supporting papers: 072130146eb9
+- Есть риск режима/структурного сдвига вне окна 2022–2024 и некалиброванных предположений по комиссиям.
+- mentions: 1
+- supporting papers: de03aa93a208
+- Игнорирование transaction costs может сделать найденный арбитраж нерентабельным в реальном исполнении (в метаданных отмечены transaction_costs).
+- mentions: 1
+- supporting papers: 19d1852f85ea
+- Из переданного контекста нет прямых численных сравнений по Sharpe/DD именно для pair trading.
+- mentions: 1
+- supporting papers: c50273f8c577
+- Из переданного фрагмента не извлечена детализация критериев риска (Sharpe/DD расчеты, частота ребалансов, ограничения leverage).
+- mentions: 1
+- supporting papers: 29b3d7801fd5
+- Использование leverage усиливает хвостовые риски и просадки; нужны явные ограничения и стресс-проверки (в метаданных отмечены leverage/drawdown).
+- mentions: 1
+- supporting papers: 19d1852f85ea
+- Итоговые метрики в предоставленном контексте описаны качественно, без детальных численных таблиц.
+- mentions: 1
+- supporting papers: 816729627574
+- Комовинг отклонений across currencies создаёт общий фактор риска: портфель таких сделок может давать синхронные просадки.
+- mentions: 1
+- supporting papers: f99b19bdd518
+- Материал про общий портфельный allocation, а не про конкретную логику спредовых пар и спредовые сигналы.
+- mentions: 1
+- supporting papers: 6cd91b80cca3
+- Метод не дает готового торгового сигнала для пар и не описывает механизм формирования hedge-спреда в переданном фрагменте.
+- mentions: 1
+- supporting papers: 0d4abd4c1ce7
+- Метод ориентирован на риск-метрики портфеля (VaR/ES), а не на построение сигналов/спредов для pair trading.
+- mentions: 1
+- supporting papers: 243c9ce7f858
+- Наличие множества компонентов (regime, copula, RL, structural break) повышает риск переобучения без жесткого WFA-контроля.
+- mentions: 1
+- supporting papers: 5b0f2157af60
+- Не показан явный out_of_sample/walk_forward протокол; риск переобучения по regime высок.
+- mentions: 1
+- supporting papers: c569f159fabe
+- Не показаны прямые метрики исполнения (Sharpe, DD, комиссионные сценарии) для immediate deployment.
+- mentions: 1
+- supporting papers: 67fc845695f0
+- Не приведены explicit Sharpe/DD и торговые метрики, поэтому эффект для pair trading нужно валидировать заново.
+- mentions: 1
+- supporting papers: 0d4abd4c1ce7
+- Не приведены параметры выборки, частоты, размерности модели и способов оценки валидации out-of-sample.
+- mentions: 1
+- supporting papers: 310942e06875
+- Не раскрыт механизм управления комиссией/слеппиджем и DD в доступном фрагменте.
+- mentions: 1
+- supporting papers: c2647cc7ae3e
+- Не раскрыт полный торговый флоу (как сигналы переводятся в вход/выход, риск-менеджмент и правила ребалансировки).
+- mentions: 1
+- supporting papers: 5a6f4e60d49e
+- Не раскрыта детальная калибровка параметров комиссий и порядка заявок для конкретной биржи, а это влияет на эффект в live.
+- mentions: 1
+- supporting papers: 6cd91b80cca3
+- Не раскрыты параметры стоимости исполнения (slippage/fees, leverage), что критично для DD контроля.
+- mentions: 1
+- supporting papers: 0d4abd4c1ce7
+- Не содержит описания количественной торговой модели, входов/выходов, метрик Sharpe и drawdown.
+- mentions: 1
+- supporting papers: 18b3b18efc99
+- Не указаны walk-forward и out-of-sample протоколы, что повышает риск переобучения.
+- mentions: 1
+- supporting papers: cf1f96eb1ff4
+- Не указаны параметры регенерации очереди/валидации по walk-forward, поэтому устойчивость вне выборки не подтверждена.
+- mentions: 1
+- supporting papers: 29b3d7801fd5
+- Не указаны подробности исполнения на конкретном venue, а это критично для комиссии и slippage в live.
+- mentions: 1
+- supporting papers: fd3ff852e63a
+- Нельзя извлечь численные результаты по Sharpe/DD из переданного фрагмента.
+- mentions: 1
+- supporting papers: adb4b519df44
+- Непонятно, есть ли walk-forward/разделение на устойчивые out-of-sample окна в используемой схеме экспериментов.
+- mentions: 1
+- supporting papers: 6cd91b80cca3
+- Нет данных и процедур backtest для пар BTC/USDT или других крипто-инструментов.
+- mentions: 1
+- supporting papers: 18b3b18efc99
+- Нет деталей по universe, частоте ребалансировки и точной спецификации издержек.
+- mentions: 1
+- supporting papers: 5b0f2157af60
+- Нет прямых упоминаний о механике контроля комиссий, лимитах и фактическом влиянии на Sharpe/Drawdown.
+- mentions: 1
+- supporting papers: 5a6f4e60d49e
+- Нет флага out_of_sample в переданных метаданных, что повышает риск переоптимизации параметров.
+- mentions: 1
+- supporting papers: 2a7e243462cc
+- Нет явных method/results/conclusion snippets, поэтому нельзя достоверно восстановить точную спецификацию исследования.
+- mentions: 1
+- supporting papers: adb4b519df44
+- Нет явных указаний на walk-forward и проверку с ограничением max_steps, а также не указана полноценная защита от structural breaks.
+- mentions: 1
+- supporting papers: 2a7e243462cc
+- Нет явных указаний на walk-forward как обязательный протокол в представленном фрагменте; возможен эффект look-ahead.
+- mentions: 1
+- supporting papers: fd3ff852e63a
+- Неясна точная роль leverage в исходной методике, поэтому риск-правила нужно валидировать отдельно.
+- mentions: 1
+- supporting papers: 61d2446d1ce6
+- Неясно, как в оригинале согласованы сигналы зависимости (cointegration/copula) с факторными фильтрами (PCA).
+- mentions: 1
+- supporting papers: adb4b519df44
+- Неясны допущения по ликвидности и частоте ребалансировки для конкретных бирж и инструментов.
+- mentions: 1
+- supporting papers: 46435471cec2
+- Ни в digest, ни в excerpt нет числовой оценки Sharpe, DD и деталей backtestа, поэтому переносимость на WFA-рейтинги не подтверждена.
+- mentions: 1
+- supporting papers: cf1f96eb1ff4
+- Нужна отдельная оценка влияния смены regime и просадок при экстремальных сжатиях ликвидности.
+- mentions: 1
+- supporting papers: 29b3d7801fd5
+- Охват ограничен 10 крупнейшими активами; переносимость на более широкий universe не показана в предоставленном фрагменте.
+- mentions: 1
+- supporting papers: 816729627574
+- Период исследования ограничен 2021-08-01—2024-01-31, возможна режимная нестабильность вне этого интервала.
+- mentions: 1
+- supporting papers: c3d5f7d8a290
+- Присутствуют риски интерпретации и воспроизводимости при смене рыночной микроструктуры.
+- mentions: 1
+- supporting papers: 1f91257d37bc
+- Просадки остаются высокими (median max drawdown ~29%), поэтому риск-контур критичен.
+- mentions: 1
+- supporting papers: c3d5f7d8a290
+- Прямой пары cointegration в контексте не заявлено; это модель для одного инструмента и требует конвертации в spread/хедж-логику.
+- mentions: 1
+- supporting papers: c2647cc7ae3e
+- Прямой перенос в execution-код невозможен без самостоятельной формализации и эмпирики.
+- mentions: 1
+- supporting papers: 18b3b18efc99
+- Работа не является напрямую pair-trading execution paper; нужна интеграция с отдельным signal layer.
+- mentions: 1
+- supporting papers: c50273f8c577
+- Работа про execution benchmark, а не про генерацию pair-trading alpha-сигнала.
+- mentions: 1
+- supporting papers: 231896601fcd
+- Работа фокусируется на одной паре (XRP/USDT), без явной валидации переносимости на другие пары и спреды.
+- mentions: 1
+- supporting papers: 5a6f4e60d49e
+- Результат относится к двум парам и относительно короткому периоду, что снижает прямую переносимость на большие наборы активов.
+- mentions: 1
+- supporting papers: 169fe985ca18
+- Результаты чувствительны к настройке порогов входа/выхода.
+- mentions: 1
+- supporting papers: c3d5f7d8a290
+- Риск переобучения без строгой out-of-sample проверки и оценок robustness (в метаданных отмечены out_of_sample/robustness).
+- mentions: 1
+- supporting papers: 19d1852f85ea
+- Риск ухудшения при доменном сдвиге, если модель исполнения не переобучать по режимам ликвидности.
+- mentions: 1
+- supporting papers: 231896601fcd
+- Саму методику pair-selection и правило входа/выхода из позиции нужно уточнить до production использования.
+- mentions: 1
+- supporting papers: c569f159fabe
+- Смена режима (конец августа 2019) означает риск внезапной потери стационарности «краевых» спредов и роста DD при фиксированной модели/порогах.
+- mentions: 1
+- supporting papers: 072130146eb9
+- Транзакционные издержки и (для деривативов) funding способны съесть edge; без явного стресс-теста по costs Sharpe может быть завышен.
+- mentions: 1
+- supporting papers: 072130146eb9
+- Учет транзакционных издержек заявлен в ключевых словах, но в доступном тексте нет конкретики, как они встроены в оценку риска.
+- mentions: 1
+- supporting papers: 243c9ce7f858
+- Фокус на технических индикаторах сам по себе не гарантирует применимости в рыночно-нейтральной среде.
+- mentions: 1
+- supporting papers: 169fe985ca18
+- Фокус статьи на bullish crypto market повышает риск режимной деградации вне бычьих фаз.
+- mentions: 1
+- supporting papers: 816729627574
+- Формула/конкретный метод отбора пары не раскрыты в переданном фрагменте; требуется дополнительная валидация для pair trading.
+- mentions: 1
+- supporting papers: cf1f96eb1ff4
+- Фрагмент метода обрезан (после "employing a dynamic ..."), поэтому детали реализации не раскрыты.
+- mentions: 1
+- supporting papers: b67984949e17
+- Фрагмент не содержит параметризации HMM (например, число режимов) и практических настроек, что усложняет прямое внедрение.
+- mentions: 1
+- supporting papers: 243c9ce7f858
+- Фреймворк не создает новый alpha-сигнал; он только отбирает конфигурации внутри заданного семейства сигналов.
+- mentions: 1
+- supporting papers: 2f00d1bbe406
+- Это не классический market-neutral pair trading, а трендовый портфельный long-short подход.
+- mentions: 1
+- supporting papers: 02be0d66faf9
