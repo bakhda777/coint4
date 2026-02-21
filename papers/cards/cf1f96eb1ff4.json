@@ -1,0 +1,42 @@
+{
+  "actionability_score": 6,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение ложных входов в spread-трейды и меньшее число крупных просадок за счет исключения режимов с разрывной динамикой фандинга.",
+      "idea": "Ввести фильтр допуска пары по двумерной структуре funding-rate: торгуем только когда обе стороны пары в совместимых кластерах фандинга.",
+      "impact": "medium",
+      "wfa_checks": [
+        "WFA: 5 шагов скользящего окна (train 4–6 мес, test 1 мес), max_steps<=5, метрики Sharpe и maxDD.",
+        "Сравнить baseline пары без funding-фильтра и с фильтром на одинаковом пуле монет.",
+        "Провести чувствительность к комиссиям и slippage на +20%/+40%."
+      ],
+      "why": "Ключевые признаки статьи явно связаны с clustering funding и управлением риском исполнения, что прямо отвечает задаче контроля DD в парах."
+    }
+  ],
+  "evidence": [
+    "Digest содержит заголовок о two-tier structure funding-rate markets и упоминание perpetual.",
+    "keyword_hits: funding=true, clustering=true, slippage=true, stop_loss=true, transaction_costs=true, position_sizing=true."
+  ],
+  "key_findings": [
+    "В тексте явно указан предмет: двухуровневая структура рынков funding rate в криптоперпетуалах.",
+    "Метаданные подтверждают наличие кластеризации, stop-loss, slippage, transaction_costs и position sizing, то есть управляемость риска рассматривается на уровне процесса.",
+    "Подчеркивается практическая применимость к биржам с perpetual-контрактами (Binance/Bybit)."
+  ],
+  "method_family": [
+    "funding-rate market decomposition",
+    "market clustering",
+    "execution-aware risk controls"
+  ],
+  "paper_id": "cf1f96eb1ff4",
+  "pitfalls": [
+    "Ни в digest, ни в excerpt нет числовой оценки Sharpe, DD и деталей backtestа, поэтому переносимость на WFA-рейтинги не подтверждена.",
+    "Не указаны walk-forward и out-of-sample протоколы, что повышает риск переобучения.",
+    "Формула/конкретный метод отбора пары не раскрыты в переданном фрагменте; требуется дополнительная валидация для pair trading."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Статья описывает двухуровневую структуру рынка funding-rate для криптовалютных perpetual и указывает на важность учета режимов и инфраструктурных параметров исполнения; это даёт базу для фильтрации входов в парные позиции через контекст фандинга и риск-метрики.",
+  "text_sha256": "cf1f96eb1ff4ebea55e7c2d153dd99f749803a3a68a65f2f26139c2bb378a6c4",
+  "title": "The Two-Tiered Structure of Cryptocurrency Funding Rate Markets",
+  "year": 2025
+}

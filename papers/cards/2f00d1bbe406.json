@@ -1,0 +1,60 @@
+{
+  "actionability_score": 93,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение завышенного Sharpe в отчете и более контролируемый реальный DD.",
+      "idea": "Перевести pair-perp бэктесты на fully-costed учет: fees, funding и slippage в единой семантике исполнения.",
+      "impact": "high",
+      "wfa_checks": [
+        "Разница gross vs net Sharpe",
+        "Net max DD и Calmar",
+        "Вклад funding в PnL по инструментам",
+        "Чувствительность к стресс-сценариям издержек"
+      ],
+      "why": "Digest прямо указывает на завышение метрик в fee-only/zero-cost режимах."
+    },
+    {
+      "effort": "high",
+      "expected_effect": "Меньше параметрической хрупкости и ниже вероятность OOS-провалов по DD.",
+      "idea": "Ввести двухэтапный отбор конфигураций по окнам и cost-сценариям с PBO-гейтом.",
+      "impact": "high",
+      "wfa_checks": [
+        "OOS Sharpe по folds/окнам",
+        "PBO (CSCV) до и после гейта",
+        "Разброс DD между окнами",
+        "Доля конфигураций, не проходящих cost-stress"
+      ],
+      "why": "В работе double screening связан с более низкими drawdown при строгой семантике."
+    }
+  ],
+  "evidence": [
+    "Digest: \"execution-constrained\" и \"auditable expert system\".",
+    "Digest: fully-costed включает funding и slippage.",
+    "Digest: \"CSCV/PBO ... substantial residual overfitting risk\"."
+  ],
+  "key_findings": [
+    "Fee-only и zero-cost сценарии materially inflate annualized performance по сравнению с fully-costed конфигурацией.",
+    "Double screening не гарантирует более высокую доходность, но чаще выбирает конфигурации с меньшим drawdown.",
+    "CSCV/PBO диагностирует существенный residual overfitting risk."
+  ],
+  "method_family": [
+    "execution-constrained backtesting",
+    "Bayesian optimization",
+    "two-stage double screening across windows and cost scenarios",
+    "funding/slippage/fees integrated accounting",
+    "CSCV/PBO overfitting diagnostics",
+    "walk-forward style windowed validation"
+  ],
+  "paper_id": "2f00d1bbe406",
+  "pitfalls": [
+    "Фреймворк не создает новый alpha-сигнал; он только отбирает конфигурации внутри заданного семейства сигналов.",
+    "Даже после screening остается значимый риск переобучения.",
+    "Более строгая семантика исполнения может уменьшать «красивые» backtest-метрики."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "AutoQuant предлагает execution-constrained, alpha-agnostic pipeline для отбора конфигураций в perpetual futures с жесткой семантикой исполнения, funding alignment и профилями издержек/ограничений. В digest подчеркивается, что fee-only и zero-cost бэктесты завышают годовую доходность относительно fully-costed сценария, а double screening чаще снижает drawdown, но не гарантирует рост доходности; CSCV/PBO показывает остаточный риск переобучения.",
+  "text_sha256": "2f00d1bbe40699bc83c8352e921e31951033978ca9838c54320ae86c1f88b889",
+  "title": "AutoQuant: An Auditable Expert-System Framework for Execution-Constrained Auto-Tuning in Cryptocurrency Perpetual Futures",
+  "year": 2025
+}

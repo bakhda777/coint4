@@ -1,0 +1,91 @@
+{
+  "actionability_score": 8,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Sharpe↑ за счёт арбитража отклонений; DD↓ благодаря хеджу направления базового актива.",
+      "idea": "Basis pair trade spot↔perp с учётом funding (вход при значимом perp-spot отклонении).",
+      "impact": "high",
+      "wfa_checks": [
+        "OOS Sharpe по шагам walk-forward/rolling",
+        "Max DD (общий и по худшему шагу)",
+        "Чувствительность к trading costs (fee grid)",
+        "Стабильность по разным underlyings/«currencies»",
+        "Проверка деградации edge во времени (diminish over time)"
+      ],
+      "why": "В тексте явно есть perp-spot mispricing, funding-механика и утверждение про implied arbitrage с высокой Sharpe."
+    },
+    {
+      "effort": "low",
+      "expected_effect": "Sharpe↑ net-of-costs; DD↓ через меньшее число «маржинальных» входов и ниже turnover.",
+      "idea": "Entry/exit по cost-bounds: торговать только когда отклонение превышает оценочную границу издержек.",
+      "impact": "high",
+      "wfa_checks": [
+        "Net Sharpe после комиссий/издержек",
+        "Turnover и вклад издержек в PnL",
+        "Порог отклонения vs performance (sweep)",
+        "Стабильность метрик по OOS шагам"
+      ],
+      "why": "Авторы выводят границы в markets with trading costs — это естественный фильтр для сигналов."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "DD↓ и более ровная кривая капитала при синхронных расширениях basis; Sharpe↑ через снижение волатильности.",
+      "idea": "Портфель basis-сделок с нейтрализацией общего фактора (учёт comovement отклонений across currencies).",
+      "impact": "medium",
+      "wfa_checks": [
+        "Корреляции PnL между парами/инструментами",
+        "Portfolio Max DD и tail-loss по шагам",
+        "Проверка, что риск не концентрируется в одном общем шоке",
+        "Сравнение Sharpe портфеля до/после нейтрализации общего фактора"
+      ],
+      "why": "В тексте сказано, что отклонения комовятся across currencies — значит, есть общий компонент риска."
+    },
+    {
+      "effort": "low",
+      "expected_effect": "Сохранение Sharpe и контроль DD при ослаблении mispricing (edge decay).",
+      "idea": "Адаптивные пороги/аллокация во времени: повышать требования к сигналу по мере снижения отклонений.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сравнение fixed vs adaptive порогов по OOS",
+        "Sharpe и Max DD по временным блокам",
+        "Контроль turnover при адаптации",
+        "Мониторинг дрейфа распределения отклонений (сдвиг масштаба)"
+      ],
+      "why": "В тексте указано, что отклонения уменьшаются со временем, значит фиксированные пороги могут переоптимизироваться."
+    }
+  ],
+  "evidence": [
+    "Perpetuals are not guaranteed to converge to the spot price; funding rate links the gap via payments from longs to shorts.",
+    "We derive no-arbitrage prices for perpetual futures in frictionless markets and bounds in markets with trading costs.",
+    "Empirically, deviations from these prices in crypto are larger than in traditional currency markets, comove across currencies, and diminish over time.",
+    "An implied arbitrage strategy yields high Sharpe ratios."
+  ],
+  "key_findings": [
+    "Perpetual futures дают leveraged exposure на базовый актив без rollover/прямого владения.",
+    "В отличие от фьючерсов с фиксированным сроком, perpetuals не гарантируют конвергенцию к spot.",
+    "Для уменьшения разрыва perp-spot используется funding rate: long инвесторы периодически платят short, величина пропорциональна разнице цен.",
+    "Авторы выводят no-arbitrage цены в frictionless рынках и границы цен при наличии trading costs.",
+    "В данных по crypto отклонения от таких цен/границ больше, чем на традиционных валютных рынках, комовятся между валютами и уменьшаются со временем.",
+    "Implied arbitrage стратегия на основе этих отклонений даёт высокие Sharpe ratios."
+  ],
+  "method_family": [
+    "no-arbitrage pricing",
+    "bounds with trading costs",
+    "empirical deviations analysis",
+    "arbitrage strategy construction"
+  ],
+  "paper_id": "f99b19bdd518",
+  "pitfalls": [
+    "Если игнорировать trading costs, сигнал по отклонению может быть нерабочим (нужен вход только за пределами cost-bounds).",
+    "Edge может деградировать, т.к. отклонения уменьшаются со временем; нужен мониторинг/адаптация порогов и аллокации.",
+    "Комовинг отклонений across currencies создаёт общий фактор риска: портфель таких сделок может давать синхронные просадки.",
+    "Leverage, встроенный в perpetuals, может усиливать drawdown при затяжном расхождении perp-spot.",
+    "Высокий turnover/частые ребалансы могут превратить «высокую Sharpe» до издержек в слабый net-результат."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Статья про крипто perpetual futures: описывает, почему они могут не сходиться к споту, как funding rate связывает цены perp и spot, выводит no-arbitrage цены (и границы при наличии trading costs) и эмпирически показывает, что отклонения в crypto крупнее, чем на традиционных FX рынках, комовятся между валютами и со временем уменьшаются; из этого строится implied arbitrage стратегия с высокой Sharpe.",
+  "text_sha256": "f99b19bdd518afa439c883f68ff9c0ea8d51fefec4941b764f0170311cd3ca6d",
+  "title": "Fundamentals of Perpetual Futures",
+  "year": 2022
+}

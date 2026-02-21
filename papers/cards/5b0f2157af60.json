@@ -1,0 +1,56 @@
+{
+  "actionability_score": 84,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Меньше ложных входов в стресс-периоды, что должно снизить DD и стабилизировать Sharpe.",
+      "idea": "Добавить режимный фильтр входа в пару: базовый режим и jump-режим с разными порогами спреда.",
+      "impact": "high",
+      "wfa_checks": [
+        "Сравнить Sharpe, Sortino, MaxDD и Calmar против baseline на одинаковом наборе пар.",
+        "Разбить OOS на спокойные и стрессовые окна и проверить провал метрик по режимам.",
+        "Считать комиссии и slippage в обоих режимах и проверить изменение turnover."
+      ],
+      "why": "Это напрямую следует из заявленного фокуса на regime switching с Poisson events и fat tails."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение чувствительности к экстремальным выбросам и сокращение глубины просадок.",
+      "idea": "Калибровать пороги входа/выхода по хвостовым квантилям спреда вместо нормальных z-score.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Проверить стабильность параметров квантилей на rolling OOS окнах.",
+        "Сравнить частоту стоп-аутов и tail-loss между схемами порогов.",
+        "Провести тест устойчивости к structural breaks по подпериодам."
+      ],
+      "why": "Фокус на fat tails предполагает, что нормальное приближение может быть недостаточным."
+    }
+  ],
+  "evidence": [
+    "digest/title: The Effect of Fat Tails on Rules for Optimal Pairs Trading... Regime Switching with Poisson Events",
+    "keyword_hits=true: cointegration, copula, regime, structural_break, slippage, transaction_costs, out_of_sample, robustness"
+  ],
+  "key_findings": [
+    "Из названия и цитаты следует, что фокус статьи: влияние fat tails на правила optimal pairs trading.",
+    "В keyword_hits одновременно отмечены regime, structural_break, slippage и transaction_costs.",
+    "В keyword_hits присутствуют out_of_sample и robustness, то есть акцент на проверке устойчивости заявлен в контексте."
+  ],
+  "method_family": [
+    "pairs trading rule design",
+    "fat-tail modeling",
+    "regime switching with Poisson events",
+    "cointegration/copula diagnostics",
+    "cost-aware robustness evaluation"
+  ],
+  "paper_id": "5b0f2157af60",
+  "pitfalls": [
+    "В input отсутствуют method/results/conclusion snippets, поэтому нельзя извлечь численные эффекты по Sharpe/DD.",
+    "Наличие множества компонентов (regime, copula, RL, structural break) повышает риск переобучения без жесткого WFA-контроля.",
+    "Нет деталей по universe, частоте ребалансировки и точной спецификации издержек."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "По переданному контексту работа напрямую про optimal pairs trading при fat tails и regime switching с Poisson events; также отмечены cointegration/copula, structural_break, slippage, transaction_costs, robustness и out_of_sample, что делает ее прикладной для задач роста Sharpe и снижения DD.",
+  "text_sha256": "5b0f2157af60f23b5def0a10f9f238f8fc77bf6620608a2c164c027a79f07bc9",
+  "title": "The Effect of Fat Tails on Rules for Optimal Pairs Trading: Performance Implications of Regime Switching with Poisson Events",
+  "year": 2025
+}

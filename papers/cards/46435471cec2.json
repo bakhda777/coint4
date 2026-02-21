@@ -1,0 +1,58 @@
+{
+  "actionability_score": 9,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Ожидается рост Sharpe за счёт лучшей диверсификации спредов и снижение DD через сохранение рыночной нейтральности.",
+      "idea": "Собрать минимальный market-neutral каркас: выбирать k наиболее устойчивых пар, решать задачу оптимизации весов со сдерживанием бета и суммарного рычагa, затем тестировать кросс-активно.",
+      "impact": "high",
+      "wfa_checks": [
+        "Запустить OOS/внешний walk-forward по нескольким стартам",
+        "Метрика сравнения: net Sharpe, max drawdown, turnover, cost-adjusted return",
+        "Проверить устойчивость весов при стресс-окнах и лимитировании leverage"
+      ],
+      "why": "Тема статьи прямо называет multi-asset market-neutral pair trading, что максимально совпадает с целевым стеком реализации."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Ожидается улучшение net Sharpe и уменьшение непродуктивной оборотности, что обычно снижает DD.",
+      "idea": "Включить explicit penalty за транзакционные издержки и funding в оптимизационный критерий вместо обычного максимизирования брутто-доходности.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сравнить оптимизатор без и с cost-aware штрафом",
+        "Проверить изменение частоты сделок и средний DD",
+        "Провести устойчивый бэктест на нескольких cutoff-разделениях"
+      ],
+      "why": "Keyword-context явно показывает значимость funding/transaction_costs, поэтому игнорировать их в objective для кода будет упущенной возможностью."
+    }
+  ],
+  "evidence": [
+    "\"Optimal Market-Neutral Multivariate Pair Trading on the Cryptocurrency Platform\"",
+    "citation, year 2024 and keywords: cointegration, leverage, robustness, transaction_costs, out_of_sample"
+  ],
+  "key_findings": [
+    "В источнике задается оптимизационный подход к мультивариантному рыночно-нейтральному pair trading в крипто-среде.",
+    "Упомянуты параметры, важные для практики: влияние funding/leverage и транзакционных издержек при формировании позиции.",
+    "Наличие маркера out_of_sample и robustness делает метод пригодным для интеграции в WFA-конвейер с последующей эмпирикой.",
+    "Контекст напрямую релевантен целям повышения качества соотношения риск/доходность в парных стратегиях."
+  ],
+  "method_family": [
+    "market-neutral construction",
+    "multivariate pair trading",
+    "cointegration-based pairing",
+    "optimization under constraints",
+    "robustness and OOS validation",
+    "transaction-cost/leveraged execution"
+  ],
+  "paper_id": "46435471cec2",
+  "pitfalls": [
+    "В доступном тексте нет числовых результатов по Sharpe, DD и детализации objective-функции.",
+    "Неясны допущения по ликвидности и частоте ребалансировки для конкретных бирж и инструментов.",
+    "Без локальной калибровки результаты статьи нельзя перенести 1:1 в эксплуатацию."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Статья заявляет оптимизацию рыночно-нейтрального многопарного pair trading на криптовалютной платформе и относится к непосредственно прикладному блоку для построения кросс-активного спредового портфеля с учётом рыночной структуры.",
+  "text_sha256": "46435471cec2e3eae8ca1493c6db421d46909f1e0ab13f59b1f1f6726c896b43",
+  "title": "46435471cec2",
+  "year": 2024
+}

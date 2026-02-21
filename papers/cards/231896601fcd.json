@@ -1,0 +1,57 @@
+{
+  "actionability_score": 76,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Снижение реализованных издержек входа/выхода и рост net Sharpe стратегии.",
+      "idea": "Заменить базовое исполнение ног пары на policy, оптимизирующую VWAP slippage на уровне ордеров.",
+      "impact": "high",
+      "wfa_checks": [
+        "Сравнить net Sharpe и MaxDD до/после execution-layer замены при одинаковых сигналах.",
+        "Посчитать implementation shortfall, VWAP slippage и fill ratio по каждой ноге.",
+        "Проверить устойчивость на OOS периодах с разной волатильностью и turnover."
+      ],
+      "why": "Контекст статьи прямо про direct VWAP optimization в crypto execution."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Меньше проскальзывания в спокойных режимах и меньше недоисполнения в стрессовых режимах.",
+      "idea": "Ввести режимный переключатель агрессии исполнения (passive/active) для каждой ноги пары.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Оценить trade-off между slippage и missed alpha по режимам.",
+        "Сравнить DD на всплесках волатильности при разных правилах агрессии.",
+        "Проверить стабильность эффекта на разных биржевых сессиях и инструментах."
+      ],
+      "why": "В abstract подчеркивается нестабильность условий, где простая volume-curve логика становится субоптимальной."
+    }
+  ],
+  "evidence": [
+    "digest: Deep Learning for VWAP Execution in Crypto Markets: Beyond the Volume Curve",
+    "abstract excerpt: proposes directly optimizing VWAP objective bypassing volume-curve forecasting",
+    "keyword_hits=true: binance, perpetual, slippage, transaction_costs, turnover, out_of_sample"
+  ],
+  "key_findings": [
+    "В abstract указано, что стандартный подход обычно строится на прогнозе volume curve.",
+    "Предложен фреймворк, напрямую оптимизирующий VWAP objective вместо промежуточного прогноза объемов.",
+    "В keyword_hits отмечены slippage, transaction_costs, turnover, out_of_sample, binance и perpetual."
+  ],
+  "method_family": [
+    "deep learning execution",
+    "VWAP objective optimization",
+    "crypto market microstructure",
+    "slippage and transaction-cost aware execution",
+    "regime-aware execution control"
+  ],
+  "paper_id": "231896601fcd",
+  "pitfalls": [
+    "Работа про execution benchmark, а не про генерацию pair-trading alpha-сигнала.",
+    "В input нет results/conclusion snippets, поэтому размер практического эффекта не извлекается.",
+    "Риск ухудшения при доменном сдвиге, если модель исполнения не переобучать по режимам ликвидности."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Из переданного abstract: работа предлагает deep learning подход, который напрямую оптимизирует VWAP execution objective, обходя промежуточный шаг прогноза volume curve; для pair trading это прикладной слой исполнения, способный снижать издержки и тем самым поддерживать Sharpe и ограничивать DD.",
+  "text_sha256": "231896601fcdb8ad0802b8db77ef8d7ba8971ba6b77135058f15d1a84c6deb11",
+  "title": "Deep Learning for VWAP Execution in Crypto Markets: Beyond the Volume Curve",
+  "year": 2025
+}

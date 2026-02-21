@@ -1,0 +1,56 @@
+{
+  "actionability_score": 63,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Более стабильный набор пар и снижение хвостовых провалов, что может улучшить Sharpe/DD профиль.",
+      "idea": "Собрать ансамбль отбора пар: cointegration + copula + PCA фильтр + half-life ограничение.",
+      "impact": "high",
+      "wfa_checks": [
+        "Сравнить Sharpe и MaxDD ансамбля против одиночных методов отбора.",
+        "Проверить OOS устойчивость состава пар и распад параметров по rolling окнам.",
+        "Оценить влияние transaction costs на net-метрики после фильтрации."
+      ],
+      "why": "Именно эти блоки одновременно отмечены в keyword_hits для данной статьи."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение скрытых carry-издержек и более ровная кривая капитала.",
+      "idea": "Добавить funding-adjusted spread и биржевые фильтры ликвидности для Binance/Bybit пар.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сравнить net PnL и DD с/без funding-adjustment.",
+        "Проверить чувствительность к времени удержания и half-life.",
+        "Провести стресс-тест на периодах роста базисных расхождений между площадками."
+      ],
+      "why": "В контексте отмечены funding и обе биржи, что указывает на практическую важность учета переносов."
+    }
+  ],
+  "evidence": [
+    "keyword_hits=true: cointegration, copula, pca, half_life, funding, binance, bybit, out_of_sample, transaction_costs",
+    "title fragment contains beta formula (ˆβSW), indicating factor/exposure context but without full method details"
+  ],
+  "key_findings": [
+    "По keyword_hits в одном контексте присутствуют cointegration, copula, pca и half_life.",
+    "Есть биржевая привязка к Binance и Bybit, а также пометка funding.",
+    "Также отмечены out_of_sample, robustness и transaction_costs."
+  ],
+  "method_family": [
+    "cointegration screening",
+    "copula dependence modeling",
+    "PCA factor filtering",
+    "half-life based mean-reversion control",
+    "cost-aware cross-exchange setup"
+  ],
+  "paper_id": "adb4b519df44",
+  "pitfalls": [
+    "Нет явных method/results/conclusion snippets, поэтому нельзя достоверно восстановить точную спецификацию исследования.",
+    "Нельзя извлечь численные результаты по Sharpe/DD из переданного фрагмента.",
+    "Неясно, как в оригинале согласованы сигналы зависимости (cointegration/copula) с факторными фильтрами (PCA)."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Контекст фрагментарный (виден только фрагмент формулы и блок Open Access), но keyword_hits одновременно указывают на cointegration, copula, pca, half_life, funding, Binance/Bybit, out_of_sample и transaction_costs; это дает прикладные идеи для построения более устойчивого crypto pair trading.",
+  "text_sha256": "adb4b519df44f9ccdb3555640eca9952d0ab9ecacceaf8fcec2f6c0cf414bd58",
+  "title": ", (2) ˆβSW i,t = Cov(rSW i,s:t, rm,s:t) Var(rm,s:t) .",
+  "year": 2025
+}

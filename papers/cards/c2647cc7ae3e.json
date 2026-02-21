@@ -1,0 +1,54 @@
+{
+  "actionability_score": 7,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Повышение адаптивности в быстро меняющихся режимах и потенциальный рост Sharpe при меньших экстремальных просадках.",
+      "idea": "Использовать ESN-признаки как динамический state-space input для RL-агента, который выбирает hedge-ratio и направление пары в диапазоне ±1 позиции.",
+      "impact": "medium",
+      "wfa_checks": [
+        "WFA с окнами 3–6 месяцев, тест 2 недели, max_steps<=5.",
+        "Метрики: Sharpe, maxDD, turnover, hit rate по позиционной смене по обоим legs пары.",
+        "Сравнить режимы с RL-контроллером и без него при одинаковых транзакционных допущениях."
+      ],
+      "why": "Статья демонстрирует практичный конвейер признаков и RL-контроля для perpetual; это можно перенести на сигналы spread с дополнительным контрольным слоем."
+    },
+    {
+      "effort": "high",
+      "expected_effect": "Сокращение периода деградации после смены рынка и снижение drawdown через более быстрое приспособление.",
+      "idea": "Ввести online transfer между парами (например, BTC/ETH и BTC/SOL) как warm-start весов и обновлять только при разрыве качества out-of-sample.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Отдельно сравнить cold-start и warm-start в каждом новом walk-forward окне.",
+        "Фиксировать время восстановления Sharpe после regime shift по каждой паре.",
+        "Ограничить число пересчётов параметров, чтобы не нарастить turnover."
+      ],
+      "why": "Ключевой элемент статьи — online transfer learning, который как раз служит для ускорения адаптации в смене regime."
+    }
+  ],
+  "evidence": [
+    "Digest: «online transfer learning», «echo state network», «recurrent reinforcement learning», «XBTUSD perpetual», «intraday».",
+    "keyword_hits: rl=true, out_of_sample=true, robust=true, kalman=false, leverage=true, transaction_costs=true."
+  ],
+  "key_findings": [
+    "В метаописании указано сочетание ESN для фичей и recurrent RL для торгового решения.",
+    "Модель обучалась на intraday торговле perpetual swap контракта XBTUSD (BitMEX), т.е. в условии реальных фьючерсных микроструктур.",
+    "Наличие out_of_sample и robustness сигнализирует, что проверка переносимости/обобщения была частью постановки задачи."
+  ],
+  "method_family": [
+    "recurrent reinforcement learning",
+    "echo state networks",
+    "online transfer learning"
+  ],
+  "paper_id": "c2647cc7ae3e",
+  "pitfalls": [
+    "Прямой пары cointegration в контексте не заявлено; это модель для одного инструмента и требует конвертации в spread/хедж-логику.",
+    "Не раскрыт механизм управления комиссией/слеппиджем и DD в доступном фрагменте.",
+    "Без walk-forward-глубины из статьи нельзя считать WFA-результаты воспроизводимыми для долгого интервала."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Исследуется онлайн-трансферное обучение с представлением признаков на базе echo state network и recurrent RL для торговли XBTUSD perpetual на BitMEX; это источник идей для адаптивной смены параметров и состояний в pair trading, особенно когда нужен быстрый regime-switch.",
+  "text_sha256": "c2647cc7ae3e8360b2f9e557f8e3198f0567b28bf7f4cafe27bc229c00a089d7",
+  "title": "The Recurrent Reinforcement Learning Crypto Agent",
+  "year": 2022
+}

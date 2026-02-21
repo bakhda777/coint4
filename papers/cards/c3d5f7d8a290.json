@@ -1,0 +1,59 @@
+{
+  "actionability_score": 89,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Рост стабильности спредов и улучшение OOS Sharpe на валидных парах.",
+      "idea": "Собрать pipeline отбора пар: cointegration + ECM + кластеризация перед генерацией сигналов.",
+      "impact": "high",
+      "wfa_checks": [
+        "Доля пар, проходящих OOS-стационарность",
+        "OOS Sharpe по кластерам",
+        "Частота распада коинтеграции",
+        "DD по кластерам и по рын. режимам"
+      ],
+      "why": "В digest именно такая комбинация методов привела к рабочему набору 229 пар."
+    },
+    {
+      "effort": "high",
+      "expected_effect": "Лучший компромисс Sharpe/DD относительно фиксированных порогов.",
+      "idea": "Оптимизировать пороги входа/выхода генетическим алгоритмом с штрафом за drawdown.",
+      "impact": "high",
+      "wfa_checks": [
+        "OOS Sharpe и Sortino",
+        "Max DD и время восстановления",
+        "Turnover и чувствительность к транзакционным издержкам",
+        "Стабильность параметров на соседних окнах"
+      ],
+      "why": "В работе сравниваются стандартные и оптимизированные пороги, при этом риск остается ключевой проблемой."
+    }
+  ],
+  "evidence": [
+    "Digest: \"cointegration tests and error correction models\".",
+    "Digest: \"final sample of 229 pairs\" из 209 активов.",
+    "Digest: \"median maxdrawdown of 29%\" для лучшей стратегии."
+  ],
+  "key_findings": [
+    "Из 209 криптоактивов получен финальный набор из 229 пар для pair trading.",
+    "Показано существование прибыльных коинтеграционных связей и краткосрочных неэффективностей.",
+    "Даже лучшая стратегия по risk-return остается рискованной: median max drawdown около 29%."
+  ],
+  "method_family": [
+    "cointegration testing",
+    "error correction models (ECM)",
+    "genetic algorithm optimization",
+    "pair clustering",
+    "threshold optimization (standard vs optimized)"
+  ],
+  "paper_id": "c3d5f7d8a290",
+  "pitfalls": [
+    "Просадки остаются высокими (median max drawdown ~29%), поэтому риск-контур критичен.",
+    "Результаты чувствительны к настройке порогов входа/выхода.",
+    "Период исследования ограничен 2021-08-01—2024-01-31, возможна режимная нестабильность вне этого интервала."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Работа по крипто pair trading комбинирует эконометрику и ML: cointegration tests + error correction models для отбора пар, затем genetic algorithm и pair clustering для оптимизации порогов. На выборке 209 активов (период 2021-08-01—2024-01-31) сформировано 229 пар; авторы подтверждают наличие прибыльных коинтеграционных связей, но лучший риск-доходностный вариант остается рискованным (median max drawdown около 29%).",
+  "text_sha256": "c3d5f7d8a290ef19b694e3de87dd4abf7376a0ac0e2a7eef75ab17fe15f21e0a",
+  "title": "Optimized pairs-trading strategies in the cryptocurrencies market using genetic algorithms and cointegration",
+  "year": 2024
+}

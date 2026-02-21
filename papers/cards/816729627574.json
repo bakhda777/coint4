@@ -1,0 +1,59 @@
+{
+  "actionability_score": 91,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение DD и более ровный Sharpe за счет отсечения неблагоприятной волатильности.",
+      "idea": "Наложить adaptive trailing stop-loss и volatility filter на существующие сигналы спреда.",
+      "impact": "high",
+      "wfa_checks": [
+        "OOS Sharpe до/после риск-оверлея",
+        "Max DD и глубина хвостов PnL",
+        "Доля времени вне рынка из-за volatility filter",
+        "Бета/экспозиция к рынку при включенном оверлее"
+      ],
+      "why": "В методологии статьи этот блок прямо связан с улучшением risk-adjusted результатов."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Улучшение risk-adjusted excess return относительно пассивного и базового pair-trading.",
+      "idea": "Сделать системную оптимизацию параметров пары и риск-фильтров на строгих OOS-окнах.",
+      "impact": "medium",
+      "wfa_checks": [
+        "OOS Sharpe vs passive baseline",
+        "Стабильность параметров между окнами",
+        "Чувствительность к комиссиям и slippage",
+        "Сравнение DD в bullish/не-bullish подокнах"
+      ],
+      "why": "Статья акцентирует именно системную параметрическую оптимизацию внутри pair-trading framework."
+    }
+  ],
+  "evidence": [
+    "Digest: \"cointegrated pairs trading\" и \"systematic parameter optimization\".",
+    "Digest: период \"January 2019 to May 2024\" и выборка \"ten major cryptocurrencies\".",
+    "Digest: указаны adaptive trailing stop-loss и volatility filtering как элементы методологии."
+  ],
+  "key_findings": [
+    "На выборке 10 крупных криптовалют (2019-01 — 2024-05) стратегия демонстрирует устойчивое превосходство над conventional pairs trading и passive подходами.",
+    "Комбинация adaptive trailing stop-loss и volatility filtering заявлена как центральный элемент риск-контроля.",
+    "Отмечены значимые risk-adjusted excess returns при низкой market exposure."
+  ],
+  "method_family": [
+    "cointegrated pairs trading",
+    "systematic parameter optimization",
+    "adaptive trailing stop-loss",
+    "volatility filtering",
+    "dynamic risk management"
+  ],
+  "paper_id": "816729627574",
+  "pitfalls": [
+    "Охват ограничен 10 крупнейшими активами; переносимость на более широкий universe не показана в предоставленном фрагменте.",
+    "Фокус статьи на bullish crypto market повышает риск режимной деградации вне бычьих фаз.",
+    "Итоговые метрики в предоставленном контексте описаны качественно, без детальных численных таблиц."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Исследование тестирует cointegrated pairs trading на 10 крупных криптовалютах за период January 2019—May 2024 с системной оптимизацией параметров. Ключевой риск-блок включает adaptive trailing stop-loss и volatility filtering. По digest стратегия стабильно превосходит conventional pairs и passive подходы по risk-adjusted excess return при низкой рыночной экспозиции.",
+  "text_sha256": "8167296275746e172f3522f3db1f35fee60d8ed9ad9eefe4b1d5317e9e8ede3c",
+  "title": "Trading Games: Beating Passive Strategies in the Bullish Crypto Market",
+  "year": 2024
+}

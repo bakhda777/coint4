@@ -1,0 +1,80 @@
+{
+  "actionability_score": 7,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Рост net Sharpe и снижение DD за счёт более “подогнанной” под правила входа/выхода конструкции спрэда.",
+      "idea": "Свести поиск пары к частному случаю multi-asset CCP: оптимизировать веса спрэда под moving-band правила.",
+      "impact": "high",
+      "wfa_checks": [
+        "Walk-forward OOS; ограничить max_steps<=5 для queue-прогонов.",
+        "Сравнить IS vs OOS Sharpe (gap) и стабильность метрик по фолдам.",
+        "Проверить стабильность весов/сигнала при сдвиге окна (robustness)."
+      ],
+      "why": "Статья заявляет CCP-подход к moving-band статарбам и допускает >2 активов; для pair trading это можно начать с 2 активов и расширять."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение turnover и просадок; повышение net Sharpe относительно gross-оптимума.",
+      "idea": "Добавить в оптимизацию явный учёт transaction_costs и funding (штраф/ограничение на оборот и ожидаемые финансирования).",
+      "impact": "high",
+      "wfa_checks": [
+        "Sweep по уровням комиссий/спрэда/фандинга; смотреть устойчивость рейтинга.",
+        "Сравнить gross vs net PnL/Sharpe; требовать сохранения edge после издержек.",
+        "Отдельно мониторить turnover и вклад funding в PnL по фолдам."
+      ],
+      "why": "В контексте отмечены transaction_costs и funding; для практики это обычно ключевой источник деградации Sharpe и роста DD."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение tail-risk и глубины DD ценой небольшой потери доходности; итоговый Sharpe может вырасти.",
+      "idea": "Ввести ограничения на leverage/экспозицию (нормы весов) и proxy на риск просадки при подборе спрэда.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Проверить max drawdown и recovery time по фолдам; сравнить с baseline без ограничений.",
+        "Проверить концентрацию весов/экспозиции и чувствительность к одному активу.",
+        "Провести стресс: ухудшение волатильности/спрэда и смотреть стабильность правил выхода из band."
+      ],
+      "why": "В метаданных есть leverage и drawdown; практический контроль экспозиции часто критичен для DD↓."
+    },
+    {
+      "effort": "low",
+      "expected_effect": "Более устойчивые пары/наборы, меньше ложных находок, лучше OOS-качество и DD.",
+      "idea": "Сузить поиск кандидатов через clustering и затем применять CCP-поиск внутри кластеров (а не по всему universe).",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сравнить OOS Sharpe/DD при одинаковом бюджете поиска (число кандидатов).",
+        "Проверить, что кластеры стабильны во времени (не разваливаются по фолдам).",
+        "Проверить, что найденные кандидаты не завязаны на единичные экстремальные периоды (robustness)."
+      ],
+      "why": "В метаданных отмечен clustering; для статарб-поиска это практичный способ повысить качество кандидатов и снизить множественные сравнения."
+    }
+  ],
+  "evidence": [
+    "Keywords (из digest): Statistical arbitrage, moving-band, convex optimization, convex-concave procedure.",
+    "Abstract snippet (из digest): метод поиска statistical arbitrages, которые могут содержать больше активов, чем традиционная пара.",
+    "Metadata/keyword_hits: crypto=true, funding=true, transaction_costs=true, drawdown=true, leverage=true, out_of_sample=true, robustness=true, clustering=true, copula=true, kalman=true, ou=true."
+  ],
+  "key_findings": [
+    "Предлагается метод поиска статистических арбитражей, допускающий портфель из более чем двух активов, а не только пары.",
+    "Подход явно формулируется в терминах convex optimization и convex–concave optimization/процедуры (CCP) (по названию и ключевым словам)."
+  ],
+  "method_family": [
+    "moving-band statistical arbitrage",
+    "convex optimization",
+    "convex-concave procedure (CCP)",
+    "multi-asset stat arb (beyond pairs)"
+  ],
+  "paper_id": "19d1852f85ea",
+  "pitfalls": [
+    "Риск переобучения без строгой out-of-sample проверки и оценок robustness (в метаданных отмечены out_of_sample/robustness).",
+    "Игнорирование transaction costs может сделать найденный арбитраж нерентабельным в реальном исполнении (в метаданных отмечены transaction_costs).",
+    "В крипто-деривативах funding может существенно смещать net PnL и DD, если его не учитывать (в метаданных отмечены funding/crypto).",
+    "Использование leverage усиливает хвостовые риски и просадки; нужны явные ограничения и стресс-проверки (в метаданных отмечены leverage/drawdown)."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "По фрагменту аннотации: предлагается метод поиска moving-band statistical arbitrage, который может включать больше двух активов (не только классическую пару), и опирается на convex optimization и convex–concave procedure (CCP) для построения таких арбитражных конструкций.",
+  "text_sha256": "19d1852f85ea3c3ff9790500160a71ae16ffd6c82a15206bf6a668a01ab95b6b",
+  "title": "Finding Moving-Band Statistical Arbitrages via Convex-Concave Optimization Kasper Johansson",
+  "year": 2024
+}

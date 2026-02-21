@@ -1,0 +1,57 @@
+{
+  "actionability_score": 72,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Снижение глубины просадок в тяжелохвостых режимах при умеренной потере доходности.",
+      "idea": "Использовать оценку tail-state из Factor-HGH как фильтр риска для ограничения gross exposure пар.",
+      "impact": "high",
+      "wfa_checks": [
+        "Сравнить MaxDD, CVaR и Sharpe с/без tail-state фильтра.",
+        "Проверить стабильность фильтра на OOS окнах разных режимов волатильности.",
+        "Оценить влияние на turnover и долю пропущенных сделок."
+      ],
+      "why": "Модель специально построена для учета гетерогенных хвостов и сложных зависимостей."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Более чистая mean-reversion компонента и уменьшение режимных провалов.",
+      "idea": "Строить spread-сигналы на факторно-очищенных остатках вместо сырых ценовых спредов.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сравнить автокорреляцию и half-life остаточных спредов против базовых.",
+        "Сопоставить Sharpe/DD профили на идентичном universe.",
+        "Проверить чувствительность к размерности факторного блока."
+      ],
+      "why": "Факторная структура и богатая модель зависимостей подходят для отделения общего рыночного риска."
+    }
+  ],
+  "evidence": [
+    "digest abstract: heterogeneous tails mixture for factors and returns (Factor-HGH)",
+    "digest abstract: Cholesky dependency structure and fast ECME for large dimensions",
+    "keyword_hits=true: drawdown, regime, robustness, out_of_sample, pca"
+  ],
+  "key_findings": [
+    "В abstract заявлена новая модель joint distribution факторов и доходностей (Factor-HGH).",
+    "Указана Cholesky-декомпозиция dispersion matrix для богатой структуры зависимостей.",
+    "Отмечена применимость в больших размерностях благодаря быстрому ECME алгоритму."
+  ],
+  "method_family": [
+    "heterogeneous-tail factor modeling (Factor-HGH)",
+    "latent mixture distribution",
+    "Cholesky dependency structure",
+    "ECME estimation",
+    "factor-based risk decomposition"
+  ],
+  "paper_id": "c50273f8c577",
+  "pitfalls": [
+    "Работа не является напрямую pair-trading execution paper; нужна интеграция с отдельным signal layer.",
+    "Из переданного контекста нет прямых численных сравнений по Sharpe/DD именно для pair trading.",
+    "В keyword_hits нет явного акцента на slippage/transaction_costs для этой статьи."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "По digest это факторная модель Factor-HGH: multivariate normal mean-variance heterogeneous tails mixture для факторов и доходностей, с Cholesky-структурой зависимостей и быстрым ECME; для pair trading это полезно как слой tail-risk контроля ради снижения DD и более устойчивого Sharpe.",
+  "text_sha256": "c50273f8c57780846c95363b63778c648ca62b40b9bcf0534960fe683d6ae5a1",
+  "title": "Heterogeneous tail generalized common factor modeling",
+  "year": 2023
+}

@@ -1,0 +1,56 @@
+{
+  "actionability_score": 69,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Более точный тайминг входов/выходов, что может повысить Sharpe и снизить DD.",
+      "idea": "Добавить DL-слой для real-time прогноза спреда/сигнала на уже отобранных коинтегрированных парах.",
+      "impact": "medium",
+      "wfa_checks": [
+        "OOS Sharpe vs статический baseline",
+        "Max DD и tail-loss метрики",
+        "Стабильность качества прогноза по рыночным режимам",
+        "Drift ошибок прогноза во времени"
+      ],
+      "why": "Название и введение прямо указывают на real-time deep learning для co-integrated pairs."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение просадок в периодах распада зависимостей и структурных сдвигов.",
+      "idea": "Ввести режимный и structural-break гейтинг для отключения сигналов при нестабильности.",
+      "impact": "high",
+      "wfa_checks": [
+        "DD в окнах со структурными разрывами",
+        "Доля приостановленных сделок и влияние на Sharpe",
+        "Стабильность результатов до/после break-событий"
+      ],
+      "why": "В keyword_hits отмечены regime=true и structural_break=true, что указывает на релевантность таких проверок."
+    }
+  ],
+  "evidence": [
+    "Title: \"Deep learning-based pairs trading: real-time forecasting of co-integrated cryptocurrency pairs\".",
+    "Digest: статические методы не захватывают non-stationary dynamics и это снижает trading effectiveness.",
+    "keyword_hits: out_of_sample=true, robustness=true, regime=true, structural_break=true."
+  ],
+  "key_findings": [
+    "Проблема сформулирована как ограниченность статических подходов при нестационарности, что снижает эффективность торговли.",
+    "Предложен deep learning-based подход для real-time прогнозирования co-integrated cryptocurrency pairs.",
+    "По метаданным статьи отмечены признаки out_of_sample, robustness, regime и structural_break анализа (keyword_hits)."
+  ],
+  "method_family": [
+    "deep learning for real-time forecasting",
+    "cointegration-based pairs trading",
+    "dynamic modeling under non-stationary dynamics"
+  ],
+  "paper_id": "b67984949e17",
+  "pitfalls": [
+    "В предоставленном контексте отсутствуют конкретные численные результаты Sharpe, DD и turnover.",
+    "Фрагмент метода обрезан (после \"employing a dynamic ...\"), поэтому детали реализации не раскрыты.",
+    "Высокая модельная сложность требует дополнительных проверок на переобучение и режимные сдвиги."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "В предоставленном фрагменте статья позиционирует deep learning подход для real-time forecasting коинтегрированных криптопар и мотивирует его тем, что статические методы хуже работают при нестационарной динамике. Прямых численных итогов по Sharpe/DD в данном контексте нет, но направление явно нацелено на повышение эффективности statistical arbitrage при динамическом обновлении сигналов.",
+  "text_sha256": "b67984949e176989c628b46847986bd1260942fb441cfac38651562ed7093bdc",
+  "title": "Deep learning-based pairs trading: real-time forecasting of co-integrated cryptocurrency pairs",
+  "year": 2026
+}

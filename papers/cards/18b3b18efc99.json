@@ -1,0 +1,44 @@
+{
+  "actionability_score": 2,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Ожидается снижение экстремальных просадок в период повышенной институциональной турбулентности.",
+      "idea": "Добавить макро- и регуляторный режимный флаг (например, периоды с заметными изменениями инфраструктурных правил/событий) как множитель риска для pair-trading и отключения агрессивной торговли.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Сделать сценарный split до/после инфраструктурно-регуляторных событий",
+        "Оценить рост DD и падение Sharpe в стрессовом режиме",
+        "Проверить, улучшает ли снижение активности в этих периодах качество PnL"
+      ],
+      "why": "Контекст статьи прямо указывает на рыночный режим через регуляторную и инфраструктурную среду, что косвенно влияет на ликвидность и издержки парных стратегий."
+    }
+  ],
+  "evidence": [
+    "\"Open Peer Review on Qeios Digitalization, Emerging Technologies, and Financial Stability\"",
+    "\"challenges and opportunities for the Indonesian banking sector and beyond\"",
+    "keyword_hits: regime, funding, perpetual, transaction_costs"
+  ],
+  "key_findings": [
+    "Работа связывает цифровизацию финансовой инфраструктуры с рисками и возможностями банковской стабильности.",
+    "Отмечены каналы воздействия новых платформ и технологий (BCT/FinTech/open banking) на стоимость и доступность финансирования.",
+    "Материал подчеркивает важность системного контекста (регуляторных и инфраструктурных изменений) при оценке рыночных стратегий."
+  ],
+  "method_family": [
+    "documentary institutional analysis",
+    "financial stability framework",
+    "technology-ecosystem risk analysis",
+    "regulatory regime mapping"
+  ],
+  "paper_id": "18b3b18efc99",
+  "pitfalls": [
+    "Не содержит описания количественной торговой модели, входов/выходов, метрик Sharpe и drawdown.",
+    "Нет данных и процедур backtest для пар BTC/USDT или других крипто-инструментов.",
+    "Прямой перенос в execution-код невозможен без самостоятельной формализации и эмпирики."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Статья описывает цифровую трансформацию банковской системы (open banking, BCT, FinTech, BigTech/телеком, P2P lending) и её влияние на устойчивость финансовой системы; фокус институциональный, а не торговый, поэтому ценность для pair trading ограничена через институциональные и регимные факторы.",
+  "text_sha256": "18b3b18efc99f220d26cc62868b00e86c3e86fbb6103fde93153b5caecacb472",
+  "title": "Keywords: Blockchain, CBDC, crypto assets, digitalization, Fintechs, emerging technologies, open banking, P2P lending. JEL: E44, E02, G20, G32, 033,M15, M25.",
+  "year": null
+}

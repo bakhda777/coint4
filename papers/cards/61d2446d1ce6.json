@@ -1,0 +1,56 @@
+{
+  "actionability_score": 69,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Меньше неустойчивых пар и более контролируемый DD при сохранении доходности.",
+      "idea": "Сделать двухэтапный отбор: SSD-предскрининг, затем cointegration/copula и фильтр structural breaks.",
+      "impact": "high",
+      "wfa_checks": [
+        "Сравнить Sharpe, MaxDD и hit-rate против одиночного SSD подхода.",
+        "Проверить распад качества пар после смен режимов и структурных сдвигов.",
+        "Учесть комиссии и slippage в каждом этапе отбора."
+      ],
+      "why": "Комбинация SSD, cointegration, copula и structural_break прямо следует из переданных признаков."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение хвостовых просадок в турбулентных режимах при умеренном падении оборота.",
+      "idea": "Ввести режимное ограничение плеча и агрессии входа для perpetual-пар.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Оценить DD и CVaR при разных правилах leverage cap.",
+        "Сравнить net Sharpe после учета funding, комиссии и slippage.",
+        "Провести OOS-проверку по rolling окнам, даже если она не заявлена в исходном контексте."
+      ],
+      "why": "В контексте одновременно присутствуют leverage, perpetual, regime и drawdown."
+    }
+  ],
+  "evidence": [
+    "title fragment includes SSDi,j",
+    "keyword_hits=true: cointegration, copula, regime, structural_break, rl, slippage, transaction_costs, drawdown, leverage, perpetual, binance"
+  ],
+  "key_findings": [
+    "В переданном title присутствует SSD_{i,j}, что указывает на distance-компонент отбора.",
+    "Keyword_hits одновременно включают structural_break, regime и RL.",
+    "Также отмечены crypto/perpetual/binance и явный блок издержек: slippage + transaction_costs."
+  ],
+  "method_family": [
+    "distance-based pair screening (SSD)",
+    "cointegration and copula validation",
+    "regime and structural-break filtering",
+    "RL-based decision layer",
+    "transaction-cost/slippage aware trading"
+  ],
+  "paper_id": "61d2446d1ce6",
+  "pitfalls": [
+    "Для этой статьи нет method/results/conclusion snippets, поэтому выводы ограничены индикаторами из keyword_hits.",
+    "out_of_sample=false в keyword_hits, значит OOS-устойчивость из контекста не подтверждена.",
+    "Неясна точная роль leverage в исходной методике, поэтому риск-правила нужно валидировать отдельно."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "По доступному контексту виден SSD-фрагмент в заголовке и широкий набор keyword_hits: cointegration, copula, regime, structural_break, RL, slippage, transaction_costs, drawdown, leverage, perpetual и Binance; это дает прикладной каркас для cost-aware pair trading с контролем просадок.",
+  "text_sha256": "61d2446d1ce6ed77bf93ed753e025930dc66cb2e59a585ad8a44922ad8786cc7",
+  "title": "= cri t, (3) SSDi,j = T",
+  "year": 2025
+}

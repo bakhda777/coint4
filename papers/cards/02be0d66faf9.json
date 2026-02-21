@@ -1,0 +1,58 @@
+{
+  "actionability_score": 76,
+  "actionable_experiments": [
+    {
+      "effort": "medium",
+      "expected_effect": "Снижение хвостовых просадок и max DD при сохранении Sharpe.",
+      "idea": "Применить волатильностно-адаптивный trailing stop к спред-позициям пар.",
+      "impact": "high",
+      "wfa_checks": [
+        "OOS Sharpe vs baseline без адаптивного стопа",
+        "Max DD и Calmar по одинаковым окнам",
+        "Частота стоп-срабатываний по рыночным режимам",
+        "Net-метрики после fee+slippage"
+      ],
+      "why": "В статье динамический trailing stop выделен как один из ключевых компонентов риска."
+    },
+    {
+      "effort": "medium",
+      "expected_effect": "Более стабильный risk-adjusted результат и меньше деградации OOS.",
+      "idea": "Делать ежемесячный отбор торгуемых пар по rolling Sharpe с фильтром ликвидности.",
+      "impact": "medium",
+      "wfa_checks": [
+        "Распределение OOS Sharpe по месяцам",
+        "Turnover и доля издержек в PnL",
+        "Стабильность результатов по bull/bear/sideways режимам"
+      ],
+      "why": "В работе используется rolling Sharpe-based selection и market-cap aware filtering."
+    }
+  ],
+  "evidence": [
+    "\"150+ cryptocurrency pairs\" и \"36-month evaluation window (2022–2024)\" указаны в digest.",
+    "В digest явно указаны \"Sharpe ratio of 2.41\" и \"maximum drawdown of −12.7%\".",
+    "Ключевые инновации в digest: dynamic trailing stop, rolling Sharpe selection, 70/30 long-short."
+  ],
+  "key_findings": [
+    "Заявлены результаты OOS: annualized Sharpe 2.41, max drawdown −12.7%, Calmar 3.18.",
+    "Подход заявлен как превосходящий benchmark trend-following (TSMOM) и equal-weighted buy-and-hold.",
+    "Отдельно заявлены robustness-проверки: чувствительность параметров, учет transaction costs, regime-conditional decomposition."
+  ],
+  "method_family": [
+    "high-frequency trend following (6h)",
+    "monthly adaptive portfolio construction",
+    "dynamic trailing stop by volatility regime",
+    "rolling Sharpe-based asset selection",
+    "asymmetric long-short allocation (70/30)"
+  ],
+  "paper_id": "02be0d66faf9",
+  "pitfalls": [
+    "Это не классический market-neutral pair trading, а трендовый портфельный long-short подход.",
+    "Асимметрия 70/30 опирается на положительный дрейф крипторынка и может повышать рыночную экспозицию.",
+    "6-часовая торговля и активные стопы повышают зависимость от turnover/slippage."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Работа описывает фреймворк AdaptiveTrend: тренд-следование на 6-часовых данных, ежемесячная адаптивная аллокация и асимметричное long-short распределение 70/30. В out-of-sample окне 2022–2024 на 150+ криптопарах заявлены Sharpe 2.41, max drawdown −12.7% и Calmar 3.18, а также устойчивость к разным рыночным режимам с учетом транзакционных издержек.",
+  "text_sha256": "02be0d66faf98d3c4e70aae71dc1bfe2ed0075aaf3b617d571fc04088bb7f73d",
+  "title": "Systematic Trend-Following with Adaptive Portfolio Construction: Enhancing Risk-Adjusted Alpha in Cryptocurrency Markets",
+  "year": 2022
+}

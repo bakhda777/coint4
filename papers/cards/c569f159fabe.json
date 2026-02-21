@@ -1,0 +1,55 @@
+{
+  "actionability_score": 5,
+  "actionable_experiments": [
+    {
+      "effort": "high",
+      "expected_effect": "Стабилизация качества сигналов в период regime-shift и меньшая просадка за счет выхода из неустойчивых конфигураций.",
+      "idea": "Сделать двухуровневый selector: PCA-сжатие признаков -> copula/cointegration оценка устойчивости пары в каждом regime с учетом структурного разрыва.",
+      "impact": "medium",
+      "wfa_checks": [
+        "WFA с 5 шагами и перетренировкой модели при обнаружении break-уровня.",
+        "Считать Sharpe и maxDD отдельно для спокойных и стрессовых режимов.",
+        "Добавить ограничение turnover и сравнить с baseline без структурного break-фильтра."
+      ],
+      "why": "Наличие PCA, cointegration, copula, structural_break в метаданных прямо поддерживает такой каскадный фильтр."
+    },
+    {
+      "effort": "low",
+      "expected_effect": "Снижение затрат на частые операции и более ровная кривая прибыли при сохранении адаптивности к режимам.",
+      "idea": "Ввести cap на число ребалансов пары на основе regime confidence score и пересматривать параметры только раз в N баров.",
+      "impact": "low",
+      "wfa_checks": [
+        "Провести grid по N=5,10,20 баров и оценить maxDD и net Sharpe.",
+        "Зафиксировать одинаковый universe и комиссии для fair-компарации.",
+        "Отфильтровать периоды повышенного слеппиджа."
+      ],
+      "why": "turnover и structural break сигналы в метаданных позволяют перевести модель в менее шумный execution mode."
+    }
+  ],
+  "evidence": [
+    "keyword_hits: cointegration=true, copula=true, pca=true, structural_break=true, regime=true, turnover=true, transaction_costs=true.",
+    "Title отсутствует явно в input, поэтому остаётся по крайней мере методологическая интерпретация по ключевым признакам."
+  ],
+  "key_findings": [
+    "По ключам явно связаны cointegration и copula как механизм учета зависимостей между криптоактивами.",
+    "PCA и структурные разрывы/регимы присутствуют как потенциальные инструменты снижения шума и адаптации.",
+    "Turnover и transaction_costs также отмечены, что указывает на учет операционных аспектов валидации."
+  ],
+  "method_family": [
+    "cointegration and dependence modeling",
+    "copula regime modeling",
+    "PCA-based factor compression",
+    "structural break-aware trading"
+  ],
+  "paper_id": "c569f159fabe",
+  "pitfalls": [
+    "В доступных данных нет численных результатов, метрик Sharpe/DD и деталей backtest-пайплайна.",
+    "Не показан явный out_of_sample/walk_forward протокол; риск переобучения по regime высок.",
+    "Саму методику pair-selection и правило входа/выхода из позиции нужно уточнить до production использования."
+  ],
+  "schema_version": "card-v1.1.0",
+  "summary": "Фрагмент указывает на исследование с комбинацией cointegration, copula и PCA при наличии regime и structural break логики; с позиции pair trading это намекает на построение стохастических фильтров для смены режимов и ограничения торговли в нефильтрованных периодах.",
+  "text_sha256": "c569f159fabe8176919d0017a147ca2db3421fdc362623b38a0937a0736e3b6d",
+  "title": "i=1 Aixt−i + εt, (4) xt = xt−1 + p−1",
+  "year": 2024
+}
