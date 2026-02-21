@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "card-v1.1.0",
+  "title": "PaperCard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "text_sha256",
+    "paper_id",
+    "title",
+    "year",
+    "summary",
+    "method_family",
+    "key_findings",
+    "pitfalls",
+    "actionability_score",
+    "actionable_experiments"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 3
+    },
+    "text_sha256": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 128
+    },
+    "paper_id": {
+      "type": "string",
+      "minLength": 6
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 40
+    },
+    "method_family": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "key_findings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "pitfalls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "actionability_score": {
+      "type": "integer"
+    },
+    "actionable_experiments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "idea",
+          "expected_effect",
+          "impact",
+          "effort",
+          "why",
+          "wfa_checks"
+        ],
+        "properties": {
+          "idea": {
+            "type": "string",
+            "minLength": 8
+          },
+          "expected_effect": {
+            "type": "string",
+            "minLength": 8
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 8
+          },
+          "wfa_checks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
