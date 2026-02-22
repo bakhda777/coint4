@@ -1,9 +1,17 @@
 """Configuration utilities using Pydantic models."""
 
+import copy
 from pathlib import Path
+from typing import Any
 
 import yaml as pyyaml  # type: ignore
 from pydantic import BaseModel, DirectoryPath, Field, model_validator  # type: ignore
+
+TRADEABILITY_MIN_LIQUIDITY_USD_DAILY = 300_000.0
+TRADEABILITY_MAX_BID_ASK_PCT = 0.60
+TRADEABILITY_MAX_AVG_FUNDING_PCT = 0.07
+PAIR_STABILITY_MIN_WINDOW_STEPS = 2
+PAIR_STABILITY_MIN_STEPS = 2
 
 
 class PairSelectionConfig(BaseModel):
@@ -74,6 +82,66 @@ class PairSelectionConfig(BaseModel):
         if minimum > window:
             raise ValueError("`pair_stability_min_steps` must be <= `pair_stability_window_steps`")
         return self
+
+    def resolved_tradeability_thresholds(self) -> tuple[float, float, float]:
+        """Return effective tradeability thresholds with safety floors applied."""
+        if not self.enable_pair_tradeability_filter:
+            # Explicitly disable the market microstructure gate.
+            return 0.0, 1.0, 1.0
+
+        liquidity = float(self.liquidity_usd_daily or 0.0)
+        max_bid_ask = float(self.max_bid_ask_pct if self.max_bid_ask_pct is not None else 1.0)
+        max_avg_funding = float(
+            self.max_avg_funding_pct if self.max_avg_funding_pct is not None else 1.0
+        )
+        return (
+            max(liquidity, TRADEABILITY_MIN_LIQUIDITY_USD_DAILY),
+            min(max_bid_ask, TRADEABILITY_MAX_BID_ASK_PCT),
+            min(max_avg_funding, TRADEABILITY_MAX_AVG_FUNDING_PCT),
+        )
+
+    def tradeability_floor_violations(self) -> list[str]:
+        """Return guardrail violations for configured tradeability thresholds."""
+        violations: list[str] = []
+        if not self.enable_pair_tradeability_filter:
+            violations.append("enable_pair_tradeability_filter=false")
+            return violations
+
+        configured_liquidity = float(self.liquidity_usd_daily or 0.0)
+        configured_bid_ask = float(self.max_bid_ask_pct if self.max_bid_ask_pct is not None else 1.0)
+        configured_funding = float(
+            self.max_avg_funding_pct if self.max_avg_funding_pct is not None else 1.0
+        )
+
+        if configured_liquidity < TRADEABILITY_MIN_LIQUIDITY_USD_DAILY:
+            violations.append(
+                "liquidity_usd_daily<"
+                f"{int(TRADEABILITY_MIN_LIQUIDITY_USD_DAILY)} ({configured_liquidity:.0f})"
+            )
+        if configured_bid_ask > TRADEABILITY_MAX_BID_ASK_PCT:
+            violations.append(
+                "max_bid_ask_pct>"
+                f"{TRADEABILITY_MAX_BID_ASK_PCT:.2f} ({configured_bid_ask:.4f})"
+            )
+        if configured_funding > TRADEABILITY_MAX_AVG_FUNDING_PCT:
+            violations.append(
+                "max_avg_funding_pct>"
+                f"{TRADEABILITY_MAX_AVG_FUNDING_PCT:.2f} ({configured_funding:.4f})"
+            )
+        return violations
+
+    def resolved_pair_stability(self) -> tuple[int, int]:
+        """Return effective pair-stability thresholds with anti-one-off floor."""
+        window = int(self.pair_stability_window_steps or 0)
+        minimum = int(self.pair_stability_min_steps or 0)
+        if window <= 0 and minimum <= 0:
+            return 0, 0
+
+        window = max(window, PAIR_STABILITY_MIN_WINDOW_STEPS)
+        minimum = max(minimum, PAIR_STABILITY_MIN_STEPS)
+        if minimum > window:
+            window = minimum
+        return window, minimum
 
 
 class FilterParamsConfig(BaseModel):
@@ -210,6 +278,12 @@ class BacktestConfig(BaseModel):
     pair_stop_loss_usd: float = Field(default=75.0, gt=0.0)  # Pair-level stop loss in USD
     pair_stop_loss_zscore: float = Field(default=3.0, gt=0.0)  # Z-score based stop loss
     portfolio_daily_stop_pct: float = Field(default=0.02, gt=0.0, lt=1.0)  # 2% daily portfolio stop
+    portfolio_deleverage_start_pct: float | None = Field(
+        default=None, gt=0.0, lt=1.0
+    )  # Daily loss threshold where portfolio deleverage starts
+    portfolio_deleverage_factor: float = Field(
+        default=0.5, gt=0.0, le=1.0
+    )  # Position size multiplier while deleverage is active
     
     # NEW: Time-based filters
     enable_funding_time_filter: bool = True
@@ -230,6 +304,15 @@ class BacktestConfig(BaseModel):
     commission_rate_per_leg: float = Field(default=0.0004, ge=0.0)  # 0.04% per leg
     slippage_half_spread_multiplier: float = Field(default=2.0, ge=0.0)  # 2x half spread for slippage
     funding_cost_enabled: bool = True
+
+    # Fully-costed overlay (used by WFA aggregation and ranking defaults).
+    costs_enabled: bool = True
+    fee_bps: float | None = Field(default=None, ge=0.0)
+    slippage_bps: float | None = Field(default=None, ge=0.0)
+    funding_bps_per_8h: float = 0.0
+    funding_series_path: str | None = None
+    cost_scenarios: list[str] = Field(default_factory=lambda: ["baseline", "low", "mid", "high"])
+    cost_scenario: str = "baseline"
     
     # NEW: Enhanced position sizing with beta recalculation
     beta_recalc_frequency_hours: int = Field(default=48, ge=1)  # Recalculate beta every 48 hours
@@ -303,6 +386,14 @@ class BacktestConfig(BaseModel):
         
         if self.max_var_multiplier <= 1.0:
             raise ValueError("`max_var_multiplier` must be greater than 1.0")
+
+        if (
+            self.portfolio_deleverage_start_pct is not None
+            and self.portfolio_deleverage_start_pct > self.portfolio_daily_stop_pct
+        ):
+            raise ValueError(
+                "`portfolio_deleverage_start_pct` must be <= `portfolio_daily_stop_pct`"
+            )
         
         # Validate market regime detection parameters
         if self.market_regime_detection and self.hurst_window < 100:
@@ -326,7 +417,16 @@ class BacktestConfig(BaseModel):
         
         if self.correlation_window < 50:
             raise ValueError("`correlation_window` must be at least 50 periods")
-        
+
+        normalized_scenarios = [str(item).strip().lower() for item in self.cost_scenarios if str(item).strip()]
+        if not normalized_scenarios:
+            raise ValueError("`cost_scenarios` must contain at least one scenario")
+        self.cost_scenarios = normalized_scenarios
+
+        self.cost_scenario = str(self.cost_scenario).strip().lower() or "baseline"
+        if self.cost_scenario not in self.cost_scenarios:
+            raise ValueError("`cost_scenario` must be one of `cost_scenarios`")
+
         return self
 
 
@@ -447,6 +547,70 @@ def convert_paths_to_strings(data):
         return data
 
 
+def _read_raw_yaml(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = pyyaml.safe_load(handle)
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid YAML config (expected mapping): {path}")
+    return payload
+
+
+def _deep_merge_config(base: Any, override: Any) -> Any:
+    if isinstance(base, dict) and isinstance(override, dict):
+        merged = copy.deepcopy(base)
+        for key, value in override.items():
+            # In generated batch configs `null` is used as "no override".
+            if key in merged and value is None:
+                continue
+            if key in merged:
+                merged[key] = _deep_merge_config(merged[key], value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+    if override is None and base is not None:
+        return copy.deepcopy(base)
+    return copy.deepcopy(override)
+
+
+def _resolve_base_config_path(base_config: str, current_path: Path) -> Path:
+    candidate = Path(base_config)
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    local_candidate = (current_path.parent / candidate).resolve()
+    if local_candidate.exists():
+        return local_candidate
+
+    cwd_candidate = (Path.cwd() / candidate).resolve()
+    if cwd_candidate.exists():
+        return cwd_candidate
+
+    return local_candidate
+
+
+def _load_raw_config(path: Path, visited: set[Path] | None = None) -> dict[str, Any]:
+    resolved = path.resolve()
+    visited_paths = set(visited or ())
+    if resolved in visited_paths:
+        chain = " -> ".join(str(p) for p in sorted(visited_paths | {resolved}))
+        raise ValueError(f"Circular base_config chain detected: {chain}")
+    visited_paths.add(resolved)
+
+    raw_cfg = _read_raw_yaml(resolved)
+    base_ref = str(raw_cfg.get("base_config") or "").strip()
+    if not base_ref:
+        raw_cfg.pop("base_config", None)
+        return raw_cfg
+
+    base_path = _resolve_base_config_path(base_ref, resolved)
+    base_cfg = _load_raw_config(base_path, visited=visited_paths)
+    override_cfg = copy.deepcopy(raw_cfg)
+    override_cfg.pop("base_config", None)
+    return _deep_merge_config(base_cfg, override_cfg)
+
+
 def load_config(path: Path | str) -> AppConfig:
     """Load configuration from a YAML file.
 
@@ -461,6 +625,5 @@ def load_config(path: Path | str) -> AppConfig:
         Parsed configuration object.
     """
     path = Path(path) if isinstance(path, str) else path
-    with path.open("r", encoding="utf-8") as f:
-        raw_cfg = pyyaml.safe_load(f)
+    raw_cfg = _load_raw_config(path)
     return AppConfig(**raw_cfg)

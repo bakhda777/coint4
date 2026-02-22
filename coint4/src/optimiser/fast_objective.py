@@ -14,7 +14,12 @@ import math
 import threading
 import multiprocessing
 
-from coint2.utils.config import load_config
+from coint2.utils.config import (
+    load_config,
+    TRADEABILITY_MIN_LIQUIDITY_USD_DAILY,
+    TRADEABILITY_MAX_BID_ASK_PCT,
+    TRADEABILITY_MAX_AVG_FUNDING_PCT,
+)
 from coint2.core.data_loader import DataHandler, load_master_dataset
 from coint2.engine.numba_engine import NumbaPairBacktester
 from coint2.engine.optimized_backtest_engine import OptimizedPairBacktester
@@ -80,6 +85,34 @@ def _coerce_bool(value, default: bool) -> bool:
 def _coerce_str(value, default: str) -> str:
     """Safely coerce config values to str for test/mocked configs."""
     return value if isinstance(value, str) else default
+
+
+def _resolve_tradeability_thresholds(pair_selection) -> tuple[float, float, float, bool]:
+    """Resolve microstructure thresholds with safety floors for filtering."""
+    tradeability_enabled = _coerce_bool(
+        getattr(pair_selection, "enable_pair_tradeability_filter", True), True
+    )
+    if not tradeability_enabled:
+        return 0.0, 1.0, 1.0, False
+
+    requested_liquidity = _coerce_float(
+        getattr(pair_selection, "liquidity_usd_daily", None), 0.0
+    )
+    requested_bid_ask = _coerce_float(
+        getattr(pair_selection, "max_bid_ask_pct", None), 1.0
+    )
+    requested_funding = _coerce_float(
+        getattr(pair_selection, "max_avg_funding_pct", None), 1.0
+    )
+    resolved_liquidity = max(requested_liquidity, TRADEABILITY_MIN_LIQUIDITY_USD_DAILY)
+    resolved_bid_ask = min(requested_bid_ask, TRADEABILITY_MAX_BID_ASK_PCT)
+    resolved_funding = min(requested_funding, TRADEABILITY_MAX_AVG_FUNDING_PCT)
+    adjusted = (
+        requested_liquidity != resolved_liquidity
+        or requested_bid_ask != resolved_bid_ask
+        or requested_funding != resolved_funding
+    )
+    return resolved_liquidity, resolved_bid_ask, resolved_funding, adjusted
 
 
 def _clean_step_dataframe(
@@ -773,6 +806,20 @@ class FastWalkForwardObjective:
                 print(f"   ❌ Не найдено пар для фильтрации в шаге {step_idx + 1}")
                 return pd.DataFrame(), norm_stats.get('normalization_stats', {})
 
+            (
+                liquidity_usd_daily,
+                max_bid_ask_pct,
+                max_avg_funding_pct,
+                tradeability_adjusted,
+            ) = _resolve_tradeability_thresholds(cfg.pair_selection)
+            if tradeability_adjusted:
+                print(
+                    "   🛡️ Tradeability guardrail: "
+                    f"liquidity>={int(liquidity_usd_daily)} "
+                    f"bid_ask<={max_bid_ask_pct:.2f} "
+                    f"funding<={max_avg_funding_pct:.2f}"
+                )
+
             # Фильтрация пар по коинтеграции и другим критериям
             filtered_pairs = filter_pairs_by_coint_and_half_life(
                 pairs_for_filter,
@@ -785,6 +832,9 @@ class FastWalkForwardObjective:
                 max_hurst_exponent=getattr(cfg.pair_selection, 'max_hurst_exponent', 0.7),
                 min_mean_crossings=getattr(cfg.pair_selection, 'min_mean_crossings', 10),
                 min_correlation=getattr(cfg.pair_selection, 'min_correlation', 0.5),  # НОВЫЙ параметр
+                liquidity_usd_daily=liquidity_usd_daily,
+                max_bid_ask_pct=max_bid_ask_pct,
+                max_avg_funding_pct=max_avg_funding_pct,
                 kpss_pvalue_threshold=getattr(cfg.pair_selection, 'kpss_pvalue_threshold', 0.05),
             )
             

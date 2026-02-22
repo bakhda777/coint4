@@ -1,5 +1,5 @@
 configVersion = "2.1"
-maxIterations = 0
+maxIterations = 10
 iterationDelay = 0
 outputDir = ".ralph-tui/iterations"
 agent = "codex"

@@ -154,8 +154,10 @@ class PaperTradingEngine:
         self.state_path = state_path or Path("artifacts/live/state.json")
         self.sync_on_start = sync_on_start
         self._synced = False
+        self.latest_prices: Dict[str, float] = {}
         self.daily_pnl: float = 0.0
         self.daily_pnl_day: Optional[datetime] = None
+        self._hard_stop_logged_day: Optional[datetime] = None
         self._load_state()
 
     def _position_idx(self, side: str, reduce_only: bool) -> int:
@@ -211,6 +213,39 @@ class PaperTradingEngine:
         if self.daily_pnl_day is None or day > self.daily_pnl_day:
             self.daily_pnl_day = day
             self.daily_pnl = 0.0
+            self._hard_stop_logged_day = None
+
+    def _portfolio_guard_params(self) -> Tuple[float, float, float]:
+        daily_stop_pct = float(getattr(self.cfg.backtest, "portfolio_daily_stop_pct", 0.0) or 0.0)
+        deleverage_start_raw = getattr(self.cfg.backtest, "portfolio_deleverage_start_pct", None)
+        if deleverage_start_raw is None and daily_stop_pct > 0:
+            deleverage_start_pct = daily_stop_pct * 0.6
+        else:
+            deleverage_start_pct = float(deleverage_start_raw or 0.0)
+        if daily_stop_pct > 0 and deleverage_start_pct > daily_stop_pct:
+            deleverage_start_pct = daily_stop_pct
+        deleverage_factor = float(getattr(self.cfg.backtest, "portfolio_deleverage_factor", 0.5) or 0.5)
+        deleverage_factor = min(max(deleverage_factor, 0.0), 1.0)
+        return daily_stop_pct, deleverage_start_pct, deleverage_factor
+
+    def _estimate_total_unrealized_pnl(self) -> float:
+        total_unrealized = 0.0
+        for pair in self.pairs:
+            state = self.states.get(pair.key)
+            if state is None or state.position == 0:
+                continue
+            price_y = self.latest_prices.get(pair.symbol1, state.entry_price_y)
+            price_x = self.latest_prices.get(pair.symbol2, state.entry_price_x)
+            total_unrealized += self._estimate_unrealized_pnl(state, price_y, price_x)
+        return total_unrealized
+
+    def _portfolio_loss_snapshot(self) -> Tuple[float, float]:
+        total_pnl = self.daily_pnl + self._estimate_total_unrealized_pnl()
+        initial_capital = float(getattr(self.cfg.portfolio, "initial_capital", 0.0) or 0.0)
+        if initial_capital <= 0:
+            return total_pnl, 0.0
+        loss_pct = max(0.0, -total_pnl / initial_capital)
+        return total_pnl, loss_pct
 
     def _get_klines_cached(self, symbol: str, interval: str, limit: int) -> List[Dict[str, float]]:
         if self.kline_cache_ttl_ms <= 0:
@@ -388,8 +423,10 @@ class PaperTradingEngine:
         price_y: float,
         price_x: float,
         beta: float,
+        risk_scale: float = 1.0,
     ) -> Tuple[float, float]:
         portfolio = self.cfg.portfolio
+        risk_scale = min(max(float(risk_scale), 0.0), 1.0)
         base_notional = portfolio.initial_capital * portfolio.risk_per_position_pct
         min_notional = portfolio.min_notional_per_trade
         max_notional = portfolio.max_notional_per_trade
@@ -397,6 +434,9 @@ class PaperTradingEngine:
             base_notional = min_notional
         if base_notional > max_notional:
             base_notional = max_notional
+        base_notional *= risk_scale
+        if base_notional < min_notional:
+            base_notional = min_notional
 
         beta_abs = abs(beta) if abs(beta) > 1e-6 else 1.0
         notional_y = base_notional / (1.0 + beta_abs)
@@ -519,6 +559,7 @@ class PaperTradingEngine:
         min_spread_move = float(self.cfg.backtest.min_spread_move_sigma)
         min_beta = float(self.cfg.filter_params.min_beta)
         max_beta = float(self.cfg.filter_params.max_beta)
+        daily_stop_pct, deleverage_start_pct, deleverage_factor = self._portfolio_guard_params()
 
         history_bars = max(rolling_window + 5, min_hold_bars + 5, cooldown_bars + 5)
 
@@ -540,8 +581,30 @@ class PaperTradingEngine:
             state.beta = beta
             current_spread = float(y_vals[-1] - beta * x_vals[-1])
             now = datetime.now(timezone.utc)
+            self.latest_prices[pair.symbol1] = float(y_vals[-1])
+            self.latest_prices[pair.symbol2] = float(x_vals[-1])
 
-            if self.daily_pnl <= -self.cfg.backtest.portfolio_daily_stop_pct * self.cfg.portfolio.initial_capital:
+            total_pnl, portfolio_loss_pct = self._portfolio_loss_snapshot()
+            hard_stop_active = daily_stop_pct > 0 and portfolio_loss_pct >= daily_stop_pct
+            deleverage_active = (
+                not hard_stop_active
+                and deleverage_start_pct > 0
+                and portfolio_loss_pct >= deleverage_start_pct
+                and deleverage_factor < 1.0
+            )
+            risk_scale = deleverage_factor if deleverage_active else 1.0
+
+            if hard_stop_active and self._hard_stop_logged_day != self.daily_pnl_day:
+                self.logger.log_alert(
+                    "PORTFOLIO_DAILY_STOP",
+                    "Portfolio daily hard-stop triggered; flattening positions and blocking entries",
+                    severity="warning",
+                    daily_pnl=total_pnl,
+                    loss_pct=portfolio_loss_pct,
+                )
+                self._hard_stop_logged_day = self.daily_pnl_day
+
+            if hard_stop_active:
                 if state.position != 0:
                     self._exit_position(pair, state, y_vals[-1], x_vals[-1], now)
                 continue
@@ -549,9 +612,15 @@ class PaperTradingEngine:
             if state.position == 0:
                 if pair.symbol1 in self.blocked_symbols or pair.symbol2 in self.blocked_symbols:
                     continue
-                if self._active_positions_count() >= self.cfg.portfolio.max_active_positions:
+                max_positions_limit = int(self.cfg.portfolio.max_active_positions)
+                if deleverage_active:
+                    max_positions_limit = max(1, int(max_positions_limit * risk_scale))
+                if self._active_positions_count() >= max_positions_limit:
                     continue
-                if self._current_notional_usage() > self.cfg.portfolio.max_margin_usage:
+                margin_usage_limit = float(self.cfg.portfolio.max_margin_usage)
+                if deleverage_active:
+                    margin_usage_limit *= risk_scale
+                if self._current_notional_usage() > margin_usage_limit:
                     continue
                 if state.last_exit_time and cooldown_bars > 0:
                     cooldown_until = state.last_exit_time + timedelta(minutes=cooldown_bars * self.cfg.time.gap_minutes)
@@ -563,9 +632,25 @@ class PaperTradingEngine:
                         continue
 
                 if zscore >= entry_threshold:
-                    self._enter_position(pair, state, -1, y_vals[-1], x_vals[-1], now)
+                    self._enter_position(
+                        pair,
+                        state,
+                        -1,
+                        y_vals[-1],
+                        x_vals[-1],
+                        now,
+                        risk_scale=risk_scale,
+                    )
                 elif zscore <= -entry_threshold:
-                    self._enter_position(pair, state, 1, y_vals[-1], x_vals[-1], now)
+                    self._enter_position(
+                        pair,
+                        state,
+                        1,
+                        y_vals[-1],
+                        x_vals[-1],
+                        now,
+                        risk_scale=risk_scale,
+                    )
             else:
                 bars_held = 0
                 if state.entry_time:
@@ -603,8 +688,16 @@ class PaperTradingEngine:
         price_y: float,
         price_x: float,
         now: datetime,
+        risk_scale: float = 1.0,
     ) -> None:
-        qty_y, qty_x = self._compute_quantities(pair.symbol1, pair.symbol2, price_y, price_x, state.beta)
+        qty_y, qty_x = self._compute_quantities(
+            pair.symbol1,
+            pair.symbol2,
+            price_y,
+            price_x,
+            state.beta,
+            risk_scale=risk_scale,
+        )
         if qty_y <= 0 or qty_x <= 0:
             self.logger.log_system("Skip entry due to size constraints", level="warning", pair=pair.key)
             return

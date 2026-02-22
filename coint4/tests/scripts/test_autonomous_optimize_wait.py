@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
-import subprocess
 import sys
 import csv
 from pathlib import Path
@@ -25,7 +24,7 @@ def _args() -> SimpleNamespace:
         once=False,
         until_done=False,
         max_iterations=None,
-        use_codex_exec=False,
+        use_codex_exec=True,
         codex_model="",
         plan_only=False,
         wait_timeout_sec=21600,
@@ -71,6 +70,8 @@ def _setup_runner(module, tmp_path: Path):
     runner.build_run_index = app_root / "scripts" / "optimization" / "build_run_index.py"
     runner.rank_script = app_root / "scripts" / "optimization" / "rank_multiwindow_robust_runs.py"
     runner.codex_schema_path = schema_dst
+    runner._ensure_codex_auth_ready = lambda: True
+    runner._run_codex_json = lambda *args, **kwargs: None
 
     runner.state_dir.mkdir(parents=True, exist_ok=True)
     runner.decisions_dir.mkdir(parents=True, exist_ok=True)
@@ -112,21 +113,44 @@ def _decision_payload(
     }
 
 
-def _mock_codex_subprocess(decisions: list[dict]):
+def _mock_decide_with_codex(module, runner, payloads: list[dict | None]):
     calls = {"n": 0}
 
-    def _run(cmd, *args, **kwargs):
-        assert cmd[0] == "codex"
-        assert "--output-last-message" in cmd
+    def _decide(_state):
         idx = calls["n"]
         calls["n"] += 1
-        out_path = Path(cmd[cmd.index("--output-last-message") + 1])
-        payload = decisions[min(idx, len(decisions) - 1)]
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout='{"ok":true}\n', stderr="")
+        payload = payloads[min(idx, len(payloads) - 1)] if payloads else None
+        if payload is None:
+            return None
 
-    return _run
+        stamp = f"test_{idx + 1:03d}"
+        decision_json_path = runner.decisions_dir / f"decision_{stamp}.json"
+        context_path = runner.decisions_dir / f"context_{stamp}.json"
+        decision_md_path = runner.decisions_dir / f"decision_{stamp}.md"
+        exec_log_path = runner.decisions_dir / f"codex_exec_{stamp}.jsonl"
+        decision_json_path.parent.mkdir(parents=True, exist_ok=True)
+        decision_json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        context_path.write_text("{}", encoding="utf-8")
+        exec_log_path.write_text("", encoding="utf-8")
+
+        runner._persist_decision_memo(decision_payload=payload, decision_md_path=decision_md_path)
+        runner.log(
+            "codex decision_id={decision_id} next_action={next_action} stop={stop}".format(
+                decision_id=str(payload.get("decision_id") or "").strip(),
+                next_action=str(payload.get("next_action") or "").strip(),
+                stop=bool(payload.get("stop")),
+            )
+        )
+        runner._log_human_explanation(str(payload.get("human_explanation_md") or ""))
+        return module.CodexDecision(
+            payload=payload,
+            decision_json_path=decision_json_path,
+            context_path=context_path,
+            decision_md_path=decision_md_path,
+            exec_log_path=exec_log_path,
+        )
+
+    return _decide
 
 
 def _write_rollup(path: Path, rows: list[dict[str, str]]) -> None:
@@ -170,32 +194,96 @@ def test_valid_codex_decision_creates_queue_and_configs(tmp_path: Path, monkeypa
             next_queue_path="coint4/artifacts/wfa/aggregate/rg_codex/run_queue.csv",
             queue_entries=queue_entries,
             human_explanation_md="### Run batch\n- candidate set",
-        ),
-        _decision_payload(
-            decision_id="d2",
-            next_action="wait",
-            stop=False,
-            stop_reason="need metrics",
-            human_explanation_md="### Wait\n- awaiting completion",
-            next_run_group="rg_codex",
-            next_queue_path="coint4/artifacts/wfa/aggregate/rg_codex/run_queue.csv",
-            queue_entries=[],
-        ),
+        )
     ]
-    monkeypatch.setattr(module.subprocess, "run", _mock_codex_subprocess(decisions))
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, decisions))
     monkeypatch.setattr(runner, "_run_powered_queue", lambda queue, iteration_log: 0)
+    monkeypatch.setattr(
+        runner,
+        "_rank_from_remote_result",
+        lambda _rg: module.RankResult(
+            ok=True,
+            source="test",
+            score=1.23,
+            worst_robust_sharpe=1.23,
+            worst_dd_pct=-0.08,
+            run_name="run1",
+            config_path="configs/autopilot/generated/rg_codex/run1.yaml",
+            details="ok",
+        ),
+    )
     monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
 
     state = runner._default_state()
     result = runner.run_iteration(state=state)
 
     queue_path = runner.repo_root / "coint4/artifacts/wfa/aggregate/rg_codex/run_queue.csv"
-    config_path = runner.repo_root / "coint4/configs/autopilot/generated/test_batch/run1.yaml"
     assert queue_path.exists()
+    with queue_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows
+    generated_config_rel = str(rows[0].get("config_path") or "").strip()
+    assert generated_config_rel
+    config_path = runner.app_root / generated_config_rel
     assert config_path.exists()
     assert result["iteration"] == 1
     assert result["current_run_group"] == "rg_codex"
-    assert result["last_iteration_phase"] == "waiting_codex"
+    assert result["last_iteration_phase"] == "rank_ok"
+
+
+def test_codex_run_iteration_uses_single_decision_per_cycle(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+
+    queue_entries = [
+        {
+            "config_path": "coint4/configs/autopilot/generated/rg_one_decision/run1.yaml",
+            "status": "planned",
+            "results_dir": "artifacts/wfa/runs_clean/rg_one_decision/run1",
+            "notes": "single decision cycle",
+            "overrides": {"portfolio": {"risk_per_position_pct": 0.006}},
+        }
+    ]
+    decision = _decision_payload(
+        decision_id="single-1",
+        next_action="run_next_batch",
+        next_run_group="rg_one_decision",
+        next_queue_path="coint4/artifacts/wfa/aggregate/rg_one_decision/run_queue.csv",
+        queue_entries=queue_entries,
+        human_explanation_md="run one batch",
+    )
+
+    calls = {"n": 0}
+
+    decide = _mock_decide_with_codex(module, runner, [decision])
+
+    def _counting_decide(state):
+        calls["n"] += 1
+        return decide(state)
+
+    monkeypatch.setattr(runner, "decide_with_codex", _counting_decide)
+    monkeypatch.setattr(runner, "_run_powered_queue", lambda queue, iteration_log: 0)
+    monkeypatch.setattr(
+        runner,
+        "_rank_from_remote_result",
+        lambda _rg: module.RankResult(
+            ok=True,
+            source="test",
+            score=1.11,
+            worst_robust_sharpe=1.11,
+            worst_dd_pct=-0.05,
+            run_name="run1",
+            config_path="configs/autopilot/generated/rg_one_decision/run1.yaml",
+            details="ok",
+        ),
+    )
+    monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
+
+    state = runner._default_state()
+    result = runner.run_iteration(state=state)
+
+    assert calls["n"] == 1
+    assert result["last_iteration_phase"] == "rank_ok"
 
 
 def test_codex_stop_marks_state_done(tmp_path: Path, monkeypatch) -> None:
@@ -211,7 +299,7 @@ def test_codex_stop_marks_state_done(tmp_path: Path, monkeypatch) -> None:
             queue_entries=[],
         )
     ]
-    monkeypatch.setattr(module.subprocess, "run", _mock_codex_subprocess(decisions))
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, decisions))
     monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
     monkeypatch.setattr(runner, "_run_powered_queue", lambda queue, iteration_log: (_ for _ in ()).throw(AssertionError("powered must not run")))
 
@@ -236,7 +324,7 @@ def test_codex_wait_logs_human_explanation_and_memo(tmp_path: Path, monkeypatch)
             queue_entries=[],
         )
     ]
-    monkeypatch.setattr(module.subprocess, "run", _mock_codex_subprocess(decisions))
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, decisions))
     monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
 
     rc = runner.run()
@@ -256,17 +344,64 @@ def test_codex_wait_logs_human_explanation_and_memo(tmp_path: Path, monkeypatch)
     assert explanation in memo_text
 
 
+def test_decision_prompt_requires_pnl_and_dd_in_human_output(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    prompt = runner._decision_prompt({"evidence": {}})
+    assert "P&L" in prompt
+    assert "DD" in prompt
+
+
+def test_until_done_keeps_loop_in_process_after_wait(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    runner.args.until_done = True
+    runner.args.once = False
+
+    decisions = [
+        _decision_payload(
+            decision_id="wait-1",
+            next_action="wait",
+            stop=False,
+            stop_reason="need more completed runs",
+            human_explanation_md="wait and retry",
+            queue_entries=[],
+        )
+        | {"wait_seconds": 7},
+        _decision_payload(
+            decision_id="stop-2",
+            next_action="stop",
+            stop=True,
+            stop_reason="finished",
+            human_explanation_md="stop now",
+            queue_entries=[],
+        ),
+    ]
+
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, decisions))
+    monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(module.time, "sleep", lambda sec: sleep_calls.append(float(sec)))
+
+    rc = runner.run()
+    assert rc == 0
+    assert sleep_calls
+    assert int(sleep_calls[0]) == 7
+
+    state = runner.load_state()
+    assert state["status"] == "done"
+    assert state["last_decision_id"] == "stop-2"
+
+    log_text = runner.main_log_path.read_text(encoding="utf-8")
+    assert "continue in-process (--until-done)" in log_text
+
+
 def test_invalid_codex_json_goes_wait_without_queue(tmp_path: Path, monkeypatch) -> None:
     module = _load_autonomous_module(tmp_path)
     runner = _setup_runner(module, tmp_path)
 
-    def _broken_run(cmd, *args, **kwargs):
-        out_path = Path(cmd[cmd.index("--output-last-message") + 1])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text("{invalid json\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(module.subprocess, "run", _broken_run)
+    runner._last_wait_reason = "CODEX_DECISION_INVALID_JSON:JSONDecodeError"
+    monkeypatch.setattr(runner, "decide_with_codex", lambda _state: None)
     monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
 
     rc = runner.run()
@@ -445,6 +580,101 @@ def test_build_decision_context_marks_rollup_lagging_remote(tmp_path: Path, monk
     assert "NO_COMPLETED_RUNS" not in set(evidence["blocking_missing_reasons"])
     assert "ROLLUP_LAGGING_REMOTE" in set(evidence["blocking_missing_reasons"])
     assert evidence["remote_counts"]["completed"] == 2
+
+
+def test_build_decision_context_first_iteration_ignores_rollup_not_updated_with_historical_data(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+
+    run_group = "rg_ctx_hist_bootstrap"
+    queue_path = runner.app_root / "artifacts" / "wfa" / "aggregate" / run_group / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "\n".join(
+            [
+                "config_path,results_dir,status",
+                "configs/autopilot/generated/rg_ctx_hist_bootstrap/new_run.yaml,artifacts/wfa/runs_clean/rg_ctx_hist_bootstrap/new_run,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _write_rollup(
+        runner.rollup_csv,
+        [
+            {
+                "run_id": "hist_run1",
+                "run_group": "rg_ctx_hist_prev",
+                "results_dir": "artifacts/wfa/runs_clean/rg_ctx_hist_prev/hist_run1",
+                "metrics_path": "hist.csv",
+                "config_path": "configs/autopilot/generated/rg_ctx_hist_prev/hist_run1.yaml",
+                "status": "completed",
+                "metrics_present": "True",
+                "sharpe_ratio_abs": "0.80",
+                "max_drawdown_on_equity": "-0.10",
+            }
+        ],
+    )
+
+    state = runner._default_state()
+    state["iteration"] = 0
+    state["current_run_group"] = run_group
+    context = runner._build_decision_context(state)
+    evidence = context["evidence"]
+
+    assert evidence["historical_bootstrap_mode"] is True
+    assert evidence["historical_metrics_present_true_completed"] == 1
+    assert "ROLLUP_NOT_UPDATED" not in set(evidence["computed_missing_reasons"])
+    assert "ROLLUP_NOT_UPDATED" not in set(evidence["blocking_missing_reasons"])
+    assert "NO_COMPLETED_RUNS_CURRENT_QUEUE" in set(evidence["computed_missing_reasons"])
+    assert "NO_COMPLETED_RUNS" not in set(evidence["blocking_missing_reasons"])
+
+
+def test_build_decision_context_after_first_iteration_blocks_rollup_not_updated(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+
+    run_group = "rg_ctx_hist_after_first"
+    queue_path = runner.app_root / "artifacts" / "wfa" / "aggregate" / run_group / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "\n".join(
+            [
+                "config_path,results_dir,status",
+                "configs/autopilot/generated/rg_ctx_hist_after_first/new_run.yaml,artifacts/wfa/runs_clean/rg_ctx_hist_after_first/new_run,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _write_rollup(
+        runner.rollup_csv,
+        [
+            {
+                "run_id": "hist_run1",
+                "run_group": "rg_ctx_hist_prev",
+                "results_dir": "artifacts/wfa/runs_clean/rg_ctx_hist_prev/hist_run1",
+                "metrics_path": "hist.csv",
+                "config_path": "configs/autopilot/generated/rg_ctx_hist_prev/hist_run1.yaml",
+                "status": "completed",
+                "metrics_present": "True",
+                "sharpe_ratio_abs": "0.80",
+                "max_drawdown_on_equity": "-0.10",
+            }
+        ],
+    )
+
+    state = runner._default_state()
+    state["iteration"] = 1
+    state["current_run_group"] = run_group
+    context = runner._build_decision_context(state)
+    evidence = context["evidence"]
+
+    assert evidence["historical_bootstrap_mode"] is False
+    assert "ROLLUP_NOT_UPDATED" in set(evidence["computed_missing_reasons"])
+    assert "ROLLUP_NOT_UPDATED" in set(evidence["blocking_missing_reasons"])
 
 
 def test_log_progress_snapshot_rate_limited(tmp_path: Path, monkeypatch) -> None:
@@ -626,7 +856,7 @@ def test_wait_no_completed_launches_data_collection(tmp_path: Path, monkeypatch)
         next_queue_path=f"coint4/artifacts/wfa/aggregate/{run_group}/run_queue.csv",
         queue_entries=[],
     )
-    monkeypatch.setattr(module.subprocess, "run", _mock_codex_subprocess([decision]))
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, [decision]))
     monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
     monkeypatch.setattr(runner, "_is_powered_runner_active_for_queue", lambda _q: False)
 

@@ -2109,8 +2109,8 @@ class BasePairBacktester:
                 price_s1, price_s2, beta
             )
             
-            # USD stop-loss: 75 USDT loss
-            if unrealized_pnl <= -75.0:
+            pair_stop_loss_usd = float(getattr(self, 'pair_stop_loss_usd', 75.0) or 0.0)
+            if pair_stop_loss_usd > 0 and unrealized_pnl <= -pair_stop_loss_usd:
                 return True
                 
         # Z-score stop-loss: 3σ (configurable)

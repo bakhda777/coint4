@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from collections import Counter
 from pathlib import Path
 from typing import Tuple, List
 import time
@@ -37,6 +36,7 @@ from coint2.core.memory_optimization import (
 from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
 from coint2.core.portfolio import Portfolio
 from coint2.utils.vectorized_ops import VectorizedStatsCalculator, vectorized_eval_expression
+from coint2.pipeline.cost_model import apply_fully_costed_model
 
 def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     """
@@ -52,6 +52,29 @@ def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     if hours <= 0:
         return 0
     return int(hours * 60 / bar_minutes)
+
+
+def _compute_pair_trailing_streaks(
+    history_window: list[list[tuple[str, str]]],
+) -> dict[tuple[str, str], int]:
+    """Compute trailing consecutive presence streak for each historical pair."""
+    if not history_window:
+        return {}
+    all_pairs = {pair for step in history_window for pair in step}
+    streaks: dict[tuple[str, str], int] = {}
+    reversed_window = list(reversed(history_window))
+    for pair in all_pairs:
+        if pair not in reversed_window[0]:
+            streaks[pair] = 0
+            continue
+        streak = 0
+        for step in reversed_window:
+            if pair in step:
+                streak += 1
+            else:
+                break
+        streaks[pair] = streak
+    return streaks
 
 
 def _parallel_map(
@@ -151,7 +174,13 @@ def _init_worker_global_price(consolidated_path: str) -> None:
     if GLOBAL_PRICE is None:
         initialize_global_price_data(consolidated_path)
 
-def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=None):
+def _simulate_realistic_portfolio(
+    all_pnls,
+    cfg,
+    all_positions=None,
+    all_scores=None,
+    return_diagnostics: bool = False,
+):
     """
     КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Полноценная симуляция портфеля с реалистичным управлением позициями.
 
@@ -168,12 +197,33 @@ def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=
         all_scores: Список серий сигналов/скоринга (опционально, например z-score)
 
     Returns:
-        pd.Series: Реалистичный PnL портфеля с учетом лимитов позиций
+        pd.Series or tuple[pd.Series, dict[str, pd.Series]]:
+        Портфельный PnL. Если return_diagnostics=True, дополнительно возвращаются
+        диагностические серии (turnover_units/exposure_units) для fully-costed агрегации.
     """
     logger = get_logger(__name__)
 
     if not all_pnls:
-        return pd.Series(dtype=float)
+        empty = pd.Series(dtype=float)
+        diagnostics = {"turnover_units": empty, "exposure_units": empty}
+        if return_diagnostics:
+            return empty, diagnostics
+        return empty
+
+    backtest_cfg = getattr(cfg, "backtest", None)
+    portfolio_cfg = getattr(cfg, "portfolio", None)
+
+    initial_capital = float(getattr(portfolio_cfg, "initial_capital", 0.0) or 0.0)
+    daily_stop_pct = float(getattr(backtest_cfg, "portfolio_daily_stop_pct", 0.0) or 0.0)
+    deleverage_start_raw = getattr(backtest_cfg, "portfolio_deleverage_start_pct", None)
+    if deleverage_start_raw is None and daily_stop_pct > 0:
+        deleverage_start_pct = daily_stop_pct * 0.6
+    else:
+        deleverage_start_pct = float(deleverage_start_raw or 0.0)
+    if daily_stop_pct > 0 and deleverage_start_pct > daily_stop_pct:
+        deleverage_start_pct = daily_stop_pct
+    deleverage_factor = float(getattr(backtest_cfg, "portfolio_deleverage_factor", 0.5) or 0.5)
+    deleverage_factor = min(max(deleverage_factor, 0.0), 1.0)
 
     # Создаем DataFrame со всеми PnL сериями
     pnl_df = pd.concat({f'pair_{i}': pnl.fillna(0) for i, pnl in enumerate(all_pnls)}, axis=1)
@@ -195,17 +245,63 @@ def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=
         entry_signals_df = signals_df
 
     # Инициализируем портфель
-    max_positions = cfg.portfolio.max_active_positions
+    max_positions = int(getattr(portfolio_cfg, "max_active_positions", 0) or 0)
+    if max_positions < 1:
+        max_positions = 1
     portfolio_pnl = pd.Series(0.0, index=pnl_df.index)
+    turnover_units = pd.Series(0.0, index=pnl_df.index)
+    exposure_units = pd.Series(0.0, index=pnl_df.index)
     active_positions = {}  # {pair_name: entry_timestamp}
+    active_position_sizes = {}  # {pair_name: abs(position_size)}
+    current_day = None
+    daily_realized_pnl = 0.0
+    deleverage_steps = 0
+    hard_stop_days = 0
+    hard_stop_active = False
+    _hard_stop_day_counted = False
 
     logger.info(f"🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: {len(all_pnls)} пар, лимит {max_positions} позиций")
+    if daily_stop_pct > 0:
+        logger.info(
+            "🛡️ Portfolio safeguards: daily_stop=%.2f%%, deleverage_start=%.2f%%, deleverage_factor=%.2f",
+            daily_stop_pct * 100.0,
+            deleverage_start_pct * 100.0,
+            deleverage_factor,
+        )
 
     # Симулируем торговлю по каждому временному шагу
     for timestamp in pnl_df.index:
+        ts = pd.Timestamp(timestamp)
+        day = ts.normalize()
+        if current_day is None or day != current_day:
+            current_day = day
+            daily_realized_pnl = 0.0
+            hard_stop_active = False
+            _hard_stop_day_counted = False
+
+        daily_loss_pct = 0.0
+        if initial_capital > 0:
+            daily_loss_pct = max(0.0, -daily_realized_pnl / initial_capital)
+        hard_stop_active = hard_stop_active or (
+            daily_stop_pct > 0 and daily_loss_pct >= daily_stop_pct
+        )
+        deleverage_active = (
+            not hard_stop_active
+            and deleverage_start_pct > 0
+            and daily_loss_pct >= deleverage_start_pct
+            and deleverage_factor < 1.0
+        )
+        risk_scale = deleverage_factor if deleverage_active else 1.0
+        effective_max_positions = max_positions
+        if deleverage_active:
+            effective_max_positions = max(1, int(max_positions * risk_scale))
+            deleverage_steps += 1
+
         current_signals = signals_df.loc[timestamp]
         current_entries = entry_signals_df.loc[timestamp]
         current_pnls = pnl_df.loc[timestamp]
+        previous_sizes = dict(active_position_sizes)
+        current_positions = None
 
         # 1. Отмечаем позиции на закрытие (по позиции, а не по PnL)
         positions_to_close = []
@@ -219,34 +315,73 @@ def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=
                 if current_signals[pair_name] == 0:
                     positions_to_close.append(pair_name)
 
-        # 2. Ищем новые сигналы для открытия позиций (только на входе)
-        new_signals = []
-        for pair_name in current_signals.index:
-            if current_entries[pair_name] and pair_name not in active_positions:
-                if scores_df is not None and pair_name in scores_df.columns:
-                    strength = abs(scores_df.loc[timestamp, pair_name])
-                else:
-                    strength = abs(current_pnls[pair_name])
-                new_signals.append((pair_name, strength))
+        if hard_stop_active:
+            positions_to_close = list(active_positions.keys())
+            new_signals = []
+        else:
+            # 2. Ищем новые сигналы для открытия позиций (только на входе)
+            new_signals = []
+            for pair_name in current_signals.index:
+                if current_entries[pair_name] and pair_name not in active_positions:
+                    if scores_df is not None and pair_name in scores_df.columns:
+                        strength = abs(scores_df.loc[timestamp, pair_name])
+                    else:
+                        strength = abs(current_pnls[pair_name])
+                    new_signals.append((pair_name, strength))
 
-        # 3. Сортируем новые сигналы по силе
-        new_signals.sort(key=lambda x: x[1], reverse=True)
+            # 3. Сортируем новые сигналы по силе
+            new_signals.sort(key=lambda x: x[1], reverse=True)
 
-        # 4. Открываем новые позиции в пределах лимита (учитываем закрывающиеся)
-        available_slots = max_positions - (len(active_positions) - len(positions_to_close))
-        if available_slots < 0:
-            available_slots = 0
-        for i, (pair_name, _strength) in enumerate(new_signals):
-            if i >= available_slots:
-                break
-            active_positions[pair_name] = timestamp
+            # 4. Открываем новые позиции в пределах лимита (учитываем закрывающиеся)
+            available_slots = effective_max_positions - (len(active_positions) - len(positions_to_close))
+            if available_slots < 0:
+                available_slots = 0
+            for i, (pair_name, _strength) in enumerate(new_signals):
+                if i >= available_slots:
+                    break
+                active_positions[pair_name] = timestamp
 
         # 5. Рассчитываем PnL портфеля на этом шаге
         step_pnl = 0.0
         for pair_name in active_positions:
             step_pnl += current_pnls[pair_name]
+        step_pnl *= risk_scale
 
         portfolio_pnl[timestamp] = step_pnl
+        daily_realized_pnl += step_pnl
+
+        if (
+            not hard_stop_active
+            and daily_stop_pct > 0
+            and initial_capital > 0
+            and daily_realized_pnl <= -(daily_stop_pct * initial_capital)
+        ):
+            hard_stop_active = True
+            if not _hard_stop_day_counted:
+                hard_stop_days += 1
+                _hard_stop_day_counted = True
+            positions_to_close = list(active_positions.keys())
+
+        # 5b. Диагностика turnover/exposure в единицах позиции.
+        current_sizes = {}
+        for pair_name in active_positions:
+            if current_positions is not None and pair_name in current_positions.index:
+                size = abs(float(current_positions[pair_name]))
+            else:
+                size = 1.0
+            current_sizes[pair_name] = size * risk_scale
+
+        turnover_step = 0.0
+        for pair_name, prev_size in previous_sizes.items():
+            new_size = current_sizes.get(pair_name, 0.0)
+            turnover_step += abs(new_size - prev_size)
+        for pair_name, new_size in current_sizes.items():
+            if pair_name not in previous_sizes:
+                turnover_step += abs(new_size)
+
+        turnover_units[timestamp] = float(turnover_step)
+        exposure_units[timestamp] = float(sum(current_sizes.values()))
+        active_position_sizes = current_sizes
 
         # 6. Закрываем позиции после учета PnL на текущем баре
         for pair_name in positions_to_close:
@@ -265,7 +400,15 @@ def _simulate_realistic_portfolio(all_pnls, cfg, all_positions=None, all_scores=
 
     utilization = (total_signals.clip(upper=max_positions) / max_positions).mean()
     logger.info(f"   ⚡ Утилизация лимита позиций: {utilization:.1%}")
+    if daily_stop_pct > 0:
+        logger.info(f"   🛡️ Deleverage баров: {deleverage_steps}, hard-stop дней: {hard_stop_days}")
 
+    diagnostics = {
+        "turnover_units": turnover_units,
+        "exposure_units": exposure_units,
+    }
+    if return_diagnostics:
+        return portfolio_pnl, diagnostics
     return portfolio_pnl
 
 
@@ -1164,6 +1307,39 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         fixed_pairs = load_pair_tuples(pairs_file)
         if not fixed_pairs:
             raise ValueError(f"Файл pairs_file пуст или не содержит пар: {pairs_file}")
+        # Best-effort guardrail: if pairs_file carries a selection period that overlaps
+        # the test start, warn about potential lookahead/selection bias.
+        try:
+            pairs_path = Path(str(pairs_file))
+            if not pairs_path.is_absolute() and not pairs_path.exists():
+                app_root = Path(__file__).resolve().parents[3]
+                candidates = [Path.cwd() / pairs_path, app_root / pairs_path]
+                for candidate in candidates:
+                    if candidate.exists():
+                        pairs_path = candidate
+                        break
+
+            if pairs_path.exists() and pairs_path.suffix.lower() in {".yaml", ".yml"}:
+                import yaml
+
+                raw = yaml.safe_load(pairs_path.read_text(encoding="utf-8")) or {}
+                if isinstance(raw, dict):
+                    metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+                    period = metadata.get("period") if isinstance(metadata.get("period"), dict) else {}
+                    period_end = str(period.get("end") or "").strip()
+                    if period_end:
+                        period_end_dt = pd.to_datetime(period_end, errors="coerce")
+                        if pd.notna(period_end_dt) and period_end_dt >= start_date:
+                            logger.warning(
+                                "⚠️ pairs_file period_end >= walk_forward.start_date: "
+                                f"period_end={period_end_dt.date()} start_date={start_date.date()} "
+                                f"(pairs_file={pairs_path}). "
+                                "Это может дать lookahead/selection bias в OOS. "
+                                "Рекомендуется собирать pairs_file с end_date <= start_date - 1 day "
+                                "или включить динамический отбор пар."
+                            )
+        except Exception:  # noqa: BLE001
+            pass
         logger.info(f"🔒 WFA: фиксированный universe из {pairs_file} ({len(fixed_pairs)} пар)")
     else:
         logger.info("🧭 WFA: динамический отбор пар на каждом шаге")
@@ -1354,6 +1530,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
 
     # Initialize tracking variables
     aggregated_pnl = pd.Series(dtype=float)
+    aggregated_turnover_units = pd.Series(dtype=float)
+    aggregated_exposure_units = pd.Series(dtype=float)
     daily_pnl = []
     equity_data = []
     pair_count_data = []
@@ -1577,6 +1755,38 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                             if not filter_n_jobs or filter_n_jobs < 1:
                                 filter_n_jobs = 1
                             filter_backend = os.getenv("COINT_FILTER_BACKEND", "threads")
+                            requested_liquidity = float(cfg.pair_selection.liquidity_usd_daily or 0.0)
+                            requested_bid_ask = float(
+                                cfg.pair_selection.max_bid_ask_pct
+                                if cfg.pair_selection.max_bid_ask_pct is not None
+                                else 1.0
+                            )
+                            requested_funding = float(
+                                cfg.pair_selection.max_avg_funding_pct
+                                if cfg.pair_selection.max_avg_funding_pct is not None
+                                else 1.0
+                            )
+                            (
+                                liquidity_usd_daily,
+                                max_bid_ask_pct,
+                                max_avg_funding_pct,
+                            ) = cfg.pair_selection.resolved_tradeability_thresholds()
+                            if cfg.pair_selection.enable_pair_tradeability_filter and (
+                                requested_liquidity != liquidity_usd_daily
+                                or requested_bid_ask != max_bid_ask_pct
+                                or requested_funding != max_avg_funding_pct
+                            ):
+                                logger.info(
+                                    "  Tradeability guardrail: liquidity %.0f→%.0f, bid_ask %.4f→%.4f, funding %.4f→%.4f",
+                                    requested_liquidity,
+                                    liquidity_usd_daily,
+                                    requested_bid_ask,
+                                    max_bid_ask_pct,
+                                    requested_funding,
+                                    max_avg_funding_pct,
+                                )
+                            elif not cfg.pair_selection.enable_pair_tradeability_filter:
+                                logger.info("  Tradeability filter disabled by config")
                             filtered_pairs = filter_pairs_by_coint_and_half_life(
                                 pairs_for_filter,
                                 training_slice,
@@ -1588,6 +1798,9 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 min_mean_crossings=cfg.filter_params.min_mean_crossings,
                                 max_hurst_exponent=cfg.filter_params.max_hurst_exponent,
                                 min_correlation=cfg.pair_selection.min_correlation,
+                                liquidity_usd_daily=liquidity_usd_daily,
+                                max_bid_ask_pct=max_bid_ask_pct,
+                                max_avg_funding_pct=max_avg_funding_pct,
                                 save_filter_reasons=cfg.pair_selection.save_filter_reasons,
                                 kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
                                 n_jobs=filter_n_jobs,
@@ -1595,26 +1808,63 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 # Параметры commission_pct и slippage_pct удалены
                             )
                             current_pair_keys = [(s1, s2) for s1, s2, *_ in filtered_pairs]
-                            stability_window = int(getattr(cfg.pair_selection, "pair_stability_window_steps", 0) or 0)
-                            stability_min = int(getattr(cfg.pair_selection, "pair_stability_min_steps", 0) or 0)
+                            requested_stability_window = int(
+                                getattr(cfg.pair_selection, "pair_stability_window_steps", 0) or 0
+                            )
+                            requested_stability_min = int(
+                                getattr(cfg.pair_selection, "pair_stability_min_steps", 0) or 0
+                            )
+                            (
+                                stability_window,
+                                stability_min,
+                            ) = cfg.pair_selection.resolved_pair_stability()
+                            if requested_stability_window and requested_stability_min and (
+                                requested_stability_window != stability_window
+                                or requested_stability_min != stability_min
+                            ):
+                                logger.info(
+                                    "  Pair stability guardrail: window %d→%d, min_steps %d→%d",
+                                    requested_stability_window,
+                                    stability_window,
+                                    requested_stability_min,
+                                    stability_min,
+                                )
                             if stability_window and stability_min:
                                 history_steps = len(pair_history)
                                 if history_steps >= stability_min:
                                     history_window = pair_history[-stability_window:]
-                                    counts = Counter(pair for step in history_window for pair in step)
-                                    stable_pairs = {pair for pair, count in counts.items() if count >= stability_min}
+                                    streaks = _compute_pair_trailing_streaks(history_window)
+                                    stable_pairs = {
+                                        pair for pair, streak in streaks.items() if streak >= stability_min
+                                    }
                                     before_count = len(filtered_pairs)
-                                    filtered_pairs = [
-                                        pair for pair in filtered_pairs if (pair[0], pair[1]) in stable_pairs
-                                    ]
+                                    rejected_pairs: list[tuple[tuple[str, str], int]] = []
+                                    kept_pairs = []
+                                    for pair_payload in filtered_pairs:
+                                        key = (pair_payload[0], pair_payload[1])
+                                        if key in stable_pairs:
+                                            kept_pairs.append(pair_payload)
+                                        else:
+                                            rejected_pairs.append((key, streaks.get(key, 0)))
+                                    filtered_pairs = kept_pairs
                                     logger.info(
-                                        "  Pair stability filter: %d → %d (window=%d, min_steps=%d, history=%d)",
+                                        "  Pair stability filter: %d → %d (window=%d, min_steps=%d, history=%d, rule=trailing_streak)",
                                         before_count,
                                         len(filtered_pairs),
                                         stability_window,
                                         stability_min,
                                         history_steps,
                                     )
+                                    if rejected_pairs:
+                                        rejected_sample = ", ".join(
+                                            f"{s1}/{s2}:streak={streak}"
+                                            for (s1, s2), streak in rejected_pairs[:5]
+                                        )
+                                        logger.info(
+                                            "  Pair stability rejects: %d (sample: %s)",
+                                            len(rejected_pairs),
+                                            rejected_sample,
+                                        )
                                 else:
                                     logger.info(
                                         "  Pair stability filter: insufficient history (%d < %d), skip",
@@ -1659,6 +1909,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         logger.info(f"  Всего пар для торговли: {num_active_pairs} (ограничение {cfg.portfolio.max_active_positions} применяется к одновременно открытым позициям)")
 
         step_pnl = pd.Series(dtype=float)
+        step_turnover_units = pd.Series(dtype=float)
+        step_exposure_units = pd.Series(dtype=float)
         total_step_pnl = 0.0
 
         current_equity = portfolio.get_current_equity()
@@ -1800,12 +2052,15 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 all_pnl_series = [result['pnl_series'] for result in successful_results]
                 all_positions = [result.get('positions', pd.Series(dtype=float)) for result in successful_results]
                 all_scores = [result.get('z_scores', pd.Series(dtype=float)) for result in successful_results]
-                step_pnl = _simulate_realistic_portfolio(
+                step_pnl, step_diagnostics = _simulate_realistic_portfolio(
                     all_pnl_series,
                     cfg,
                     all_positions=all_positions,
                     all_scores=all_scores,
+                    return_diagnostics=True,
                 )
+                step_turnover_units = step_diagnostics.get("turnover_units", pd.Series(dtype=float))
+                step_exposure_units = step_diagnostics.get("exposure_units", pd.Series(dtype=float))
                 total_step_pnl = step_pnl.sum()
 
                 # Aggregate other data
@@ -1816,6 +2071,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 profitable_count = 0
                 total_trades_count = 0
                 total_step_pnl = 0.0
+                step_turnover_units = pd.Series(dtype=float)
+                step_exposure_units = pd.Series(dtype=float)
             
             # Process failed results
             for result in failed_results:
@@ -1886,6 +2143,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 portfolio.record_daily_pnl(pd.Timestamp(date), pnl)
 
         aggregated_pnl = pd.concat([aggregated_pnl, step_pnl])
+        aggregated_turnover_units = pd.concat([aggregated_turnover_units, step_turnover_units])
+        aggregated_exposure_units = pd.concat([aggregated_exposure_units, step_exposure_units])
 
         logger.info(
             f"  💼 Шаг P&L: ${total_step_pnl:+,.2f}, Накопленный капитал: ${portfolio.get_current_equity():,.2f}"

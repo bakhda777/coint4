@@ -4,6 +4,7 @@ import pytest
 import subprocess
 from pathlib import Path
 import sys
+import json
 
 
 @pytest.mark.smoke
@@ -84,6 +85,28 @@ def test_preflight_creates_report():
         report_content = report_path.read_text()
         assert "Preflight Report" in report_content, "Report missing title"
         assert "Overall Status" in report_content, "Report missing status section"
+
+
+@pytest.mark.smoke
+def test_preflight_includes_tradeability_and_stability_guardrails():
+    """Preflight report should include new guardrail checks."""
+    summary_path = Path("artifacts/live/PREFLIGHT.json")
+
+    try:
+        subprocess.run(
+            [sys.executable, "scripts/run_preflight.py"],
+            capture_output=True,
+            timeout=30,
+        )
+    except Exception:
+        pass
+
+    assert summary_path.exists(), "Preflight summary JSON not created"
+    payload = json.loads(summary_path.read_text())
+    checks = payload.get("checks", [])
+    names = {check.get("name") for check in checks}
+    assert "tradeability_thresholds_guardrail" in names
+    assert "pair_stability_guardrail" in names
 
 
 @pytest.mark.smoke

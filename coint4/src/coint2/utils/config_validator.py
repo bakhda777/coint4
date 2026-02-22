@@ -386,6 +386,26 @@ def validate_for_production_cfg(cfg: AppConfig) -> List[str]:
     if cfg.walk_forward.gap_minutes != 15:
         warnings.append(f"⚠️ Non-standard gap: {cfg.walk_forward.gap_minutes} minutes")
 
+    tradeability_violations = cfg.pair_selection.tradeability_floor_violations()
+    if tradeability_violations:
+        warnings.append(
+            "⚠️ Tradeability guardrail violations: " + ", ".join(tradeability_violations)
+        )
+
+    requested_window = int(cfg.pair_selection.pair_stability_window_steps or 0)
+    requested_min = int(cfg.pair_selection.pair_stability_min_steps or 0)
+    effective_window, effective_min = cfg.pair_selection.resolved_pair_stability()
+    if requested_window and requested_min and (
+        requested_window != effective_window or requested_min != effective_min
+    ):
+        warnings.append(
+            "⚠️ Pair stability guardrail will be raised: "
+            f"window {requested_window}->{effective_window}, "
+            f"min_steps {requested_min}->{effective_min}"
+        )
+    elif effective_window == 0 and effective_min == 0:
+        warnings.append("⚠️ Pair stability filter is disabled")
+
     return warnings
 
 

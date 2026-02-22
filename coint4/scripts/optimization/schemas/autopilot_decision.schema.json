@@ -1,0 +1,207 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "coint4 autonomous optimizer decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_id",
+    "stop",
+    "stop_reason",
+    "human_explanation_md",
+    "next_run_group",
+    "next_queue_path",
+    "queue_entries",
+    "file_edits",
+    "constraints",
+    "next_action",
+    "wait_seconds"
+  ],
+  "properties": {
+    "decision_id": {
+      "type": "string"
+    },
+    "stop": {
+      "type": "boolean"
+    },
+    "stop_reason": {
+      "type": "string"
+    },
+    "human_explanation_md": {
+      "type": "string"
+    },
+    "next_run_group": {
+      "type": "string"
+    },
+    "next_queue_path": {
+      "type": "string"
+    },
+    "queue_entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "config_path",
+          "status",
+          "results_dir",
+          "notes",
+          "overrides"
+        ],
+        "properties": {
+          "config_path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "results_dir": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "overrides": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "backtest",
+              "portfolio",
+              "pair_selection",
+              "filter_params",
+              "walk_forward"
+            ],
+            "properties": {
+              "backtest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "pair_stop_loss_usd",
+                  "max_var_multiplier"
+                ],
+                "properties": {
+                  "pair_stop_loss_usd": { "type": "number" },
+                  "max_var_multiplier": { "type": "number" }
+                }
+              },
+              "portfolio": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "risk_per_position_pct"
+                ],
+                "properties": {
+                  "risk_per_position_pct": { "type": "number" }
+                }
+              },
+              "pair_selection": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "min_correlation",
+                  "coint_pvalue_threshold",
+                  "max_pairs"
+                ],
+                "properties": {
+                  "min_correlation": { "type": ["number", "null"] },
+                  "coint_pvalue_threshold": { "type": ["number", "null"] },
+                  "max_pairs": { "type": ["integer", "null"] }
+                }
+              },
+              "filter_params": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "min_beta",
+                  "max_hurst_exponent"
+                ],
+                "properties": {
+                  "min_beta": { "type": ["number", "null"] },
+                  "max_hurst_exponent": { "type": ["number", "null"] }
+                }
+              },
+              "walk_forward": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start_date",
+                  "end_date"
+                ],
+                "properties": {
+                  "start_date": { "type": "string" },
+                  "end_date": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "file_edits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "op",
+          "content",
+          "rationale"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "write_text",
+              "append_text",
+              "write_yaml",
+              "write_json"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "must_keep",
+        "allow_anything_in_repo"
+      ],
+      "properties": {
+        "must_keep": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_anything_in_repo": {
+          "type": "boolean"
+        }
+      }
+    },
+    "next_action": {
+      "type": "string",
+      "enum": [
+        "run_next_batch",
+        "wait",
+        "stop"
+      ]
+    },
+    "wait_seconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

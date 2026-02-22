@@ -515,6 +515,33 @@ def test_get_remote_queue_counts_returns_payload(tmp_path: Path, monkeypatch: py
     assert result["has_metrics"] is True
 
 
+def test_remote_rebuild_rollup_rebuilds_full_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_powered_module(tmp_path)
+    captured: dict[str, str] = {}
+
+    def _fake_run_remote_command(host, user, remote_command, **_kwargs):
+        _ = (host, user)
+        captured["cmd"] = str(remote_command)
+        return 0
+
+    monkeypatch.setattr(module, "_run_remote_command", _fake_run_remote_command)
+
+    module._remote_rebuild_rollup(
+        host="85.198.90.128",
+        user="root",
+        remote_repo=Path("/remote/repo"),
+        remote_python="python3",
+        queue_relative="artifacts/wfa/aggregate/group/run_queue.csv",
+        log_path=tmp_path / "powered.log",
+        port=22,
+        log=lambda _msg: None,
+    )
+
+    cmd = captured.get("cmd", "")
+    assert "build_run_index.py --output-dir artifacts/wfa/aggregate/rollup" in cmd
+    assert "--queue" not in cmd
+
+
 def test_get_remote_queue_counts_maps_queue_missing_error_class(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -625,6 +652,83 @@ def test_run_powered_queue_waits_after_queue_run(
     assert events.index("remote_rollup") > events.index("wait_completion")
     assert events.index("sync_rollup_back") > events.index("remote_rollup")
     assert events.index("remote_rank") > events.index("sync_rollup_back")
+
+
+def test_run_powered_queue_skip_power_uses_ssh_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,planned\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module,
+        "_safe_api_key",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("_safe_api_key must not be used")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_safe_resolve_server_id_by_ip",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("server_id API must not be used")),
+    )
+    monkeypatch.setattr(
+        module,
+        "ensure_server_ready",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("ensure_server_ready must not be used")),
+    )
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_safe_power_off",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("power_off must not be used in skip_power")),
+    )
+
+    purposes: list[str] = []
+
+    def _remote_cmd(_host, _user, _remote_command, *args, **kwargs):
+        purposes.append(str(kwargs.get("command_purpose") or ""))
+        return 0
+
+    monkeypatch.setattr(module, "_run_remote_command", _remote_cmd)
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=True,
+        statuses="planned,stalled",
+        parallel=1,
+        postprocess=True,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        skip_power=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        watchdog=False,
+        watchdog_stale_sec=900,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    assert "skip-power-preflight" in purposes
 
 
 def test_parallel_auto_detects_nproc_and_pins_threads(

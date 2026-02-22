@@ -37,13 +37,20 @@ def annualized_sharpe_ratio(
     - Skips non-finite values.
     - Returns 0.0 when insufficient data or zero stdev.
     """
+    try:
+        risk_free_rate_value = float(risk_free_rate)
+    except (TypeError, ValueError):
+        risk_free_rate_value = 0.0
+    if not math.isfinite(risk_free_rate_value):
+        risk_free_rate_value = 0.0
+
     count = 0
     mean = 0.0
     m2 = 0.0
 
     for value in returns:
         try:
-            ret = float(value) - risk_free_rate
+            ret = float(value) - risk_free_rate_value
         except (TypeError, ValueError):
             continue
         if not math.isfinite(ret):

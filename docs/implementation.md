@@ -19,6 +19,8 @@ Coint4 is a crypto market-neutral pairs trading research codebase focused on coi
 - [ ] Type checks pass (mypy/pyright/tsc --noEmit)
 - [ ] Manual smoke-test verified (if applicable)
 - [ ] Reproducible run verified (same inputs/config => same outputs/metrics within an agreed tolerance)
+- [ ] Postprocess выполнен единообразно для блока прогонов: `sync_queue_status.py -> build_run_index.py -> rank_multiwindow_robust_runs.py`
+- [ ] Источник истины для отбора явно зафиксирован и использован: `artifacts/wfa/aggregate/rollup/run_index.csv` + `rank_multiwindow_robust_runs.py --fullspan-policy-v1` + gates (`min_windows/min_trades/min_pairs/max_dd_pct/min_pnl/tail_worst_gate_pct`)
 - [ ] No edits to existing artifacts directories unless explicitly requested
 - [ ] Minimal smoke-run command is documented and verified (placeholder allowed): UNKNOWN
 - [ ] No TODOs left without a ticket/issue link

@@ -129,10 +129,10 @@ pair_selection:
   coint_pvalue_threshold: 0.35
   enable_pair_tradeability_filter: true
   kpss_pvalue_threshold: 1.0
-  liquidity_usd_daily: 200000
+  liquidity_usd_daily: 300000
   lookback_days: 90
-  max_avg_funding_pct: 0.08
-  max_bid_ask_pct: 0.8
+  max_avg_funding_pct: 0.07
+  max_bid_ask_pct: 0.6
   max_funding_rate_abs: 0.02
   max_half_life_days: 60
   max_half_life_hours: 2400.0
@@ -144,7 +144,7 @@ pair_selection:
   min_half_life_days: 0.02
   min_mean_crossings: 1
   min_volume_usd_24h: 150000
-  pair_stability_min_steps: 1
+  pair_stability_min_steps: 2
   pair_stability_window_steps: 2
   pvalue_top_n: 2500
   save_filter_reasons: true

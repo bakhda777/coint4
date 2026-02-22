@@ -23,7 +23,7 @@ from lib_pipeline import (
     read_text_file,
 )
 
-MAKE_CARDS_VERSION = "make-cards-v2"
+MAKE_CARDS_VERSION = "make-cards-v3"
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,6 +33,11 @@ def parse_args() -> argparse.Namespace:
         "--queue-path",
         default=str(DEFAULT_SYNTHESIS_DIR / "priority_queue.jsonl"),
         help="Priority queue JSONL",
+    )
+    parser.add_argument(
+        "--selection-file",
+        default=None,
+        help="Optional selection JSONL (if set, cards are generated only for this selection)",
     )
     parser.add_argument("--cards-dir", default=str(DEFAULT_CARDS_DIR), help="Cards output dir")
     parser.add_argument(
@@ -209,6 +214,39 @@ def _load_queue(queue_path: Path, top_n: int) -> list[dict[str, Any]]:
     return entries[:top_n]
 
 
+def _load_selection(selection_path: Path, top_n: int) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    with selection_path.open("r", encoding="utf-8") as fh:
+        for line_no, line in enumerate(fh, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                continue
+            paper_id = row.get("paper_id")
+            if not isinstance(paper_id, str) or not paper_id.strip():
+                continue
+            if paper_id in seen_ids:
+                continue
+            seen_ids.add(paper_id)
+            entry = dict(row)
+            entry["_line_no"] = line_no
+            entries.append(entry)
+
+    entries.sort(
+        key=lambda entry: (
+            int(entry.get("selection_rank", 10**9)),
+            int(entry.get("_line_no", 10**9)),
+            entry.get("paper_id", ""),
+        )
+    )
+    if top_n > 0:
+        entries = entries[:top_n]
+    return entries
+
+
 def _cached(card_path: Path, text_sha256: str, schema_version: str) -> bool:
     if not card_path.exists():
         return False
@@ -299,13 +337,16 @@ def main() -> int:
 
     db_path = Path(args.db_path)
     queue_path = Path(args.queue_path)
+    selection_path = Path(args.selection_file) if args.selection_file else None
     cards_dir = Path(args.cards_dir)
     schema_path = Path(args.schema_path)
 
     cards_dir.mkdir(parents=True, exist_ok=True)
 
-    if not queue_path.exists():
+    if selection_path is None and not queue_path.exists():
         raise FileNotFoundError(f"Queue not found: {queue_path}")
+    if selection_path is not None and not selection_path.exists():
+        raise FileNotFoundError(f"Selection file not found: {selection_path}")
     if not schema_path.exists():
         raise FileNotFoundError(f"Schema not found: {schema_path}")
 
@@ -313,7 +354,12 @@ def main() -> int:
     schema_version = str(schema.get("$id") or schema.get("version") or CARD_SCHEMA_VERSION)
 
     conn = connect_db(db_path, read_only=True)
-    queue = _load_queue(queue_path, top_n=args.top_n)
+    if selection_path is not None:
+        queue = _load_selection(selection_path, top_n=args.top_n)
+        input_mode = "selection_file"
+    else:
+        queue = _load_queue(queue_path, top_n=args.top_n)
+        input_mode = "priority_queue"
 
     generated = 0
     skipped = 0
@@ -376,6 +422,8 @@ def main() -> int:
                     "skipped": skipped,
                     "failed": failed,
                     "schema_version": schema_version,
+                    "input_mode": input_mode,
+                    "selection_file": str(selection_path) if selection_path else None,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -461,6 +509,8 @@ def main() -> int:
         "failed": failed,
         "schema_version": schema_version,
         "batch_size": batch_size,
+        "input_mode": input_mode,
+        "selection_file": str(selection_path) if selection_path else None,
         "top_error_reasons": top_error_reasons,
     }
     print(json.dumps(stats, ensure_ascii=False, sort_keys=True))

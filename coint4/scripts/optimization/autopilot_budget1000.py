@@ -203,6 +203,8 @@ class _RunIndexRow:
     metrics_present: bool
     sharpe: Optional[float]
     dd_pct: Optional[float]
+    psr: Optional[float]
+    dsr: Optional[float]
     trades: Optional[float]
     pairs: Optional[float]
 
@@ -216,6 +218,8 @@ class SelectionResult:
     avg_robust_sharpe: float
     worst_dd_pct: float
     avg_dd_pct: float
+    worst_robust_psr: Optional[float]
+    worst_robust_dsr: Optional[float]
     windows: int
     sample_config_path: str
 
@@ -253,6 +257,8 @@ def _load_run_index(run_index_path: Path) -> List[_RunIndexRow]:
                     metrics_present=_to_bool(row.get("metrics_present") or ""),
                     sharpe=_to_float(row.get("sharpe_ratio_abs") or ""),
                     dd_pct=_to_float(row.get("max_drawdown_on_equity") or ""),
+                    psr=_to_float(row.get("psr") or ""),
+                    dsr=_to_float(row.get("dsr") or ""),
                     trades=_to_float(row.get("total_trades") or ""),
                     pairs=_to_float(row.get("total_pairs_traded") or ""),
                 )
@@ -268,6 +274,8 @@ def select_best_multiwindow(
     min_trades: int,
     min_pairs: int,
     max_dd_pct: Optional[float],
+    min_psr: Optional[float],
+    min_dsr: Optional[float],
     dd_target_pct: Optional[float],
     dd_penalty: float,
 ) -> SelectionResult:
@@ -287,7 +295,7 @@ def select_best_multiwindow(
             continue
         paired.setdefault(base_id, {})[kind] = r
 
-    windows_by_variant: Dict[str, List[Tuple[str, float, float, _RunIndexRow]]] = {}
+    windows_by_variant: Dict[str, List[Tuple[str, float, float, Optional[float], Optional[float], _RunIndexRow]]] = {}
     for base_id, pair in paired.items():
         h = pair.get("holdout")
         s = pair.get("stress")
@@ -296,9 +304,11 @@ def select_best_multiwindow(
 
         robust_sharpe = min(float(h.sharpe), float(s.sharpe))
         dd_pct = max(abs(float(h.dd_pct)), abs(float(s.dd_pct)))
+        robust_psr = min(float(h.psr), float(s.psr)) if h.psr is not None and s.psr is not None else None
+        robust_dsr = min(float(h.dsr), float(s.dsr)) if h.dsr is not None and s.dsr is not None else None
         window = _parse_window(base_id)
         variant = _variant_id(base_id)
-        windows_by_variant.setdefault(variant, []).append((window, robust_sharpe, dd_pct, h))
+        windows_by_variant.setdefault(variant, []).append((window, robust_sharpe, dd_pct, robust_psr, robust_dsr, h))
 
     candidates: List[SelectionResult] = []
     for variant, items in windows_by_variant.items():
@@ -308,11 +318,23 @@ def select_best_multiwindow(
         if max_dd_pct is not None and worst_dd > max(0.0, float(max_dd_pct)):
             continue
 
-        holdout_rows = [item[3] for item in items]
+        holdout_rows = [item[5] for item in items]
         min_tr = min(int(r.trades or 0.0) for r in holdout_rows)
         min_pr = min(int(r.pairs or 0.0) for r in holdout_rows)
         if min_tr < int(min_trades) or min_pr < int(min_pairs):
             continue
+
+        psr_values = [float(item[3]) for item in items if item[3] is not None]
+        worst_psr = min(psr_values) if psr_values else None
+        if min_psr is not None:
+            if worst_psr is None or len(psr_values) != len(items) or worst_psr < float(min_psr):
+                continue
+
+        dsr_values = [float(item[4]) for item in items if item[4] is not None]
+        worst_dsr = min(dsr_values) if dsr_values else None
+        if min_dsr is not None:
+            if worst_dsr is None or len(dsr_values) != len(items) or worst_dsr < float(min_dsr):
+                continue
 
         worst_robust = min(item[1] for item in items)
         avg_robust = sum(item[1] for item in items) / len(items)
@@ -331,6 +353,8 @@ def select_best_multiwindow(
                 avg_robust_sharpe=float(avg_robust),
                 worst_dd_pct=float(worst_dd),
                 avg_dd_pct=float(avg_dd),
+                worst_robust_psr=worst_psr,
+                worst_robust_dsr=worst_dsr,
                 windows=len(items),
                 sample_config_path=sample_cfg,
             )
@@ -341,8 +365,10 @@ def select_best_multiwindow(
             f"No candidates matched for run_group={run_group} (check gates/sanity or ensure rollup is rebuilt)."
         )
 
+    # Canonical fullspan-safe ordering:
+    # avg_robust_sharpe is diagnostic only and must not decide promotion.
     candidates.sort(
-        key=lambda c: (c.score, c.worst_robust_sharpe, c.avg_robust_sharpe, -c.worst_dd_pct),
+        key=lambda c: (c.score, c.worst_robust_sharpe, -c.worst_dd_pct),
         reverse=True,
     )
     return candidates[0]
@@ -1093,6 +1119,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     selection_cfg = cfg.get("selection") or {}
     max_dd_pct_raw = selection_cfg.get("max_dd_pct", None)
     max_dd_pct = None if max_dd_pct_raw is None else float(max_dd_pct_raw)
+    min_psr_raw = selection_cfg.get("min_psr", None)
+    min_psr = None if min_psr_raw is None else float(min_psr_raw)
+    min_dsr_raw = selection_cfg.get("min_dsr", None)
+    min_dsr = None if min_dsr_raw is None else float(min_dsr_raw)
     dd_target_pct_raw = selection_cfg.get("dd_target_pct", None)
     dd_target_pct = None if dd_target_pct_raw is None else float(dd_target_pct_raw)
     dd_penalty = float(selection_cfg.get("dd_penalty") or 0.0)
@@ -1409,6 +1439,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 min_trades=min_trades,
                 min_pairs=min_pairs,
                 max_dd_pct=max_dd_pct,
+                min_psr=min_psr,
+                min_dsr=min_dsr,
                 dd_target_pct=dd_target_pct,
                 dd_penalty=dd_penalty,
             )
@@ -1434,6 +1466,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "score": selection.score,
                 "worst_robust_sharpe": selection.worst_robust_sharpe,
                 "avg_robust_sharpe": selection.avg_robust_sharpe,
+                "worst_robust_psr": selection.worst_robust_psr,
+                "worst_robust_dsr": selection.worst_robust_dsr,
                 "worst_dd_pct": selection.worst_dd_pct,
                 "avg_dd_pct": selection.avg_dd_pct,
                 "windows": selection.windows,
@@ -1456,6 +1490,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "best_variant_id": selection.variant_id,
                 "best_score": selection.score,
                 "best_worst_robust_sharpe": selection.worst_robust_sharpe,
+                "best_worst_robust_psr": selection.worst_robust_psr,
+                "best_worst_robust_dsr": selection.worst_robust_dsr,
                 "best_worst_dd_pct": selection.worst_dd_pct,
                 "improved": improved,
             }

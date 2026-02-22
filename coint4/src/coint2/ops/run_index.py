@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from coint2.core.performance import (
+    deflated_sharpe_ratio,
+    probabilistic_sharpe_ratio,
+)
 from coint2.core.sharpe import compute_sharpe_ratio_abs_from_equity_curve_csv
+
+try:
+    import yaml
+except Exception:  # noqa: BLE001
+    yaml = None
 
 
 @dataclass
@@ -20,11 +32,19 @@ class RunIndexEntry:
     results_dir: str
     metrics_path: str
     config_path: str
+    universe_path: str
+    universe_tag: str
+    universe_pairs_count: Optional[int]
+    denylist_count: int
+    denylist_hash: str
     status: str
     metrics_present: bool
     sharpe_ratio_abs: Optional[float]
     sharpe_ratio_abs_raw: Optional[float]
     sharpe_ratio_on_returns: Optional[float]
+    psr: Optional[float]
+    dsr: Optional[float]
+    dsr_trials: Optional[int]
     total_pnl: Optional[float]
     max_drawdown_abs: Optional[float]
     max_drawdown_on_equity: Optional[float]
@@ -37,6 +57,14 @@ class RunIndexEntry:
     best_pair_pnl: Optional[float]
     worst_pair_pnl: Optional[float]
     avg_pnl_per_pair: Optional[float]
+    tail_loss_pair_total_abs: Optional[float]
+    tail_loss_worst_pair: str
+    tail_loss_worst_pair_pnl: Optional[float]
+    tail_loss_worst_pair_share: Optional[float]
+    tail_loss_period_total_abs: Optional[float]
+    tail_loss_worst_period: str
+    tail_loss_worst_period_pnl: Optional[float]
+    tail_loss_worst_period_share: Optional[float]
 
 
 def _normalize_path(path: Path, project_root: Path) -> str:
@@ -96,6 +124,97 @@ def _compute_sharpe_from_equity_curve(
     )
 
 
+def _load_equity_returns(results_dir: Path) -> List[float]:
+    """Load per-step returns from equity_curve.csv."""
+    equity_curve_path = results_dir / "equity_curve.csv"
+    if not equity_curve_path.exists():
+        return []
+
+    returns: List[float] = []
+    prev_ts: Optional[datetime] = None
+    prev_equity: Optional[float] = None
+
+    with equity_curve_path.open(newline="") as handle:
+        reader = csv.reader(handle)
+        next(reader, None)  # header
+        for row in reader:
+            if len(row) < 2:
+                continue
+            try:
+                ts = datetime.fromisoformat(str(row[0]).strip())
+                equity = float(row[1])
+            except (TypeError, ValueError):
+                continue
+            if prev_ts is None or prev_equity is None or prev_equity == 0:
+                prev_ts = ts
+                prev_equity = equity
+                continue
+            if (ts - prev_ts).total_seconds() <= 0:
+                prev_ts = ts
+                prev_equity = equity
+                continue
+            returns.append((equity - prev_equity) / prev_equity)
+            prev_ts = ts
+            prev_equity = equity
+    return returns
+
+
+def _load_daily_pnl_as_returns(results_dir: Path) -> List[float]:
+    """Fallback: use daily_pnl.csv values as return-like series."""
+    daily_path = results_dir / "daily_pnl.csv"
+    if not daily_path.exists():
+        return []
+
+    with daily_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = list(reader.fieldnames or [])
+        if not fields:
+            return []
+        pnl_key: Optional[str] = None
+        for field in fields:
+            if "pnl" in field.lower():
+                pnl_key = field
+                break
+        if pnl_key is None and len(fields) >= 2:
+            pnl_key = fields[1]
+        if pnl_key is None:
+            return []
+
+        values: List[float] = []
+        for row in reader:
+            value = _to_float(str(row.get(pnl_key) or ""))
+            if value is not None:
+                values.append(float(value))
+        return values
+
+
+def _safe_psr_dsr(
+    *,
+    returns: Sequence[float],
+    trials: Optional[int],
+) -> Tuple[Optional[float], Optional[float]]:
+    if len(returns) < 2:
+        return None, None
+    try:
+        psr_raw = probabilistic_sharpe_ratio(list(returns), benchmark_sr=0.0)
+        psr = float(psr_raw)
+        if not math.isfinite(psr) or not (0.0 <= psr <= 1.0):
+            psr = None
+    except Exception:  # noqa: BLE001
+        psr = None
+
+    dsr: Optional[float] = None
+    if trials is not None and int(trials) >= 2:
+        try:
+            dsr_raw = deflated_sharpe_ratio(list(returns), trials=int(trials))
+            dsr = float(dsr_raw)
+            if not math.isfinite(dsr):
+                dsr = None
+        except Exception:  # noqa: BLE001
+            dsr = None
+    return psr, dsr
+
+
 def _to_float(value: Optional[str]) -> Optional[float]:
     if value is None:
         return None
@@ -106,6 +225,136 @@ def _to_float(value: Optional[str]) -> Optional[float]:
         return float(stripped)
     except ValueError:
         return None
+
+
+def _to_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_symbols(values: Any) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    normalized: List[str] = []
+    for item in values:
+        token = str(item).strip().upper()
+        if token:
+            normalized.append(token)
+    return sorted(set(normalized))
+
+
+def _symbols_hash(symbols: Sequence[str]) -> str:
+    if not symbols:
+        return ""
+    payload = "\n".join(sorted(symbols))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_yaml_dict(path: Path) -> Dict[str, Any]:
+    if yaml is None or not path.exists():
+        return {}
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _resolve_repo_path(raw_path: str, project_root: Path) -> Optional[Path]:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
+        return None
+    path = Path(candidate)
+    if not path.is_absolute():
+        path = project_root / path
+    return path.resolve()
+
+
+def _extract_universe_context(
+    *,
+    config_path: str,
+    project_root: Path,
+    config_cache: Dict[str, Dict[str, Any]],
+    universe_cache: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    context: Dict[str, Any] = {
+        "universe_path": "",
+        "universe_tag": "",
+        "universe_pairs_count": None,
+        "denylist_count": 0,
+        "denylist_hash": "",
+    }
+    config_abs = _resolve_repo_path(config_path, project_root)
+    if config_abs is None:
+        return context
+
+    config_key = config_abs.as_posix()
+    payload = config_cache.get(config_key)
+    if payload is None:
+        payload = _load_yaml_dict(config_abs)
+        config_cache[config_key] = payload
+    if not payload:
+        return context
+
+    data_filters = payload.get("data_filters")
+    if isinstance(data_filters, dict):
+        denylisted = _normalize_symbols(data_filters.get("exclude_symbols"))
+        context["denylist_count"] = len(denylisted)
+        context["denylist_hash"] = _symbols_hash(denylisted)
+
+    walk_forward = payload.get("walk_forward")
+    pairs_file = ""
+    if isinstance(walk_forward, dict):
+        pairs_file = str(walk_forward.get("pairs_file") or "").strip()
+    if not pairs_file:
+        return context
+
+    universe_abs = _resolve_repo_path(pairs_file, project_root)
+    if universe_abs is None:
+        return context
+
+    context["universe_path"] = _relative_path(universe_abs, project_root)
+    context["universe_tag"] = universe_abs.stem
+
+    universe_key = universe_abs.as_posix()
+    universe_payload = universe_cache.get(universe_key)
+    if universe_payload is None:
+        universe_payload = _load_yaml_dict(universe_abs)
+        universe_cache[universe_key] = universe_payload
+
+    if not universe_payload:
+        return context
+
+    pairs = universe_payload.get("pairs")
+    if isinstance(pairs, list):
+        context["universe_pairs_count"] = len(pairs)
+
+    metadata = universe_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return context
+
+    for key in ("tag", "version", "name", "generated"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            context["universe_tag"] = value
+            break
+
+    pruning = metadata.get("pruning")
+    if isinstance(pruning, dict):
+        denylisted = _normalize_symbols(pruning.get("denylisted_symbols"))
+        if denylisted:
+            context["denylist_count"] = len(denylisted)
+            context["denylist_hash"] = _symbols_hash(denylisted)
+        if context["universe_pairs_count"] is None:
+            remaining_pairs = _to_int(pruning.get("remaining_pairs"))
+            if remaining_pairs is not None:
+                context["universe_pairs_count"] = remaining_pairs
+
+    return context
 
 
 def _status_rank(status: str) -> int:
@@ -176,6 +425,81 @@ def _load_canonical_metrics(canonical_path: Path) -> Dict[str, Optional[float]]:
     }
 
 
+def _tail_loss_bucket_metrics(pnl_by_bucket: Dict[str, float]) -> Dict[str, Optional[float] | str]:
+    loss_total_abs = float(sum(-pnl for pnl in pnl_by_bucket.values() if pnl < 0))
+    if loss_total_abs <= 0.0:
+        return {
+            "loss_total_abs": 0.0,
+            "worst_bucket": "",
+            "worst_bucket_pnl": None,
+            "worst_bucket_share": None,
+        }
+
+    worst_bucket, worst_bucket_pnl = min(pnl_by_bucket.items(), key=lambda kv: kv[1])
+    if worst_bucket_pnl >= 0:
+        return {
+            "loss_total_abs": loss_total_abs,
+            "worst_bucket": "",
+            "worst_bucket_pnl": None,
+            "worst_bucket_share": None,
+        }
+
+    return {
+        "loss_total_abs": loss_total_abs,
+        "worst_bucket": str(worst_bucket),
+        "worst_bucket_pnl": float(worst_bucket_pnl),
+        "worst_bucket_share": float(abs(worst_bucket_pnl) / loss_total_abs),
+    }
+
+
+def _load_tail_loss_diagnostics(results_dir: Path) -> Dict[str, Optional[float] | str]:
+    empty: Dict[str, Optional[float] | str] = {
+        "tail_loss_pair_total_abs": None,
+        "tail_loss_worst_pair": "",
+        "tail_loss_worst_pair_pnl": None,
+        "tail_loss_worst_pair_share": None,
+        "tail_loss_period_total_abs": None,
+        "tail_loss_worst_period": "",
+        "tail_loss_worst_period_pnl": None,
+        "tail_loss_worst_period_share": None,
+    }
+
+    trade_stats_path = results_dir / "trade_statistics.csv"
+    if not trade_stats_path.exists():
+        return empty
+
+    pair_pnl: Dict[str, float] = {}
+    period_pnl: Dict[str, float] = {}
+    try:
+        with trade_stats_path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                pnl = _to_float(str(row.get("total_pnl") or ""))
+                if pnl is None:
+                    continue
+                pair = str(row.get("pair") or "").strip()
+                period = str(row.get("period") or "").strip()
+                if pair:
+                    pair_pnl[pair] = float(pair_pnl.get(pair, 0.0) + pnl)
+                if period:
+                    period_pnl[period] = float(period_pnl.get(period, 0.0) + pnl)
+    except OSError:
+        return empty
+
+    pair_metrics = _tail_loss_bucket_metrics(pair_pnl)
+    period_metrics = _tail_loss_bucket_metrics(period_pnl)
+    return {
+        "tail_loss_pair_total_abs": pair_metrics.get("loss_total_abs"),
+        "tail_loss_worst_pair": str(pair_metrics.get("worst_bucket") or ""),
+        "tail_loss_worst_pair_pnl": pair_metrics.get("worst_bucket_pnl"),
+        "tail_loss_worst_pair_share": pair_metrics.get("worst_bucket_share"),
+        "tail_loss_period_total_abs": period_metrics.get("loss_total_abs"),
+        "tail_loss_worst_period": str(period_metrics.get("worst_bucket") or ""),
+        "tail_loss_worst_period_pnl": period_metrics.get("worst_bucket_pnl"),
+        "tail_loss_worst_period_share": period_metrics.get("worst_bucket_share"),
+    }
+
+
 def build_run_index(
     runs_dir: Path, queue_paths: Iterable[Path], project_root: Path
 ) -> List[RunIndexEntry]:
@@ -192,11 +516,19 @@ def build_run_index(
             results_dir=_relative_path(results_path, project_root),
             metrics_path="",
             config_path=queue_info.get("config_path", ""),
+            universe_path="",
+            universe_tag="",
+            universe_pairs_count=None,
+            denylist_count=0,
+            denylist_hash="",
             status=queue_info.get("status", ""),
             metrics_present=False,
             sharpe_ratio_abs=None,
             sharpe_ratio_abs_raw=None,
             sharpe_ratio_on_returns=None,
+            psr=None,
+            dsr=None,
+            dsr_trials=None,
             total_pnl=None,
             max_drawdown_abs=None,
             max_drawdown_on_equity=None,
@@ -209,6 +541,14 @@ def build_run_index(
             best_pair_pnl=None,
             worst_pair_pnl=None,
             avg_pnl_per_pair=None,
+            tail_loss_pair_total_abs=None,
+            tail_loss_worst_pair="",
+            tail_loss_worst_pair_pnl=None,
+            tail_loss_worst_pair_share=None,
+            tail_loss_period_total_abs=None,
+            tail_loss_worst_period="",
+            tail_loss_worst_period_pnl=None,
+            tail_loss_worst_period_share=None,
         )
         entries[results_abs] = entry
 
@@ -243,6 +583,15 @@ def build_run_index(
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
         entry.worst_pair_pnl = metrics.get("worst_pair_pnl")
         entry.avg_pnl_per_pair = metrics.get("avg_pnl_per_pair")
+        tail_diag = _load_tail_loss_diagnostics(results_path)
+        entry.tail_loss_pair_total_abs = tail_diag.get("tail_loss_pair_total_abs")
+        entry.tail_loss_worst_pair = str(tail_diag.get("tail_loss_worst_pair") or "")
+        entry.tail_loss_worst_pair_pnl = tail_diag.get("tail_loss_worst_pair_pnl")
+        entry.tail_loss_worst_pair_share = tail_diag.get("tail_loss_worst_pair_share")
+        entry.tail_loss_period_total_abs = tail_diag.get("tail_loss_period_total_abs")
+        entry.tail_loss_worst_period = str(tail_diag.get("tail_loss_worst_period") or "")
+        entry.tail_loss_worst_period_pnl = tail_diag.get("tail_loss_worst_period_pnl")
+        entry.tail_loss_worst_period_share = tail_diag.get("tail_loss_worst_period_share")
 
         canonical_path = results_path / "canonical_metrics.json"
         if canonical_path.exists():
@@ -273,11 +622,19 @@ def build_run_index(
                 results_dir=_relative_path(results_path, project_root),
                 metrics_path="",
                 config_path="",
+                universe_path="",
+                universe_tag="",
+                universe_pairs_count=None,
+                denylist_count=0,
+                denylist_hash="",
                 status="unknown",
                 metrics_present=False,
                 sharpe_ratio_abs=None,
                 sharpe_ratio_abs_raw=None,
                 sharpe_ratio_on_returns=None,
+                psr=None,
+                dsr=None,
+                dsr_trials=None,
                 total_pnl=None,
                 max_drawdown_abs=None,
                 max_drawdown_on_equity=None,
@@ -290,6 +647,14 @@ def build_run_index(
                 best_pair_pnl=None,
                 worst_pair_pnl=None,
                 avg_pnl_per_pair=None,
+                tail_loss_pair_total_abs=None,
+                tail_loss_worst_pair="",
+                tail_loss_worst_pair_pnl=None,
+                tail_loss_worst_pair_share=None,
+                tail_loss_period_total_abs=None,
+                tail_loss_worst_period="",
+                tail_loss_worst_period_pnl=None,
+                tail_loss_worst_period_share=None,
             )
             entries[results_abs] = entry
 
@@ -314,6 +679,15 @@ def build_run_index(
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
         entry.worst_pair_pnl = metrics.get("worst_pair_pnl")
         entry.avg_pnl_per_pair = metrics.get("avg_pnl_per_pair")
+        tail_diag = _load_tail_loss_diagnostics(results_path)
+        entry.tail_loss_pair_total_abs = tail_diag.get("tail_loss_pair_total_abs")
+        entry.tail_loss_worst_pair = str(tail_diag.get("tail_loss_worst_pair") or "")
+        entry.tail_loss_worst_pair_pnl = tail_diag.get("tail_loss_worst_pair_pnl")
+        entry.tail_loss_worst_pair_share = tail_diag.get("tail_loss_worst_pair_share")
+        entry.tail_loss_period_total_abs = tail_diag.get("tail_loss_period_total_abs")
+        entry.tail_loss_worst_period = str(tail_diag.get("tail_loss_worst_period") or "")
+        entry.tail_loss_worst_period_pnl = tail_diag.get("tail_loss_worst_period_pnl")
+        entry.tail_loss_worst_period_share = tail_diag.get("tail_loss_worst_period_share")
 
         canonical_path = results_path / "canonical_metrics.json"
         if canonical_path.exists():
@@ -328,6 +702,50 @@ def build_run_index(
             if canonical_max_dd_abs is not None:
                 entry.max_drawdown_abs = canonical_max_dd_abs
 
+    config_cache: Dict[str, Dict[str, Any]] = {}
+    universe_cache: Dict[str, Dict[str, Any]] = {}
+    for entry in entries.values():
+        context = _extract_universe_context(
+            config_path=entry.config_path,
+            project_root=project_root,
+            config_cache=config_cache,
+            universe_cache=universe_cache,
+        )
+        entry.universe_path = str(context.get("universe_path") or "")
+        entry.universe_tag = str(context.get("universe_tag") or "")
+        entry.universe_pairs_count = _to_int(context.get("universe_pairs_count"))
+        denylist_count = _to_int(context.get("denylist_count"))
+        entry.denylist_count = int(denylist_count or 0)
+        entry.denylist_hash = str(context.get("denylist_hash") or "")
+
+    # Statistical confidence metrics for Sharpe reliability.
+    # trials ~= number of tested configs with metrics in the same run_group.
+    trials_by_group: Dict[str, int] = {}
+    total_trials = 0
+    for entry in entries.values():
+        if not entry.metrics_present:
+            continue
+        total_trials += 1
+        key = str(entry.run_group or "")
+        trials_by_group[key] = int(trials_by_group.get(key, 0) + 1)
+    default_trials = total_trials if total_trials >= 2 else None
+
+    for entry in entries.values():
+        if not entry.metrics_present:
+            continue
+        group_key = str(entry.run_group or "")
+        group_trials = trials_by_group.get(group_key, 0)
+        trials = group_trials if group_trials >= 2 else default_trials
+        entry.dsr_trials = int(trials) if trials is not None else None
+
+        results_abs = _resolve_repo_path(entry.results_dir, project_root)
+        if results_abs is None:
+            continue
+        returns = _load_equity_returns(results_abs)
+        if len(returns) < 2:
+            returns = _load_daily_pnl_as_returns(results_abs)
+        entry.psr, entry.dsr = _safe_psr_dsr(returns=returns, trials=entry.dsr_trials)
+
     return list(entries.values())
 
 
@@ -340,11 +758,19 @@ def write_run_index_csv(path: Path, entries: Sequence[RunIndexEntry]) -> None:
         "results_dir",
         "metrics_path",
         "config_path",
+        "universe_path",
+        "universe_tag",
+        "universe_pairs_count",
+        "denylist_count",
+        "denylist_hash",
         "status",
         "metrics_present",
         "sharpe_ratio_abs",
         "sharpe_ratio_abs_raw",
         "sharpe_ratio_on_returns",
+        "psr",
+        "dsr",
+        "dsr_trials",
         "total_pnl",
         "max_drawdown_abs",
         "max_drawdown_on_equity",
@@ -357,6 +783,14 @@ def write_run_index_csv(path: Path, entries: Sequence[RunIndexEntry]) -> None:
         "best_pair_pnl",
         "worst_pair_pnl",
         "avg_pnl_per_pair",
+        "tail_loss_pair_total_abs",
+        "tail_loss_worst_pair",
+        "tail_loss_worst_pair_pnl",
+        "tail_loss_worst_pair_share",
+        "tail_loss_period_total_abs",
+        "tail_loss_worst_period",
+        "tail_loss_worst_period_pnl",
+        "tail_loss_worst_period_share",
     ]
     with path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)

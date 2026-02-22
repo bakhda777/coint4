@@ -4,13 +4,10 @@
 
 ## Rules
 - Work autonomously. If something is ambiguous, pick the safest default and record the decision in `.ralph-tui/progress.md`.
-- Keep diffs small and focused. One task = one commit.
-- Commit messages must be one of: `chore(ralph): ...`, `feat: ...`, `fix: ...`.
-- Never commit secrets. Serverspace API key must live only in `.secrets/serverspace_api_key` (ignored) and/or `SERVSPACE_API_KEY` (env). Never print it and never log request headers.
-- Never commit generated artifacts/outputs/backtests (e.g. `coint4/artifacts/**`, `coint4/outputs/**`, `outputs/**`, `.ralph-tui/iterations/**`, `*.pid`, `*.log`).
-- NEVER run `git add -A`. Stage only explicit files. Before committing: check `git status --porcelain` and `git diff --cached --name-only` to ensure only intended files are staged.
+- Keep diffs small and focused.
+- Do not run `git add`, `git commit`, `git restore --staged`, or any other git staging/commit operations in this session.
+- Never print secrets (Serverspace API key must live only in `.secrets/serverspace_api_key` and/or `SERVSPACE_API_KEY`).
 - After finishing: update `.ralph-tui/progress.md` (max ~10 bullets, no long text) for short cross-task context.
   IMPORTANT: `.ralph-tui/progress.md` is intentionally gitignored. Do NOT change `.gitignore` to track it and do NOT stage/commit it.
-  Then commit only the task's relevant project files.
-- When the task is fully done *and* the commit is created, end your final message with exactly this marker on its own line:
+- When the task is fully done, end your final message with exactly this marker on its own line:
   `<promise>COMPLETE</promise>`

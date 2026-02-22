@@ -6,7 +6,7 @@
 - генерирует очереди WFA (multi-window, holdout+stress),
 - гоняет их на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` (по умолчанию `STOP_AFTER=1`),
 - после sync_back пересчитывает `canonical_metrics.json`, пересобирает rollup `run_index.csv`,
-- выбирает лучший вариант по robust-метрике с учётом DD (гейт или penalty),
+- выбирает лучший вариант по robust-метрике с учётом DD (гейт или penalty) и минимального P&L по окнам (по умолчанию не ниже 0),
 - останавливается, когда полный круг по knobs не даёт улучшений.
 
 ## Предусловия
@@ -30,7 +30,7 @@
 Что обычно правят:
 - `base_config`: с какого конфига стартуем (можно указать уже “лучший на сейчас”).
 - `windows`: OOS окна (paired start/end).
-- `selection`: DD-гейт (`max_dd_pct`) или soft penalty (`dd_target_pct` + `dd_penalty`).
+- `selection`: DD-гейт (`max_dd_pct`) или soft penalty (`dd_target_pct` + `dd_penalty`), плюс минимум P&L (`min_pnl`).
 - `search.knobs`: какие параметры крутить и шаги.
 - `run_group_prefix`: как будут называться очереди/результаты.
 

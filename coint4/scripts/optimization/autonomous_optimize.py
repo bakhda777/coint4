@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -129,8 +130,13 @@ class AutonomousOptimizer:
         )
         self._current_queue_for_ranking: Optional[Path] = None
         self._exit_after_iteration_wait: bool = False
+        self._next_iteration_delay_sec: int = max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60))
         self._last_queue_selection_error: str = ""
         self._last_wait_reason: str = ""
+        self._codex_auth_checked: bool = False
+        self._codex_auth_ready: bool = False
+        self._codex_auth_reason: str = ""
+        self._codex_exec_home: str = str(os.environ.get("HOME") or "").strip()
 
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.decisions_dir.mkdir(parents=True, exist_ok=True)
@@ -157,6 +163,9 @@ class AutonomousOptimizer:
             "min_trades": 200,
             "min_pairs": 20,
             "max_dd_pct": 0.14,
+            "min_pnl": 0.0,
+            "min_psr": None,
+            "min_dsr": None,
         }
         policy = dict(defaults)
         defaults_used: list[str] = []
@@ -196,10 +205,70 @@ class AutonomousOptimizer:
             defaults_used.append("max_dd_pct")
         else:
             policy["max_dd_pct"] = float(max_dd_pct)
+        min_pnl = _to_float(selection.get("min_pnl"))
+        if min_pnl is None:
+            defaults_used.append("min_pnl")
+        else:
+            policy["min_pnl"] = float(min_pnl)
+
+        min_psr = _to_float(selection.get("min_psr"))
+        if min_psr is None:
+            defaults_used.append("min_psr")
+        else:
+            policy["min_psr"] = float(min_psr)
+
+        min_dsr = _to_float(selection.get("min_dsr"))
+        if min_dsr is None:
+            defaults_used.append("min_dsr")
+        else:
+            policy["min_dsr"] = float(min_dsr)
 
         policy["defaults_used"] = sorted(set(defaults_used))
         policy["source"] = _safe_rel(self.bridge11_path, self.app_root) if self.bridge11_path.exists() else "defaults"
         return policy
+
+    def _fixed_walk_forward_period(self) -> tuple[Optional[str], Optional[str]]:
+        payload = _read_yaml(self.bridge11_path)
+        windows = payload.get("windows") if isinstance(payload.get("windows"), list) else []
+        starts: list[str] = []
+        ends: list[str] = []
+        for item in windows:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            start = str(item[0] or "").strip()
+            end = str(item[1] or "").strip()
+            if start and end:
+                starts.append(start)
+                ends.append(end)
+        if starts and ends:
+            return min(starts), max(ends)
+
+        base_config_rel = str(payload.get("base_config") or "").strip()
+        if base_config_rel:
+            try:
+                base_config_path = self._resolve_app_path(base_config_rel)
+            except Exception:  # noqa: BLE001
+                base_config_path = None
+            if base_config_path is not None:
+                base_payload = _read_yaml(base_config_path)
+                walk_forward = base_payload.get("walk_forward") if isinstance(base_payload.get("walk_forward"), dict) else {}
+                start = str(walk_forward.get("start_date") or "").strip()
+                end = str(walk_forward.get("end_date") or "").strip()
+                if start and end:
+                    return start, end
+
+        return None, None
+
+    def _apply_fixed_walk_forward_period(self, cfg_payload: Dict[str, Any]) -> None:
+        fixed_start, fixed_end = self._fixed_walk_forward_period()
+        if not fixed_start or not fixed_end:
+            return
+        walk_forward = cfg_payload.get("walk_forward")
+        if not isinstance(walk_forward, dict):
+            walk_forward = {}
+            cfg_payload["walk_forward"] = walk_forward
+        walk_forward["start_date"] = fixed_start
+        walk_forward["end_date"] = fixed_end
 
     def _default_state(self) -> Dict[str, Any]:
         return {
@@ -277,6 +346,199 @@ class AutonomousOptimizer:
             lines.append(line)
         return "\n".join(lines)
 
+    def _classify_codex_exec_failure(self, *, stdout: str, stderr: str) -> str:
+        blob = f"{stdout}\n{stderr}".lower()
+        auth_markers = (
+            "missing bearer",
+            "unauthorized",
+            "authentication",
+            "codex login",
+            "login --with-api-key",
+            "api key",
+            "incorrect api key",
+            "401",
+        )
+        if any(marker in blob for marker in auth_markers):
+            return "CODEX_AUTH_REQUIRED"
+        network_markers = (
+            "stream disconnected",
+            "error sending request",
+            "dns error",
+            "operation not permitted",
+            "timed out",
+            "connection reset",
+            "transport channel closed",
+            "network",
+        )
+        if any(marker in blob for marker in network_markers):
+            return "CODEX_EXEC_NETWORK"
+        return ""
+
+    def _codex_auth_mode(self) -> str:
+        raw_mode = str(os.environ.get("COINT4_CODEX_AUTH_MODE") or "subscription").strip().lower()
+        if raw_mode in {"subscription", "chatgpt", "device-auth", "device_auth", "device"}:
+            return "subscription"
+        if raw_mode in {"api-key", "api_key", "apikey", "with-api-key"}:
+            return "api-key"
+        if raw_mode == "auto":
+            return "auto"
+        return "subscription"
+
+    def _candidate_codex_homes(self) -> list[str]:
+        homes: list[str] = []
+
+        def _append(raw: Any) -> None:
+            value = str(raw or "").strip()
+            if not value:
+                return
+            value = str(Path(value).expanduser())
+            if value not in homes:
+                homes.append(value)
+
+        _append(os.environ.get("HOME"))
+        _append(self._codex_exec_home)
+        _append(os.environ.get("COINT4_CODEX_AUTH_HOME"))
+        try:
+            import pwd  # Unix-only; fallback handled by exception.
+
+            _append(pwd.getpwuid(os.getuid()).pw_dir)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if hasattr(os, "geteuid") and int(os.geteuid()) == 0:
+                _append("/root")
+        except Exception:  # noqa: BLE001
+            pass
+        if not homes:
+            homes.append(str(Path.home()))
+        return homes
+
+    def _codex_subprocess_env(
+        self,
+        *,
+        auth_mode: Optional[str] = None,
+        home_override: Optional[str] = None,
+    ) -> Dict[str, str]:
+        mode = str(auth_mode or self._codex_auth_mode()).strip().lower()
+        env = os.environ.copy()
+        selected_home = str(home_override or self._codex_exec_home or "").strip()
+        if selected_home:
+            env["HOME"] = selected_home
+        if mode == "subscription":
+            # Force device/session auth path for subscription mode.
+            env.pop("OPENAI_API_KEY", None)
+        return env
+
+    def _ensure_codex_auth_ready(self) -> bool:
+        if self._codex_auth_checked:
+            return self._codex_auth_ready
+
+        self._codex_auth_checked = True
+        auth_mode = self._codex_auth_mode()
+        if auth_mode == "subscription" and str(os.environ.get("OPENAI_API_KEY") or "").strip():
+            self.log("autonomous: subscription mode active; ignore OPENAI_API_KEY for codex exec")
+
+        candidate_homes = self._candidate_codex_homes()
+        for candidate_home in candidate_homes:
+            codex_env = self._codex_subprocess_env(auth_mode=auth_mode, home_override=candidate_home)
+            try:
+                status_proc = subprocess.run(
+                    ["codex", "login", "status"],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=20,
+                    env=codex_env,
+                )
+            except FileNotFoundError:
+                self._codex_auth_reason = "CODEX_EXEC_UNAVAILABLE"
+                self.log("autonomous: codex auth check failed (codex binary not found)")
+                self._codex_auth_ready = False
+                return False
+            except subprocess.TimeoutExpired:
+                self._codex_auth_reason = "CODEX_AUTH_STATUS_TIMEOUT"
+                self.log("autonomous: codex auth status timeout")
+                self._codex_auth_ready = False
+                return False
+            except Exception as exc:  # noqa: BLE001
+                self._codex_auth_reason = f"CODEX_AUTH_STATUS_ERROR:{type(exc).__name__}"
+                self.log(f"autonomous: codex auth status error={type(exc).__name__}")
+                self._codex_auth_ready = False
+                return False
+
+            if status_proc.returncode == 0:
+                self._codex_exec_home = str(codex_env.get("HOME") or "").strip()
+                self._codex_auth_ready = True
+                self._codex_auth_reason = ""
+                current_home = str(os.environ.get("HOME") or "").strip()
+                if self._codex_exec_home and self._codex_exec_home != current_home:
+                    self.log(
+                        "autonomous: codex auth ready via existing codex session "
+                        f"(fallback HOME={self._codex_exec_home})"
+                    )
+                else:
+                    self.log("autonomous: codex auth ready via existing codex session")
+                return True
+
+        if auth_mode == "subscription":
+            self._codex_auth_reason = "CODEX_AUTH_REQUIRED"
+            self.log(
+                "autonomous: codex login required (subscription mode). "
+                "Run `codex login --device-auth` under the service user."
+            )
+            self._codex_auth_ready = False
+            return False
+
+        api_key = str(os.environ.get("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            self._codex_auth_reason = "CODEX_AUTH_MISSING"
+            self.log("autonomous: codex auth missing (OPENAI_API_KEY is empty for api-key mode)")
+            self._codex_auth_ready = False
+            return False
+
+        bootstrap_home = candidate_homes[0] if candidate_homes else ""
+        bootstrap_env = self._codex_subprocess_env(auth_mode=auth_mode, home_override=bootstrap_home)
+        try:
+            proc = subprocess.run(
+                ["codex", "login", "--with-api-key"],
+                input=api_key + "\n",
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+                env=bootstrap_env,
+            )
+        except FileNotFoundError:
+            self._codex_auth_reason = "CODEX_EXEC_UNAVAILABLE"
+            self.log("autonomous: codex auth bootstrap failed (codex binary not found)")
+            self._codex_auth_ready = False
+            return False
+        except subprocess.TimeoutExpired:
+            self._codex_auth_reason = "CODEX_AUTH_BOOTSTRAP_TIMEOUT"
+            self.log("autonomous: codex auth bootstrap timeout")
+            self._codex_auth_ready = False
+            return False
+        except Exception as exc:  # noqa: BLE001
+            self._codex_auth_reason = f"CODEX_AUTH_BOOTSTRAP_ERROR:{type(exc).__name__}"
+            self.log(f"autonomous: codex auth bootstrap error={type(exc).__name__}")
+            self._codex_auth_ready = False
+            return False
+
+        if proc.returncode != 0:
+            self._codex_auth_reason = "CODEX_AUTH_BOOTSTRAP_FAILED"
+            self.log(f"autonomous: codex auth bootstrap failed rc={proc.returncode}")
+            self._codex_auth_ready = False
+            return False
+
+        self._codex_exec_home = str(bootstrap_env.get("HOME") or "").strip()
+        self._codex_auth_ready = True
+        self._codex_auth_reason = ""
+        self.log(
+            "autonomous: codex auth ready via OPENAI_API_KEY bootstrap"
+            + (f" (home={self._codex_exec_home})" if self._codex_exec_home else "")
+        )
+        return True
+
     def _is_within(self, path: Path, root: Path) -> bool:
         try:
             path.resolve().relative_to(root.resolve())
@@ -296,10 +558,28 @@ class AutonomousOptimizer:
             raise ValueError(f"Path outside repo: {raw_path}")
         return resolved
 
-    def _resolve_app_relative(self, raw_path: str) -> str:
-        path = self._resolve_repo_path(raw_path)
-        if not self._is_within(path, self.app_root):
+    def _resolve_app_path(self, raw_path: str) -> Path:
+        raw = str(raw_path or "").strip()
+        candidate = Path(raw)
+        if not candidate.as_posix():
+            raise ValueError("Empty path in decision payload")
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+            if self._is_within(resolved, self.app_root):
+                return resolved
             raise ValueError(f"Path must be under app root: {raw_path}")
+
+        repo_candidate = (self.repo_root / candidate).resolve()
+        if self._is_within(repo_candidate, self.app_root):
+            return repo_candidate
+
+        app_candidate = (self.app_root / candidate).resolve()
+        if self._is_within(app_candidate, self.app_root):
+            return app_candidate
+        raise ValueError(f"Path must be under app root: {raw_path}")
+
+    def _resolve_app_relative(self, raw_path: str) -> str:
+        path = self._resolve_app_path(raw_path)
         return _safe_rel(path, self.app_root).replace("\\", "/")
 
     def _deep_merge(self, base: Any, override: Any) -> Any:
@@ -330,7 +610,8 @@ class AutonomousOptimizer:
         summary: Dict[str, Any] = {"exists": self.rollup_csv.exists(), "total_rows": 0, "status_counts": {}, "sample_rows": []}
         if not self.rollup_csv.exists():
             return summary
-        rows: list[dict[str, str]] = []
+        rows_head: list[dict[str, str]] = []
+        rows_recent: list[dict[str, str]] = []
         status_counts: dict[str, int] = {}
         try:
             with self.rollup_csv.open("r", encoding="utf-8", newline="") as handle:
@@ -338,24 +619,29 @@ class AutonomousOptimizer:
                     summary["total_rows"] += 1
                     status = str(row.get("status") or "").strip().lower() or "unknown"
                     status_counts[status] = status_counts.get(status, 0) + 1
-                    if len(rows) < limit:
-                        rows.append(
-                            {
-                                "run_group": str(row.get("run_group") or "").strip(),
-                                "run_id": str(row.get("run_id") or "").strip(),
-                                "status": status,
-                                "metrics_present": str(row.get("metrics_present") or "").strip(),
-                                "config_path": str(row.get("config_path") or "").strip(),
-                                "results_dir": str(row.get("results_dir") or "").strip(),
-                                "sharpe_ratio_abs": str(row.get("sharpe_ratio_abs") or "").strip(),
-                                "max_drawdown_on_equity": str(row.get("max_drawdown_on_equity") or "").strip(),
-                            }
-                        )
+                    row_payload = {
+                        "run_group": str(row.get("run_group") or "").strip(),
+                        "run_id": str(row.get("run_id") or "").strip(),
+                        "status": status,
+                        "metrics_present": str(row.get("metrics_present") or "").strip(),
+                        "config_path": str(row.get("config_path") or "").strip(),
+                        "results_dir": str(row.get("results_dir") or "").strip(),
+                        "sharpe_ratio_abs": str(row.get("sharpe_ratio_abs") or "").strip(),
+                        "max_drawdown_on_equity": str(row.get("max_drawdown_on_equity") or "").strip(),
+                    }
+                    if len(rows_head) < limit:
+                        rows_head.append(row_payload)
+                    rows_recent.append(row_payload)
+                    if len(rows_recent) > limit:
+                        rows_recent.pop(0)
         except Exception as exc:  # noqa: BLE001
             summary["error"] = f"{type(exc).__name__}:{exc}"
             return summary
         summary["status_counts"] = status_counts
-        summary["sample_rows"] = rows
+        # Keep backward compatibility for consumers that read sample_rows only,
+        # but prefer recent rows so decision context sees latest batches.
+        summary["sample_rows"] = rows_recent
+        summary["sample_rows_head"] = rows_head
         return summary
 
     def _resolve_queue_for_run_group(self, run_group: str) -> Optional[Path]:
@@ -421,6 +707,7 @@ class AutonomousOptimizer:
         search = payload.get("search") if isinstance(payload.get("search"), dict) else {}
         selection = payload.get("selection") if isinstance(payload.get("selection"), dict) else {}
         batch_policy = payload.get("batch_policy") if isinstance(payload.get("batch_policy"), dict) else {}
+        fixed_start, fixed_end = self._fixed_walk_forward_period()
         knobs_raw = search.get("knobs") if isinstance(search.get("knobs"), list) else []
 
         knobs: list[Dict[str, Any]] = []
@@ -443,6 +730,7 @@ class AutonomousOptimizer:
         return {
             "base_config": str(payload.get("base_config") or "").strip(),
             "windows": payload.get("windows") if isinstance(payload.get("windows"), list) else [],
+            "fixed_walk_forward": {"start_date": fixed_start, "end_date": fixed_end},
             "selection_gates": selection,
             "batch_policy": batch_policy,
             "search": {
@@ -469,25 +757,61 @@ class AutonomousOptimizer:
 
         queue_filters = self._extract_queue_filters(queue_rows)
         status_counts: Dict[str, int] = {}
+        historical_status_counts: Dict[str, int] = {}
         matched_rows: list[dict[str, str]] = []
+        historical_candidates: list[Dict[str, Any]] = []
         matched_total = 0
         completed_count = 0
         metrics_true_completed = 0
         metrics_false_completed = 0
         objective_available_count = 0
+        historical_completed_count = 0
+        historical_metrics_true_completed = 0
+        historical_metrics_false_completed = 0
+        historical_objective_available_count = 0
 
         if self.rollup_csv.exists():
             try:
                 with self.rollup_csv.open("r", encoding="utf-8", newline="") as handle:
                     for row in csv.DictReader(handle):
-                        if not self._row_matches_queue_filters(row, run_group=run_group, filters=queue_filters):
-                            continue
-                        matched_total += 1
                         status = str(row.get("status") or "").strip().lower() or "unknown"
-                        status_counts[status] = status_counts.get(status, 0) + 1
+                        historical_status_counts[status] = historical_status_counts.get(status, 0) + 1
 
                         is_completed = status == "completed"
                         metrics_present = _to_bool(row.get("metrics_present"))
+                        objective = _to_float(row.get("score"))
+                        if is_completed:
+                            historical_completed_count += 1
+                            if metrics_present:
+                                historical_metrics_true_completed += 1
+                            else:
+                                historical_metrics_false_completed += 1
+                        if objective is not None:
+                            historical_objective_available_count += 1
+                        if is_completed and metrics_present:
+                            historical_candidates.append(
+                                {
+                                    "run_group": str(row.get("run_group") or "").strip(),
+                                    "run_id": str(row.get("run_id") or "").strip(),
+                                    "config_path": str(row.get("config_path") or "").strip(),
+                                    "results_dir": str(row.get("results_dir") or "").strip(),
+                                    "best_score": objective,
+                                    "total_pnl": _to_float(row.get("total_pnl")),
+                                    "worst_robust_sharpe": _to_float(
+                                        row.get("worst_robust_sharpe") or row.get("sharpe_ratio_abs")
+                                    ),
+                                    "worst_dd_pct": _to_float(
+                                        row.get("worst_dd_pct") or row.get("max_drawdown_on_equity")
+                                    ),
+                                    "ranking_basis": "objective_score" if objective is not None else "sharpe_proxy",
+                                }
+                            )
+
+                        if not self._row_matches_queue_filters(row, run_group=run_group, filters=queue_filters):
+                            continue
+
+                        matched_total += 1
+                        status_counts[status] = status_counts.get(status, 0) + 1
                         if is_completed:
                             completed_count += 1
                             if metrics_present:
@@ -495,7 +819,7 @@ class AutonomousOptimizer:
                             else:
                                 metrics_false_completed += 1
 
-                        if _to_float(row.get("score")) is not None:
+                        if objective is not None:
                             objective_available_count += 1
 
                         if len(matched_rows) < row_limit:
@@ -507,6 +831,7 @@ class AutonomousOptimizer:
                                     "config_path": str(row.get("config_path") or "").strip(),
                                     "results_dir": str(row.get("results_dir") or "").strip(),
                                     "score": str(row.get("score") or "").strip(),
+                                    "total_pnl": str(row.get("total_pnl") or "").strip(),
                                     "worst_robust_sharpe": str(
                                         row.get("worst_robust_sharpe") or row.get("sharpe_ratio_abs") or ""
                                     ).strip(),
@@ -533,6 +858,7 @@ class AutonomousOptimizer:
                     "config_path": str(row.get("config_path") or "").strip(),
                     "results_dir": str(row.get("results_dir") or "").strip(),
                     "best_score": objective,
+                    "total_pnl": _to_float(row.get("total_pnl")),
                     "worst_robust_sharpe": worst_sharpe,
                     "worst_dd_pct": worst_dd,
                     "ranking_basis": "objective_score" if objective is not None else "sharpe_proxy",
@@ -553,9 +879,28 @@ class AutonomousOptimizer:
                 ),
                 reverse=True,
             )
+        historical_candidates.sort(
+            key=lambda row: (
+                _to_float(row.get("best_score")) if row.get("best_score") is not None else float("-inf"),
+                _to_float(row.get("worst_robust_sharpe")) if row.get("worst_robust_sharpe") is not None else float("-inf"),
+            ),
+            reverse=True,
+        )
+        if not any(row.get("best_score") is not None for row in historical_candidates):
+            historical_candidates.sort(
+                key=lambda row: (
+                    _to_float(row.get("worst_robust_sharpe")) if row.get("worst_robust_sharpe") is not None else float("-inf"),
+                ),
+                reverse=True,
+            )
 
         computed_missing_reasons: list[str] = []
         blocking_missing_reasons: list[str] = []
+        try:
+            iteration_idx = int(state.get("iteration") or 0)
+        except (TypeError, ValueError):
+            iteration_idx = 0
+        historical_bootstrap_mode = bool(iteration_idx <= 0 and historical_metrics_true_completed > 0)
 
         if not self.rollup_csv.exists():
             computed_missing_reasons.append("ROLLUP_NOT_UPDATED")
@@ -563,11 +908,17 @@ class AutonomousOptimizer:
         if queue_path is None and run_group:
             computed_missing_reasons.append("QUEUE_CONTEXT_MISSING")
         if queue_rows and matched_total == 0:
-            computed_missing_reasons.append("ROLLUP_NOT_UPDATED")
-            blocking_missing_reasons.append("ROLLUP_NOT_UPDATED")
+            if not historical_bootstrap_mode:
+                computed_missing_reasons.append("ROLLUP_NOT_UPDATED")
+                blocking_missing_reasons.append("ROLLUP_NOT_UPDATED")
         if completed_count == 0:
-            computed_missing_reasons.append("NO_COMPLETED_RUNS")
-            blocking_missing_reasons.append("NO_COMPLETED_RUNS")
+            if historical_metrics_true_completed > 0:
+                # Local queue has no completed rows yet, but historical rollup still provides
+                # usable completed evidence for decision making.
+                computed_missing_reasons.append("NO_COMPLETED_RUNS_CURRENT_QUEUE")
+            else:
+                computed_missing_reasons.append("NO_COMPLETED_RUNS")
+                blocking_missing_reasons.append("NO_COMPLETED_RUNS")
         if completed_count > 0 and metrics_true_completed == 0:
             computed_missing_reasons.append("NO_CANONICAL_METRICS")
             blocking_missing_reasons.append("NO_CANONICAL_METRICS")
@@ -600,6 +951,13 @@ class AutonomousOptimizer:
             "metrics_present_true_completed": metrics_true_completed,
             "metrics_present_false_completed": metrics_false_completed,
             "objective_available_count": objective_available_count,
+            "historical_status_counts": historical_status_counts,
+            "historical_completed_count": historical_completed_count,
+            "historical_metrics_present_true_completed": historical_metrics_true_completed,
+            "historical_metrics_present_false_completed": historical_metrics_false_completed,
+            "historical_objective_available_count": historical_objective_available_count,
+            "historical_data_ready": bool(historical_metrics_true_completed > 0),
+            "historical_bootstrap_mode": historical_bootstrap_mode,
             "completed_threshold_for_next_batch": completed_threshold,
             "decision_data_ready": bool(
                 completed_count >= completed_threshold and metrics_true_completed > 0 and not blocking_missing_reasons
@@ -607,6 +965,7 @@ class AutonomousOptimizer:
             "computed_missing_reasons": computed_missing_reasons,
             "blocking_missing_reasons": blocking_missing_reasons,
             "top_candidates": candidates[:10],
+            "historical_top_candidates": historical_candidates[:10],
             "queue_read_error": queue_read_error,
         }
 
@@ -752,8 +1111,16 @@ class AutonomousOptimizer:
                 for item in list(patched.get("blocking_missing_reasons") or [])
                 if str(item).strip()
             ]
-            computed = [item for item in computed if item != "NO_COMPLETED_RUNS"]
-            blocking = [item for item in blocking if item != "NO_COMPLETED_RUNS"]
+            computed = [
+                item
+                for item in computed
+                if item not in {"NO_COMPLETED_RUNS", "NO_COMPLETED_RUNS_CURRENT_QUEUE"}
+            ]
+            blocking = [
+                item
+                for item in blocking
+                if item not in {"NO_COMPLETED_RUNS", "NO_COMPLETED_RUNS_CURRENT_QUEUE"}
+            ]
             if "ROLLUP_LAGGING_REMOTE" not in computed:
                 computed.append("ROLLUP_LAGGING_REMOTE")
             if "ROLLUP_LAGGING_REMOTE" not in blocking:
@@ -819,6 +1186,25 @@ class AutonomousOptimizer:
             elapsed_sec = max(0, int((now_dt - iteration_started).total_seconds()))
 
         run_group = str(evidence.get("current_run_group") or "").strip() or "n/a"
+        top_candidate = None
+        top_candidates = evidence.get("top_candidates")
+        if isinstance(top_candidates, list) and top_candidates:
+            first = top_candidates[0]
+            if isinstance(first, dict):
+                top_candidate = first
+        if top_candidate is None:
+            historical = evidence.get("historical_top_candidates")
+            if isinstance(historical, list) and historical:
+                first_hist = historical[0]
+                if isinstance(first_hist, dict):
+                    top_candidate = first_hist
+
+        top_score = _to_float(top_candidate.get("best_score")) if isinstance(top_candidate, dict) else None
+        top_pnl = _to_float(top_candidate.get("total_pnl")) if isinstance(top_candidate, dict) else None
+        top_dd = _to_float(top_candidate.get("worst_dd_pct")) if isinstance(top_candidate, dict) else None
+        top_score_text = "n/a" if top_score is None else f"{top_score:.6f}"
+        top_pnl_text = "n/a" if top_pnl is None else f"{top_pnl:.2f}"
+        top_dd_text = "n/a" if top_dd is None else f"{top_dd:.6f}"
         remote_probe_suffix = ""
         remote_counts = evidence.get("remote_counts") if isinstance(evidence.get("remote_counts"), dict) else {}
         if remote_counts:
@@ -838,7 +1224,8 @@ class AutonomousOptimizer:
             "progress phase={phase} run_group={run_group} queue={queue} planned={planned} "
             "running={running} stalled={stalled} completed={completed} "
             "metrics_true_completed={metrics_true} threshold={threshold} ready={ready} "
-            "missing={missing} remaining_to_unblock={remaining} elapsed_sec={elapsed}{remote_suffix}".format(
+            "missing={missing} remaining_to_unblock={remaining} elapsed_sec={elapsed} "
+            "top_score={top_score} top_pnl={top_pnl} top_dd={top_dd}{remote_suffix}".format(
                 phase=str(phase or "").strip() or "snapshot",
                 run_group=run_group,
                 queue=queue_rel,
@@ -852,6 +1239,9 @@ class AutonomousOptimizer:
                 missing=missing,
                 remaining=remaining_to_unblock,
                 elapsed=elapsed_sec,
+                top_score=top_score_text,
+                top_pnl=top_pnl_text,
+                top_dd=top_dd_text,
                 remote_suffix=remote_probe_suffix,
             )
         )
@@ -905,11 +1295,20 @@ class AutonomousOptimizer:
                 ],
                 "decision_rule_wait": (
                     "Use next_action='wait' only when evidence.blocking_missing_reasons is non-empty. "
-                    "List every blocking reason in stop_reason and human_explanation_md."
+                    "List every blocking reason in stop_reason and human_explanation_md. "
+                    "If only current queue is empty but historical_data_ready=true, wait is optional."
                 ),
                 "decision_rule_when_ready": (
                     "If evidence.completed_count >= evidence.completed_threshold_for_next_batch and "
                     "metrics_present_true_completed > 0, default to run_next_batch unless stop=true is justified."
+                ),
+                "historical_fallback_rule": (
+                    "When evidence.historical_data_ready=true and evidence.historical_top_candidates is non-empty, "
+                    "you may decide stop or run_next_batch even if current queue has no completed rows."
+                ),
+                "analysis_scope_rule": (
+                    "Always analyze both the current queue/batch and the global rollup index "
+                    "(canonical_sources.run_index_csv). Never make decisions from only the latest batch."
                 ),
             },
             "recent_iteration_logs": recent_log_paths,
@@ -941,8 +1340,19 @@ class AutonomousOptimizer:
             "Если выбираешь wait: перечисли ВСЕ blocking_missing_reasons в stop_reason и подробно в human_explanation_md.\n"
             "Если completed_count >= completed_threshold_for_next_batch и есть metrics_present_true_completed > 0,\n"
             "безосновательный wait запрещён: выбери run_next_batch или stop с проверяемым объяснением.\n"
+            "Если completed в текущей очереди нет, но historical_data_ready=true и есть historical_top_candidates,\n"
+            "используй historical evidence и не утверждай NO_COMPLETED_RUNS без проверки historical_* полей.\n"
+            "Анализируй не только последний batch: обязательно проверяй глобальный rollup index "
+            "(context.canonical_sources.run_index_csv) и кросс-batch динамику.\n"
+            "В критериях отбора строго соблюдай stop_policy, включая min_pnl.\n"
+            "Периоды walk_forward фиксируются вне агента (по bridge11 windows), их подбирать/менять не нужно.\n"
             "Для run_next_batch: сформируй actionable queue_entries (обычно 10-25, если нет явных ограничений),\n"
             "каждому entry дай notes, а для file_edits добавь rationale.\n"
+            "В human_explanation_md обязательно укажи ключевые P&L и DD для текущего лучшего кандидата\n"
+            "(или явно напиши, что данных по P&L/DD пока нет).\n"
+            "Пути next_queue_path/config_path/results_dir задавай внутри app-root coint4 "
+            "(допустимы форматы coint4/... или app-relative вроде configs/... и artifacts/...).\n"
+            "config_path делай уникальными и предпочтительно под configs/_autopilot_batches/<next_run_group>/.\n"
             "Если нужно менять параметры вне стандартных overrides, используй file_edits.\n"
             "stop=true ставь только когда обоснованно считаешь, что дальше улучшать некуда.\n\n"
             f"Контекст:\n{payload}\n"
@@ -1001,7 +1411,16 @@ class AutonomousOptimizer:
         constraints = payload.get("constraints")
         if not isinstance(constraints, dict):
             return "INVALID_FIELD:constraints"
-        if constraints.get("allow_anything_in_repo") is not True:
+        allow_anything = constraints.get("allow_anything_in_repo")
+        if isinstance(allow_anything, str):
+            lowered = allow_anything.strip().lower()
+            if lowered in {"true", "false"}:
+                allow_anything = lowered == "true"
+                constraints["allow_anything_in_repo"] = allow_anything
+        if allow_anything is None:
+            allow_anything = False
+            constraints["allow_anything_in_repo"] = allow_anything
+        if not isinstance(allow_anything, bool):
             return "INVALID_FIELD:constraints.allow_anything_in_repo"
         if not isinstance(constraints.get("must_keep"), list):
             return "INVALID_FIELD:constraints.must_keep"
@@ -1043,6 +1462,14 @@ class AutonomousOptimizer:
         self.log("codex human_explanation_md END")
 
     def decide_with_codex(self, state: Dict[str, Any]) -> Optional[CodexDecision]:
+        if not bool(self.args.use_codex_exec):
+            self._last_wait_reason = "CODEX_EXEC_DISABLED"
+            return None
+        auth_mode = self._codex_auth_mode()
+        if not self._ensure_codex_auth_ready():
+            self._last_wait_reason = self._codex_auth_reason or "CODEX_AUTH_MISSING"
+            return None
+        codex_env = self._codex_subprocess_env(auth_mode=auth_mode)
         stamp = self._decision_stamp()
         context_path = self.decisions_dir / f"context_{stamp}.json"
         decision_json_path = self.decisions_dir / f"decision_{stamp}.json"
@@ -1056,8 +1483,12 @@ class AutonomousOptimizer:
         cmd = [
             "codex",
             "exec",
-            "--cd",
+            "-C",
             str(self.repo_root),
+            "-s",
+            "read-only",
+            "--skip-git-repo-check",
+            "--ephemeral",
             "--output-schema",
             str(self.codex_schema_path),
             "--output-last-message",
@@ -1065,67 +1496,233 @@ class AutonomousOptimizer:
             "--json",
             "-",
         ]
-        try:
-            proc = subprocess.run(
-                cmd,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                check=False,
+        timeout_default = max(300, int(getattr(self.args, "wait_poll_sec", 60) or 60) * 3)
+        timeout_override = _to_int(os.environ.get("COINT4_CODEX_EXEC_TIMEOUT_SEC"))
+        timeout_sec = timeout_default
+        if isinstance(timeout_override, int) and timeout_override > 0:
+            timeout_sec = max(30, int(timeout_override))
+        heartbeat_sec = _to_int(os.environ.get("COINT4_CODEX_EXEC_HEARTBEAT_SEC"))
+        if not isinstance(heartbeat_sec, int) or heartbeat_sec <= 0:
+            heartbeat_sec = min(30, max(5, timeout_sec // 10))
+        max_attempts = max(1, int(os.environ.get("COINT4_CODEX_EXEC_ATTEMPTS", "3") or "3"))
+        backoff_sec = max(1, int(os.environ.get("COINT4_CODEX_EXEC_BACKOFF_SEC", "5") or "5"))
+        last_reason = "CODEX_EXEC_UNKNOWN"
+        prompt_bytes = len(prompt.encode("utf-8", errors="ignore"))
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.log(
+                    "autonomous: codex exec start attempt={attempt}/{total} timeout={timeout}s heartbeat={heartbeat}s "
+                    "prompt_bytes={prompt_bytes} home={home} user={user}".format(
+                        attempt=attempt,
+                        total=max_attempts,
+                        timeout=timeout_sec,
+                        heartbeat=heartbeat_sec,
+                        prompt_bytes=prompt_bytes,
+                        home=codex_env.get("HOME", ""),
+                        user=codex_env.get("USER", ""),
+                    )
+                )
+                started_at = time.monotonic()
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    env=codex_env,
+                )
+                first_input: Optional[str] = prompt
+                stdout_text = ""
+                stderr_text = ""
+                while True:
+                    elapsed_sec = int(max(0, time.monotonic() - started_at))
+                    remaining_sec = timeout_sec - elapsed_sec
+                    if remaining_sec <= 0:
+                        proc.kill()
+                        kill_stdout, kill_stderr = proc.communicate()
+                        stdout_text = kill_stdout or stdout_text
+                        stderr_text = kill_stderr or stderr_text
+                        raise subprocess.TimeoutExpired(
+                            cmd=cmd,
+                            timeout=timeout_sec,
+                            output=stdout_text,
+                            stderr=stderr_text,
+                        )
+                    slice_timeout = min(heartbeat_sec, max(1, remaining_sec))
+                    try:
+                        stdout_text, stderr_text = proc.communicate(input=first_input, timeout=slice_timeout)
+                        break
+                    except subprocess.TimeoutExpired as timeout_exc:
+                        first_input = None
+                        if isinstance(timeout_exc.output, str) and timeout_exc.output:
+                            stdout_text = timeout_exc.output
+                        if isinstance(timeout_exc.stderr, str) and timeout_exc.stderr:
+                            stderr_text = timeout_exc.stderr
+                        elapsed_sec = int(max(0, time.monotonic() - started_at))
+                        if elapsed_sec >= timeout_sec:
+                            proc.kill()
+                            kill_stdout, kill_stderr = proc.communicate()
+                            stdout_text = kill_stdout or stdout_text
+                            stderr_text = kill_stderr or stderr_text
+                            raise subprocess.TimeoutExpired(
+                                cmd=cmd,
+                                timeout=timeout_sec,
+                                output=stdout_text,
+                                stderr=stderr_text,
+                            )
+                        self.log(
+                            "autonomous: codex attempt {attempt}/{total} running elapsed={elapsed}s/{timeout}s".format(
+                                attempt=attempt,
+                                total=max_attempts,
+                                elapsed=elapsed_sec,
+                                timeout=timeout_sec,
+                            )
+                        )
+                        continue
+
+                proc_result = subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=int(proc.returncode or 0),
+                    stdout=stdout_text or "",
+                    stderr=stderr_text or "",
+                )
+                event = {
+                    "ts": _utc_now(),
+                    "attempt": int(attempt),
+                    "max_attempts": int(max_attempts),
+                    "cmd": cmd,
+                    "rc": int(proc_result.returncode),
+                    "elapsed_sec": int(max(0, time.monotonic() - started_at)),
+                    "timeout_sec": int(timeout_sec),
+                    "stdout": self._sanitize_external_text(proc_result.stdout or ""),
+                    "stderr": self._sanitize_external_text(proc_result.stderr or ""),
+                    "context_path": _safe_rel(context_path, self.repo_root),
+                    "decision_json_path": _safe_rel(decision_json_path, self.repo_root),
+                    "home": codex_env.get("HOME", ""),
+                    "user": codex_env.get("USER", ""),
+                    "auth_mode": auth_mode,
+                    "openai_api_key_present": bool(str(codex_env.get("OPENAI_API_KEY") or "").strip()),
+                }
+                with exec_log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+            except FileNotFoundError:
+                last_reason = "CODEX_EXEC_UNAVAILABLE"
+                break
+            except subprocess.TimeoutExpired as exc:
+                stdout_text = self._sanitize_external_text(str(getattr(exc, "output", "") or ""))
+                stderr_text = self._sanitize_external_text(str(getattr(exc, "stderr", "") or ""))
+                timeout_event = {
+                    "ts": _utc_now(),
+                    "attempt": int(attempt),
+                    "max_attempts": int(max_attempts),
+                    "cmd": cmd,
+                    "rc": None,
+                    "elapsed_sec": int(timeout_sec),
+                    "timeout_sec": int(timeout_sec),
+                    "stdout": stdout_text,
+                    "stderr": stderr_text,
+                    "context_path": _safe_rel(context_path, self.repo_root),
+                    "decision_json_path": _safe_rel(decision_json_path, self.repo_root),
+                    "home": codex_env.get("HOME", ""),
+                    "user": codex_env.get("USER", ""),
+                    "auth_mode": auth_mode,
+                    "openai_api_key_present": bool(str(codex_env.get("OPENAI_API_KEY") or "").strip()),
+                }
+                with exec_log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(timeout_event, ensure_ascii=False) + "\n")
+                classified = self._classify_codex_exec_failure(stdout=stdout_text, stderr=stderr_text)
+                last_reason = classified or "CODEX_EXEC_TIMEOUT"
+                if last_reason == "CODEX_AUTH_REQUIRED":
+                    self.log("autonomous: codex timeout contains auth markers; stop retries")
+                    break
+                if attempt < max_attempts:
+                    sleep_sec = backoff_sec * attempt
+                    self.log(
+                        "autonomous: codex attempt {attempt}/{total} timeout={timeout}s; retry in {sleep}s".format(
+                            attempt=attempt,
+                            total=max_attempts,
+                            timeout=timeout_sec,
+                            sleep=sleep_sec,
+                        )
+                    )
+                    time.sleep(sleep_sec)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                last_reason = f"CODEX_EXEC_ERROR:{type(exc).__name__}"
+                if attempt < max_attempts:
+                    sleep_sec = backoff_sec * attempt
+                    self.log(
+                        "autonomous: codex attempt {attempt}/{total} error={reason}; retry in {sleep}s".format(
+                            attempt=attempt,
+                            total=max_attempts,
+                            reason=last_reason,
+                            sleep=sleep_sec,
+                        )
+                    )
+                    time.sleep(sleep_sec)
+                continue
+
+            if proc_result.returncode != 0:
+                classified = self._classify_codex_exec_failure(
+                    stdout=proc_result.stdout or "",
+                    stderr=proc_result.stderr or "",
+                )
+                last_reason = classified or f"CODEX_EXEC_RC{proc_result.returncode}"
+                if last_reason == "CODEX_AUTH_REQUIRED":
+                    self.log("autonomous: codex auth required in runtime HOME; stop retries")
+            elif not decision_json_path.exists():
+                last_reason = "CODEX_DECISION_MISSING"
+            else:
+                try:
+                    payload = json.loads(decision_json_path.read_text(encoding="utf-8"))
+                except Exception as exc:  # noqa: BLE001
+                    last_reason = f"CODEX_DECISION_INVALID_JSON:{type(exc).__name__}"
+                else:
+                    if not isinstance(payload, dict):
+                        last_reason = "CODEX_DECISION_INVALID_PAYLOAD"
+                    else:
+                        validation_error = self._validate_decision(payload)
+                        if validation_error:
+                            last_reason = f"CODEX_DECISION_SCHEMA:{validation_error}"
+                        else:
+                            self._persist_decision_memo(decision_payload=payload, decision_md_path=decision_md_path)
+                            self.log(
+                                "codex decision_id={decision_id} next_action={next_action} stop={stop}".format(
+                                    decision_id=str(payload.get("decision_id") or "").strip(),
+                                    next_action=str(payload.get("next_action") or "").strip(),
+                                    stop=bool(payload.get("stop")),
+                                )
+                            )
+                            self._log_human_explanation(str(payload.get("human_explanation_md") or ""))
+                            return CodexDecision(
+                                payload=payload,
+                                decision_json_path=decision_json_path,
+                                context_path=context_path,
+                                decision_md_path=decision_md_path,
+                                exec_log_path=exec_log_path,
+                            )
+
+            is_retriable = (
+                last_reason not in {"CODEX_EXEC_UNAVAILABLE", "CODEX_AUTH_REQUIRED"}
+                and not last_reason.startswith("CODEX_DECISION_SCHEMA:")
             )
-        except FileNotFoundError:
-            self._last_wait_reason = "CODEX_EXEC_UNAVAILABLE"
-            return None
-        except Exception as exc:  # noqa: BLE001
-            self._last_wait_reason = f"CODEX_EXEC_ERROR:{type(exc).__name__}"
-            return None
+            if is_retriable and attempt < max_attempts:
+                sleep_sec = backoff_sec * attempt
+                self.log(
+                    "autonomous: codex attempt {attempt}/{total} failed ({reason}); retry in {sleep}s".format(
+                        attempt=attempt,
+                        total=max_attempts,
+                        reason=last_reason,
+                        sleep=sleep_sec,
+                    )
+                )
+                time.sleep(sleep_sec)
+                continue
+            break
 
-        event = {
-            "ts": _utc_now(),
-            "cmd": cmd,
-            "rc": int(proc.returncode),
-            "stdout": self._sanitize_external_text(proc.stdout or ""),
-            "stderr": self._sanitize_external_text(proc.stderr or ""),
-            "context_path": _safe_rel(context_path, self.repo_root),
-            "decision_json_path": _safe_rel(decision_json_path, self.repo_root),
-        }
-        exec_log_path.write_text(json.dumps(event, ensure_ascii=False) + "\n", encoding="utf-8")
-
-        if proc.returncode != 0:
-            self._last_wait_reason = f"CODEX_EXEC_RC{proc.returncode}"
-            return None
-        if not decision_json_path.exists():
-            self._last_wait_reason = "CODEX_DECISION_MISSING"
-            return None
-        try:
-            payload = json.loads(decision_json_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            self._last_wait_reason = f"CODEX_DECISION_INVALID_JSON:{type(exc).__name__}"
-            return None
-        if not isinstance(payload, dict):
-            self._last_wait_reason = "CODEX_DECISION_INVALID_PAYLOAD"
-            return None
-        validation_error = self._validate_decision(payload)
-        if validation_error:
-            self._last_wait_reason = f"CODEX_DECISION_SCHEMA:{validation_error}"
-            return None
-
-        self._persist_decision_memo(decision_payload=payload, decision_md_path=decision_md_path)
-        self.log(
-            "codex decision_id={decision_id} next_action={next_action} stop={stop}".format(
-                decision_id=str(payload.get("decision_id") or "").strip(),
-                next_action=str(payload.get("next_action") or "").strip(),
-                stop=bool(payload.get("stop")),
-            )
-        )
-        self._log_human_explanation(str(payload.get("human_explanation_md") or ""))
-        return CodexDecision(
-            payload=payload,
-            decision_json_path=decision_json_path,
-            context_path=context_path,
-            decision_md_path=decision_md_path,
-            exec_log_path=exec_log_path,
-        )
+        self._last_wait_reason = last_reason
+        return None
 
     def _apply_file_edits(self, decision: CodexDecision) -> None:
         edits = list(decision.payload.get("file_edits") or [])
@@ -1161,36 +1758,53 @@ class AutonomousOptimizer:
         run_group = str(payload.get("next_run_group") or "").strip()
         if not run_group:
             raise ValueError("Decision missing next_run_group")
-        queue_path = self._resolve_repo_path(str(payload.get("next_queue_path") or ""))
+        queue_path = self._resolve_app_path(str(payload.get("next_queue_path") or ""))
         queue_entries = list(payload.get("queue_entries") or [])
         if not queue_entries:
             raise ValueError("Decision next_action=run_next_batch but queue_entries is empty")
 
         base_cfg = _read_yaml(self.bridge11_path)
         rows: list[dict[str, str]] = []
-        for entry in queue_entries:
-            config_abs = self._resolve_repo_path(str(entry.get("config_path") or ""))
-            if not self._is_within(config_abs, self.app_root):
-                raise ValueError(f"config_path must be inside app root: {config_abs}")
-            overrides = entry.get("overrides") if isinstance(entry.get("overrides"), dict) else {}
-            cfg_payload = self._deep_merge(base_cfg, overrides)
-            config_abs.parent.mkdir(parents=True, exist_ok=True)
-            config_abs.write_text(yaml.safe_dump(cfg_payload, sort_keys=False), encoding="utf-8")
+        seen_config_paths: set[str] = set()
+        generated_prefix = f"configs/_autopilot_batches/{run_group}/"
+        generated_dir = self.app_root / "configs" / "_autopilot_batches" / run_group
+        for idx, entry in enumerate(queue_entries):
+            requested_config_abs = self._resolve_app_path(str(entry.get("config_path") or ""))
+            requested_config_rel = _safe_rel(requested_config_abs, self.app_root).replace("\\", "/")
 
             results_raw = str(entry.get("results_dir") or "").strip()
             if not results_raw:
                 raise ValueError("queue entry results_dir is empty")
-            results_candidate = Path(results_raw)
-            if results_candidate.is_absolute():
-                if not self._is_within(results_candidate, self.app_root):
-                    raise ValueError(f"results_dir must be under app root: {results_raw}")
-                results_rel = _safe_rel(results_candidate, self.app_root).replace("\\", "/")
+            results_abs = self._resolve_app_path(results_raw)
+            results_rel = _safe_rel(results_abs, self.app_root).replace("\\", "/")
+
+            # Keep provided config paths only when they are already in the per-run-group
+            # batch namespace and unique. Otherwise materialize into generated files.
+            if (
+                requested_config_rel.startswith(generated_prefix)
+                and requested_config_rel not in seen_config_paths
+            ):
+                config_abs = requested_config_abs
+                config_rel = requested_config_rel
             else:
-                results_rel = results_candidate.as_posix()
+                config_abs = generated_dir / f"entry_{idx:03d}.yaml"
+                config_rel = _safe_rel(config_abs, self.app_root).replace("\\", "/")
+                dedupe_idx = 1
+                while config_rel in seen_config_paths:
+                    config_abs = generated_dir / f"entry_{idx:03d}_{dedupe_idx:02d}.yaml"
+                    config_rel = _safe_rel(config_abs, self.app_root).replace("\\", "/")
+                    dedupe_idx += 1
+
+            overrides = entry.get("overrides") if isinstance(entry.get("overrides"), dict) else {}
+            cfg_payload = self._deep_merge(base_cfg, overrides)
+            self._apply_fixed_walk_forward_period(cfg_payload)
+            config_abs.parent.mkdir(parents=True, exist_ok=True)
+            config_abs.write_text(yaml.safe_dump(cfg_payload, sort_keys=False), encoding="utf-8")
+            seen_config_paths.add(config_rel)
 
             rows.append(
                 {
-                    "config_path": _safe_rel(config_abs, self.app_root).replace("\\", "/"),
+                    "config_path": config_rel,
                     "results_dir": results_rel,
                     "status": "planned",
                 }
@@ -1203,12 +1817,9 @@ class AutonomousOptimizer:
             for row in rows:
                 writer.writerow(row)
 
-        queue_path_app = queue_path
-        if not self._is_within(queue_path_app, self.app_root):
-            raise ValueError(f"next_queue_path must be under app root: {queue_path}")
         return QueueTarget(
             run_group=run_group,
-            queue_path=queue_path_app,
+            queue_path=queue_path,
             source="codex_decision",
             ready_rows=len(rows),
         )
@@ -1404,6 +2015,7 @@ class AutonomousOptimizer:
         if not codex_bin:
             self.log("autonomous: codex exec requested but codex binary not found; fallback deterministic")
             return None
+        codex_env = self._codex_subprocess_env()
 
         with tempfile.TemporaryDirectory(prefix="autonomous_codex_") as tmp_dir:
             tmp = Path(tmp_dir)
@@ -1434,6 +2046,7 @@ class AutonomousOptimizer:
                 capture_output=True,
                 check=False,
                 timeout=max(30, int(timeout_sec)),
+                env=codex_env,
             )
             if proc.returncode != 0:
                 self.log(f"autonomous: codex exec failed rc={proc.returncode}; fallback deterministic")
@@ -1563,7 +2176,7 @@ class AutonomousOptimizer:
             ready_rows=ready,
         )
 
-    def select_next_queue(self, *, state: Dict[str, Any]) -> Optional[QueueTarget]:
+    def select_next_queue(self, *, state: Dict[str, Any], allow_codex_pick: bool = True) -> Optional[QueueTarget]:
         self._last_queue_selection_error = ""
         has_winner = bool(str(state.get("best_run_name") or "").strip()) or (_to_float(state.get("best_score")) is not None)
         if (not has_winner) and self.baseline_queue.exists() and not self._is_demo_queue(self.baseline_queue):
@@ -1589,9 +2202,10 @@ class AutonomousOptimizer:
         ready_queues = self._prioritize_queues(self._discover_ready_queues())
         ready_queues = [item for item in ready_queues if not self._is_ignored_queue(item.queue_path, state)]
 
-        codex_pick = self._select_queue_with_codex(ready_queues, state)
-        if codex_pick is not None:
-            return codex_pick
+        if allow_codex_pick:
+            codex_pick = self._select_queue_with_codex(ready_queues, state)
+            if codex_pick is not None:
+                return codex_pick
 
         ensured = self._select_queue_via_ensure_next_batch(state)
         if ensured is not None:
@@ -1741,26 +2355,36 @@ class AutonomousOptimizer:
         return int(proc.returncode)
 
     def _parse_ranker_table(self, text: str) -> Optional[RankResult]:
-        for line in (text or "").splitlines():
-            stripped = line.strip()
-            if not stripped.startswith("|"):
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip().startswith("|")]
+        if len(lines) < 3:
+            return None
+
+        header = [part.strip() for part in lines[0].strip("|").split("|")]
+        if not header:
+            return None
+
+        for line in lines[2:]:
+            cols = [part.strip() for part in line.strip("|").split("|")]
+            if len(cols) != len(header):
                 continue
-            cols = [part.strip() for part in stripped.strip("|").split("|")]
-            if len(cols) < 9:
+            row = dict(zip(header, cols))
+            if str(row.get("rank") or "").strip() != "1":
                 continue
-            if cols[0] != "1":
-                continue
-            score = _to_float(cols[1])
-            worst_dd = _to_float(cols[3])
-            run_name = str(cols[7]).strip()
-            cfg = str(cols[8]).strip()
+
+            score = _to_float(row.get("score"))
+            worst_robust = _to_float(row.get("worst_robust_sh"))
+            worst_dd = _to_float(row.get("worst_dd_pct"))
+            run_name = str(row.get("variant_id") or "").strip()
+            cfg = str(row.get("sample_config") or "").strip()
             if score is None or not run_name:
                 continue
+            if worst_robust is None:
+                worst_robust = score
             return RankResult(
                 ok=True,
                 source="rank_multiwindow_robust_runs.py",
                 score=score,
-                worst_robust_sharpe=score,
+                worst_robust_sharpe=worst_robust,
                 worst_dd_pct=worst_dd,
                 run_name=run_name,
                 config_path=cfg,
@@ -1822,6 +2446,11 @@ class AutonomousOptimizer:
 
         best_row: Optional[dict[str, str]] = None
         best_score: Optional[float] = None
+        min_pnl = _to_float(self.stop_policy.get("min_pnl"))
+        if min_pnl is None:
+            min_pnl = 0.0
+        min_psr = _to_float(self.stop_policy.get("min_psr"))
+        min_dsr = _to_float(self.stop_policy.get("min_dsr"))
         with self.rollup_csv.open("r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
@@ -1831,6 +2460,15 @@ class AutonomousOptimizer:
                     continue
                 metrics_present = _to_bool(row.get("metrics_present"))
                 if not metrics_present:
+                    continue
+                pnl = _to_float(row.get("total_pnl"))
+                if pnl is None or pnl < min_pnl:
+                    continue
+                psr = _to_float(row.get("psr"))
+                if min_psr is not None and (psr is None or psr < min_psr):
+                    continue
+                dsr = _to_float(row.get("dsr"))
+                if min_dsr is not None and (dsr is None or dsr < min_dsr):
                     continue
                 sharpe = _to_float(row.get("sharpe_ratio_abs"))
                 if sharpe is None:
@@ -1969,7 +2607,15 @@ class AutonomousOptimizer:
             str(int(self.stop_policy["min_pairs"])),
             "--max-dd-pct",
             str(float(self.stop_policy["max_dd_pct"])),
+            "--min-pnl",
+            str(float(self.stop_policy["min_pnl"])),
         ]
+        min_psr = _to_float(self.stop_policy.get("min_psr"))
+        if min_psr is not None:
+            cmd.extend(["--min-psr", str(float(min_psr))])
+        min_dsr = _to_float(self.stop_policy.get("min_dsr"))
+        if min_dsr is not None:
+            cmd.extend(["--min-dsr", str(float(min_dsr))])
         proc = self._run_subprocess(cmd=cmd, cwd=self.app_root, env=self._env(), iteration_log=iteration_log)
         if proc.returncode == 0:
             parsed = self._parse_ranker_table(proc.stdout or "")
@@ -2097,7 +2743,11 @@ class AutonomousOptimizer:
         lines.append("## Objective and gates")
         lines.append("- Ranker: `scripts/optimization/rank_multiwindow_robust_runs.py`")
         lines.append("- Score: `worst_robust_sharpe` (as implemented in ranker)")
-        lines.append(f"- Gates: min_windows={self.stop_policy['min_windows']}, min_trades={self.stop_policy['min_trades']}, min_pairs={self.stop_policy['min_pairs']}, max_dd_pct={self.stop_policy['max_dd_pct']}")
+        lines.append(
+            f"- Gates: min_windows={self.stop_policy['min_windows']}, min_trades={self.stop_policy['min_trades']}, "
+            f"min_pairs={self.stop_policy['min_pairs']}, max_dd_pct={self.stop_policy['max_dd_pct']}, "
+            f"min_pnl={self.stop_policy['min_pnl']}"
+        )
         lines.append("")
         lines.append("## Stop criteria")
         lines.append(f"- max_rounds={self.stop_policy['max_rounds']}")
@@ -2139,6 +2789,29 @@ class AutonomousOptimizer:
                 value=int(progress.get("completed_threshold_for_next_batch", 0) or 0)
             )
         )
+        top_candidate: Optional[Dict[str, Any]] = None
+        top_candidates = progress.get("top_candidates")
+        if isinstance(top_candidates, list) and top_candidates:
+            first = top_candidates[0]
+            if isinstance(first, dict):
+                top_candidate = first
+        if top_candidate is None:
+            historical_candidates = progress.get("historical_top_candidates")
+            if isinstance(historical_candidates, list) and historical_candidates:
+                first_hist = historical_candidates[0]
+                if isinstance(first_hist, dict):
+                    top_candidate = first_hist
+        if isinstance(top_candidate, dict):
+            lines.append(
+                "- Top candidate: run_id={run_id}, score={score}, pnl={pnl}, dd={dd}".format(
+                    run_id=str(top_candidate.get("run_id") or "n/a"),
+                    score=top_candidate.get("best_score"),
+                    pnl=top_candidate.get("total_pnl"),
+                    dd=top_candidate.get("worst_dd_pct"),
+                )
+            )
+        else:
+            lines.append("- Top candidate: n/a")
         missing_reasons = list(progress.get("blocking_missing_reasons") or progress.get("computed_missing_reasons") or [])
         lines.append(
             "- missing reasons: {value}".format(
@@ -2154,9 +2827,9 @@ class AutonomousOptimizer:
             lines.append("")
         return "\n".join(lines)
 
-    def write_final_report(self, state: Dict[str, Any]) -> None:
+    def write_final_report(self, state: Dict[str, Any], *, prefer_codex: bool = True) -> None:
         defaults_used = list(self.stop_policy.get("defaults_used") or [])
-        if bool(self.args.use_codex_exec):
+        if prefer_codex and bool(self.args.use_codex_exec):
             schema = {
                 "type": "object",
                 "properties": {"markdown": {"type": "string"}},
@@ -2167,7 +2840,7 @@ class AutonomousOptimizer:
                 "Сформируй краткий markdown final report для автономного оптимизатора.\n"
                 f"State JSON: {json.dumps(state, ensure_ascii=False)}\n"
                 f"Policy JSON: {json.dumps(self.stop_policy, ensure_ascii=False)}\n"
-                "Укажи objective/gates/stop criteria и winner."
+                "Укажи objective/gates/stop criteria и winner. Обязательно добавь P&L и DD по winner (или явно укажи, что данных нет)."
             )
             payload = self._run_codex_json(prompt=prompt, schema=schema, timeout_sec=180)
             if payload and str(payload.get("markdown") or "").strip():
@@ -2210,26 +2883,203 @@ class AutonomousOptimizer:
         state: Dict[str, Any],
         reason: str,
         phase: str,
+        wait_seconds: Optional[int] = None,
+        prefer_codex_report: bool = True,
     ) -> Dict[str, Any]:
         if phase.startswith("waiting") or phase == "skipping_queue":
             self.log_progress_snapshot(state, phase=f"wait:{phase}")
+        delay = wait_seconds
+        fallback = int(getattr(self.args, "wait_poll_sec", 60) or 60)
+        if fallback <= 0:
+            fallback = 60
+        max_wait_env = _to_int(os.environ.get("COINT4_MAX_WAIT_SECONDS"))
+        max_wait = max_wait_env if isinstance(max_wait_env, int) and max_wait_env > 0 else fallback
+        if not isinstance(delay, int) or delay <= 0:
+            delay = fallback
+        if delay > max_wait:
+            self.log(
+                "autonomous: clamp wait_seconds {value}s -> {limit}s".format(
+                    value=int(delay),
+                    limit=int(max_wait),
+                )
+            )
+            delay = max_wait
+        self._next_iteration_delay_sec = int(delay)
         state["status"] = "running"
         state["last_error"] = reason
         state["last_iteration_phase"] = phase
         self.save_state(state)
         self.write_best_params(state)
+        self.write_final_report(state, prefer_codex=prefer_codex_report)
+        self._exit_after_iteration_wait = True
+        return state
+
+    def _run_iteration_local(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
+        self._exit_after_iteration_wait = False
+        self._next_iteration_delay_sec = max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60))
+        iteration = int(state.get("iteration") or 0)
+
+        queue = self.select_next_queue(state=state, allow_codex_pick=False)
+        if queue is None:
+            reason = str(self._last_queue_selection_error or "NO_VALID_QUEUES").strip() or "NO_VALID_QUEUES"
+            return self._wait_and_exit(
+                state=state,
+                reason=reason,
+                phase="waiting_queue",
+                wait_seconds=min(10, self._next_iteration_delay_sec),
+            )
+        if self._is_demo_queue(queue.queue_path):
+            self._record_ignored_queue(state, queue)
+            return self._wait_and_exit(
+                state=state,
+                reason="SKIP_QUEUE:DEMO_QUEUE",
+                phase="skipping_queue",
+                wait_seconds=1,
+            )
+        if self._is_ignored_queue(queue.queue_path, state):
+            return self._wait_and_exit(
+                state=state,
+                reason="SKIP_QUEUE:IGNORED_QUEUE",
+                phase="skipping_queue",
+                wait_seconds=1,
+            )
+        if queue.ready_rows < 1:
+            return self._wait_and_exit(
+                state=state,
+                reason="NO_VALID_QUEUES",
+                phase="waiting_queue",
+                wait_seconds=min(10, self._next_iteration_delay_sec),
+            )
+        remote_probe = self._probe_remote_queue_counts(queue.queue_path)
+        if isinstance(remote_probe, dict):
+            counts_raw = remote_probe.get("counts")
+            counts = counts_raw if isinstance(counts_raw, dict) else {}
+            stalled = int(counts.get("stalled", 0) or 0)
+            planned = int(counts.get("planned", 0) or 0)
+            running = int(counts.get("running", 0) or 0)
+            completed = int(counts.get("completed", 0) or 0)
+            has_metrics = bool(remote_probe.get("has_metrics"))
+            if stalled > 0 and planned == 0 and running == 0 and completed == 0 and not has_metrics:
+                self.log(
+                    "autonomous: skip stalled-only remote queue {queue}".format(
+                        queue=_safe_rel(queue.queue_path, self.app_root),
+                    )
+                )
+                self._record_ignored_queue(state, queue)
+                return self._wait_and_exit(
+                    state=state,
+                    reason="SKIP_QUEUE:REMOTE_STALLED_ONLY",
+                    phase="skipping_queue",
+                    wait_seconds=1,
+                )
+
+        state["last_decision_id"] = f"local-{self._decision_stamp()}"
+        state["last_decision_action"] = "run_existing_queue"
+        state["last_decision_explanation_md"] = (
+            "Локальный deterministic режим: выбран существующий ready queue без Codex exec."
+        )
+        state["iteration"] = iteration + 1
+        state["current_run_group"] = queue.run_group
+        state["iteration_started_utc"] = _utc_now()
+        state["status"] = "running"
+        state["last_error"] = ""
+        state["last_iteration_phase"] = "started"
+        self.save_state(state)
         self.write_final_report(state)
+
+        iteration_log = self._iteration_log_path(queue.run_group, iteration)
+        self.log(
+            f"autonomous: local iteration={iteration + 1} queue={_safe_rel(queue.queue_path, self.app_root)} source={queue.source} ready={queue.ready_rows}"
+        )
+        self.log_progress_snapshot(state, phase="pre-run")
+
+        if bool(self.args.plan_only):
+            return self._wait_and_exit(state=state, reason="PLAN_ONLY_MODE", phase="planned", wait_seconds=1)
+
+        rc_powered = self._run_powered_queue(queue, iteration_log=iteration_log)
+        self.log_progress_snapshot(state, phase="post-run")
+        if rc_powered != 0:
+            fail_reason = self._latest_powered_fail_reason(queue.run_group)
+            fail_reason_norm = str(fail_reason or "").strip().upper() or "UNKNOWN"
+            if fail_reason_norm in {
+                "LOCAL_CONFIG_MISSING",
+                "QUEUE_MISSING",
+                "QUEUE_PARSE_ERROR",
+                "QUEUE_REL_EMPTY",
+                "REMOTE_EXEC_FAILED",
+                "SERVSPACEERROR",
+                "SERVSPACE_ERROR",
+            } or fail_reason_norm.startswith("QUEUE_"):
+                self._record_ignored_queue(state, queue)
+                return self._wait_and_exit(
+                    state=state,
+                    reason=f"SKIP_QUEUE:{fail_reason_norm}",
+                    phase="skipping_queue",
+                    wait_seconds=1,
+                )
+            return self._wait_and_exit(
+                state=state,
+                reason=f"POWERED_WAIT:{fail_reason_norm}",
+                phase="waiting_powered",
+                wait_seconds=min(10, self._next_iteration_delay_sec),
+            )
+
+        if bool(self.args.local_rollup_rebuild):
+            rc_rollup = self._rebuild_rollup(iteration_log=iteration_log)
+            if rc_rollup != 0:
+                return self._wait_and_exit(
+                    state=state,
+                    reason=f"BUILD_RUN_INDEX_RC{rc_rollup}",
+                    phase="waiting_rollup",
+                    wait_seconds=min(10, self._next_iteration_delay_sec),
+                )
+        else:
+            self.log("autonomous: skip local build_run_index (using powered sync-back rollup)")
+
+        rank = self._rank_from_remote_result(queue.run_group)
+        if rank.ok and rank.score is not None:
+            prev_best = _to_float(state.get("best_score"))
+            if self._improved(current=rank.score, best=prev_best):
+                state["best_score"] = rank.score
+                state["best_run_name"] = rank.run_name
+                state["best_config_path"] = rank.config_path
+                state["no_improvement_streak"] = 0
+            else:
+                state["no_improvement_streak"] = int(state.get("no_improvement_streak") or 0) + 1
+            state["last_error"] = "LOCAL_NEXT_BATCH_READY"
+            state["last_iteration_phase"] = "rank_ok"
+        else:
+            state["last_error"] = f"RANK_NOT_READY:{rank.details or 'NO_DATA'}"
+            state["last_iteration_phase"] = "rank_pending"
+
+        state["status"] = "running"
+        self.save_state(state)
+        self.write_best_params(state)
+        self.write_final_report(state)
+        self._next_iteration_delay_sec = min(5, max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60)))
         self._exit_after_iteration_wait = True
         return state
 
     def run_iteration(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not bool(self.args.use_codex_exec):
+            return self._run_iteration_local(state=state)
+
         self._exit_after_iteration_wait = False
+        self._next_iteration_delay_sec = max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60))
         iteration = int(state.get("iteration") or 0)
 
         decision = self.decide_with_codex(state)
         if decision is None:
             wait_reason = str(self._last_wait_reason or "WAITING_CODEX_OR_DATA").strip()
             self.log(f"autonomous: codex decision unavailable ({wait_reason})")
+            if wait_reason.startswith("CODEX_AUTH_") or wait_reason == "CODEX_AUTH_MISSING":
+                return self._wait_and_exit(
+                    state=state,
+                    reason=wait_reason,
+                    phase="waiting_codex_auth",
+                    wait_seconds=1800,
+                    prefer_codex_report=False,
+                )
             return self._wait_and_exit(state=state, reason=wait_reason, phase="waiting_codex")
 
         self._apply_decision_state(state, decision)
@@ -2289,7 +3139,12 @@ class AutonomousOptimizer:
                             "autonomous: data-collection run already active for queue "
                             f"{_safe_rel(queue_target.queue_path, self.app_root)}"
                         )
-            return self._wait_and_exit(state=state, reason=wait_reason, phase="waiting_codex")
+            return self._wait_and_exit(
+                state=state,
+                reason=wait_reason,
+                phase="waiting_codex",
+                wait_seconds=_to_int(payload.get("wait_seconds")),
+            )
 
         if next_action != "run_next_batch":
             return self._wait_and_exit(
@@ -2380,26 +3235,6 @@ class AutonomousOptimizer:
         else:
             self.log("autonomous: skip local build_run_index (using powered sync-back rollup)")
 
-        follow_decision = self.decide_with_codex(state)
-        if follow_decision is None:
-            wait_reason = str(self._last_wait_reason or "WAITING_CODEX_OR_DATA").strip()
-            return self._wait_and_exit(state=state, reason=wait_reason, phase="waiting_codex")
-
-        self._apply_decision_state(state, follow_decision)
-        follow_payload = follow_decision.payload
-        follow_action = str(follow_payload.get("next_action") or "").strip()
-        if bool(follow_payload.get("stop")) or follow_action == "stop":
-            state["status"] = "done"
-            state["last_error"] = str(follow_payload.get("stop_reason") or "").strip()
-            state["last_iteration_phase"] = "stopped_by_codex"
-            self.save_state(state)
-            self.write_best_params(state)
-            self.write_final_report(state)
-            return state
-        if follow_action == "wait":
-            wait_reason = str(follow_payload.get("stop_reason") or "").strip() or "WAITING_CODEX_OR_DATA"
-            return self._wait_and_exit(state=state, reason=wait_reason, phase="waiting_codex")
-
         rank = self._rank_from_remote_result(queue.run_group)
         if rank.ok and rank.score is not None:
             prev_best = _to_float(state.get("best_score"))
@@ -2412,11 +3247,12 @@ class AutonomousOptimizer:
                 state["no_improvement_streak"] = int(state.get("no_improvement_streak") or 0) + 1
 
         state["status"] = "running"
-        state["last_error"] = "NEXT_BATCH_READY_FROM_CODEX"
+        state["last_error"] = "RANK_UPDATED"
         state["last_iteration_phase"] = "rank_ok"
         self.save_state(state)
         self.write_best_params(state)
         self.write_final_report(state)
+        self._next_iteration_delay_sec = 0
         self._exit_after_iteration_wait = True
         return state
 
@@ -2426,6 +3262,7 @@ class AutonomousOptimizer:
         self.log(
             f"autonomous: start once={bool(self.args.once)} until_done={bool(self.args.until_done)} "
             f"max_iterations={self.args.max_iterations} plan_only={bool(self.args.plan_only)} "
+            f"use_codex_exec={bool(self.args.use_codex_exec)} "
             f"wait_timeout_sec={int(self.args.wait_timeout_sec)} wait_poll_sec={int(self.args.wait_poll_sec)} "
             f"local_rollup_rebuild={bool(self.args.local_rollup_rebuild)}"
         )
@@ -2454,6 +3291,26 @@ class AutonomousOptimizer:
                     self.log("autonomous: done by codex decision")
                     return 0
                 if self._exit_after_iteration_wait:
+                    if bool(self.args.plan_only):
+                        self.log("autonomous: plan-only complete")
+                        return 0
+                    if bool(self.args.once):
+                        self.log("autonomous: once mode complete")
+                        return 0
+                    if bool(self.args.until_done):
+                        phase = str(state.get("last_iteration_phase") or "").strip() or "waiting"
+                        delay_sec = int(self._next_iteration_delay_sec or 0)
+                        if delay_sec > 0:
+                            self.log(
+                                f"autonomous: wait phase={phase}, sleep {delay_sec}s and continue in-process (--until-done)"
+                            )
+                            time.sleep(delay_sec)
+                        else:
+                            self.log(
+                                f"autonomous: continue immediately phase={phase} in-process (--until-done)"
+                            )
+                        state = self.load_state()
+                        continue
                     self.log("autonomous: wait mode, exit 0 and continue on next timer/service run")
                     return 0
                 if bool(self.args.once):

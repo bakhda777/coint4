@@ -1,0 +1,29 @@
+# Budget $1000 autonomous optimizer bridge11 config (Codex-driven loop).
+#
+# This file is a *controller/metadata* config for scripts/optimization/autonomous_optimize.py.
+# It is NOT a direct coint2 walk-forward config. The optimizer loads `base_config` as the
+# walk-forward config template and applies decision `overrides` on top.
+
+base_config: configs/prod_final_budget1000.yaml
+
+windows:
+  - ["2022-06-01", "2023-04-30"]
+  - ["2023-10-01", "2024-09-30"]
+  - ["2024-05-01", "2025-06-30"]
+
+selection:
+  min_windows: 3
+  min_trades: 200
+  min_pairs: 20
+  max_dd_pct: 0.14
+  min_pnl: 150.0
+  min_psr: 0.90
+  min_dsr: null
+
+search:
+  # Stop/plateau logic is delegated to Codex decisions; keep these as guidance only.
+  max_rounds: 0
+  no_improvement_rounds: 2
+  min_improvement: 0.02
+  require_all_knobs_before_stop: true
+  min_queue_entries: 24

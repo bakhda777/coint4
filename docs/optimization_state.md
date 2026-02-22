@@ -1,14 +1,61 @@
 # Optimization state
 
-Last updated: 2026-02-20
+Last updated: 2026-02-22
 
-Current stage: **US-LOOP-004 (docs + live export) завершён после fail-closed stop в US-LOOP-003**: `decision_id=us-loop-003-stop-20260220T0149Z-infra-block`, `stop_reason=INFRA_BLOCKED_SANDBOX_NETWORK: codex backend and serverspace api unreachable; powered runner repeats RC4`. Финальный winner для live-экспорта остаётся baseline `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro` (`run_id=holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`, `score=3.530254`, `worst_dd_pct=0.132205`).
+Current stage: **US-LOOP-004 (docs + live export) закрыт + выполнены VPS confirm-replay top-10 BL11 и fullspan replay top-3 BL11**: `decision_id=us-loop-003-stop-20260220T0149Z-infra-block`, `stop_reason=INFRA_BLOCKED_SANDBOX_NETWORK: codex backend and serverspace api unreachable; powered runner repeats RC4`. Live winner для cutover пока остаётся baseline `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro` (`run_id=holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`, `score=3.530254`, `worst_dd_pct=0.132205`) до отдельного решения по промоуту BL11.
 
 **Prod config лидер**: `pruned_v2` (168 пар, universe: `coint4/configs/universe/pruned_v2_pairs_universe.yaml`), full-span holdout Sharpe **2.24**, stress **1.83**. Max DD -53.0% (было -83.1%). Все 3 OOS-окна прибыльны.
 
 **Denylisted symbols**: AFCUSDT, CITYUSDT, ERTHAUSDT, FLOWUSDT, GALFTUSDT, HFTUSDC, HFTUSDT, INTERUSDT, IZIUSDT, JUVUSDT, KDAUSDT
 
-## Критерий отбора (канонический, budget=$1000)
+## Рабочий цикл fullspan v1 (обязательный для каждого блока)
+
+Цель:
+- Закрывать каждый блок прогонов одним и тем же циклом: queue execution -> postprocess -> fullspan ranking -> decision memo.
+- Исключить неоднозначность между short OOS shortlist и финальным fullspan promote.
+
+Текущий статус:
+- Fullspan replay top-3 BL11 завершён и перепроверен на свежем каноническом rollup (`run_index`, 8077 записей).
+- Source of truth snapshot (local, 2026-02-22T17:42:16Z): `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` содержит `8077` записей.
+- Расхождение с VPS-снимком (`7927`) трактуется как срез другой рабочей копии/момента синхронизации; для локального решения и документации каноническим считается локальный `run_index` в репозитории.
+- Strict `fullspan_v1` (`--min-pnl 0`, `--tail-worst-gate-pct 0.20`) дал `No variants matched`:
+  - `..._slusd1p81` отклонён по hard gate `worst_step_pnl=-209.15 < -200`.
+  - `..._pv0p365` и `..._max_pairs24p0` отклонены по economic gate (`worst_robust_pnl < 0`), у `..._max_pairs24p0` дополнительно провален worst-step gate.
+- Policy decision (2026-02-22): строгий gate `tail_worst_gate_pct=0.20` остаётся обязательным для final promote; `0.21` допустим только в diagnostic/research режиме.
+- Baseline lock (2026-02-22): до первого strict-pass по `fullspan_v1` baseline winner остаётся `20260213_budget1000_dd_sprint08_stoplossusd_micro/holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`; promote в live запрещён (fail-closed).
+- Для bridge11 controller-профиля временно отключён DSR-gate (`selection.min_dsr: null` в `coint4/configs/autopilot/budget1000_batch_loop_bridge11_20260217.yaml`) до согласованной нормализации DSR.
+- План возврата DSR-gate:
+  - нормализовать интерпретацию DSR (или привести к шкале вероятности, или зафиксировать иной канонический порог и единицы);
+  - добавить регрессионный тест ранжирования с `min_dsr` на synthetic run_index;
+  - вернуть `selection.min_dsr` в bridge-профиль только после подтверждения на confirm/fullspan-блоке без ложных reject.
+- Контракт postprocess восстановлен в коде:
+  - `scripts/optimization/run_wfa_queue.py` снова поддерживает `--postprocess` и `--rollup-*`;
+  - `scripts/optimization/build_run_index.py` синхронизирует queue-статусы по метрикам (с опцией `--no-auto-sync-status`).
+- Добавлен единый оркестратор цикла: `scripts/optimization/run_fullspan_decision_cycle.py`.
+- Финальный promote в live не выполнялся автоматически (режим fail-closed сохранён, `selection_mode=shortlist_only`).
+
+Обязательный postprocess (после каждого блока прогонов):
+1. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<run_group>/run_queue.csv`
+2. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status`
+3. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --run-index artifacts/wfa/aggregate/rollup/run_index.csv --contains <run_group_or_tag> --fullspan-policy-v1 --min-windows 1 --min-trades 200 --min-pairs 20 --max-dd-pct 0.50 --min-pnl 0 --initial-capital 1000 --tail-quantile 0.20 --tail-q-soft-loss-pct 0.03 --tail-worst-soft-loss-pct 0.10 --tail-q-penalty 2.0 --tail-worst-penalty 1.0 --tail-worst-gate-pct 0.20`
+
+Канонические gate-пороги отбора (fullspan v1):
+- `min_windows >= 1`
+- `min_trades >= 200`
+- `min_pairs >= 20`
+- `max_dd_pct <= 0.50`
+- `worst_robust_pnl >= 0`
+- `worst_step_pnl >= -0.20 * initial_capital` (для `$1000`: `>= -200`)
+
+Следующие шаги:
+1. Для каждого нового run_group фиксировать в дневнике `selection_policy=fullspan_v1`, `selection_mode`, `promotion_verdict`, `rejection_reason` (если есть).
+2. Не продвигать winner из short OOS без отдельного fullspan replay по команде выше.
+3. Поддерживать единый формат отчётности в `docs/optimization_runs_YYYYMMDD.md` и `docs/optimization_state.md`.
+4. Референс перехода на новый шаблон отчётности: `docs/optimization_runs_20260222.md`.
+
+## Критерий shortlist для short OOS (не финальный promote, budget=$1000)
+
+Этот блок применяется только для pre-filter/shortlist в коротких OOS-циклах. Финальный выбор winner для live/cutover выполняется только по контракту из раздела `Fullspan selection policy v1`.
 
 Source of truth для ранжирования: `canonical_metrics.json` (пересчитан из `equity_curve.csv`) и/или rollup `run_index.csv` (поле `sharpe_ratio_abs` уже канонизировано через пересчёт из `equity_curve.csv`; детали: `docs/sharpe_audit.md`).
 
@@ -16,12 +63,50 @@ Objective (robust Sharpe):
 - Для одного окна: `robust_sharpe = min(sharpe_ratio_abs_holdout, sharpe_ratio_abs_stress)`.
 - Для multi-window: `robust_sharpe = min(robust_sharpe_window_i)` (worst-window robust Sharpe).
 
-DD-gate для $1000:
+DD-gate для $1000 (short OOS shortlist):
 - Проходит только если `max_drawdown_on_equity <= 0.15` (то есть worst DD не хуже -15%), эквивалентно `max_drawdown_abs >= -150` при `initial_capital=1000`.
+- Этот порог не переопределяет fullspan hard-gate `worst_dd_pct <= 0.50`; для промоута действует только fullspan-контракт ниже.
 
 Sanity-gates (анти no-op, минимальные):
 - `total_trades >= 10` и (если метрика присутствует) `total_pairs_traded >= 1`.
 - `equity_curve.csv` должен содержать минимум 2 точки (иначе Sharpe/DD по curve не определены, а `sharpe_ratio_abs` в канонизации может стать 0).
+
+## Fullspan selection policy v1
+
+Канонический источник: `docs/fullspan_selection_policy.md` (этот раздел в state — оперативная выжимка для ежедневной работы).
+
+Область действия:
+- Этот контракт обязателен для выбора победителя в fullspan-контуре (`walk_forward.max_steps=null` или эквивалентный полный диапазон дат по данным).
+- Short OOS (например, `max_steps<=5`) используется только как shortlist/pre-filter и не может быть финальным критерием промоута.
+- Любая неоднозначность между short OOS и fullspan трактуется fail-closed в пользу fullspan-контракта.
+
+Source of truth:
+- `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (канонизированные Sharpe/DD/PnL).
+- Перешаговая диагностика tail-risk из run-артефактов (`daily_pnl.csv` holdout/stress); для шага используется `step_robust_pnl = min(step_pnl_holdout, step_pnl_stress)`.
+
+Objective (формально, v1):
+- Базовый сигнал: `worst_robust_sharpe = min_window(min(sharpe_holdout, sharpe_stress))`.
+- Tail-компоненты:
+  - `worst_step_pnl = min(step_robust_pnl)`;
+  - `q20_step_pnl = quantile(step_robust_pnl, 0.20)`.
+- Итоговый score:
+  - `score_fullspan_v1 = worst_robust_sharpe - 2.0 * max(0, (-q20_step_pnl / initial_capital) - 0.03) - 1.0 * max(0, (-worst_step_pnl / initial_capital) - 0.10)`.
+- Tie-break: `worst_robust_pnl` (выше лучше) -> `worst_dd_pct` (ниже лучше) -> `avg_robust_sharpe` (выше лучше).
+
+Hard-gates (обязательные):
+- DD gate: `worst_dd_pct = max_window(max(abs(dd_holdout), abs(dd_stress))) <= 0.50`.
+- Worst-step gate: `worst_step_pnl >= -0.20 * initial_capital` (для `$1000`: не хуже `-200` на худшем шаге).
+- Economic gate: `worst_robust_pnl >= 0`.
+- Sanity gate: `metrics_present=true` для holdout+stress; `total_trades>=200`; `total_pairs_traded>=20`.
+
+Запрет (явный):
+- Нельзя выбирать winner только по `avg_sharpe`/`avg_robust_sharpe` на коротком OOS.
+- Любой кандидат с "хорошим средним Sharpe" и провалом `worst_step_pnl`/`worst_robust_pnl`/`worst_dd_pct` должен быть отклонён.
+
+Статистические метрики устойчивости:
+- Нормативно: использовать `PSR` и `DSR` как обязательные diagnostics в ранжировании fullspan.
+- Временный fallback (safe default v1 до добавления PSR/DSR в rollup): `stats_mode=fallback_no_psr_dsr`, решение валидно только при документированной причине `PSR_DSR_UNAVAILABLE_V1` и прохождении всех hard-gates выше.
+- Если одновременно недоступны `PSR/DSR` и tail-step данные, применяется fail-closed: только `selection_mode=shortlist_only`, `promotion_verdict=reject`, `rejection_reason=TAIL_DATA_MISSING_OR_PSR_DSR_UNAVAILABLE`.
 
 Recent updates (2026-02-20):
 
@@ -51,6 +136,46 @@ Recent updates (2026-02-20):
 - Примечание по tie-break: у `20260214_budget1000_dd_sprint09_hurst_slusd1p91` тот же `worst_robust_sharpe`; для continuity оставлен baseline из sprint08 (`20260213...`).
 - Snapshot по `runs_clean` (`20260215_confirm_shortlist`): `10/10` пар имеют `robust_sharpe=0` и `PnL=0` (no-op), поэтому clean-shortlist не используется как baseline для нового loop до разбора причины no-op.
 - Дневник блока: `docs/optimization_runs_20260220.md`.
+
+### VPS confirm replay (20260220_confirm_top10_bl11)
+- Собрана confirm-очередь top-10: `coint4/artifacts/wfa/aggregate/20260220_confirm_top10_bl11/run_queue.csv` (`60` run'ов = `10` вариантов × `3` окна × holdout+stress).
+- Для воспроизводимости подтянуты отсутствовавшие локально YAML из VPS (`20260217_budget1000_bl11_r02_max_pairs`, `r03_pv`, `r05_slusd`) через `coint4/scripts/remote/run_server_job.sh` + `SYNC_BACK`.
+- Heavy run выполнен на VPS `85.198.90.128`:
+  - `SYNC_UP=1 UPDATE_CODE=0 STOP_AFTER=1 SYNC_BACK=1 bash coint4/scripts/remote/run_server_job.sh bash -lc 'bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260220_confirm_top10_bl11/run_queue.csv --parallel 12'`
+  - Итог очереди: `60/60 completed`; `sync_queue_status.py` -> `no changes`.
+  - VPS выключен автоматически (`STOP_AFTER=1`, SSH после завершения недоступен).
+- Пересобран rollup после confirm:
+  - `run_index` после пересборки: `8071` записей.
+- Ранжирование confirm-группы воспроизвело исходный shortlist 1:1:
+  - лидер: `..._slusd1p81` (`worst_robust_sharpe=4.504620`, `worst_dd_pct=0.085423`, `worst_pnl=252.894`).
+  - далее: `..._max_pairs24p0` (`4.365635`) и `..._pv0p365` (`4.311314`).
+- Статус промоута: результаты зафиксированы и подтверждены на VPS; live winner в state не переключался автоматически.
+
+### VPS fullspan replay top-3 BL11 (20260220_top3_fullspan_wfa)
+- Fullspan-окно собрано по фактическому диапазону данных parquet: `2022-03-01` -> `2025-06-30` (`walk_forward.max_steps=null`).
+- Очередь: `coint4/artifacts/wfa/aggregate/20260220_top3_fullspan_wfa/run_queue.csv` (`6` run'ов = top-3 × holdout+stress).
+- Heavy run выполнен на VPS `85.198.90.128` через `coint4/scripts/remote/run_server_job.sh` + `run_wfa_queue.py --parallel 6`.
+- Результат очереди: `6/6 completed`; проверка: `Sharpe consistency OK (6 run(s))`; VPS выключен автоматически (`STOP_AFTER=1`).
+- Пересобран rollup после fullspan:
+  - `run_index` после пересборки: `8077` записей.
+- Fullspan robust ranking (по `robust_sharpe=min(holdout,stress)`) показал:
+  - #1 `..._slusd1p81`: holdout/stress Sharpe `1.463/1.088`, robust PnL `1500.25`.
+  - #2 `..._pv0p365`: holdout/stress Sharpe `1.367/-0.342`, robust PnL `-210.92`.
+  - #3 `..._max_pairs24p0`: holdout/stress Sharpe `1.478/-0.346`, robust PnL `-215.28`.
+- Строгая проверка canonical fullspan-policy-v1 (postprocess-команда из раздела выше):
+  - результат: `No variants matched fullspan policy v1 (missing_tail=0, worst_step_gate_failed=1)`.
+  - диагностически: `..._slusd1p81` имеет `worst_step_pnl=-209.15` (ниже порога `-200`), `..._max_pairs24p0` имеет `worst_step_pnl=-255.48`, `..._pv0p365` проваливает economic gate (`worst_robust_pnl=-210.92`).
+- Вывод по промоуту: для `20260220_top3_fullspan_wfa` зафиксирован fail-closed verdict (`selection_mode=shortlist_only`, `promotion_verdict=reject`), live winner в state не переключался автоматически.
+- Дополнительная VPS-перепроверка (2026-02-22 UTC, `SYNC_UP=1`, isolated fetch):
+  - `build_run_index.py` на VPS: `Run index entries: 7927` (снимок сервера).
+  - strict ranker на VPS повторил тот же verdict: `No variants matched fullspan policy v1`.
+  - diagnostic `tail_worst_gate_pct=0.21` на VPS пропускает только `..._slusd1p81`.
+  - targeted verify на VPS для postprocess-сценариев: `3 passed`, `4 failed` (`test_build_run_index_auto_sync`, `test_run_wfa_queue_postprocess*`), что указывает на несоответствие текущего `run_wfa_queue.py` ожиданиям тестов postprocess CLI.
+  - артефакты/rollup подтянуты в `.remote_fetch_20260222/` без перезаписи рабочей копии.
+- После фикса контрактов (2026-02-22 UTC):
+  - локально: `tests/scripts/test_build_run_index_auto_sync.py + tests/scripts/test_run_wfa_queue_postprocess.py + tests/utils/test_run_index.py` -> `7 passed`;
+  - VPS (`SYNC_UP=1`): те же 3 файла -> `7 passed`.
+  - канонический цикл воспроизводится новой командой-оркестратором и подтверждает тот же fail-closed verdict (strict no-pass, research pass only `..._slusd1p81`).
 
 Recent updates (2026-02-17):
 

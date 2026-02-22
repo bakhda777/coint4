@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rank WFA runs across multiple OOS windows by robust Sharpe, with DD gates.
+"""Rank WFA runs across multiple OOS windows by robust Sharpe.
 
 This script consumes the rollup run index and pairs runs where the run_id starts
 with `holdout_` / `stress_` and the remainder (base id) matches, within the same
@@ -8,19 +8,29 @@ run_group.
 It then aggregates *across OOS windows* for the same variant. OOS windows are
 detected by the filename tag pattern: `_oosYYYYMMDD_YYYYMMDD`.
 
-Primary objective (recommended): maximize worst-window robust Sharpe:
+Default objective:
   robust_sharpe_window = min(holdout_sharpe, stress_sharpe)
   score = min_window(robust_sharpe_window)
 
-Risk gate (recommended): bound worst-window drawdown on equity:
-  dd_pct_window = max(abs(holdout_dd_pct), abs(stress_dd_pct))
-  gate: max_window(dd_pct_window) <= --max-dd-pct
+Alternative objectives (`--score-mode`):
+  - worst:     score = min_window(robust_sharpe_window)
+  - quantile:  score = quantile(robust_sharpe_window, q), where q=`--quantile-q`
+  - hybrid:    score = w_worst * worst + w_q * q_score + w_avg * avg
+               with weights from `--hybrid-*-weight` (normalized to sum=1)
+
+Optional fullspan contract (`--fullspan-policy-v1`):
+  score_fullspan_v1 = worst_robust_sharpe
+      - tail_q_penalty * max(0, (-q_tail / initial_capital) - tail_q_soft_loss_pct)
+      - tail_worst_penalty * max(0, (-worst_tail / initial_capital) - tail_worst_soft_loss_pct)
+where `q_tail` / `worst_tail` are computed from robust daily PnL:
+  robust_daily_pnl_t = min(holdout_daily_pnl_t, stress_daily_pnl_t)
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,9 +52,51 @@ class _Entry:
     pnl: Optional[float]
     dd_abs: Optional[float]
     dd_pct: Optional[float]
+    psr: Optional[float]
+    dsr: Optional[float]
     trades: Optional[float]
     pairs: Optional[float]
     costs: Optional[float]
+    tail_loss_worst_pair_share: Optional[float]
+    tail_loss_worst_period_share: Optional[float]
+
+
+@dataclass(frozen=True)
+class _WindowStats:
+    window: str
+    robust_sharpe: float
+    dd_pct: float
+    robust_psr: Optional[float]
+    robust_dsr: Optional[float]
+    robust_pnl: Optional[float]
+    robust_tail_pair_share: Optional[float]
+    robust_tail_period_share: Optional[float]
+    tail_samples: Tuple[float, ...]
+    holdout: _Entry
+    stress: _Entry
+
+
+@dataclass(frozen=True)
+class _RankRow:
+    score: float
+    score_mode: str
+    worst_robust: float
+    q_robust: float
+    worst_dd: float
+    avg_robust: float
+    avg_dd: float
+    worst_psr: Optional[float]
+    worst_dsr: Optional[float]
+    windows: int
+    variant: str
+    sample_cfg: str
+    run_group: str
+    worst_pnl: Optional[float]
+    avg_pnl: Optional[float]
+    worst_tail_pair_share: Optional[float]
+    worst_tail_period_share: Optional[float]
+    worst_step_pnl: Optional[float]
+    q_step_pnl: Optional[float]
 
 
 def _to_bool(value: str) -> bool:
@@ -94,6 +146,126 @@ def _fmt(value: Optional[float], *, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+def _resolve_path(project_root: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return project_root / path
+
+
+def _quantile(values: Iterable[float], q: float) -> Optional[float]:
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    if len(ordered) == 1:
+        return float(ordered[0])
+
+    q = min(1.0, max(0.0, float(q)))
+    pos = (len(ordered) - 1) * q
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(ordered[lo])
+    weight = pos - lo
+    return float(ordered[lo] + (ordered[hi] - ordered[lo]) * weight)
+
+
+def _load_daily_pnl_map(path: Path) -> Dict[str, float]:
+    if not path.exists():
+        return {}
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        fields = list(reader.fieldnames or [])
+        if not fields:
+            return {}
+
+        date_key = fields[0]
+        pnl_key: Optional[str] = None
+        for field in fields:
+            if "pnl" in field.lower():
+                pnl_key = field
+                break
+        if pnl_key is None and len(fields) >= 2:
+            pnl_key = fields[1]
+        if pnl_key is None:
+            return {}
+
+        out: Dict[str, float] = {}
+        for row in reader:
+            date = str(row.get(date_key) or "").strip()
+            if not date:
+                continue
+            pnl = _to_float(str(row.get(pnl_key) or ""))
+            if pnl is None:
+                continue
+            out[date] = float(pnl)
+        return out
+
+
+def _load_robust_daily_tail(project_root: Path, holdout: _Entry, stress: _Entry) -> Tuple[float, ...]:
+    holdout_daily = _load_daily_pnl_map(_resolve_path(project_root, holdout.results_dir) / "daily_pnl.csv")
+    stress_daily = _load_daily_pnl_map(_resolve_path(project_root, stress.results_dir) / "daily_pnl.csv")
+    if not holdout_daily or not stress_daily:
+        return ()
+
+    common_dates = sorted(set(holdout_daily).intersection(stress_daily))
+    if not common_dates:
+        return ()
+    return tuple(min(holdout_daily[day], stress_daily[day]) for day in common_dates)
+
+
+def _fullspan_score(
+    *,
+    worst_robust_sharpe: float,
+    q_step_pnl: float,
+    worst_step_pnl: float,
+    initial_capital: float,
+    tail_q_soft_loss_pct: float,
+    tail_worst_soft_loss_pct: float,
+    tail_q_penalty: float,
+    tail_worst_penalty: float,
+) -> float:
+    q_loss = max(0.0, (-q_step_pnl / initial_capital) - tail_q_soft_loss_pct)
+    worst_loss = max(0.0, (-worst_step_pnl / initial_capital) - tail_worst_soft_loss_pct)
+    return float(worst_robust_sharpe) - float(tail_q_penalty) * q_loss - float(tail_worst_penalty) * worst_loss
+
+
+def _hybrid_weights(args: argparse.Namespace) -> Tuple[float, float, float]:
+    w_worst = max(0.0, float(args.hybrid_worst_weight))
+    w_q = max(0.0, float(args.hybrid_quantile_weight))
+    w_avg = max(0.0, float(args.hybrid_avg_weight))
+    total = w_worst + w_q + w_avg
+    if total <= 0.0:
+        raise SystemExit("hybrid weights must have positive sum")
+    return (w_worst / total, w_q / total, w_avg / total)
+
+
+def _print_concentration_rejects(
+    *,
+    max_tail_pair_share: Optional[float],
+    max_tail_period_share: Optional[float],
+    pair_missing: int,
+    pair_above_max: int,
+    period_missing: int,
+    period_above_max: int,
+) -> None:
+    if pair_missing <= 0 and pair_above_max <= 0 and period_missing <= 0 and period_above_max <= 0:
+        return
+
+    parts: List[str] = []
+    if max_tail_pair_share is not None:
+        parts.append(f"pair_missing={pair_missing}")
+        parts.append(f"pair_above_max={pair_above_max}")
+        parts.append(f"max_pair_share={float(max_tail_pair_share):.3f}")
+    if max_tail_period_share is not None:
+        parts.append(f"period_missing={period_missing}")
+        parts.append(f"period_above_max={period_above_max}")
+        parts.append(f"max_period_share={float(max_tail_period_share):.3f}")
+    if parts:
+        print("Concentration gate rejections: " + ", ".join(parts) + ".")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rank paired holdout/stress WFA runs across OOS windows (robust Sharpe)")
     parser.add_argument(
@@ -122,15 +294,150 @@ def main() -> int:
         default=0.40,
         help="Gate: max window drawdown on equity (abs) must be <= this (default: 0.40 = 40%%).",
     )
+    parser.add_argument(
+        "--min-pnl",
+        type=float,
+        default=0.0,
+        help="Gate: worst window PnL (min(window min(holdout_total_pnl, stress_total_pnl))) must be >= this (default: 0.0).",
+    )
+    parser.add_argument(
+        "--min-psr",
+        type=float,
+        default=None,
+        help="Gate: worst-window robust PSR must be >= this threshold (disabled when omitted).",
+    )
+    parser.add_argument(
+        "--min-dsr",
+        type=float,
+        default=None,
+        help="Gate: worst-window robust DSR must be >= this threshold (disabled when omitted).",
+    )
+    parser.add_argument(
+        "--max-tail-pair-share",
+        type=float,
+        default=None,
+        help=(
+            "Gate: worst robust tail-loss share contributed by one pair "
+            "must be <= this in [0, 1] (disabled when omitted)."
+        ),
+    )
+    parser.add_argument(
+        "--max-tail-period-share",
+        type=float,
+        default=None,
+        help=(
+            "Gate: worst robust tail-loss share contributed by one WF period "
+            "must be <= this in [0, 1] (disabled when omitted)."
+        ),
+    )
+    parser.add_argument(
+        "--score-mode",
+        choices=("worst", "quantile", "hybrid"),
+        default="worst",
+        help=(
+            "Ranking objective for multi-window robust Sharpe: "
+            "worst=min(window robust_sharpe), "
+            "quantile=Q_q(window robust_sharpe), "
+            "hybrid=w_worst*worst + w_q*Q_q + w_avg*avg."
+        ),
+    )
+    parser.add_argument(
+        "--quantile-q",
+        type=float,
+        default=0.20,
+        help="Lower-tail quantile q in [0,1] for quantile/hybrid score modes (default: 0.20).",
+    )
+    parser.add_argument(
+        "--hybrid-worst-weight",
+        type=float,
+        default=0.50,
+        help="Hybrid weight for worst robust Sharpe (default: 0.50).",
+    )
+    parser.add_argument(
+        "--hybrid-quantile-weight",
+        type=float,
+        default=0.30,
+        help="Hybrid weight for quantile robust Sharpe (default: 0.30).",
+    )
+    parser.add_argument(
+        "--hybrid-avg-weight",
+        type=float,
+        default=0.20,
+        help="Hybrid weight for average robust Sharpe (default: 0.20).",
+    )
+    parser.add_argument(
+        "--fullspan-policy-v1",
+        action="store_true",
+        help=(
+            "Enable canonical fullspan scoring: worst robust Sharpe with tail penalties from robust daily PnL "
+            "plus hard gate on worst-step loss."
+        ),
+    )
+    parser.add_argument(
+        "--initial-capital",
+        type=float,
+        default=1000.0,
+        help="Initial capital used to normalize tail losses (default: 1000).",
+    )
+    parser.add_argument(
+        "--tail-quantile",
+        type=float,
+        default=0.20,
+        help="Tail quantile q in [0, 1] for fullspan score (default: 0.20).",
+    )
+    parser.add_argument(
+        "--tail-q-soft-loss-pct",
+        type=float,
+        default=0.03,
+        help="Soft threshold for quantile loss as share of capital (default: 0.03).",
+    )
+    parser.add_argument(
+        "--tail-worst-soft-loss-pct",
+        type=float,
+        default=0.10,
+        help="Soft threshold for worst-step loss as share of capital (default: 0.10).",
+    )
+    parser.add_argument(
+        "--tail-q-penalty",
+        type=float,
+        default=2.0,
+        help="Penalty multiplier for quantile tail overflow (default: 2.0).",
+    )
+    parser.add_argument(
+        "--tail-worst-penalty",
+        type=float,
+        default=1.0,
+        help="Penalty multiplier for worst-step tail overflow (default: 1.0).",
+    )
+    parser.add_argument(
+        "--tail-worst-gate-pct",
+        type=float,
+        default=0.20,
+        help="Hard gate for worst robust daily PnL as share of capital (default: 0.20).",
+    )
     args = parser.parse_args()
 
+    if args.initial_capital <= 0:
+        raise SystemExit("--initial-capital must be > 0")
+    if not (0.0 <= args.quantile_q <= 1.0):
+        raise SystemExit("--quantile-q must be in [0, 1]")
+    if not (0.0 <= args.tail_quantile <= 1.0):
+        raise SystemExit("--tail-quantile must be in [0, 1]")
+    if args.min_psr is not None and not (0.0 <= float(args.min_psr) <= 1.0):
+        raise SystemExit("--min-psr must be in [0, 1]")
+    if args.max_tail_pair_share is not None and not (0.0 <= float(args.max_tail_pair_share) <= 1.0):
+        raise SystemExit("--max-tail-pair-share must be in [0, 1]")
+    if args.max_tail_period_share is not None and not (0.0 <= float(args.max_tail_period_share) <= 1.0):
+        raise SystemExit("--max-tail-period-share must be in [0, 1]")
+    hybrid_worst_weight, hybrid_q_weight, hybrid_avg_weight = _hybrid_weights(args)
+
     project_root = Path(__file__).resolve().parents[2]
-    run_index_path = project_root / args.run_index
+    run_index_path = _resolve_path(project_root, args.run_index)
     if not run_index_path.exists():
         raise SystemExit(f"run index not found: {run_index_path}")
 
     entries: List[_Entry] = []
-    with run_index_path.open(newline="") as handle:
+    with run_index_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
             entries.append(
@@ -145,97 +452,310 @@ def main() -> int:
                     pnl=_to_float(row.get("total_pnl") or ""),
                     dd_abs=_to_float(row.get("max_drawdown_abs") or ""),
                     dd_pct=_to_float(row.get("max_drawdown_on_equity") or ""),
+                    psr=_to_float(row.get("psr") or ""),
+                    dsr=_to_float(row.get("dsr") or ""),
                     trades=_to_float(row.get("total_trades") or ""),
                     pairs=_to_float(row.get("total_pairs_traded") or ""),
                     costs=_to_float(row.get("total_costs") or ""),
+                    tail_loss_worst_pair_share=_to_float(row.get("tail_loss_worst_pair_share") or ""),
+                    tail_loss_worst_period_share=_to_float(row.get("tail_loss_worst_period_share") or ""),
                 )
             )
 
     # Step 1: pair holdout/stress within each run_group by base_id.
     paired: Dict[Tuple[str, str], Dict[str, _Entry]] = {}
-    for e in entries:
-        kind, base_id = _kind_and_base_id(e.run_id)
+    for entry in entries:
+        kind, base_id = _kind_and_base_id(entry.run_id)
         if kind not in {"holdout", "stress"}:
             continue
 
-        meta = " | ".join([e.run_group, base_id, e.run_id, e.config_path, e.results_dir, e.status])
+        meta = " | ".join([entry.run_group, base_id, entry.run_id, entry.config_path, entry.results_dir, entry.status])
         if args.contains and not _matches_all(meta, args.contains):
             continue
 
-        key = (e.run_group, base_id)
+        key = (entry.run_group, base_id)
         slot = paired.setdefault(key, {})
-        slot[kind] = e
+        slot[kind] = entry
 
     # Step 2: compute per-window robust metrics and aggregate by variant.
-    # variant key: (run_group, variant_id)
-    windows_by_variant: Dict[Tuple[str, str], List[Tuple[str, float, float, _Entry, _Entry]]] = {}
+    windows_by_variant: Dict[Tuple[str, str], List[_WindowStats]] = {}
     for (run_group, base_id), pair in paired.items():
-        h = pair.get("holdout")
-        s = pair.get("stress")
-        if h is None or s is None:
+        holdout = pair.get("holdout")
+        stress = pair.get("stress")
+        if holdout is None or stress is None:
             continue
-        if not (h.metrics_present and s.metrics_present):
+        if not (holdout.metrics_present and stress.metrics_present):
             continue
-        if h.sharpe is None or s.sharpe is None:
+        if holdout.sharpe is None or stress.sharpe is None:
             continue
-        if h.dd_pct is None or s.dd_pct is None:
+        if holdout.dd_pct is None or stress.dd_pct is None:
             continue
         if not args.include_noncompleted:
-            if h.status.lower() != "completed" or s.status.lower() != "completed":
+            if holdout.status.lower() != "completed" or stress.status.lower() != "completed":
                 continue
 
-        robust_sharpe = min(h.sharpe, s.sharpe)
-        dd_pct = max(abs(h.dd_pct), abs(s.dd_pct))
+        robust_sharpe = min(holdout.sharpe, stress.sharpe)
+        dd_pct = max(abs(holdout.dd_pct), abs(stress.dd_pct))
+        robust_psr = None
+        if holdout.psr is not None and stress.psr is not None:
+            robust_psr = min(holdout.psr, stress.psr)
+        robust_dsr = None
+        if holdout.dsr is not None and stress.dsr is not None:
+            robust_dsr = min(holdout.dsr, stress.dsr)
+        robust_pnl = None
+        if holdout.pnl is not None and stress.pnl is not None:
+            robust_pnl = min(holdout.pnl, stress.pnl)
+        robust_tail_pair_share = None
+        if holdout.tail_loss_worst_pair_share is not None and stress.tail_loss_worst_pair_share is not None:
+            robust_tail_pair_share = max(holdout.tail_loss_worst_pair_share, stress.tail_loss_worst_pair_share)
+        robust_tail_period_share = None
+        if holdout.tail_loss_worst_period_share is not None and stress.tail_loss_worst_period_share is not None:
+            robust_tail_period_share = max(
+                holdout.tail_loss_worst_period_share,
+                stress.tail_loss_worst_period_share,
+            )
+
+        tail_samples: Tuple[float, ...] = ()
+        if args.fullspan_policy_v1:
+            tail_samples = _load_robust_daily_tail(project_root, holdout, stress)
+
         window = _parse_window(base_id)
         variant = _variant_id(base_id)
-        windows_by_variant.setdefault((run_group, variant), []).append((window, robust_sharpe, dd_pct, h, s))
+        windows_by_variant.setdefault((run_group, variant), []).append(
+            _WindowStats(
+                window=window,
+                robust_sharpe=float(robust_sharpe),
+                dd_pct=float(dd_pct),
+                robust_psr=robust_psr,
+                robust_dsr=robust_dsr,
+                robust_pnl=robust_pnl,
+                robust_tail_pair_share=robust_tail_pair_share,
+                robust_tail_period_share=robust_tail_period_share,
+                tail_samples=tail_samples,
+                holdout=holdout,
+                stress=stress,
+            )
+        )
 
-    rows = []
+    rows: List[_RankRow] = []
+    skipped_tail_missing = 0
+    skipped_tail_gate = 0
+    skipped_pair_concentration_missing = 0
+    skipped_pair_concentration_gate = 0
+    skipped_period_concentration_missing = 0
+    skipped_period_concentration_gate = 0
     for (run_group, variant), items in windows_by_variant.items():
         if len(items) < max(1, args.min_windows):
             continue
-        # Gates across windows.
-        worst_dd = max(item[2] for item in items)
+
+        worst_dd = max(item.dd_pct for item in items)
         if worst_dd > max(0.0, args.max_dd_pct):
             continue
 
-        min_trades = min((item[3].trades or 0.0) for item in items)
-        min_pairs = min((item[3].pairs or 0.0) for item in items)
+        min_trades = min(
+            min(item.holdout.trades or 0.0, item.stress.trades or 0.0) for item in items
+        )
+        min_pairs = min(
+            min(item.holdout.pairs or 0.0, item.stress.pairs or 0.0) for item in items
+        )
         if min_trades < args.min_trades or min_pairs < args.min_pairs:
             continue
 
-        worst_robust = min(item[1] for item in items)
-        avg_robust = sum(item[1] for item in items) / len(items)
-        avg_dd = sum(item[2] for item in items) / len(items)
-        rows.append((worst_robust, avg_robust, worst_dd, avg_dd, run_group, variant, items))
+        worst_robust = min(item.robust_sharpe for item in items)
+        q_robust = _quantile((item.robust_sharpe for item in items), args.quantile_q)
+        if q_robust is None:
+            continue
+        avg_robust = sum(item.robust_sharpe for item in items) / len(items)
+        avg_dd = sum(item.dd_pct for item in items) / len(items)
+        psr_values = [item.robust_psr for item in items if item.robust_psr is not None]
+        worst_psr = min(psr_values) if psr_values else None
+        if args.min_psr is not None:
+            if worst_psr is None or len(psr_values) != len(items) or worst_psr < float(args.min_psr):
+                continue
 
-    rows.sort(key=lambda x: (x[0], x[1], -x[2]), reverse=True)
+        dsr_values = [item.robust_dsr for item in items if item.robust_dsr is not None]
+        worst_dsr = min(dsr_values) if dsr_values else None
+        if args.min_dsr is not None:
+            if worst_dsr is None or len(dsr_values) != len(items) or worst_dsr < float(args.min_dsr):
+                continue
+
+        pnls = [item.robust_pnl for item in items if item.robust_pnl is not None]
+        worst_pnl = min(pnls) if pnls else None
+        avg_pnl = (sum(pnls) / len(pnls)) if pnls else None
+        if worst_pnl is None or worst_pnl < args.min_pnl:
+            continue
+        pair_tail_shares = [item.robust_tail_pair_share for item in items if item.robust_tail_pair_share is not None]
+        worst_tail_pair_share = max(pair_tail_shares) if pair_tail_shares else None
+        if args.max_tail_pair_share is not None:
+            if worst_tail_pair_share is None or len(pair_tail_shares) != len(items):
+                skipped_pair_concentration_missing += 1
+                continue
+            if worst_tail_pair_share > float(args.max_tail_pair_share):
+                skipped_pair_concentration_gate += 1
+                continue
+        period_tail_shares = [
+            item.robust_tail_period_share for item in items if item.robust_tail_period_share is not None
+        ]
+        worst_tail_period_share = max(period_tail_shares) if period_tail_shares else None
+        if args.max_tail_period_share is not None:
+            if worst_tail_period_share is None or len(period_tail_shares) != len(items):
+                skipped_period_concentration_missing += 1
+                continue
+            if worst_tail_period_share > float(args.max_tail_period_share):
+                skipped_period_concentration_gate += 1
+                continue
+
+        if args.score_mode == "worst":
+            score = float(worst_robust)
+        elif args.score_mode == "quantile":
+            score = float(q_robust)
+        else:
+            score = (
+                hybrid_worst_weight * float(worst_robust)
+                + hybrid_q_weight * float(q_robust)
+                + hybrid_avg_weight * float(avg_robust)
+            )
+        worst_step_pnl: Optional[float] = None
+        q_step_pnl: Optional[float] = None
+
+        if args.fullspan_policy_v1:
+            tail_values = [sample for item in items for sample in item.tail_samples]
+            if not tail_values:
+                skipped_tail_missing += 1
+                continue
+            worst_step_pnl = min(tail_values)
+            q_step_pnl = _quantile(tail_values, args.tail_quantile)
+            if q_step_pnl is None:
+                skipped_tail_missing += 1
+                continue
+            if worst_step_pnl < (-args.tail_worst_gate_pct * args.initial_capital):
+                skipped_tail_gate += 1
+                continue
+            score = _fullspan_score(
+                worst_robust_sharpe=worst_robust,
+                q_step_pnl=q_step_pnl,
+                worst_step_pnl=worst_step_pnl,
+                initial_capital=float(args.initial_capital),
+                tail_q_soft_loss_pct=float(args.tail_q_soft_loss_pct),
+                tail_worst_soft_loss_pct=float(args.tail_worst_soft_loss_pct),
+                tail_q_penalty=float(args.tail_q_penalty),
+                tail_worst_penalty=float(args.tail_worst_penalty),
+            )
+
+        sample_cfg = items[0].holdout.config_path
+        rows.append(
+            _RankRow(
+                score=float(score),
+                score_mode="fullspan_v1" if args.fullspan_policy_v1 else str(args.score_mode),
+                worst_robust=float(worst_robust),
+                q_robust=float(q_robust),
+                worst_dd=float(worst_dd),
+                avg_robust=float(avg_robust),
+                avg_dd=float(avg_dd),
+                worst_psr=worst_psr,
+                worst_dsr=worst_dsr,
+                windows=len(items),
+                variant=variant,
+                sample_cfg=sample_cfg,
+                run_group=run_group,
+                worst_pnl=worst_pnl,
+                avg_pnl=avg_pnl,
+                worst_tail_pair_share=worst_tail_pair_share,
+                worst_tail_period_share=worst_tail_period_share,
+                worst_step_pnl=worst_step_pnl,
+                q_step_pnl=q_step_pnl,
+            )
+        )
+
+    if args.fullspan_policy_v1:
+        # Canonical tie-break for fullspan: worst_robust_pnl -> worst_dd_pct -> avg_robust_sharpe.
+        rows.sort(
+            key=lambda row: (
+                row.score,
+                row.worst_pnl if row.worst_pnl is not None else float("-inf"),
+                -row.worst_dd,
+                row.avg_robust,
+            ),
+            reverse=True,
+        )
+    else:
+        rows.sort(
+            key=lambda row: (
+                row.score,
+                row.worst_robust,
+                row.q_robust,
+                row.avg_robust,
+                row.worst_psr if row.worst_psr is not None else float("-inf"),
+                row.worst_dsr if row.worst_dsr is not None else float("-inf"),
+                -row.worst_dd,
+            ),
+            reverse=True,
+        )
+
     rows = rows[: max(1, args.top)]
 
     if not rows:
+        _print_concentration_rejects(
+            max_tail_pair_share=args.max_tail_pair_share,
+            max_tail_period_share=args.max_tail_period_share,
+            pair_missing=skipped_pair_concentration_missing,
+            pair_above_max=skipped_pair_concentration_gate,
+            period_missing=skipped_period_concentration_missing,
+            period_above_max=skipped_period_concentration_gate,
+        )
+        if args.fullspan_policy_v1:
+            print(
+                "No variants matched fullspan policy v1 "
+                f"(missing_tail={skipped_tail_missing}, worst_step_gate_failed={skipped_tail_gate})."
+            )
+            return 1
         print("No variants matched (check filters/gates or ensure rollup index is up to date).")
         return 1
 
+    q_robust_label = f"q{int(round(args.quantile_q * 100)):02d}_robust_sh"
+    q_step_label = f"q{int(round(args.tail_quantile * 100)):02d}_step_pnl"
     print(
-        "| rank | worst_robust_sh | avg_robust_sh | worst_dd_pct | avg_dd_pct | windows | run_group | variant_id | sample_config |"
+        "| rank | score_mode | score | worst_robust_sh | {q_robust_label} | avg_robust_sh | worst_dd_pct | avg_dd_pct | worst_psr | worst_dsr | windows | variant_id | sample_config | run_group | worst_pnl | avg_pnl | worst_pair_tail_share | worst_period_tail_share | worst_step_pnl | {q_step_label} |".format(
+            q_robust_label=q_robust_label,
+            q_step_label=q_step_label,
+        )
     )
-    print("|---:|---:|---:|---:|---:|---:|---|---|---|")
-    for idx, (worst_robust, avg_robust, worst_dd, avg_dd, run_group, variant, items) in enumerate(rows, 1):
-        # pick a stable config_path for reference
-        sample_cfg = items[0][3].config_path
+    print(
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|"
+    )
+    for idx, row in enumerate(rows, 1):
         print(
-            "| {rank} | {worst} | {avg} | {wdd} | {add} | {n} | {group} | {variant} | {cfg} |".format(
+            "| {rank} | {mode} | {score} | {worst} | {qrobust} | {avg} | {wdd} | {add} | {wpsr} | {wdsr} | {n} | {variant} | {cfg} | {group} | {wpnl} | {apnl} | {wpair} | {wperiod} | {wstep} | {qstep} |".format(
                 rank=idx,
-                worst=_fmt(worst_robust, digits=3),
-                avg=_fmt(avg_robust, digits=3),
-                wdd=_fmt(worst_dd, digits=3),
-                add=_fmt(avg_dd, digits=3),
-                n=len(items),
-                group=run_group,
-                variant=variant,
-                cfg=sample_cfg,
+                mode=row.score_mode,
+                score=_fmt(row.score, digits=3),
+                worst=_fmt(row.worst_robust, digits=3),
+                qrobust=_fmt(row.q_robust, digits=3),
+                wdd=_fmt(row.worst_dd, digits=3),
+                avg=_fmt(row.avg_robust, digits=3),
+                add=_fmt(row.avg_dd, digits=3),
+                wpsr=_fmt(row.worst_psr, digits=3),
+                wdsr=_fmt(row.worst_dsr, digits=3),
+                n=row.windows,
+                variant=row.variant,
+                cfg=row.sample_cfg,
+                group=row.run_group,
+                wpnl=_fmt(row.worst_pnl, digits=2),
+                apnl=_fmt(row.avg_pnl, digits=2),
+                wpair=_fmt(row.worst_tail_pair_share, digits=3),
+                wperiod=_fmt(row.worst_tail_period_share, digits=3),
+                wstep=_fmt(row.worst_step_pnl, digits=2),
+                qstep=_fmt(row.q_step_pnl, digits=2),
             )
         )
+    _print_concentration_rejects(
+        max_tail_pair_share=args.max_tail_pair_share,
+        max_tail_period_share=args.max_tail_period_share,
+        pair_missing=skipped_pair_concentration_missing,
+        pair_above_max=skipped_pair_concentration_gate,
+        period_missing=skipped_period_concentration_missing,
+        period_above_max=skipped_period_concentration_gate,
+    )
 
     return 0
 

@@ -3,9 +3,23 @@ SHELL := /bin/bash
 
 COINT4_DIR := coint4
 COINT4_VENV_BIN := $(COINT4_DIR)/.venv/bin
+LOOP_HOME ?= /home/claudeuser/coint4
 
 # Queue path is relative to app root (coint4/). Override if needed.
 VPS_WFA_QUEUE ?= artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv
+LOOP_USE_CODEX_EXEC ?= 1
+CODEX_ENV_FILE ?= /etc/coint4/codex.env
+# codex auth mode for loop targets:
+#   subscription (default): use existing `codex login` session (recommended; no API key usage).
+#   api-key: require OPENAI_API_KEY and bootstrap via `codex login --with-api-key`.
+#   auto: try session first, then OPENAI_API_KEY bootstrap if key is present.
+LOOP_CODEX_AUTH_MODE ?= subscription
+
+ifeq ($(LOOP_USE_CODEX_EXEC),1)
+LOOP_CODEX_FLAG := --use-codex-exec
+else
+LOOP_CODEX_FLAG :=
+endif
 
 define _ensure_venv
 	@test -x "$(COINT4_VENV_BIN)/$(1)" || ( \
@@ -23,6 +37,9 @@ help:
 	@echo "  make test-slow   Run pytest -m slow"
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
+	@echo "  make loop        Closed loop (autonomous_optimize --until-done; Codex exec + local fallback)"
+	@echo "  make loop-once   One closed-loop pass (autonomous_optimize --once; Codex exec + local fallback)"
+	@echo "  make loop-api-power Legacy one-shot baseline via API power-cycle wrapper"
 	@echo "  make preflight-loop Run loop preflight (remote policy + secrets + SSH + hygiene/lint/test)"
 	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
 	@echo "  make secret-scan Run staged secret scan (forbidden paths + sensitive patterns)"
@@ -32,6 +49,7 @@ help:
 	@echo "Notes:"
 	@echo "  - Most commands use coint4/.venv/bin/* directly (no need for 'poetry run')."
 	@echo "  - 'make setup' requires Poetry to be installed."
+	@echo "  - loop auth mode: LOOP_CODEX_AUTH_MODE=subscription|api-key|auto (default: subscription)."
 
 .PHONY: setup
 setup:
@@ -60,6 +78,33 @@ lint:
 
 .PHONY: ci
 ci: lint test
+
+.PHONY: loop
+loop: loop-closed
+
+.PHONY: loop-closed
+loop-closed:
+	@$(call _ensure_venv,python)
+	@cd $(COINT4_DIR) && set -euo pipefail; \
+		if [[ -r "$(CODEX_ENV_FILE)" ]]; then set -a; . "$(CODEX_ENV_FILE)"; set +a; fi; \
+		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
+		HOME="$(LOOP_HOME)" \
+		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
+		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --until-done $(LOOP_CODEX_FLAG)
+
+.PHONY: loop-once
+loop-once:
+	@$(call _ensure_venv,python)
+	@cd $(COINT4_DIR) && set -euo pipefail; \
+		if [[ -r "$(CODEX_ENV_FILE)" ]]; then set -a; . "$(CODEX_ENV_FILE)"; set +a; fi; \
+		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
+		HOME="$(LOOP_HOME)" \
+		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
+		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --once $(LOOP_CODEX_FLAG)
+
+.PHONY: loop-api-power
+loop-api-power:
+	@python3 coint4/scripts/optimization/run_loop_with_api_power.py
 
 .PHONY: preflight-loop
 preflight-loop:

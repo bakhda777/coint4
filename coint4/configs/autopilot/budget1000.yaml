@@ -41,6 +41,12 @@ selection:
   min_trades: 10
   min_pairs: 1
 
+  # Statistical confidence gates for robust Sharpe (optional).
+  # min_psr: 0.90
+  # min_dsr: 0.0
+  min_psr: null
+  min_dsr: null
+
   # Option A (hard gate): enable max_dd_pct (set null to disable).
   # max_dd_pct: 0.15
   max_dd_pct: null
@@ -79,4 +85,3 @@ search:
       candidates: [-2, -1, 0, 1, 2]
       min: 1.0
       max: 1.05
-

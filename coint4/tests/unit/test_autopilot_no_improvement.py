@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import sys
+import csv
 from pathlib import Path
 
 import pytest
@@ -264,3 +265,102 @@ def test_collect_seen_config_signatures_uses_run_group_prefix(tmp_path: Path) ->
         run_group_prefix="grp",
     )
     assert len(seen) == 2
+
+
+def test_select_best_multiwindow_applies_psr_dsr_gate(tmp_path: Path) -> None:
+    mod = _load_autopilot_module()
+    run_index = tmp_path / "run_index.csv"
+    fieldnames = [
+        "run_id",
+        "run_group",
+        "config_path",
+        "results_dir",
+        "status",
+        "metrics_present",
+        "sharpe_ratio_abs",
+        "max_drawdown_on_equity",
+        "psr",
+        "dsr",
+        "total_trades",
+        "total_pairs_traded",
+    ]
+    rows = [
+        {
+            "run_id": "holdout_variant_a_oos20240101_20240301",
+            "run_group": "rg",
+            "config_path": "configs/a.yaml",
+            "results_dir": "artifacts/wfa/runs/rg/holdout_a",
+            "status": "completed",
+            "metrics_present": "true",
+            "sharpe_ratio_abs": "1.50",
+            "max_drawdown_on_equity": "0.10",
+            "psr": "0.40",
+            "dsr": "-0.20",
+            "total_trades": "200",
+            "total_pairs_traded": "20",
+        },
+        {
+            "run_id": "stress_variant_a_oos20240101_20240301",
+            "run_group": "rg",
+            "config_path": "configs/a.yaml",
+            "results_dir": "artifacts/wfa/runs/rg/stress_a",
+            "status": "completed",
+            "metrics_present": "true",
+            "sharpe_ratio_abs": "1.20",
+            "max_drawdown_on_equity": "0.12",
+            "psr": "0.35",
+            "dsr": "-0.30",
+            "total_trades": "200",
+            "total_pairs_traded": "20",
+        },
+        {
+            "run_id": "holdout_variant_b_oos20240101_20240301",
+            "run_group": "rg",
+            "config_path": "configs/b.yaml",
+            "results_dir": "artifacts/wfa/runs/rg/holdout_b",
+            "status": "completed",
+            "metrics_present": "true",
+            "sharpe_ratio_abs": "1.00",
+            "max_drawdown_on_equity": "0.09",
+            "psr": "0.96",
+            "dsr": "0.30",
+            "total_trades": "200",
+            "total_pairs_traded": "20",
+        },
+        {
+            "run_id": "stress_variant_b_oos20240101_20240301",
+            "run_group": "rg",
+            "config_path": "configs/b.yaml",
+            "results_dir": "artifacts/wfa/runs/rg/stress_b",
+            "status": "completed",
+            "metrics_present": "true",
+            "sharpe_ratio_abs": "0.95",
+            "max_drawdown_on_equity": "0.11",
+            "psr": "0.92",
+            "dsr": "0.25",
+            "total_trades": "200",
+            "total_pairs_traded": "20",
+        },
+    ]
+    with run_index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+    selected = mod.select_best_multiwindow(
+        run_index_path=run_index,
+        run_group="rg",
+        min_windows=1,
+        min_trades=1,
+        min_pairs=1,
+        max_dd_pct=0.40,
+        min_psr=0.90,
+        min_dsr=0.0,
+        dd_target_pct=None,
+        dd_penalty=0.0,
+    )
+
+    assert selected.variant_id == "variant_b"
+    assert selected.worst_robust_psr == pytest.approx(0.92)
+    assert selected.worst_robust_dsr == pytest.approx(0.25)

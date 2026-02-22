@@ -138,6 +138,18 @@ def _parse_bool_flag(value: object) -> bool:
     raise argparse.ArgumentTypeError(f"Invalid boolean value: {value!r}. Use true/false.")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return bool(default)
+
+
 def compute_backoff_delay(attempt_index: int, base_seconds: float, cap_seconds: float = 120.0) -> float:
     return min(float(cap_seconds), float(base_seconds) * (2.0 ** max(0, attempt_index)))
 
@@ -166,6 +178,15 @@ def _to_repo_relative(path: Path, project_root: Path) -> Path:
         if len(parts) > 1:
             return Path(*parts[1:])
         return Path(p.name)
+
+
+def _is_busy_power_error(exc: Exception) -> bool:
+    text = str(exc).strip().lower()
+    return (
+        "busy" in text
+        or "conflict occurred during the competitive change of the object" in text
+        or "wait until the end of the previous operation and try again" in text
+    )
 
 
 def _exec_ssh_command(
@@ -485,22 +506,42 @@ def _remote_rank_and_sync(
                             ]
                             proc = subprocess.run(rank_cmd, capture_output=True, text=True, check=False)
                             parsed = False
-                            for line in (proc.stdout or "").splitlines():
-                                stripped = line.strip()
-                                if not stripped.startswith("|"):
+                            table_lines = [
+                                line.strip()
+                                for line in (proc.stdout or "").splitlines()
+                                if line.strip().startswith("|")
+                            ]
+                            if len(table_lines) >= 3:
+                                header = [chunk.strip() for chunk in table_lines[0].strip("|").split("|")]
+                            else:
+                                header = []
+                            for line in table_lines[2:]:
+                                if not header:
                                     continue
-                                cols = [chunk.strip() for chunk in stripped.strip("|").split("|")]
-                                if len(cols) < 9 or cols[0] != "1":
+                                cols = [chunk.strip() for chunk in line.strip("|").split("|")]
+                                if len(cols) != len(header):
                                     continue
-                                worst_robust = _to_float(cols[1])
-                                worst_dd = _to_float(cols[3])
+                                row = dict(zip(header, cols))
+                                if str(row.get("rank") or "").strip() != "1":
+                                    continue
+                                best_score = _to_float(row.get("score"))
+                                worst_robust = _to_float(row.get("worst_robust_sh"))
+                                if best_score is None:
+                                    best_score = worst_robust
+                                if worst_robust is None:
+                                    worst_robust = best_score
+                                worst_dd = _to_float(row.get("worst_dd_pct"))
+                                best_run_name = str(row.get("variant_id") or "").strip()
+                                best_config_path = str(row.get("sample_config") or "").strip()
+                                if best_score is None or not best_run_name:
+                                    continue
                                 result.update(
                                     {
                                         "ok": True,
                                         "run_group": run_group,
-                                        "best_run_name": str(cols[7]).strip(),
-                                        "best_config_path": str(cols[8]).strip(),
-                                        "best_score": worst_robust,
+                                        "best_run_name": best_run_name,
+                                        "best_config_path": best_config_path,
+                                        "best_score": best_score,
                                         "worst_robust_sharpe": worst_robust,
                                         "worst_dd_pct": worst_dd,
                                         "details": "REMOTE_RANK_OK",
@@ -974,23 +1015,60 @@ def ensure_server_ready(
     host: str,
     user: str,
     *,
+    project_root: Optional[Path] = None,
     port: int = 22,
     log_path: Path,
     log: Callable[[str], None],
 ) -> None:
     log(f"powered: power_on requested")
     try:
-        _safe_power_on(api_key, server_id)
+        _safe_power_on(api_key, server_id, project_root=project_root)
     except Exception as exc:  # noqa: BLE001
-        text = str(exc).lower()
-        if "busy" in text:
-            log("powered: power_on reported busy; continue with readiness checks")
+        if _is_busy_power_error(exc):
+            log("powered: power_on reported busy/conflict; continue with readiness checks")
         else:
             raise
-    _wait_for_status(api_key, server_id, timeout_sec=600, poll_sec=3.0, log=log)
+    _wait_for_status(
+        api_key,
+        server_id,
+        project_root=project_root,
+        timeout_sec=600,
+        poll_sec=3.0,
+        log=log,
+    )
     log(f"powered: wait_ssh host={host} port={port}")
+    if _wait_ssh_ready(host, port, timeout_sec=300, poll_sec=2.0, log=log):
+        return
+
+    # Sometimes API reports ACTIVE while SSH remains unreachable; attempt one hard power-cycle.
+    log("powered: wait_ssh failed after power_on; attempting recovery power cycle")
+    try:
+        _safe_power_off(api_key, server_id, project_root=project_root)
+        log("powered: recovery power_off requested")
+    except Exception as exc:  # noqa: BLE001
+        log(f"powered: recovery power_off failed: {type(exc).__name__}")
+    time.sleep(5.0)
+
+    log("powered: recovery power_on requested")
+    try:
+        _safe_power_on(api_key, server_id, project_root=project_root)
+    except Exception as exc:  # noqa: BLE001
+        if _is_busy_power_error(exc):
+            log("powered: recovery power_on reported busy/conflict; continue")
+        else:
+            raise
+
+    _wait_for_status(
+        api_key,
+        server_id,
+        project_root=project_root,
+        timeout_sec=600,
+        poll_sec=3.0,
+        log=log,
+    )
+    log(f"powered: wait_ssh retry host={host} port={port}")
     if not _wait_ssh_ready(host, port, timeout_sec=300, poll_sec=2.0, log=log):
-        raise _PoweredFailure("SSH readiness check failed", error_class="NETWORK", fatal=True)
+        raise _PoweredFailure("SSH readiness check failed after recovery cycle", error_class="NETWORK", fatal=True)
 
 
 def _wait_ssh_ready(
@@ -1242,6 +1320,7 @@ def _build_remote_command(
     parallel: int,
     postprocess: bool,
 ) -> str:
+    _ = postprocess  # Postprocessing happens in this wrapper, not in run_wfa_queue.py.
     thread_exports = (
         "export OMP_NUM_THREADS=1; "
         "export MKL_NUM_THREADS=1; "
@@ -1255,8 +1334,7 @@ def _build_remote_command(
         f"&& PYTHONPATH=src "
         f"{shlex.quote(remote_python)} "
         f"scripts/optimization/run_wfa_queue.py --queue {shlex.quote(queue_relative)} "
-        f"--statuses {shlex.quote(statuses)} --parallel {int(parallel)} "
-        f"--postprocess {'true' if bool(postprocess) else 'false'}"
+        f"--statuses {shlex.quote(statuses)} --parallel {int(parallel)}"
     )
 
 
@@ -1895,6 +1973,8 @@ def _wait_for_completion(
 ) -> None:
     deadline = time.time() + max(1, int(timeout_sec))
     attempt = 0
+    all_done_without_metrics_streak = 0
+    all_done_without_metrics_grace = 2
 
     while True:
         attempt += 1
@@ -1922,6 +2002,19 @@ def _wait_for_completion(
         if all_done and has_metrics:
             log("powered: wait_completion completion detected")
             return
+        if all_done and not has_metrics:
+            all_done_without_metrics_streak += 1
+            log(
+                "powered: wait_completion all_done_without_metrics streak={streak}/{grace}".format(
+                    streak=all_done_without_metrics_streak,
+                    grace=all_done_without_metrics_grace,
+                )
+            )
+            if all_done_without_metrics_streak >= all_done_without_metrics_grace:
+                log("powered: wait_completion completion detected without metrics; continue to postprocess")
+                return
+        else:
+            all_done_without_metrics_streak = 0
 
         if time.time() >= deadline:
             raise _PoweredFailure(
@@ -1946,8 +2039,7 @@ def _remote_rebuild_rollup(
     cmd = (
         f"cd {shlex.quote(str(remote_repo))} "
         f"&& PYTHONPATH=src {shlex.quote(remote_python)} "
-        "scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup "
-        f"--queue {shlex.quote(str(queue_relative).replace('\\', '/'))}"
+        "scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup"
     )
     _run_remote_command(
         host,
@@ -1970,29 +2062,49 @@ def run_powered_queue(
     queue_relative = _to_repo_relative(queue_path, project_root)
     remote_candidates = [Path(p) for p in args.remote_repo_candidates]
 
-    api_key = _safe_api_key(project_root)
-    server_id = (args.serverspace_server_id or os.getenv("SERVERSPACE_SERVER_ID") or "").strip()
-    if server_id:
-        _emit(f"powered: resolve server_id from env override {server_id}", log_path)
-    else:
-        _emit(f"powered: resolve server_id by ip={args.compute_host}", log_path)
-        server_id = _safe_resolve_server_id_by_ip(api_key, args.compute_host, project_root=project_root)
-
     started_on_compute = False
     remote_repo: Optional[Path] = None
     remote_python = None
     log = lambda msg: _emit(msg, log_path)
+    skip_power = bool(getattr(args, "skip_power", False))
+    api_key = ""
+    server_id = ""
     try:
-        ensure_server_ready(
-            api_key,
-            server_id,
-            args.compute_host,
-            args.ssh_user,
-            port=int(args.ssh_port),
-            log_path=log_path,
-            log=log,
-        )
-        started_on_compute = True
+        if skip_power:
+            log("powered: skip_power=true (Serverspace API bypass)")
+            if args.poweroff:
+                log("powered: skip_power=true so API power_off is disabled for this run")
+            log(f"powered: skip_power ssh preflight host={args.compute_host} port={int(args.ssh_port)}")
+            _run_remote_command(
+                args.compute_host,
+                args.ssh_user,
+                "echo POWER_OK",
+                log_path=log_path,
+                port=int(args.ssh_port),
+                log=log,
+                command_purpose="skip-power-preflight",
+            )
+            started_on_compute = True
+        else:
+            api_key = _safe_api_key(project_root)
+            server_id = (args.serverspace_server_id or os.getenv("SERVERSPACE_SERVER_ID") or "").strip()
+            if server_id:
+                log(f"powered: resolve server_id from env override {server_id}")
+            else:
+                log(f"powered: resolve server_id by ip={args.compute_host}")
+                server_id = _safe_resolve_server_id_by_ip(api_key, args.compute_host, project_root=project_root)
+
+            ensure_server_ready(
+                api_key,
+                server_id,
+                args.compute_host,
+                args.ssh_user,
+                project_root=project_root,
+                port=int(args.ssh_port),
+                log_path=log_path,
+                log=log,
+            )
+            started_on_compute = True
 
         if bool(args.preflight):
             _run_remote_command(
@@ -2306,12 +2418,14 @@ def run_powered_queue(
 
         return int(remote_rc)
     finally:
-        if args.poweroff and started_on_compute:
+        if args.poweroff and started_on_compute and not skip_power:
             _emit("powered: power_off requested (finally)", log_path)
             try:
                 _safe_power_off(api_key, server_id, project_root=project_root)
             except Exception as exc:  # noqa: BLE001
                 _emit(f"powered: power_off failed: {type(exc).__name__}", log_path)
+        elif args.poweroff and skip_power:
+            _emit("powered: power_off skipped (skip_power=true)", log_path)
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -2351,6 +2465,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--ssh-user", default="root")
     parser.add_argument("--ssh-port", type=int, default=22)
     parser.add_argument("--poweroff", type=_parse_bool_flag, default=True)
+    parser.add_argument(
+        "--skip-power",
+        type=_parse_bool_flag,
+        default=_env_bool("COINT4_SKIP_POWER", False),
+        help="Skip Serverspace API power actions and use direct SSH readiness check.",
+    )
     parser.add_argument("--max-retries", type=int, default=30)
     parser.add_argument("--backoff-seconds", type=float, default=10.0)
     parser.add_argument("--serverspace-server-id", default=None)
