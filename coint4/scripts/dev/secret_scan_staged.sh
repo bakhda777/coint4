@@ -18,6 +18,20 @@ forbidden_ext_re='(\.pid|\.log)$'
 mapfile -t staged_paths < <(git diff --cached --name-only)
 
 for p in "${staged_paths[@]}"; do
+  # Allow-list small, intentionally-tracked WFA aggregate metadata under coint4/artifacts.
+  # This keeps heavy run outputs (wfa/runs) blocked, while letting us commit queues/search spaces/rollups.
+  if [[ "$p" =~ ^coint4/artifacts/ ]]; then
+    if [[ "$p" =~ ^coint4/artifacts/wfa/aggregate/[^/]+/run_queue\.csv$ ]]; then
+      continue
+    fi
+    if [[ "$p" =~ ^coint4/artifacts/wfa/aggregate/[^/]+/search_space\.(csv|md)$ ]]; then
+      continue
+    fi
+    if [[ "$p" =~ ^coint4/artifacts/wfa/aggregate/rollup/(README\.md|run_index\.(csv|json|md))$ ]]; then
+      continue
+    fi
+  fi
+
   if [[ "$p" =~ $forbidden_path_re ]]; then
     echo "[secret-scan] ERROR: forbidden staged path: $p" >&2
     fail=1

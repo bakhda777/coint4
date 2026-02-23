@@ -1,0 +1,15 @@
+variant_id,hypothesis,dd_start,dd_end,liquidity_usd_daily,max_bid_ask_pct,max_avg_funding_pct,require_market_metrics,require_same_quote,min_volume_usd_24h,min_days_live,max_funding_rate_abs,max_tick_size_pct,min_mean_crossings,min_half_life_days,max_half_life_days,max_hurst_exponent,min_beta,max_beta,kpss_pvalue_threshold
+v01_control_v07,control_replay_r04_v07_ddfocus,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,2,0.02,45,0.75,0.01,50.0,1.0
+v02_h1_trade_mild_A,H1_tradeability_tighten,2023-06-29,2024-06-27,300000,0.002,0.001,True,True,0.0,180,0.001,0.0005,2,0.02,45,0.75,0.01,50.0,1.0
+v03_h1_trade_balanced_B,H1_tradeability_tighten,2023-06-29,2024-06-27,400000,0.001,0.001,True,True,0.0,180,0.001,0.0005,2,0.02,45,0.75,0.01,50.0,1.0
+v04_h1_trade_hard_C,H1_tradeability_tighten,2023-06-29,2024-06-27,400000,0.001,0.001,True,True,0.0,365,0.001,0.0005,2,0.02,45,0.75,0.01,50.0,1.0
+v05_h1_diag_bidask_only,H1_tradeability_diag_one_filter,2023-06-29,2024-06-27,200000,0.001,0.08,,,150000,1,0.02,0.01,2,0.02,45,0.75,0.01,50.0,1.0
+v06_h1_diag_tick_only,H1_tradeability_diag_one_filter,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.0005,2,0.02,45,0.75,0.01,50.0,1.0
+v07_h1_diag_dayslive_only,H1_tradeability_diag_one_filter,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,180,0.02,0.01,2,0.02,45,0.75,0.01,50.0,1.0
+v08_h2_quality_cross3,H2_quality_tighten,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,3,0.02,45,0.75,0.01,50.0,1.0
+v09_h2_quality_hl40,H2_quality_tighten,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,2,0.02,40,0.75,0.01,50.0,1.0
+v10_h2_quality_hurst0p72,H2_quality_tighten,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,2,0.02,45,0.72,0.01,50.0,1.0
+v11_h2_quality_beta_tight,H2_quality_tighten,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,2,0.02,45,0.75,0.02,40.0,1.0
+v12_h2_quality_kpss_on,H2_quality_tighten,2023-06-29,2024-06-27,200000,0.8,0.08,,,150000,1,0.02,0.01,2,0.02,45,0.75,0.01,50.0,0.05
+v13_h12_tradeA_cross3,H1+H2_combo,2023-06-29,2024-06-27,300000,0.002,0.001,True,True,0.0,180,0.001,0.0005,3,0.02,45,0.75,0.01,50.0,1.0
+v14_h12_tradeB_beta,H1+H2_combo,2023-06-29,2024-06-27,400000,0.001,0.001,True,True,0.0,180,0.001,0.0005,2,0.02,45,0.75,0.02,40.0,1.0
