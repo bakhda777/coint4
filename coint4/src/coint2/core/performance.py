@@ -46,6 +46,8 @@ def compute_coverage_metrics(
         series = pd.Series(values.to_numpy(copy=False), index=idx).dropna()
         if not series.empty:
             series = series.groupby(series.index.normalize()).sum()
+            # Fail-closed: only count observed days within the configured test window.
+            series = series[(series.index >= start_ts) & (series.index <= end_ts)]
             observed = int(series.shape[0])
             zero_days = int((series.abs() < float(eps)).sum())
 

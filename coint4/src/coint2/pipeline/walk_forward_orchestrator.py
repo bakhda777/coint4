@@ -1215,6 +1215,42 @@ def validate_walk_forward_data(
     
     return True, "Data validation successful"
 
+
+def _build_walk_forward_steps(
+    *,
+    start_date: pd.Timestamp,
+    end_ts_inclusive: pd.Timestamp,
+    training_period_days: float,
+    testing_period_days: float,
+    bar_delta: pd.Timedelta,
+) -> list[tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]]:
+    """Build contiguous WFA steps that cover [start_date, end_ts_inclusive] without overlap.
+
+    Semantics:
+    - start_date / end_ts_inclusive are *testing* boundaries (inclusive on both ends at bar level).
+    - Each step tests up to `testing_period_days` calendar days of bars, but the final step may be shorter
+      if end_ts_inclusive isn't aligned to a full window.
+    """
+    if end_ts_inclusive < start_date:
+        return []
+
+    steps: list[tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]] = []
+    current_test_start = start_date
+    while current_test_start <= end_ts_inclusive:
+        training_start = current_test_start - pd.Timedelta(days=float(training_period_days))
+        training_end = current_test_start - bar_delta
+        testing_start = current_test_start
+
+        full_testing_end = testing_start + pd.Timedelta(days=float(testing_period_days)) - bar_delta
+        testing_end = min(full_testing_end, end_ts_inclusive)
+        if testing_end <= testing_start:
+            break
+
+        steps.append((training_start, training_end, testing_start, testing_end))
+        current_test_start = testing_end + bar_delta
+    return steps
+
+
 @logged_time("run_walk_forward_analysis")
 def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, float]:
     """Run walk-forward analysis and return aggregated performance metrics.
@@ -1244,8 +1280,23 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         handler.clear_cache()
     clean_window, excluded_symbols = resolve_data_filters(cfg)
 
-    start_date = pd.to_datetime(cfg.walk_forward.start_date)
-    end_date = pd.to_datetime(cfg.walk_forward.end_date)
+    raw_start_date = str(cfg.walk_forward.start_date or "").strip()
+    raw_end_date = str(cfg.walk_forward.end_date or "").strip()
+
+    start_date = pd.to_datetime(raw_start_date)
+    end_date = pd.to_datetime(raw_end_date)
+
+    # Bar size is needed to interpret date-only boundaries as full-day inclusive ranges.
+    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
+    bar_delta = pd.Timedelta(minutes=bar_minutes)
+
+    # Interpret date-only boundaries as full-day timestamps: [start 00:00, end 23:45] for 15m bars.
+    # If the user supplies an explicit timestamp, respect it as-is.
+    if len(raw_start_date) <= 10:
+        start_date = start_date.normalize()
+    end_ts_inclusive = end_date
+    if len(raw_end_date) <= 10:
+        end_ts_inclusive = end_date.normalize() + pd.Timedelta(days=1) - bar_delta
     # Для новой логики: нужны данные на training_period_days раньше start_date
     full_range_start = start_date - pd.Timedelta(days=cfg.walk_forward.training_period_days)
     
@@ -1344,27 +1395,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     else:
         logger.info("🧭 WFA: динамический отбор пар на каждом шаге")
 
-    # Calculate walk-forward steps
-    # ИСПРАВЛЕНИЕ: start_date теперь начало ТЕСТОВОГО периода, а не тренировочного
-    current_test_start = start_date
-    walk_forward_steps = []
-    bar_minutes = getattr(cfg.pair_selection, "bar_minutes", None) or 15
-    bar_delta = pd.Timedelta(minutes=bar_minutes)
-    while current_test_start < end_date:
-        # Тренировочный период ПРЕДШЕСТВУЕТ тестовому
-        training_start = current_test_start - pd.Timedelta(days=cfg.walk_forward.training_period_days)
-        # Завершаем тренировочный период за один бар до начала тестового
-        training_end = current_test_start - bar_delta
-        testing_start = current_test_start
-        testing_end = testing_start + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
-        
-        # ИСПРАВЛЕНИЕ: Простая проверка для прекращения, если начало следующего теста выходит за рамки end_date
-        if testing_start >= end_date:
-            break
-
-        logger.info(f"  Шаг {len(walk_forward_steps)+1}: тренировка {training_start.date()}-{training_end.date()}, тест {testing_start.date()}-{testing_end.date()}")
-        walk_forward_steps.append((training_start, training_end, testing_start, testing_end))
-        current_test_start = testing_end
+    # Calculate walk-forward steps (cover the configured test window without overshooting end_date).
+    walk_forward_steps = _build_walk_forward_steps(
+        start_date=start_date,
+        end_ts_inclusive=end_ts_inclusive,
+        training_period_days=float(cfg.walk_forward.training_period_days),
+        testing_period_days=float(cfg.walk_forward.testing_period_days),
+        bar_delta=bar_delta,
+    )
 
     logger.info(f"📈 Запланировано {len(walk_forward_steps)} walk-forward шагов")
 
@@ -1412,15 +1450,20 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         logger.warning(f"   testing_period_days: {cfg.walk_forward.testing_period_days}")
         
         # Рассчитаем, что должно было быть
-        would_be_testing_end = start_date + pd.Timedelta(days=cfg.walk_forward.testing_period_days)
+        would_be_testing_end = start_date + pd.Timedelta(days=float(cfg.walk_forward.testing_period_days)) - bar_delta
         needed_training_start = start_date - pd.Timedelta(days=cfg.walk_forward.training_period_days)
         
         logger.warning(f"   testing_end был бы: {would_be_testing_end.date()}")
         logger.warning(f"   нужны данные с: {needed_training_start.date()}")
         
-        if would_be_testing_end > end_date:
-            logger.warning(f"   ❌ ПРИЧИНА: testing_end ({would_be_testing_end.date()}) > end_date ({end_date.date()})")
-            logger.warning(f"   ✅ РЕШЕНИЕ: Продлите end_date до {would_be_testing_end.date()} или сократите testing_period_days")
+        if would_be_testing_end > end_ts_inclusive:
+            logger.warning(
+                f"   ❌ ПРИЧИНА: testing_end ({would_be_testing_end}) > end_ts_inclusive ({end_ts_inclusive})"
+            )
+            logger.warning(
+                f"   ✅ РЕШЕНИЕ: Продлите end_date или сократите testing_period_days "
+                f"(для date-only end_date последним баром считается {end_ts_inclusive})"
+            )
         
     else:
         logger.info("✅ Шаги успешно запланированы:")
@@ -1581,6 +1624,8 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             step_df = step_df_long.pivot_table(index="timestamp", columns="symbol", values="close", observed=False)
             
             # ДОПОЛНИТЕЛЬНАЯ ВАЛИДАЦИЯ: Проверка наличия данных для временных окон
+            expected_testing_days = float((testing_end - testing_start + bar_delta) / pd.Timedelta(days=1))
+            min_testing_days = min(float(cfg.walk_forward.testing_period_days), expected_testing_days)
             is_data_valid, data_error = validate_walk_forward_data(
                 step_df,
                 training_start,
@@ -1588,7 +1633,7 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 testing_start,
                 testing_end,
                 min_training_days=cfg.walk_forward.training_period_days,
-                min_testing_days=cfg.walk_forward.testing_period_days,
+                min_testing_days=min_testing_days,
                 bar_minutes=bar_minutes,
             )
             if not is_data_valid:
