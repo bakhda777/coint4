@@ -215,6 +215,15 @@ def main() -> int:
         help="Completion sentinel filename inside results_dir for auto queue sync.",
     )
     parser.add_argument(
+        "--compute-legacy-coverage",
+        action="store_true",
+        default=False,
+        help=(
+            "Compute coverage_* fields for legacy runs missing them by reading daily_pnl.csv + config dates. "
+            "This can be slow across thousands of runs."
+        ),
+    )
+    parser.add_argument(
         "--auto-sync-status",
         dest="auto_sync_status",
         action="store_true",
@@ -245,7 +254,12 @@ def main() -> int:
             updatable_statuses=("planned", "running", "stalled", "active"),
         )
 
-    entries = build_run_index(runs_dir, queue_paths, project_root)
+    entries = build_run_index(
+        runs_dir,
+        queue_paths,
+        project_root,
+        compute_legacy_coverage=bool(args.compute_legacy_coverage),
+    )
     entries = sorted(entries, key=lambda e: (e.run_group, e.run_id))
 
     output_dir.mkdir(parents=True, exist_ok=True)

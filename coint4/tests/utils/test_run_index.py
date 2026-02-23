@@ -27,6 +27,14 @@ def _write_metrics(path: Path, *, sharpe: float = 0.5) -> None:
         writer.writerow([sharpe, 100.0, -20.0, 200, 50, 10.0, -5.0, 2.0])
 
 
+def _write_daily_pnl(path: Path, rows) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["date", "pnl"])
+        writer.writerows(rows)
+
+
 def _write_equity_curve(path: Path, equities: list[float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     start = datetime(2024, 1, 1, 0, 0, 0)
@@ -171,3 +179,53 @@ def test_build_run_index_computes_tail_loss_concentration(tmp_path: Path) -> Non
     assert entry.tail_loss_worst_period == "03/01-03/31"
     assert entry.tail_loss_worst_period_pnl == -11.0
     assert entry.tail_loss_worst_period_share == 1.0
+
+
+def test_build_run_index_legacy_coverage_fallback_clips_to_config_dates(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "artifacts" / "wfa" / "runs"
+    run_dir = runs_dir / "group_cov" / "run_cov"
+
+    _write_metrics(run_dir / "strategy_metrics.csv", sharpe=0.7)  # legacy: no coverage_* fields
+    _write_daily_pnl(
+        run_dir / "daily_pnl.csv",
+        [
+            ("2024-01-01", 0.0),  # outside window
+            ("2024-01-02", 0.0),  # inside window, zero
+            ("2024-01-03", 1.0),  # inside window, non-zero
+            ("2024-01-04", 0.0),  # inside window, zero
+            ("2024-01-05", 0.0),  # outside window
+        ],
+    )
+
+    cfg_path = tmp_path / "configs" / "run_cov.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "walk_forward:",
+                "  start_date: '2024-01-02'",
+                "  end_date: '2024-01-04'",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    queue_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "group_cov" / "run_queue.csv"
+    _write_queue(queue_path, [("configs/run_cov.yaml", "artifacts/wfa/runs/group_cov/run_cov", "completed")])
+
+    # Default: legacy coverage fallback is disabled for performance.
+    entries = build_run_index(runs_dir, [queue_path], tmp_path)
+    assert len(entries) == 1
+    assert entries[0].coverage_ratio is None
+
+    # Opt-in: compute legacy coverage, but clip observed days to the configured test window.
+    entries = build_run_index(runs_dir, [queue_path], tmp_path, compute_legacy_coverage=True)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.expected_test_days == 3.0
+    assert entry.observed_test_days == 3.0
+    assert entry.coverage_ratio == 1.0
+    assert entry.zero_pnl_days == 2.0
+    assert math.isclose(float(entry.zero_pnl_days_pct or 0.0), 2.0 / 3.0, rel_tol=1e-9)
+    assert entry.missing_test_days == 0.0

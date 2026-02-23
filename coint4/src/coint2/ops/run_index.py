@@ -266,6 +266,10 @@ def _coverage_from_daily_pnl_csv(
                 day = _parse_iso_date(str(row.get(date_key) or ""))
                 if day is None:
                     continue
+                # Fail-closed: observed days must be scoped to the configured test window.
+                # Otherwise, stray rows outside [start, end] can inflate coverage_ratio > 1.
+                if day < start or day > end:
+                    continue
                 pnl = _to_float(str(row.get(pnl_key) or ""))
                 if pnl is None:
                     continue
@@ -602,7 +606,11 @@ def _load_tail_loss_diagnostics(results_dir: Path) -> Dict[str, Optional[float] 
 
 
 def build_run_index(
-    runs_dir: Path, queue_paths: Iterable[Path], project_root: Path
+    runs_dir: Path,
+    queue_paths: Iterable[Path],
+    project_root: Path,
+    *,
+    compute_legacy_coverage: bool = False,
 ) -> List[RunIndexEntry]:
     """Build run index entries from metrics and queue data."""
     queue_map = load_run_queues(queue_paths, project_root)
@@ -855,7 +863,11 @@ def build_run_index(
 
         # Coverage metrics (fail-closed): prefer values from strategy_metrics.csv, but when absent
         # (legacy runs) compute from daily_pnl.csv + config walk_forward dates.
-        if entry.metrics_present and (entry.coverage_ratio is None or not math.isfinite(float(entry.coverage_ratio))):
+        if (
+            compute_legacy_coverage
+            and entry.metrics_present
+            and (entry.coverage_ratio is None or not math.isfinite(float(entry.coverage_ratio)))
+        ):
             walk_forward = config_payload.get("walk_forward")
             if isinstance(walk_forward, dict):
                 wf_start = str(walk_forward.get("start_date") or "").strip()
