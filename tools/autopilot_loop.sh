@@ -121,6 +121,11 @@ run_ralph_with_watchdog() {
 
   cleanup_stale_ralph_lock_and_sessions
 
+  : >> "${RALPH_LOG_PATH}"
+  tail -n 0 -F "${RALPH_LOG_PATH}" &
+  local tail_pid=$!
+  trap 'kill -TERM "${tail_pid}" 2>/dev/null || true; wait "${tail_pid}" 2>/dev/null || true' RETURN
+
   log "starting ralph-tui headless (log: ${RALPH_LOG_PATH})"
   ralph-tui run --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> logs/ralph_headless.log 2>&1 &
   local run_pid=$!
