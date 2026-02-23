@@ -80,34 +80,41 @@ read_ralph_status() {
   set -e
 
   local parsed
-  parsed="$(python3 - <<'PY' <<< "${status_json}"
+  parsed="$(python3 - "${status_json}" <<'PY'
 import json, sys
 
-text = sys.stdin.read().strip()
-data = {}
-if text:
-    try:
-        data = json.loads(text)
-    except Exception:
-        data = {}
+def _out(status: str = "", progress: str = "", pid: str = "", locked: str = "0") -> None:
+    print(f"{status}\t{progress}\t{pid}\t{locked}")
 
-status = str(data.get("status") or "")
-session = data.get("session") or {}
-progress = session.get("progress") or {}
-percent = progress.get("percent")
-completed = progress.get("completed")
-progress_val = ""
-if isinstance(percent, (int, float)):
-    progress_val = str(int(percent))
-elif isinstance(completed, (int, float)):
-    progress_val = str(int(completed))
+try:
+    text = (sys.argv[1] if len(sys.argv) > 1 else "") or ""
+    text = text.strip()
+    data = {}
+    if text:
+        try:
+            data = json.loads(text)
+        except Exception:
+            data = {}
 
-lock = data.get("lock") or {}
-pid = lock.get("pid")
-pid_val = str(pid) if isinstance(pid, int) else ""
-locked_val = "1" if lock.get("isLocked") else "0"
+    status = str(data.get("status") or "")
+    session = data.get("session") or {}
+    progress = session.get("progress") or {}
+    percent = progress.get("percent")
+    completed = progress.get("completed")
+    progress_val = ""
+    if isinstance(percent, (int, float)):
+        progress_val = str(int(percent))
+    elif isinstance(completed, (int, float)):
+        progress_val = str(int(completed))
 
-print(f"{status}\\t{progress_val}\\t{pid_val}\\t{locked_val}")
+    lock = data.get("lock") or {}
+    pid = lock.get("pid")
+    pid_val = str(pid) if isinstance(pid, int) else ""
+    locked_val = "1" if lock.get("isLocked") else "0"
+
+    _out(status, progress_val, pid_val, locked_val)
+except Exception:
+    _out()
 PY
 )"
 
