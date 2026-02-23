@@ -57,6 +57,7 @@ class _Entry:
     trades: Optional[float]
     pairs: Optional[float]
     costs: Optional[float]
+    coverage_ratio: Optional[float]
     tail_loss_worst_pair_share: Optional[float]
     tail_loss_worst_period_share: Optional[float]
 
@@ -66,6 +67,7 @@ class _WindowStats:
     window: str
     robust_sharpe: float
     dd_pct: float
+    robust_coverage_ratio: Optional[float]
     robust_psr: Optional[float]
     robust_dsr: Optional[float]
     robust_pnl: Optional[float]
@@ -289,6 +291,15 @@ def main() -> int:
     parser.add_argument("--min-trades", type=int, default=200, help="Require min(total_trades) across windows >= this.")
     parser.add_argument("--min-pairs", type=int, default=20, help="Require min(total_pairs_traded) across windows >= this.")
     parser.add_argument(
+        "--min-coverage-ratio",
+        type=float,
+        default=0.95,
+        help=(
+            "Gate: worst-window coverage_ratio (min(holdout, stress)) must be >= this "
+            "(default: 0.95). Missing/non-finite coverage fails closed."
+        ),
+    )
+    parser.add_argument(
         "--max-dd-pct",
         type=float,
         default=0.40,
@@ -425,6 +436,8 @@ def main() -> int:
         raise SystemExit("--tail-quantile must be in [0, 1]")
     if args.min_psr is not None and not (0.0 <= float(args.min_psr) <= 1.0):
         raise SystemExit("--min-psr must be in [0, 1]")
+    if args.min_coverage_ratio is not None and not (0.0 <= float(args.min_coverage_ratio) <= 1.0):
+        raise SystemExit("--min-coverage-ratio must be in [0, 1]")
     if args.max_tail_pair_share is not None and not (0.0 <= float(args.max_tail_pair_share) <= 1.0):
         raise SystemExit("--max-tail-pair-share must be in [0, 1]")
     if args.max_tail_period_share is not None and not (0.0 <= float(args.max_tail_period_share) <= 1.0):
@@ -457,6 +470,7 @@ def main() -> int:
                     trades=_to_float(row.get("total_trades") or ""),
                     pairs=_to_float(row.get("total_pairs_traded") or ""),
                     costs=_to_float(row.get("total_costs") or ""),
+                    coverage_ratio=_to_float(row.get("coverage_ratio") or ""),
                     tail_loss_worst_pair_share=_to_float(row.get("tail_loss_worst_pair_share") or ""),
                     tail_loss_worst_period_share=_to_float(row.get("tail_loss_worst_period_share") or ""),
                 )
@@ -505,6 +519,12 @@ def main() -> int:
         robust_pnl = None
         if holdout.pnl is not None and stress.pnl is not None:
             robust_pnl = min(holdout.pnl, stress.pnl)
+        robust_coverage = None
+        if holdout.coverage_ratio is not None and stress.coverage_ratio is not None:
+            holdout_cov = float(holdout.coverage_ratio)
+            stress_cov = float(stress.coverage_ratio)
+            if math.isfinite(holdout_cov) and math.isfinite(stress_cov):
+                robust_coverage = min(holdout_cov, stress_cov)
         robust_tail_pair_share = None
         if holdout.tail_loss_worst_pair_share is not None and stress.tail_loss_worst_pair_share is not None:
             robust_tail_pair_share = max(holdout.tail_loss_worst_pair_share, stress.tail_loss_worst_pair_share)
@@ -526,6 +546,7 @@ def main() -> int:
                 window=window,
                 robust_sharpe=float(robust_sharpe),
                 dd_pct=float(dd_pct),
+                robust_coverage_ratio=robust_coverage,
                 robust_psr=robust_psr,
                 robust_dsr=robust_dsr,
                 robust_pnl=robust_pnl,
@@ -540,6 +561,9 @@ def main() -> int:
     rows: List[_RankRow] = []
     skipped_tail_missing = 0
     skipped_tail_gate = 0
+    skipped_coverage_missing = 0
+    skipped_coverage_gate = 0
+    coverage_rejects: List[Tuple[float, str, str, str, int, Optional[float]]] = []
     skipped_pair_concentration_missing = 0
     skipped_pair_concentration_gate = 0
     skipped_period_concentration_missing = 0
@@ -565,6 +589,41 @@ def main() -> int:
         q_robust = _quantile((item.robust_sharpe for item in items), args.quantile_q)
         if q_robust is None:
             continue
+
+        if args.min_coverage_ratio is not None:
+            coverage_values = [
+                float(item.robust_coverage_ratio)
+                for item in items
+                if item.robust_coverage_ratio is not None and math.isfinite(float(item.robust_coverage_ratio))
+            ]
+            worst_coverage = min(coverage_values) if coverage_values else None
+            if worst_coverage is None or len(coverage_values) != len(items):
+                skipped_coverage_missing += 1
+                coverage_rejects.append(
+                    (
+                        float(worst_robust),
+                        str(run_group),
+                        str(variant),
+                        str(items[0].holdout.config_path),
+                        int(len(items)),
+                        worst_coverage,
+                    )
+                )
+                continue
+            if float(worst_coverage) < float(args.min_coverage_ratio):
+                skipped_coverage_gate += 1
+                coverage_rejects.append(
+                    (
+                        float(worst_robust),
+                        str(run_group),
+                        str(variant),
+                        str(items[0].holdout.config_path),
+                        int(len(items)),
+                        float(worst_coverage),
+                    )
+                )
+                continue
+
         avg_robust = sum(item.robust_sharpe for item in items) / len(items)
         avg_dd = sum(item.dd_pct for item in items) / len(items)
         psr_values = [item.robust_psr for item in items if item.robust_psr is not None]
@@ -695,6 +754,12 @@ def main() -> int:
     rows = rows[: max(1, args.top)]
 
     if not rows:
+        if args.min_coverage_ratio is not None and (skipped_coverage_missing or skipped_coverage_gate):
+            print(
+                "Coverage gate rejections: "
+                f"missing={skipped_coverage_missing}, below_min={skipped_coverage_gate}, "
+                f"min_coverage_ratio={float(args.min_coverage_ratio):.3f}."
+            )
         _print_concentration_rejects(
             max_tail_pair_share=args.max_tail_pair_share,
             max_tail_period_share=args.max_tail_period_share,
@@ -756,6 +821,22 @@ def main() -> int:
         period_missing=skipped_period_concentration_missing,
         period_above_max=skipped_period_concentration_gate,
     )
+    if args.min_coverage_ratio is not None and (skipped_coverage_missing or skipped_coverage_gate):
+        print(
+            "Coverage gate rejections: "
+            f"missing={skipped_coverage_missing}, below_min={skipped_coverage_gate}, "
+            f"min_coverage_ratio={float(args.min_coverage_ratio):.3f}."
+        )
+        if coverage_rejects:
+            print("Top coverage rejects (by worst_robust_sh):")
+            for worst_robust, run_group, variant, cfg, windows, worst_cov in sorted(
+                coverage_rejects, key=lambda row: row[0], reverse=True
+            )[:10]:
+                cov_str = "-" if worst_cov is None or not math.isfinite(float(worst_cov)) else f"{float(worst_cov):.3f}"
+                print(
+                    f"- {variant} | worst_robust_sh={worst_robust:.3f} "
+                    f"worst_coverage_ratio={cov_str} windows={windows} | {run_group} | {cfg}"
+                )
 
     return 0
 

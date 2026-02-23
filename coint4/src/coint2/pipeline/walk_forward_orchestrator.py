@@ -1801,6 +1801,14 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                                 liquidity_usd_daily=liquidity_usd_daily,
                                 max_bid_ask_pct=max_bid_ask_pct,
                                 max_avg_funding_pct=max_avg_funding_pct,
+                                require_market_metrics=bool(getattr(cfg.pair_selection, "require_market_metrics", False)),
+                                require_same_quote=bool(getattr(cfg.pair_selection, "require_same_quote", False)),
+                                min_volume_usd_24h=float(getattr(cfg.pair_selection, "min_volume_usd_24h", 0.0) or 0.0),
+                                min_days_live=int(getattr(cfg.pair_selection, "min_days_live", 0) or 0),
+                                max_funding_rate_abs=float(
+                                    getattr(cfg.pair_selection, "max_funding_rate_abs", 0.0) or 0.0
+                                ),
+                                max_tick_size_pct=float(getattr(cfg.pair_selection, "max_tick_size_pct", 0.0) or 0.0),
                                 save_filter_reasons=cfg.pair_selection.save_filter_reasons,
                                 kpss_pvalue_threshold=cfg.pair_selection.kpss_pvalue_threshold,
                                 n_jobs=filter_n_jobs,
@@ -2132,6 +2140,19 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                         logger.info(f"  🏆 Топ пары: {top_pairs_str}")
             
             logger.info(f"  ⇢ Обновление капитала и дневного P&L...")
+        else:
+            # IMPORTANT: When no pairs pass selection, the portfolio is flat and PnL is 0.
+            # We still must record the testing window as zeros; otherwise Sharpe/volatility
+            # are biased upward by silently skipping non-trading windows.
+            if not testing_slice.empty:
+                step_pnl = pd.Series(0.0, index=testing_slice.index)
+                step_turnover_units = pd.Series(0.0, index=testing_slice.index)
+                step_exposure_units = pd.Series(0.0, index=testing_slice.index)
+                total_step_pnl = 0.0
+                logger.info(
+                    "  Нет пар после отбора: записываем нулевой P&L для окна теста (%d баров).",
+                    len(step_pnl),
+                )
 
         # Update equity and daily P&L
         if not step_pnl.empty:
@@ -2278,7 +2299,12 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             }
         
         logger.info(f"  ⇢ Расчет расширенных метрик (волатильность, Calmar ratio, и др.)...")
-        extended_metrics = calculate_extended_metrics(pnl_series, equity_series)
+        extended_metrics = calculate_extended_metrics(
+            pnl_series,
+            equity_series,
+            expected_test_start=str(cfg.walk_forward.start_date),
+            expected_test_end=str(cfg.walk_forward.end_date),
+        )
         logger.info(f"  ✅ Расширенные метрики рассчитаны: {len(extended_metrics)} показателей")
         
         # Trade statistics

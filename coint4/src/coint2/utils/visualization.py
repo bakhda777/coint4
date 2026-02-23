@@ -339,20 +339,42 @@ def format_metrics_summary(metrics: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def calculate_extended_metrics(pnl_series: pd.Series, equity_curve: pd.Series) -> Dict[str, Any]:
-    """Рассчитывает расширенные метрики для анализа."""
-    
+def calculate_extended_metrics(
+    pnl_series: pd.Series,
+    equity_curve: pd.Series,
+    *,
+    expected_test_start: str | None = None,
+    expected_test_end: str | None = None,
+    eps: float = 1e-12,
+) -> Dict[str, Any]:
+    """Рассчитывает расширенные метрики для анализа.
+
+    IMPORTANT: expected_test_* is sourced from config (walk_forward.start_date/end_date),
+    not inferred from the series, so coverage can detect missing rows in daily_pnl.
+    """
+    metrics: Dict[str, Any] = {}
+
+    if expected_test_start and expected_test_end:
+        from coint2.core.performance import compute_coverage_metrics
+
+        metrics.update(
+            compute_coverage_metrics(
+                pnl_series,
+                start_date=str(expected_test_start),
+                end_date=str(expected_test_end),
+                eps=float(eps),
+            )
+        )
+
     if pnl_series.empty:
-        return {}
-    
-    metrics = {}
-    
-    # Базовые метрики
-    metrics['total_days'] = len(pnl_series)
-    metrics['avg_daily_pnl'] = pnl_series.mean()
-    metrics['volatility'] = pnl_series.std()
-    metrics['win_rate'] = (pnl_series > 0).mean()
-    metrics['max_single_gain'] = pnl_series.max()
-    metrics['max_single_loss'] = pnl_series.min()
-    
+        return metrics
+
+    # Базовые метрики (по наблюдаемым дням из daily_pnl).
+    metrics["total_days"] = float(len(pnl_series))
+    metrics["avg_daily_pnl"] = float(pnl_series.mean())
+    metrics["volatility"] = float(pnl_series.std())
+    metrics["win_rate"] = float((pnl_series > 0).mean())
+    metrics["max_single_gain"] = float(pnl_series.max())
+    metrics["max_single_loss"] = float(pnl_series.min())
+
     return metrics

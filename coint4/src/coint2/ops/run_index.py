@@ -7,7 +7,7 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -52,6 +52,12 @@ class RunIndexEntry:
     total_pairs_traded: Optional[float]
     total_costs: Optional[float]
     total_days: Optional[float]
+    expected_test_days: Optional[float]
+    observed_test_days: Optional[float]
+    coverage_ratio: Optional[float]
+    zero_pnl_days: Optional[float]
+    zero_pnl_days_pct: Optional[float]
+    missing_test_days: Optional[float]
     volatility: Optional[float]
     win_rate: Optional[float]
     best_pair_pnl: Optional[float]
@@ -186,6 +192,101 @@ def _load_daily_pnl_as_returns(results_dir: Path) -> List[float]:
             if value is not None:
                 values.append(float(value))
         return values
+
+
+def _parse_iso_date(raw: str) -> Optional[date]:
+    token = str(raw or "").strip()
+    if not token:
+        return None
+    token = token.rstrip("Z")
+    try:
+        return datetime.fromisoformat(token).date()
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(token[:10]).date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _coverage_from_daily_pnl_csv(
+    daily_pnl_path: Path,
+    *,
+    start_date: str,
+    end_date: str,
+    eps: float = 1e-12,
+) -> Dict[str, Optional[float]]:
+    """Compute coverage metrics from daily_pnl.csv using only config dates for expected days."""
+    try:
+        start = datetime.fromisoformat(str(start_date).strip()).date()
+        end = datetime.fromisoformat(str(end_date).strip()).date()
+    except ValueError:
+        return {}
+
+    expected = int((end - start).days + 1) if end >= start else 0
+    if expected <= 0:
+        return {
+            "expected_test_days": float(expected),
+            "observed_test_days": 0.0,
+            "coverage_ratio": float("nan"),
+            "zero_pnl_days": 0.0,
+            "zero_pnl_days_pct": float("nan"),
+            "missing_test_days": float("nan"),
+        }
+
+    if not daily_pnl_path.exists():
+        return {
+            "expected_test_days": float(expected),
+            "observed_test_days": 0.0,
+            "coverage_ratio": 0.0,
+            "zero_pnl_days": 0.0,
+            "zero_pnl_days_pct": 0.0,
+            "missing_test_days": float(expected),
+        }
+
+    pnl_by_day: Dict[date, float] = {}
+    try:
+        with daily_pnl_path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            fields = list(reader.fieldnames or [])
+            if not fields:
+                return {}
+            date_key = fields[0]
+            pnl_key: Optional[str] = None
+            for field in fields:
+                if "pnl" in field.lower():
+                    pnl_key = field
+                    break
+            if pnl_key is None and len(fields) >= 2:
+                pnl_key = fields[1]
+            if pnl_key is None:
+                return {}
+
+            for row in reader:
+                day = _parse_iso_date(str(row.get(date_key) or ""))
+                if day is None:
+                    continue
+                pnl = _to_float(str(row.get(pnl_key) or ""))
+                if pnl is None:
+                    continue
+                pnl_by_day[day] = float(pnl_by_day.get(day, 0.0) + float(pnl))
+    except OSError:
+        return {}
+
+    observed = int(len(pnl_by_day))
+    zero_days = int(sum(1 for pnl in pnl_by_day.values() if abs(float(pnl)) < float(eps)))
+    coverage = float(observed) / float(expected)
+    zero_pct = float(zero_days) / float(expected)
+    missing = float(expected - observed)
+
+    return {
+        "expected_test_days": float(expected),
+        "observed_test_days": float(observed),
+        "coverage_ratio": float(coverage),
+        "zero_pnl_days": float(zero_days),
+        "zero_pnl_days_pct": float(zero_pct),
+        "missing_test_days": float(missing),
+    }
 
 
 def _safe_psr_dsr(
@@ -536,6 +637,12 @@ def build_run_index(
             total_pairs_traded=None,
             total_costs=None,
             total_days=None,
+            expected_test_days=None,
+            observed_test_days=None,
+            coverage_ratio=None,
+            zero_pnl_days=None,
+            zero_pnl_days_pct=None,
+            missing_test_days=None,
             volatility=None,
             win_rate=None,
             best_pair_pnl=None,
@@ -578,6 +685,12 @@ def build_run_index(
         entry.total_pairs_traded = metrics.get("total_pairs_traded")
         entry.total_costs = metrics.get("total_costs")
         entry.total_days = metrics.get("total_days")
+        entry.expected_test_days = metrics.get("expected_test_days")
+        entry.observed_test_days = metrics.get("observed_test_days")
+        entry.coverage_ratio = metrics.get("coverage_ratio")
+        entry.zero_pnl_days = metrics.get("zero_pnl_days")
+        entry.zero_pnl_days_pct = metrics.get("zero_pnl_days_pct")
+        entry.missing_test_days = metrics.get("missing_test_days")
         entry.volatility = metrics.get("volatility")
         entry.win_rate = metrics.get("win_rate")
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
@@ -642,6 +755,12 @@ def build_run_index(
                 total_pairs_traded=None,
                 total_costs=None,
                 total_days=None,
+                expected_test_days=None,
+                observed_test_days=None,
+                coverage_ratio=None,
+                zero_pnl_days=None,
+                zero_pnl_days_pct=None,
+                missing_test_days=None,
                 volatility=None,
                 win_rate=None,
                 best_pair_pnl=None,
@@ -674,6 +793,12 @@ def build_run_index(
         entry.total_pairs_traded = metrics.get("total_pairs_traded")
         entry.total_costs = metrics.get("total_costs")
         entry.total_days = metrics.get("total_days")
+        entry.expected_test_days = metrics.get("expected_test_days")
+        entry.observed_test_days = metrics.get("observed_test_days")
+        entry.coverage_ratio = metrics.get("coverage_ratio")
+        entry.zero_pnl_days = metrics.get("zero_pnl_days")
+        entry.zero_pnl_days_pct = metrics.get("zero_pnl_days_pct")
+        entry.missing_test_days = metrics.get("missing_test_days")
         entry.volatility = metrics.get("volatility")
         entry.win_rate = metrics.get("win_rate")
         entry.best_pair_pnl = metrics.get("best_pair_pnl")
@@ -705,6 +830,16 @@ def build_run_index(
     config_cache: Dict[str, Dict[str, Any]] = {}
     universe_cache: Dict[str, Dict[str, Any]] = {}
     for entry in entries.values():
+        config_payload: Dict[str, Any] = {}
+        if entry.config_path:
+            config_abs = _resolve_repo_path(entry.config_path, project_root)
+            if config_abs is not None:
+                key = config_abs.as_posix()
+                config_payload = config_cache.get(key) or {}
+                if not config_payload:
+                    config_payload = _load_yaml_dict(config_abs)
+                    config_cache[key] = config_payload
+
         context = _extract_universe_context(
             config_path=entry.config_path,
             project_root=project_root,
@@ -717,6 +852,29 @@ def build_run_index(
         denylist_count = _to_int(context.get("denylist_count"))
         entry.denylist_count = int(denylist_count or 0)
         entry.denylist_hash = str(context.get("denylist_hash") or "")
+
+        # Coverage metrics (fail-closed): prefer values from strategy_metrics.csv, but when absent
+        # (legacy runs) compute from daily_pnl.csv + config walk_forward dates.
+        if entry.metrics_present and (entry.coverage_ratio is None or not math.isfinite(float(entry.coverage_ratio))):
+            walk_forward = config_payload.get("walk_forward")
+            if isinstance(walk_forward, dict):
+                wf_start = str(walk_forward.get("start_date") or "").strip()
+                wf_end = str(walk_forward.get("end_date") or "").strip()
+                if wf_start and wf_end:
+                    results_abs = _resolve_repo_path(entry.results_dir, project_root)
+                    if results_abs is not None:
+                        cov = _coverage_from_daily_pnl_csv(
+                            results_abs / "daily_pnl.csv",
+                            start_date=wf_start,
+                            end_date=wf_end,
+                        )
+                        if cov:
+                            entry.expected_test_days = cov.get("expected_test_days")
+                            entry.observed_test_days = cov.get("observed_test_days")
+                            entry.coverage_ratio = cov.get("coverage_ratio")
+                            entry.zero_pnl_days = cov.get("zero_pnl_days")
+                            entry.zero_pnl_days_pct = cov.get("zero_pnl_days_pct")
+                            entry.missing_test_days = cov.get("missing_test_days")
 
     # Statistical confidence metrics for Sharpe reliability.
     # trials ~= number of tested configs with metrics in the same run_group.
@@ -778,6 +936,12 @@ def write_run_index_csv(path: Path, entries: Sequence[RunIndexEntry]) -> None:
         "total_pairs_traded",
         "total_costs",
         "total_days",
+        "expected_test_days",
+        "observed_test_days",
+        "coverage_ratio",
+        "zero_pnl_days",
+        "zero_pnl_days_pct",
+        "missing_test_days",
         "volatility",
         "win_rate",
         "best_pair_pnl",

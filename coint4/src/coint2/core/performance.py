@@ -13,6 +13,56 @@ def _canonical_period_sharpe(returns: np.ndarray) -> float:
     return annualized_sharpe_ratio(returns, 1.0)
 
 
+def compute_coverage_metrics(
+    pnl: pd.Series | None,
+    *,
+    start_date: str,
+    end_date: str,
+    eps: float = 1e-12,
+) -> dict[str, float]:
+    """Compute test-period coverage diagnostics for a daily PnL series.
+
+    Definitions (calendar days; inclusive):
+    - expected_test_days  = days in [start_date, end_date]
+    - observed_test_days  = unique days present in pnl index (after date normalization)
+    - coverage_ratio      = observed / expected
+    - zero_pnl_days       = count(|pnl| < eps) over observed days
+    - zero_pnl_days_pct   = zero_pnl_days / expected
+    - missing_test_days   = expected - observed
+
+    Notes:
+    - expected days are derived ONLY from the config dates, so missing PnL rows are detectable.
+    - pnl is grouped by normalized day to avoid double-counting when timestamps are intraday.
+    """
+    start_ts = pd.to_datetime(start_date).normalize()
+    end_ts = pd.to_datetime(end_date).normalize()
+    expected = int((end_ts - start_ts).days + 1) if end_ts >= start_ts else 0
+
+    observed = 0
+    zero_days = 0
+    if pnl is not None and not pnl.empty:
+        idx = pd.to_datetime(pnl.index, errors="coerce")
+        values = pd.to_numeric(pnl, errors="coerce")
+        series = pd.Series(values.to_numpy(copy=False), index=idx).dropna()
+        if not series.empty:
+            series = series.groupby(series.index.normalize()).sum()
+            observed = int(series.shape[0])
+            zero_days = int((series.abs() < float(eps)).sum())
+
+    coverage = float("nan") if expected <= 0 else float(observed) / float(expected)
+    zero_pct = float("nan") if expected <= 0 else float(zero_days) / float(expected)
+    missing = float("nan") if expected <= 0 else float(expected - observed)
+
+    return {
+        "expected_test_days": float(expected),
+        "observed_test_days": float(observed),
+        "coverage_ratio": float(coverage),
+        "zero_pnl_days": float(zero_days),
+        "zero_pnl_days_pct": float(zero_pct),
+        "missing_test_days": float(missing),
+    }
+
+
 def sharpe_ratio_on_returns(
     pnl: pd.Series,
     capital: float,

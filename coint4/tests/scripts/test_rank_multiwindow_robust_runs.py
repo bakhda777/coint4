@@ -44,6 +44,7 @@ def _run_index_fieldnames() -> list[str]:
         "total_pairs_traded",
         "max_drawdown_abs",
         "total_costs",
+        "coverage_ratio",
         "tail_loss_worst_pair_share",
         "tail_loss_worst_period_share",
     ]
@@ -91,6 +92,7 @@ def _build_run_index(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
             }
         )
         rows.append(
@@ -110,6 +112,7 @@ def _build_run_index(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
             }
         )
 
@@ -193,6 +196,7 @@ def _build_run_index_for_score_modes(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
             }
         )
         rows.append(
@@ -212,6 +216,7 @@ def _build_run_index_for_score_modes(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
             }
         )
 
@@ -269,6 +274,7 @@ def _build_run_index_for_concentration_gates(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
                 "tail_loss_worst_pair_share": _share(holdout_pair_share),
                 "tail_loss_worst_period_share": _share(holdout_period_share),
             }
@@ -290,6 +296,7 @@ def _build_run_index_for_concentration_gates(tmp_path: Path) -> Path:
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
+                "coverage_ratio": "1.0",
                 "tail_loss_worst_pair_share": _share(stress_pair_share),
                 "tail_loss_worst_period_share": _share(stress_period_share),
             }
