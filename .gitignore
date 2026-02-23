@@ -126,6 +126,7 @@ outputs/
 # Common runtime junk
 **/*.pid
 **/*.log
+logs/
 
 # Codex local runtime snapshots/temp
 .codex/shell_snapshots/

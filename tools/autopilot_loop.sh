@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+mkdir -p "${REPO_ROOT}/logs"
+RALPH_LOG_PATH="${REPO_ROOT}/logs/ralph_headless.log"
+
 log() {
   printf '[autopilot] %s\n' "$*"
 }
@@ -16,6 +19,185 @@ die() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "command not found: $1"
+}
+
+cleanup_ralph_lock_and_sessions() {
+  python3 - <<'PY'
+from pathlib import Path
+
+lock = Path(".ralph-tui/ralph.lock")
+try:
+    if lock.exists():
+        lock.unlink()
+except Exception as e:
+    print(f"[autopilot] WARN: failed to delete {lock}: {e}")
+
+for p in sorted(Path(".ralph-tui").glob("session*.json")):
+    try:
+        p.unlink()
+    except Exception as e:
+        print(f"[autopilot] WARN: failed to delete {p}: {e}")
+PY
+}
+
+cleanup_stale_ralph_lock_and_sessions() {
+  python3 - <<'PY'
+from pathlib import Path
+import time
+
+lock = Path(".ralph-tui/ralph.lock")
+if not lock.exists():
+    raise SystemExit(0)
+
+try:
+    age_sec = time.time() - lock.stat().st_mtime
+except Exception:
+    age_sec = 0
+
+if age_sec <= 30 * 60:
+    raise SystemExit(0)
+
+try:
+    lock.unlink()
+    print(f"[autopilot] stale ralph.lock removed (age_sec={int(age_sec)})")
+except Exception as e:
+    print(f"[autopilot] WARN: failed to delete {lock}: {e}")
+
+for p in sorted(Path(".ralph-tui").glob("session*.json")):
+    try:
+        p.unlink()
+        print(f"[autopilot] removed stale session file: {p}")
+    except Exception as e:
+        print(f"[autopilot] WARN: failed to delete {p}: {e}")
+PY
+}
+
+read_ralph_status() {
+  local status_json
+  set +e
+  status_json="$(ralph-tui status --json 2>/dev/null)"
+  RALPH_STATUS_RC=$?
+  set -e
+
+  local parsed
+  parsed="$(python3 - <<'PY' <<< "${status_json}"
+import json, sys
+
+text = sys.stdin.read().strip()
+data = {}
+if text:
+    try:
+        data = json.loads(text)
+    except Exception:
+        data = {}
+
+status = str(data.get("status") or "")
+session = data.get("session") or {}
+progress = session.get("progress") or {}
+percent = progress.get("percent")
+completed = progress.get("completed")
+progress_val = ""
+if isinstance(percent, (int, float)):
+    progress_val = str(int(percent))
+elif isinstance(completed, (int, float)):
+    progress_val = str(int(completed))
+
+lock = data.get("lock") or {}
+pid = lock.get("pid")
+pid_val = str(pid) if isinstance(pid, int) else ""
+locked_val = "1" if lock.get("isLocked") else "0"
+
+print(f"{status}\\t{progress_val}\\t{pid_val}\\t{locked_val}")
+PY
+)"
+
+  IFS=$'\t' read -r RALPH_STATUS RALPH_PROGRESS RALPH_LOCK_PID RALPH_LOCKED <<< "${parsed}"
+}
+
+run_ralph_with_watchdog() {
+  local epic_id="$1"
+  local poll_seconds=60
+  local stall_seconds=$((20 * 60))
+
+  cleanup_stale_ralph_lock_and_sessions
+
+  log "starting ralph-tui headless (log: ${RALPH_LOG_PATH})"
+  ralph-tui run --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> logs/ralph_headless.log 2>&1 &
+  local run_pid=$!
+  log "ralph-tui run pid=${run_pid}"
+
+  local last_progress=""
+  local last_change_ts
+  last_change_ts="$(date +%s)"
+  local seen_session=0
+
+  while true; do
+    read_ralph_status
+    if [[ -n "${RALPH_STATUS}" && "${RALPH_STATUS}" != "no-session" ]]; then
+      seen_session=1
+    fi
+
+    if [[ -n "${RALPH_PROGRESS}" && "${RALPH_PROGRESS}" != "${last_progress}" ]]; then
+      last_progress="${RALPH_PROGRESS}"
+      last_change_ts="$(date +%s)"
+      log "progress=${last_progress} (status=${RALPH_STATUS})"
+    fi
+
+    if [[ "${RALPH_STATUS}" == "completed" || "${RALPH_STATUS_RC}" -eq 0 ]]; then
+      log "ralph completed (status=${RALPH_STATUS}, rc=${RALPH_STATUS_RC})"
+      break
+    fi
+
+    if [[ "${RALPH_STATUS}" == "failed" || ( "${RALPH_STATUS}" == "no-session" && "${seen_session}" -eq 1 ) || ( "${RALPH_STATUS_RC}" -eq 2 && "${seen_session}" -eq 1 ) ]]; then
+      log "ralph not running (status=${RALPH_STATUS}, rc=${RALPH_STATUS_RC})"
+      break
+    fi
+
+    if [[ -n "${run_pid}" ]] && ! kill -0 "${run_pid}" 2>/dev/null; then
+      wait "${run_pid}" || true
+      if [[ "${RALPH_STATUS}" == "running" || "${RALPH_STATUS}" == "paused" ]]; then
+        log "run pid exited but status=${RALPH_STATUS}; continuing to monitor"
+        run_pid=""
+        last_change_ts="$(date +%s)"
+      else
+        log "ralph run process exited"
+        break
+      fi
+    fi
+
+    local now_ts
+    now_ts="$(date +%s)"
+    if (( now_ts - last_change_ts >= stall_seconds )); then
+      log "watchdog: no progress change for 20m → restart with --force"
+
+      if [[ -n "${run_pid}" ]] && kill -0 "${run_pid}" 2>/dev/null; then
+        kill -TERM "${run_pid}" 2>/dev/null || true
+        sleep 10
+        kill -KILL "${run_pid}" 2>/dev/null || true
+        wait "${run_pid}" || true
+      elif [[ "${RALPH_LOCKED}" == "1" && -n "${RALPH_LOCK_PID}" ]]; then
+        kill -TERM "${RALPH_LOCK_PID}" 2>/dev/null || true
+        sleep 10
+        kill -KILL "${RALPH_LOCK_PID}" 2>/dev/null || true
+      fi
+
+      cleanup_ralph_lock_and_sessions
+
+      ralph-tui run --force --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> logs/ralph_headless.log 2>&1 &
+      run_pid=$!
+      log "ralph restarted pid=${run_pid}"
+
+      last_progress=""
+      last_change_ts="$(date +%s)"
+      seen_session=0
+    fi
+
+    sleep "${poll_seconds}"
+  done
+
+  if [[ -n "${run_pid}" ]] && kill -0 "${run_pid}" 2>/dev/null; then
+    wait "${run_pid}" || true
+  fi
 }
 
 require_cmd bd
@@ -230,7 +412,7 @@ while true; do
   fi
 
   log "running ralph-tui headless (open tasks: ${open_cnt})"
-  ralph-tui run --headless --no-setup --serial --tracker beads --epic "${EPIC_ID}"
+  run_ralph_with_watchdog "${EPIC_ID}"
 
   log "ralph finished; running sprint_manager (review+retro+planning)"
   python3 tools/sprint_manager.py --epic-id "${EPIC_ID}" --goal "${GOAL_PATH}" --state "${STATE_PATH}"
