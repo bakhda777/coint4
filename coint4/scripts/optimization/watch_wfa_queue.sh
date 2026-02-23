@@ -118,6 +118,18 @@ if [[ ! -f "$QUEUE_PATH" ]]; then
   exit 1
 fi
 
+HEAVY_ALLOW_ENV="${HEAVY_ALLOW_ENV:-ALLOW_HEAVY_RUN}"
+HEAVY_HOST_ALLOWLIST="${HEAVY_HOSTNAME_ALLOWLIST:-85.198.90.128,coint}"
+HEAVY_MIN_RAM_GB="${HEAVY_MIN_RAM_GB:-28}"
+HEAVY_MIN_CPU="${HEAVY_MIN_CPU:-8}"
+
+PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" -m coint2.ops.heavy_guardrails \
+  --entrypoint "scripts/optimization/watch_wfa_queue.sh" \
+  --allow-env "$HEAVY_ALLOW_ENV" \
+  --allowlist "$HEAVY_HOST_ALLOWLIST" \
+  --min-ram-gb "$HEAVY_MIN_RAM_GB" \
+  --min-cpu "$HEAVY_MIN_CPU"
+
 QUEUE_DIR="$(cd "$(dirname "$QUEUE_PATH")" && pwd)"
 RUN_LOG="$QUEUE_DIR/run_queue.log"
 WATCH_LOG="$QUEUE_DIR/run_queue.watch.log"
@@ -283,7 +295,7 @@ check_max_steps
 
 log_watch "START queue=$QUEUE_PATH parallel=$PARALLEL heartbeat=${HEARTBEAT}s idle_minutes=${IDLE_MINUTES} cpu_threshold=${CPU_THRESHOLD}"
 
-PYTHONPATH=src "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \
+PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \
   --queue "$QUEUE_PATH" \
   --statuses planned,stalled \
   --parallel "$PARALLEL" \

@@ -1,0 +1,97 @@
+{
+  "name": "Optimization Params Closed Loop v1 (runs_clean -> Codex -> WFA batches)",
+  "description": "Цель: найти максимально устойчивые параметры для live, используя последние clean результаты. Objective: maximize worst-window robust Sharpe (как в scripts/optimization/rank_multiwindow_robust_runs.py). Risk gate: worst_dd_pct <= 0.14, min_windows=3, min_trades=200, min_pairs=20. Knobs (LLM может менять): portfolio.risk_per_position_pct; backtest.pair_stop_loss_usd; backtest.max_var_multiplier; pair_selection(min_correlation, coint_pvalue_threshold, max_pairs); filter_params(min_beta, max_hurst_exponent). WFA: 3 OOS окна; батч = 20 параметр-сетов (60 queue entries). Stop criterion: только LLM decision next_action=stop (4C). Тяжёлые прогоны не запускать локально: только VPS 85.198.90.128, с авто poweroff.",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "US-LOOP-001",
+      "title": "Preflight: доступы, безопасность, quality gates",
+      "description": "Как оператор, я хочу убедиться, что loop может безопасно запускать тяжёлые WFA удалённо и локально выполняются только лёгкие шаги.",
+      "acceptanceCriteria": [
+        "Подтверждено: тяжёлые WFA/оптимизации выполняются только на VPS 85.198.90.128 (локально только планирование/rollup/rank/docs).",
+        "Доступ к VPS без пароля работает: `ssh root@85.198.90.128 'echo ok'` возвращает `ok`.",
+        "Ключ Serverspace доступен без вывода значения: env `SERVSPACE_API_KEY` задан ИЛИ существует `.secrets/serverspace_api_key` (chmod 600).",
+        "Из корня репо проходят quality gates: `make lint` и `make test`."
+      ],
+      "priority": 1,
+      "passes": false,
+      "labels": [
+        "optimization",
+        "wfa",
+        "ops",
+        "autopilot"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "US-LOOP-002",
+      "title": "Baseline: rebuild rollup + снимок топ clean кандидатов",
+      "description": "Как аналитик, я хочу пересобрать rollup (включая runs_clean) и зафиксировать baseline перед запуском нового loop.",
+      "acceptanceCriteria": [
+        "Пересобран rollup: `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`.",
+        "Снят baseline топ (по тем же gates): `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --top 10 --max-dd-pct 0.14 --min-windows 3 --min-trades 200 --min-pairs 20 --contains budget1000 --include-noncompleted`.",
+        "Baseline (best run_group/run_id/score/worst_dd_pct) записан в `docs/optimization_runs_20260219.md`."
+      ],
+      "priority": 2,
+      "passes": false,
+      "labels": [
+        "optimization",
+        "rollup",
+        "rank"
+      ],
+      "dependsOn": [
+        "US-LOOP-001"
+      ]
+    },
+    {
+      "id": "US-LOOP-003",
+      "title": "Запуск closed-loop оптимизации до stop от LLM",
+      "description": "Как оператор, я хочу запустить цикл: анализ clean -> новый батч -> удалённый прогон -> анализ -> ... пока LLM не скажет stop.",
+      "acceptanceCriteria": [
+        "Loop запущен командой: `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --until-done --use-codex-exec`. ",
+        "В iteration logs присутствуют маркеры удалённого исполнения: вызов `scripts/optimization/run_wfa_queue_powered.py`, `compute-host=85.198.90.128`, `--poweroff true`, `--wait-completion true`.",
+        "Loop завершился только по решению LLM: финальное решение имеет `next_action=stop` и заполненный `stop_reason`.",
+        "После stop `docs/best_params_latest.yaml` больше не начинается с `# No winner yet`.",
+        "После stop `docs/final_report_latest.md` показывает `Status: done`, `Best run`, `Best score` и gates (min_windows/min_trades/min_pairs/max_dd_pct).",
+        "После завершения VPS выключен (подтверждено через Serverspace status или тем, что `ssh root@85.198.90.128 'echo ok'` не отвечает)."
+      ],
+      "priority": 3,
+      "passes": false,
+      "labels": [
+        "optimization",
+        "loop",
+        "codex",
+        "remote"
+      ],
+      "dependsOn": [
+        "US-LOOP-002"
+      ]
+    },
+    {
+      "id": "US-LOOP-004",
+      "title": "Фиксация результата: docs + экспорт winner для live",
+      "description": "Как владелец системы, я хочу получить финальные оптимальные параметры и понятную документацию, что именно выигрывает и почему.",
+      "acceptanceCriteria": [
+        "Обновлён `docs/optimization_state.md`: дата обновления 2026-02-19, финальный stop_reason, лучший run_group/run_id/score/worst_dd_pct, ссылка на `docs/best_params_latest.yaml` и `docs/final_report_latest.md`.",
+        "Создан/обновлён `docs/optimization_runs_20260219.md`: baseline из US-LOOP-002, список выполненных run_group раундов, финальный winner и краткое резюме.",
+        "Создан кандидат прод-конфига: `coint4/configs/prod_final_budget1000_bestparams_20260219.yaml` (копия winner `config_snapshot.yaml` или `docs/best_params_latest.yaml`, без секретов).",
+        "Проверено: тяжёлые артефакты из `coint4/artifacts/wfa/runs/**` не добавлены в git (git status чистый по артефактам)."
+      ],
+      "priority": 4,
+      "passes": false,
+      "labels": [
+        "docs",
+        "live",
+        "config"
+      ],
+      "dependsOn": [
+        "US-LOOP-003"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-19T00:00:00.000Z",
+    "updatedAt": "2026-02-19T22:41:33.871Z",
+    "version": "v1"
+  }
+}

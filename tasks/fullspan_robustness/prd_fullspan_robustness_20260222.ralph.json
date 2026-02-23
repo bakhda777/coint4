@@ -1,0 +1,212 @@
+{
+  "name": "Fullspan Robustness Hardening v1",
+  "description": "Перевести выводы по деградации fullspan в исполнимый цикл: устойчивый отбор, защита от tail-концентрации и ужесточение tradeability/universe критериев.",
+  "branchName": "feature/fullspan-robustness-hardening-v1",
+  "userStories": [
+    {
+      "id": "FS-001",
+      "title": "Зафиксировать каноническую политику отбора для fullspan",
+      "description": "Как оператор оптимизаций, я хочу единый контракт отбора, чтобы не выбирать конфиги по среднему Sharpe на коротком OOS без учёта хвостового риска.",
+      "acceptanceCriteria": [
+        "В `docs/optimization_state.md` добавлен раздел `Fullspan selection policy v1` с формальным objective и gate-правилами.",
+        "Policy содержит как минимум: `worst-step`/квантильный штраф, hard-gate по max drawdown и hard-gate по худшему step-PnL.",
+        "Policy явно фиксирует запрет на выбор победителя только по среднему Sharpe на коротком OOS (например, 5 шагов).",
+        "В policy добавлен минимальный набор статистических метрик устойчивости (PSR/DSR или зафиксированный временный fallback с причиной).",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "optimization",
+        "selection-policy",
+        "fullspan"
+      ],
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-002",
+      "title": "Расширить ranker квантильным и hybrid-скорингом",
+      "description": "Как оператор, я хочу ранжирование не только по worst-window, но и по квантильной устойчивости, чтобы снизить чувствительность к шуму и переобучению на коротком OOS.",
+      "acceptanceCriteria": [
+        "В `coint4/scripts/optimization/rank_multiwindow_robust_runs.py` добавлены аргументы `--score-mode` и `--quantile-q` (или эквивалент).",
+        "Поддержаны режимы минимум: `worst`, `quantile`, `hybrid` с явной формулой score в help/README скрипта.",
+        "В итоговую таблицу ranker добавлены колонки, отражающие выбранный score и ключевые компоненты (worst/quantile/avg).",
+        "Поведение по умолчанию обратно совместимо с текущим пайплайном, либо миграция описана в `docs/optimization_state.md`.",
+        "Добавлены/обновлены тесты для расчёта score и сортировки кандидатов.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "ranking",
+        "robustness",
+        "fullspan"
+      ],
+      "dependsOn": [
+        "FS-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-003",
+      "title": "Добавить PSR/DSR в rollup и использовать в gate",
+      "description": "Как оператор, я хочу статистические метрики достоверности Sharpe, чтобы отсекать ложных лидеров при множественных прогонах.",
+      "acceptanceCriteria": [
+        "Добавлен расчёт PSR/DSR (или эквивалент) в канонический слой метрик (`recompute_canonical_metrics.py`/`run_index`).",
+        "`artifacts/wfa/aggregate/rollup/run_index.csv` содержит поля PSR/DSR для completed run-ов (или явный маркер отсутствия).",
+        "В ranker добавлен опциональный gate (например, `--min-psr`) и он применяется при отборе.",
+        "Документация фиксирует используемую формулу/допущения и ограничение интерпретации.",
+        "Добавлены тесты на корректность расчёта и сериализации метрик.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 3,
+      "passes": true,
+      "labels": [
+        "statistics",
+        "psr",
+        "dsr"
+      ],
+      "dependsOn": [
+        "FS-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-004",
+      "title": "Сделать диагностику концентрации tail-loss по парам и периодам",
+      "description": "Как оператор, я хочу автоматически видеть, какая пара и какой WF-период убивают equity, чтобы применять целевые ограничения.",
+      "acceptanceCriteria": [
+        "Добавлен скрипт диагностики концентрации (новый или расширение `diagnose_holdout*.py`) с входом от run директории/rollup.",
+        "Скрипт считает минимум: худший период по PnL, худшую пару периода, вклад пары в убыток периода (% и abs).",
+        "Результат сохраняется в машиночитаемом виде (csv/json) и кратком markdown summary.",
+        "Для fullspan-кейса отчёт воспроизводит найденный хвостовой период и доминирующую убыточную пару.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 4,
+      "passes": true,
+      "labels": [
+        "diagnostics",
+        "tail-risk",
+        "concentration"
+      ],
+      "dependsOn": [
+        "FS-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-005",
+      "title": "Добавить concentration-gates в ранкер",
+      "description": "Как оператор, я хочу блокировать варианты с чрезмерной зависимостью от одной пары/периода, чтобы не пропускать хрупкие конфиги в top-кандидаты.",
+      "acceptanceCriteria": [
+        "Ranker получает данные концентрации и применяет минимум один hard-gate (например, max доля убытка одной пары в худшем периоде).",
+        "В выводе ranker явно печатается причина отбраковки при нарушении concentration-gate.",
+        "Параметры gate настраиваются аргументами CLI с безопасными дефолтами.",
+        "Добавлены тесты на прохождение/непрохождение gate.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 5,
+      "passes": true,
+      "labels": [
+        "ranking",
+        "tail-risk",
+        "gates"
+      ],
+      "dependsOn": [
+        "FS-002",
+        "FS-004"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-006",
+      "title": "Усилить runtime-защиту от хвостов: pair/portfolio safeguards",
+      "description": "Как оператор, я хочу runtime-контур защиты (лимиты на пару и портфельный deleverage/stop), чтобы ограничивать глубину провалов в fullspan и live.",
+      "acceptanceCriteria": [
+        "Проверено фактическое применение `pair_stop_loss_usd`, `enable_pair_quarantine`, `portfolio_daily_stop_pct` в backtest и live-контуре; расхождения устранены.",
+        "Добавлен минимум один дополнительный safeguard для хвостовых сценариев (например, лимит потерь пары на период и/или DD-triggered deleverage).",
+        "Новые параметры отражены в `coint4/src/coint2/utils/config.py` с валидацией и безопасными дефолтами.",
+        "Обновлён прод-конфиг `coint4/configs/prod_final_budget1000.yaml` и комментарии к нему по новым guardrails.",
+        "Добавлены unit/integration тесты на срабатывание safeguards.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 6,
+      "passes": true,
+      "labels": [
+        "risk",
+        "runtime",
+        "drawdown"
+      ],
+      "dependsOn": [
+        "FS-004"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-007",
+      "title": "Ужесточить tradeability/universe и стабильность пары",
+      "description": "Как оператор, я хочу исключать хрупкие пары по реальной торгуемости и межшаговой стабильности, чтобы не тянуть tail-risk в fullspan.",
+      "acceptanceCriteria": [
+        "Валидация и/или preflight фиксируют минимально допустимые tradeability-пороги (ликвидность, bid-ask, funding) для optimization/live конфигов.",
+        "Для `pair_stability_window_steps` и `pair_stability_min_steps` зафиксированы дефолты/границы, предотвращающие разовый проход пары по фильтру.",
+        "В отчётах/логах фильтрации есть достаточно данных для аудита причин исключения пары.",
+        "Наличие/отсутствие пар типа `HFTUSDC-*` объясняется проверяемыми критериями, а не ручным исключением post-factum.",
+        "Добавлены тесты на конфигурационные граничные случаи и фильтрацию пар.",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 7,
+      "passes": true,
+      "labels": [
+        "universe",
+        "tradeability",
+        "stability"
+      ],
+      "dependsOn": [
+        "FS-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "FS-008",
+      "title": "Обновить рабочий цикл и документацию под новую схему",
+      "description": "Как оператор, я хочу закрепить новую схему в документах и DoD, чтобы каждый блок прогонов воспроизводимо проходил одинаковый postprocess и отчётность.",
+      "acceptanceCriteria": [
+        "`docs/optimization_state.md` обновлён: цель, текущий статус, следующие шаги и конкретные gate-пороги для отбора.",
+        "В актуальный `docs/optimization_runs_YYYYMMDD.md` добавлен блок с before/after по fullspan кейсу и решениями по tail-risk.",
+        "Документация содержит обязательный postprocess: `sync_queue_status.py` -> `build_run_index.py` -> ranker.",
+        "В DoD явно указан источник истины для отбора кандидатов (какой скрипт/score/gates используются).",
+        "Команда `make lint` проходит.",
+        "Команда `make test` проходит."
+      ],
+      "priority": 8,
+      "passes": true,
+      "labels": [
+        "docs",
+        "process",
+        "dod"
+      ],
+      "dependsOn": [
+        "FS-002",
+        "FS-003",
+        "FS-005",
+        "FS-006",
+        "FS-007"
+      ],
+      "completionNotes": "Completed by agent"
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-22T00:00:00.000Z",
+    "updatedAt": "2026-02-22T13:46:57.996Z",
+    "version": "v1",
+    "sourcePrd": "Fullspan degradation analysis -> ralph backlog (chat, 2026-02-22)"
+  }
+}

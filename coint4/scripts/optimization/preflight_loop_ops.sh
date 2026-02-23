@@ -86,9 +86,12 @@ PY
 ok "remote-heavy policy guardrails are pinned to ${CANONICAL_COMPUTE_HOST}"
 
 key_rel=".secrets/serverspace_api_key"
-key_file="${repo_root}/${key_rel}"
+key_repo_file="${repo_root}/${key_rel}"
+key_home_file="${HOME}/.serverspace_api_key"
+key_etc_file="/etc/serverspace_api_key"
+
 has_env_key=0
-if [[ -n "${SERVSPACE_API_KEY:-}" ]]; then
+if [[ -n "${SERVSPACE_API_KEY:-}" || -n "${SERVERSPACE_API_KEY:-}" ]]; then
   has_env_key=1
 fi
 
@@ -96,21 +99,35 @@ if git ls-files --error-unmatch -- "${key_rel}" >/dev/null 2>&1; then
   fail "${key_rel} must stay untracked (secret file)"
 fi
 
-if [[ "${has_env_key}" == "0" && ! -s "${key_file}" ]]; then
-  fail "SERVSPACE_API_KEY is missing and ${key_file} does not exist or is empty"
-fi
-
-if [[ -f "${key_file}" ]]; then
+has_file_key=0
+key_source=""
+for key_file in "${key_home_file}" "${key_etc_file}" "${key_repo_file}"; do
+  if [[ ! -f "${key_file}" ]]; then
+    continue
+  fi
+  if [[ ! -r "${key_file}" ]]; then
+    continue
+  fi
+  if [[ ! -s "${key_file}" ]]; then
+    fail "Serverspace key file exists but is empty: ${key_file}"
+  fi
   mode="$(stat -c '%a' "${key_file}" 2>/dev/null || true)"
   if [[ "${mode}" != "600" ]]; then
     fail "${key_file} must have chmod 600 (current: ${mode:-unknown})"
   fi
+  has_file_key=1
+  key_source="${key_file}"
+  break
+done
+
+if [[ "${has_env_key}" == "0" && "${has_file_key}" == "0" ]]; then
+  fail "Serverspace API key is missing: set SERVSPACE_API_KEY/SERVERSPACE_API_KEY or create ~/.serverspace_api_key or /etc/serverspace_api_key (or legacy ${key_repo_file})"
 fi
 
 if [[ "${has_env_key}" == "1" ]]; then
-  ok "SERVSPACE_API_KEY is present in env (value not printed)"
+  ok "SERVSPACE_API_KEY/SERVERSPACE_API_KEY is present in env (value not printed)"
 else
-  ok "Serverspace key file exists with chmod 600 (value not printed)"
+  ok "Serverspace key file exists with chmod 600 (value not printed): ${key_source}"
 fi
 
 set +e

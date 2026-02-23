@@ -139,6 +139,24 @@ def make_tag(key: str, value: Any) -> str:
         "pair_selection.max_pairs": "mp",
         "pair_selection.min_correlation": "corr",
         "pair_selection.coint_pvalue_threshold": "pv",
+        # Tradeability extras (Bybit snapshot-based).
+        "pair_selection.require_same_quote": "qmatch",
+        "pair_selection.require_market_metrics": "qmetrics",
+        "pair_selection.min_volume_usd_24h": "vol24",
+        "pair_selection.min_days_live": "days",
+        "pair_selection.max_funding_rate_abs": "fundabs",
+        "pair_selection.max_tick_size_pct": "tick",
+        # Pair stability across WFA steps.
+        "pair_selection.pair_stability_window_steps": "stw",
+        "pair_selection.pair_stability_min_steps": "stmin",
+        # Quality tightening axes.
+        "filter_params.min_mean_crossings": "cross",
+        "filter_params.min_half_life_days": "hlmin",
+        "filter_params.max_half_life_days": "hlmax",
+        "filter_params.max_hurst_exponent": "hurst",
+        "filter_params.min_beta": "minbeta",
+        "filter_params.max_beta": "maxbeta",
+        "pair_selection.kpss_pvalue_threshold": "kpss",
     }
     short = short_keys.get(key, key.split(".")[-1])
     return f"{short}{encode_value(value)}"

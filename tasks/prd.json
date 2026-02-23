@@ -1,0 +1,123 @@
+{
+  "name": "Робастный отбор fullspan и защита от tail-концентрации (v1 offline)",
+  "branchName": "feature/fullspan-tail-v1-offline",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Извлечение робастных метрик на уровне run",
+      "description": "Как инженер оптимизации, я хочу получать PSR/DSR и tail-диагностику для каждого run, чтобы ранжирование учитывало устойчивость, а не только средний Sharpe.",
+      "acceptanceCriteria": [
+        "В run_index добавлены поля минимум: psr, dsr, wf_worst_period, wf_worst_period_pnl, wf_worst_pair, wf_worst_pair_pnl, tail_loss_concentration, pair_stability_hysteresis, robust_metrics_status.",
+        "Метрики считаются из существующих артефактов run (equity_curve.csv, daily_pnl.csv, trade_statistics.csv) без изменения формата исходных артефактов.",
+        "При частично отсутствующих входных файлах ранкер не падает: поля получают null, а robust_metrics_status отражает причину.",
+        "make ci passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "dependsOn": []
+    },
+    {
+      "id": "US-002",
+      "title": "Hard-gate по DD для fullspan",
+      "description": "Как инженер оптимизации, я хочу автоматически отбрасывать кандидаты с недопустимым DD, чтобы исключать катастрофические fullspan-профили.",
+      "acceptanceCriteria": [
+        "Реализован hard-gate: вариант не проходит, если worst_dd_pct > 0.50, где worst_dd_pct = max_window(max(abs(dd_holdout), abs(dd_stress))).",
+        "Порог 0.50 зафиксирован как дефолт v1 и параметризуем через CLI.",
+        "Для каждого исключенного варианта сохраняется явная причина (fail_reason=dd_gate).",
+        "make ci passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "dependsOn": []
+    },
+    {
+      "id": "US-003",
+      "title": "Soft-score (PSR/DSR + worst-period + concentration)",
+      "description": "Как инженер оптимизации, я хочу ранжировать варианты по робастному score, чтобы снизить шанс выбора хрупких конфигов.",
+      "acceptanceCriteria": [
+        "PSR и DSR используются как компоненты score (не как отдельный hard-fail).",
+        "В score входят штрафы за worst_wf_period_pnl и tail_loss_concentration.",
+        "Формула score детерминирована и документирована, включая нормализацию, знаки и tie-breaker.",
+        "Итоговое ранжирование строится только среди кандидатов, прошедших DD gate.",
+        "make ci passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "dependsOn": [
+        "US-001",
+        "US-002"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Offline tradeability/universe-гистерезис",
+      "description": "Как инженер оптимизации, я хочу видеть стабильность пар между периодами, чтобы не продвигать конфиги, завязанные на случайный всплеск одной пары.",
+      "acceptanceCriteria": [
+        "Рассчитывается pair_stability_hysteresis по повторяемости и устойчивости пар между WF-периодами.",
+        "Метрика публикуется в выходных артефактах как минимум диагностически в v1.",
+        "Реализация не требует новых тяжелых прогонов и работает на существующих run-артефактах.",
+        "make ci passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "dependsOn": [
+        "US-001"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Артефакты вывода (вариант 8C)",
+      "description": "Как инженер оптимизации, я хочу получать единые артефакты rollup и ranking, чтобы downstream-процессы и отчеты работали без ручной склейки.",
+      "acceptanceCriteria": [
+        "coint4/artifacts/wfa/aggregate/rollup/run_index.csv расширен новыми полями ранжирования и робастности.",
+        "coint4/artifacts/wfa/aggregate/rollup/run_index.json расширен теми же полями.",
+        "coint4/artifacts/wfa/aggregate/rollup/run_index.md содержит краткую сводку по робастным метрикам и DD-gate.",
+        "Для каждого обработанного run_group создается coint4/artifacts/wfa/aggregate/<run_group>/robust_ranking.csv.",
+        "make ci passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "dependsOn": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Валидация через replay существующих артефактов",
+      "description": "Как инженер оптимизации, я хочу доказать корректность нового отбора без тяжелых запусков на текущем сервере.",
+      "acceptanceCriteria": [
+        "Добавлены unit/integration проверки для извлечения метрик, DD gate и score.",
+        "Выполняется replay на существующих артефактах (без новых long WFA).",
+        "На replay подтверждается expected behavior: fullspan-кейсы с DD хуже -0.50 отбрасываются, OOS-кейсы с приемлемым DD остаются в ранжировании.",
+        "make ci passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "dependsOn": [
+        "US-005"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Документация состояния и прогонов",
+      "description": "Как владелец процесса оптимизации, я хочу зафиксировать новую схему отбора в состоянии проекта и дневнике, чтобы решения были трассируемыми.",
+      "acceptanceCriteria": [
+        "Обновлен docs/optimization_state.md с описанием нового gate/score и порядка запуска.",
+        "Добавлена запись в docs/optimization_runs_YYYYMMDD.md по replay-валидации и итогам ранжирования.",
+        "В документации явно зафиксировано, что v1 не включает runtime-защиты в live-исполнении.",
+        "make ci passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "dependsOn": [
+        "US-006"
+      ]
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-02-22T10:58:53.229Z"
+  }
+}

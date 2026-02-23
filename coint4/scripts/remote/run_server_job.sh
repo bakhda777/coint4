@@ -8,7 +8,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 API_BASE=${SERVSPACE_API_BASE:-"https://api.serverspace.ru/api/v1"}
-API_KEY=${SERVSPACE_API_KEY:-""}
+API_KEY=${SERVSPACE_API_KEY:-${SERVERSPACE_API_KEY:-""}}
 SERVER_ID=${SERVER_ID:-""}
 SERVER_NAME=${SERVER_NAME:-""}
 SERVER_IP=${SERVER_IP:-"85.198.90.128"}
@@ -20,11 +20,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_LOCAL_REPO_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 LOCAL_REPO_DIR=${LOCAL_REPO_DIR:-"${DEFAULT_LOCAL_REPO_DIR}"}
 
-# Local-only convenience: if SERVSPACE_API_KEY isn't exported, read it from the gitignored secret file.
-# Never echo this value.
-if [[ -z "${API_KEY}" && -f "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key" ]]; then
-  API_KEY="$(tr -d '\n' < "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key")"
-fi
+load_api_key_from_file() {
+  local path="$1"
+  if [[ -n "${API_KEY}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${path}" ]]; then
+    return 0
+  fi
+  if [[ ! -s "${path}" ]]; then
+    echo "Serverspace API key file is empty: ${path}" >&2
+    exit 2
+  fi
+  if ! API_KEY="$(tr -d '\n' < "${path}" | tr -d '\r')"; then
+    echo "Cannot read Serverspace API key file: ${path}" >&2
+    exit 2
+  fi
+}
+
+# Prefer external key files to avoid relying on env vars.
+# Never echo the key value.
+load_api_key_from_file "${HOME}/.serverspace_api_key"
+load_api_key_from_file "/etc/serverspace_api_key"
+# Legacy fallback: repo-local gitignored secret file.
+load_api_key_from_file "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key"
 
 UPDATE_CODE=${UPDATE_CODE:-"1"}
 SYNC_BACK=${SYNC_BACK:-"1"}
@@ -75,8 +94,8 @@ resolve_server_id() {
     return 0
   fi
   if [[ -z "$API_KEY" ]]; then
-    echo "SERVSPACE_API_KEY is required to resolve server id (set env var or create .secrets/serverspace_api_key)." >&2
-    return 1
+    echo "Serverspace API key is required to resolve server id (set SERVSPACE_API_KEY/SERVERSPACE_API_KEY or create ~/.serverspace_api_key or /etc/serverspace_api_key)." >&2
+    return 2
   fi
 
   local target_name target_ip
@@ -200,8 +219,8 @@ start_server() {
     return 0
   fi
   if [[ -z "$API_KEY" ]]; then
-    echo "SERVSPACE_API_KEY is required to start/stop server (set env var)." >&2
-    exit 1
+    echo "Serverspace API key is required to start/stop server (set SERVSPACE_API_KEY/SERVERSPACE_API_KEY or create ~/.serverspace_api_key or /etc/serverspace_api_key)." >&2
+    exit 2
   fi
   local sid
   sid=$(resolve_server_id)
@@ -235,7 +254,7 @@ stop_server() {
   fi
 
   echo "Unable to stop VPS automatically." >&2
-  echo "Set SERVSPACE_API_KEY (and leave SKIP_POWER=0) OR set STOP_VIA_SSH=1." >&2
+  echo "Set SERVSPACE_API_KEY/SERVERSPACE_API_KEY (or ~/.serverspace_api_key or /etc/serverspace_api_key) OR set STOP_VIA_SSH=1." >&2
   return 1
 }
 

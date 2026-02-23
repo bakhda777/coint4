@@ -2,8 +2,11 @@
 """Minimal Serverspace Public API client (no secrets in logs).
 
 Auth:
-  - env: SERVSPACE_API_KEY
-  - or file: <repo_root>/.secrets/serverspace_api_key (chmod 600, gitignored)
+  - env: SERVSPACE_API_KEY (legacy: SERVERSPACE_API_KEY)
+  - or file (priority):
+      1) ~/.serverspace_api_key
+      2) /etc/serverspace_api_key
+      3) <repo_root>/.secrets/serverspace_api_key (legacy, gitignored)
 
 Default API base:
   https://api.serverspace.ru/api/v1
@@ -31,17 +34,43 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _candidate_key_files() -> List[Path]:
+    return [
+        Path.home() / ".serverspace_api_key",
+        Path("/etc/serverspace_api_key"),
+        _repo_root() / ".secrets" / "serverspace_api_key",
+    ]
+
+
 def _load_api_key() -> str:
-    key = os.environ.get("SERVSPACE_API_KEY", "").strip()
-    if key:
-        return key
-    key_path = _repo_root() / ".secrets" / "serverspace_api_key"
-    if key_path.exists():
-        file_key = key_path.read_text(encoding="utf-8").strip()
-        if file_key:
-            return file_key
-        raise RuntimeError(".secrets/serverspace_api_key is empty")
-    raise RuntimeError("SERVSPACE_API_KEY not set and .secrets/serverspace_api_key not found")
+    for key_name in ("SERVSPACE_API_KEY", "SERVERSPACE_API_KEY"):
+        value = os.environ.get(key_name, "").strip()
+        if value:
+            return value
+
+    checked: List[str] = []
+    for path in _candidate_key_files():
+        checked.append(str(path))
+        if not path.exists():
+            continue
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"ERROR: cannot read Serverspace API key file: {path} ({exc})", file=sys.stderr)
+            raise SystemExit(2) from None
+        if value:
+            return value
+        print(f"ERROR: Serverspace API key file is empty: {path}", file=sys.stderr)
+        raise SystemExit(2) from None
+
+    print(
+        "ERROR: Serverspace API key not found. "
+        "Set SERVSPACE_API_KEY (legacy SERVERSPACE_API_KEY) or create one of:\n"
+        + "\n".join([f"- {p}" for p in checked])
+        + "\n(hint: chmod 600)",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from None
 
 
 def _request_json(

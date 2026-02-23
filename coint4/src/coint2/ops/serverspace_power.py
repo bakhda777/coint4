@@ -27,6 +27,8 @@ def _possible_secret_paths() -> list[Path]:
     repo_root = _repo_root()
     app_root = repo_root / "coint4"
     return [
+        Path.home() / ".serverspace_api_key",
+        Path("/etc/serverspace_api_key"),
         repo_root / ".secrets" / "serverspace_api_key",
         app_root / ".secrets" / "serverspace_api_key",
     ]
@@ -46,7 +48,10 @@ def load_api_key() -> str:
             return value
 
     raise ServerspaceError(
-        "SERVSPACE_API_KEY не задан (legacy SERVERSPACE_API_KEY тоже не найден)."
+        "Serverspace API key не найден. "
+        "Установите SERVSPACE_API_KEY (legacy SERVERSPACE_API_KEY) или создайте файл "
+        "~/.serverspace_api_key или /etc/serverspace_api_key "
+        "(legacy: .secrets/serverspace_api_key)."
     )
 
 

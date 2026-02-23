@@ -180,8 +180,8 @@ check_remote_preflight() {
   getent hosts api.serverspace.ru >/dev/null || die "DNS failure: api.serverspace.ru"
   curl -sS --connect-timeout 8 --max-time 15 -o /dev/null "https://api.serverspace.ru" \
     || die "API unreachable: https://api.serverspace.ru"
-  if [[ -z "${SERVSPACE_API_KEY:-}" && ! -s "${REPO_ROOT}/.secrets/serverspace_api_key" ]]; then
-    warn "SERVSPACE_API_KEY is not set (or .secrets/serverspace_api_key missing)"
+  if [[ -z "${SERVSPACE_API_KEY:-}" && -z "${SERVERSPACE_API_KEY:-}" && ! -s "${HOME}/.serverspace_api_key" && ! -s "/etc/serverspace_api_key" && ! -s "${REPO_ROOT}/.secrets/serverspace_api_key" ]]; then
+    warn "Serverspace API key is not set (set SERVSPACE_API_KEY/SERVERSPACE_API_KEY or create ~/.serverspace_api_key or /etc/serverspace_api_key or .secrets/serverspace_api_key)"
   fi
 }
 

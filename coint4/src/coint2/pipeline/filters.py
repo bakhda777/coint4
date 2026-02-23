@@ -17,18 +17,102 @@ import multiprocessing
 import os
 from typing import List, Tuple, Dict, Any, Optional
 
-# --- Placeholder market data helpers ---
-_market_cache: dict[str, tuple[float,float,float]] = {}
+# --- Market metrics (CSV snapshot; deterministic, no network in WFA runs) ---
+_MARKET_LOADED = False
+_MARKET_METRICS: dict[str, tuple[float, float, float]] = {}  # symbol -> (turnover24h_usd, bid_ask_pct, funding_rate)
+_MARKET_EXTRAS: dict[str, tuple[float, float, str]] = {}  # symbol -> (tick_size_pct, days_live, quote)
+
+
+def _to_float(raw: Any) -> Optional[float]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _quote_ccy(symbol: str) -> str:
+    for suffix in ("USDT", "USDC", "BUSD", "FDUSD"):
+        if symbol.endswith(suffix):
+            return suffix
+    return "OTHER"
+
+
+def _resolve_market_metrics_path() -> Path:
+    raw = (os.getenv("COINT_MARKET_METRICS_PATH") or "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            return p
+        # Interpret relative paths as app-root relative (coint4/).
+        return Path(__file__).resolve().parents[3] / p
+    return Path(__file__).resolve().parents[3] / "configs" / "market" / "bybit_linear_metrics_latest.csv"
+
+
+def _load_market_metrics_once() -> None:
+    global _MARKET_LOADED
+    if _MARKET_LOADED:
+        return
+    path = _resolve_market_metrics_path()
+    logger = logging.getLogger("pair_filter")
+    if not path.exists():
+        logger.warning(
+            "[ФИЛЬТР] Market metrics snapshot not found: %s. Tradeability filter will reject missing symbols only by history_ratio.",
+            path,
+        )
+        _MARKET_LOADED = True
+        return
+    try:
+        import csv
+
+        with path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                symbol = str(row.get("symbol") or "").strip()
+                if not symbol:
+                    continue
+                quote = str(row.get("quote") or _quote_ccy(symbol)).strip() or "OTHER"
+                turnover = _to_float(row.get("turnover24h_usd")) or 0.0
+                bid_ask = _to_float(row.get("bid_ask_pct"))
+                funding = _to_float(row.get("funding_rate"))
+                tick_pct = _to_float(row.get("tick_size_pct"))
+                days_live = _to_float(row.get("days_live"))
+
+                # Missing metrics are treated as untradeable (will fail typical thresholds).
+                if bid_ask is None:
+                    bid_ask = 1.0
+                if funding is None:
+                    funding = 1.0
+                if tick_pct is None:
+                    tick_pct = 1.0
+                if days_live is None:
+                    days_live = 0.0
+
+                _MARKET_METRICS[symbol] = (float(turnover), float(bid_ask), float(funding))
+                _MARKET_EXTRAS[symbol] = (float(tick_pct), float(days_live), quote)
+    except Exception as exc:
+        logger.warning("[ФИЛЬТР] Failed to load market metrics snapshot %s: %s", path, exc)
+    finally:
+        _MARKET_LOADED = True
+
 
 def _get_market_metrics(symbol: str) -> tuple[float, float, float]:
-    """Return (avg_volume_usd, bid_ask_pct, avg_funding_pct).
-    In production replace with real data source.
+    """Return (turnover24h_usd, bid_ask_pct, funding_rate) for symbol.
+
+    Missing symbols are treated as untradeable: (0.0, 1.0, 1.0).
     """
-    if symbol in _market_cache:
-        return _market_cache[symbol]
-    # WARNING: Using placeholder data - integrate real market data in production
-    _market_cache[symbol] = (float('inf'), 0.0, 0.0)
-    return _market_cache[symbol]
+    _load_market_metrics_once()
+    return _MARKET_METRICS.get(symbol, (0.0, 1.0, 1.0))
+
+
+def _get_market_extras(symbol: str) -> tuple[float, float, str]:
+    """Return (tick_size_pct, days_live, quote). Missing -> (1.0, 0.0, MISSING)."""
+    _load_market_metrics_once()
+    return _MARKET_EXTRAS.get(symbol, (1.0, 0.0, "MISSING"))
 
 import logging
 from typing import List, Tuple, Optional, Dict, Any
@@ -56,6 +140,12 @@ class _FilterWorkerCfg:
     max_avg_funding_pct: float
     kpss_pvalue_threshold: Optional[float]
     max_hurst_exponent: float
+    require_market_metrics: bool
+    require_same_quote: bool
+    min_volume_usd_24h: float
+    min_days_live: int
+    max_funding_rate_abs: float
+    max_tick_size_pct: float
 
 
 def _normalize_n_jobs(n_jobs: Optional[int]) -> int:
@@ -150,6 +240,13 @@ def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWo
             pass
 
     if cfg.liquidity_usd_daily > 0 and cfg.max_bid_ask_pct < 1.0:
+        _load_market_metrics_once()
+        if cfg.require_market_metrics and (s1 not in _MARKET_METRICS or s2 not in _MARKET_METRICS):
+            return _reject_pair("market", "missing_metrics", "missing_metrics", s1, s2)
+
+        if cfg.require_same_quote and _quote_ccy(s1) != _quote_ccy(s2):
+            return _reject_pair("market", "quote", "quote_mismatch", s1, s2)
+
         hist_ratio1 = price_df[s1].notna().mean()
         hist_ratio2 = price_df[s2].notna().mean()
         if min(hist_ratio1, hist_ratio2) < cfg.min_history_ratio:
@@ -157,6 +254,21 @@ def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWo
 
         vol1, ba1, fund1 = _get_market_metrics(s1)
         vol2, ba2, fund2 = _get_market_metrics(s2)
+        tick1, days1, _q1 = _get_market_extras(s1)
+        tick2, days2, _q2 = _get_market_extras(s2)
+
+        if cfg.min_volume_usd_24h > 0 and min(vol1, vol2) < cfg.min_volume_usd_24h:
+            return _reject_pair("market", "volume_24h", "volume_24h", s1, s2)
+
+        if cfg.min_days_live > 0 and min(days1, days2) < float(cfg.min_days_live):
+            return _reject_pair("market", "days_live", "days_live", s1, s2)
+
+        if cfg.max_tick_size_pct > 0 and max(tick1, tick2) > cfg.max_tick_size_pct:
+            return _reject_pair("market", "tick_size", "tick_size", s1, s2)
+
+        if cfg.max_funding_rate_abs > 0 and max(abs(fund1), abs(fund2)) > cfg.max_funding_rate_abs:
+            return _reject_pair("market", "funding_abs", "funding_abs", s1, s2)
+
         if (
             min(vol1, vol2) < cfg.liquidity_usd_daily
             or max(ba1, ba2) > cfg.max_bid_ask_pct
@@ -622,6 +734,12 @@ def filter_pairs_by_coint_and_half_life(
     liquidity_usd_daily: float = 1_000_000.0,
     max_bid_ask_pct: float = 0.2,
     max_avg_funding_pct: float = 0.03,
+    require_market_metrics: bool = False,
+    require_same_quote: bool = False,
+    min_volume_usd_24h: float = 0.0,
+    min_days_live: int = 0,
+    max_funding_rate_abs: float = 0.0,
+    max_tick_size_pct: float = 0.0,
     save_filter_reasons: bool = False,
     kpss_pvalue_threshold: Optional[float] = 0.05,
     max_hurst_exponent: float = 0.5,
@@ -672,6 +790,12 @@ def filter_pairs_by_coint_and_half_life(
             max_avg_funding_pct=max_avg_funding_pct,
             kpss_pvalue_threshold=kpss_pvalue_threshold,
             max_hurst_exponent=max_hurst_exponent,
+            require_market_metrics=bool(require_market_metrics),
+            require_same_quote=bool(require_same_quote),
+            min_volume_usd_24h=float(min_volume_usd_24h or 0.0),
+            min_days_live=int(min_days_live or 0),
+            max_funding_rate_abs=float(max_funding_rate_abs or 0.0),
+            max_tick_size_pct=float(max_tick_size_pct or 0.0),
         )
         return _filter_pairs_parallel(
             pairs=pairs,
@@ -867,6 +991,17 @@ def filter_pairs_by_coint_and_half_life(
         logger.info(f"[ФИЛЬТР] Market microstructure фильтр отключен")
     else:
         for s1, s2, corr, pvalue, beta, hl_days, spread, mean_crossings in kpss_passed:
+            _load_market_metrics_once()
+            if require_market_metrics and (s1 not in _MARKET_METRICS or s2 not in _MARKET_METRICS):
+                filter_reasons.append((s1, s2, 'missing_metrics'))
+                filter_stats['missing_metrics'] = filter_stats.get('missing_metrics', 0) + 1
+                continue
+
+            if require_same_quote and _quote_ccy(s1) != _quote_ccy(s2):
+                filter_reasons.append((s1, s2, 'quote_mismatch'))
+                filter_stats['quote'] = filter_stats.get('quote', 0) + 1
+                continue
+
             # --- History coverage check ---
             hist_ratio1 = price_df[s1].notna().mean()
             hist_ratio2 = price_df[s2].notna().mean()
@@ -878,6 +1013,29 @@ def filter_pairs_by_coint_and_half_life(
             # --- Liquidity & market microstructure checks ---
             vol1, ba1, fund1 = _get_market_metrics(s1)
             vol2, ba2, fund2 = _get_market_metrics(s2)
+            tick1, days1, _q1 = _get_market_extras(s1)
+            tick2, days2, _q2 = _get_market_extras(s2)
+
+            if min_volume_usd_24h > 0 and min(vol1, vol2) < float(min_volume_usd_24h):
+                filter_reasons.append((s1, s2, 'volume_24h'))
+                filter_stats['volume_24h'] = filter_stats.get('volume_24h', 0) + 1
+                continue
+
+            if min_days_live > 0 and min(days1, days2) < float(min_days_live):
+                filter_reasons.append((s1, s2, 'days_live'))
+                filter_stats['days_live'] = filter_stats.get('days_live', 0) + 1
+                continue
+
+            if max_tick_size_pct > 0 and max(tick1, tick2) > float(max_tick_size_pct):
+                filter_reasons.append((s1, s2, 'tick_size'))
+                filter_stats['tick_size'] = filter_stats.get('tick_size', 0) + 1
+                continue
+
+            if max_funding_rate_abs > 0 and max(abs(fund1), abs(fund2)) > float(max_funding_rate_abs):
+                filter_reasons.append((s1, s2, 'funding_abs'))
+                filter_stats['funding_abs'] = filter_stats.get('funding_abs', 0) + 1
+                continue
+
             if min(vol1, vol2) < liquidity_usd_daily or max(ba1, ba2) > max_bid_ask_pct or max(abs(fund1), abs(fund2)) > max_avg_funding_pct:
                 filter_reasons.append((s1, s2, 'liquidity'))
                 filter_stats['liquidity'] += 1

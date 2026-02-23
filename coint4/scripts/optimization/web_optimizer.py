@@ -8,6 +8,7 @@ import sys
 import json
 import yaml
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
@@ -22,6 +23,15 @@ import numpy as np
 
 from src.optimiser.fast_objective import FastWalkForwardObjective
 from src.coint2.utils.config import load_config
+from src.coint2.ops.heavy_guardrails import (
+    DEFAULT_ALLOW_ENV,
+    DEFAULT_HOST_ALLOWLIST,
+    DEFAULT_MIN_CPU,
+    DEFAULT_MIN_RAM_GB,
+    HeavyGuardrailConfig,
+    ensure_heavy_run_allowed,
+    parse_host_allowlist,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -205,6 +215,28 @@ class WebOptimizer:
             Dictionary with optimization results
         """
         self.callback = progress_callback
+
+        skip_heavy_guardrails = bool(kwargs.pop("skip_heavy_guardrails", False))
+        heavy_allow_env = str(kwargs.pop("heavy_allow_env", os.environ.get("HEAVY_ALLOW_ENV", DEFAULT_ALLOW_ENV)))
+        heavy_host_allowlist = str(
+            kwargs.pop(
+                "heavy_host_allowlist",
+                os.environ.get("HEAVY_HOSTNAME_ALLOWLIST", ",".join(DEFAULT_HOST_ALLOWLIST)),
+            )
+        )
+        heavy_min_ram_gb = float(kwargs.pop("heavy_min_ram_gb", os.environ.get("HEAVY_MIN_RAM_GB", DEFAULT_MIN_RAM_GB)))
+        heavy_min_cpu = int(kwargs.pop("heavy_min_cpu", os.environ.get("HEAVY_MIN_CPU", DEFAULT_MIN_CPU)))
+
+        if not skip_heavy_guardrails:
+            ensure_heavy_run_allowed(
+                HeavyGuardrailConfig(
+                    entrypoint="scripts/optimization/web_optimizer.py:WebOptimizer.optimize",
+                    allow_env=heavy_allow_env,
+                    host_allowlist=parse_host_allowlist(heavy_host_allowlist),
+                    min_ram_gb=heavy_min_ram_gb,
+                    min_cpu=heavy_min_cpu,
+                )
+            )
         
         # Create sampler
         if sampler == "TPE":

@@ -105,6 +105,7 @@ tasks/**/*.bak.*
 
 # Local secrets (never commit)
 .secrets/
+.serverspace_api_key
 
 # coint4 generated artifacts / outputs (do not commit)
 # Default: ignore everything under coint4/artifacts, but keep small WFA queues + rollup index tracked.
@@ -120,6 +121,9 @@ coint4/artifacts/**
 !coint4/artifacts/wfa/aggregate/rollup/run_index.csv
 !coint4/artifacts/wfa/aggregate/rollup/run_index.json
 !coint4/artifacts/wfa/aggregate/rollup/run_index.md
+
+# Quarantine demos (must stay untracked; commit guardrail forbids nested aggregate paths).
+coint4/artifacts/wfa/aggregate/_quarantine_demo/**
 coint4/outputs/
 outputs/
 
@@ -144,7 +148,7 @@ papers/text/
 papers/digests/
 
 # Non-canonical root-level configs (canonical: coint4/configs/)
-configs/
+/configs/
 
 # Non-canonical nested papers mirror (canonical: papers/)
 coint4/papers/

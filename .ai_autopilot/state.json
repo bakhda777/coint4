@@ -1,5 +1,134 @@
 {
-  "sprint": 1,
-  "last_results": null,
-  "decisions": []
+  "sprint": 3,
+  "last_results": {
+    "generatedAt": "2026-02-23T22:21:07+00:00",
+    "sprintReviewed": 2,
+    "run_index_path": "/home/claudeuser/coint4/coint4/artifacts/wfa/aggregate/rollup/run_index.json",
+    "best": {
+      "sharpe": 8.649446022611752,
+      "dd_abs": 0.012889916285242725,
+      "trades": 3666.0,
+      "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+      "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1",
+      "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml",
+      "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
+    },
+    "top5": [
+      {
+        "sharpe": 8.649446022611752,
+        "dd_abs": 0.012889916285242725,
+        "trades": 3666.0,
+        "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+        "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
+      },
+      {
+        "sharpe": 8.598943841859006,
+        "dd_abs": 0.01464567605153834,
+        "trades": 3977.0,
+        "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+        "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z0p95_exit0p08_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z0p95_exit0p08_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z0p95_exit0p08_hold180_cd180_ms0p1"
+      },
+      {
+        "sharpe": 8.539460359182094,
+        "dd_abs": 0.012603957451374343,
+        "trades": 3651.0,
+        "run_group": "20260126_realcost_alt_oos",
+        "run_id": "holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2",
+        "config_path": "configs/holdout_20260126_relaxed8_nokpss_u250_churnfix_alt/holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2.yaml",
+        "results_dir": "artifacts/wfa/runs/20260126_realcost_alt_oos/holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top30_z1p00_exit0p06_hold180_cd180_ms0p2"
+      },
+      {
+        "sharpe": 8.173682471436555,
+        "dd_abs": 0.012603957451374343,
+        "trades": 3519.0,
+        "run_group": "20260126_realcost_alt_oos",
+        "run_id": "holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2",
+        "config_path": "configs/holdout_20260126_relaxed8_nokpss_u250_churnfix_alt/holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2.yaml",
+        "results_dir": "artifacts/wfa/runs/20260126_realcost_alt_oos/holdout_relaxed8_nokpss_20260126_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top20_z1p00_exit0p06_hold180_cd180_ms0p2"
+      },
+      {
+        "sharpe": 7.9594402722651125,
+        "dd_abs": 0.014806105060272424,
+        "trades": 3836.0,
+        "run_group": "20260122_relaxed8_nokpss_u250_churnfix_alt",
+        "run_id": "holdout_relaxed8_nokpss_20260122_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_full_z0p95_exit0p06_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260122_relaxed8_nokpss_u250_churnfix_alt/holdout_relaxed8_nokpss_20260122_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_full_z0p95_exit0p06_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260122_relaxed8_nokpss_u250_churnfix_alt/holdout_relaxed8_nokpss_20260122_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_full_z0p95_exit0p06_hold180_cd180_ms0p1"
+      }
+    ],
+    "beads": {
+      "label": "sprint-2",
+      "total": 6,
+      "closed": 6,
+      "in_progress": 0,
+      "open": 0,
+      "closed_task_ids": [
+        "ralph-tui-aefb4673",
+        "ralph-tui-c5b5bd98",
+        "ralph-tui-ae66e37d",
+        "ralph-tui-95bf506e",
+        "ralph-tui-b47269b0",
+        "ralph-tui-7a5a102e"
+      ]
+    }
+  },
+  "decisions": [
+    {
+      "sprint": 1,
+      "at": "2026-02-23T21:11:02+00:00",
+      "summary": "retro generated, but sprint not complete; no planning",
+      "retro_path": "reports/sprint_1_retro.md",
+      "best": {
+        "sharpe": 9.384782577212707,
+        "dd_abs": 0.23644970922997863,
+        "trades": 15933.0,
+        "run_group": "20260214_sharpe_sweep",
+        "run_id": "sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12",
+        "config_path": "configs/_tmp_sharpe_sweep_20260214/sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12.yaml",
+        "results_dir": "artifacts/wfa/runs/20260214_sharpe_sweep/sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12"
+      }
+    },
+    {
+      "sprint": 1,
+      "at": "2026-02-23T21:17:18+00:00",
+      "summary": "retro generated; next sprint planned",
+      "retro_path": "reports/sprint_1_retro.md",
+      "best": {
+        "sharpe": 9.384782577212707,
+        "dd_abs": 0.23644970922997863,
+        "trades": 15933.0,
+        "run_group": "20260214_sharpe_sweep",
+        "run_id": "sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12",
+        "config_path": "configs/_tmp_sharpe_sweep_20260214/sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12.yaml",
+        "results_dir": "artifacts/wfa/runs/20260214_sharpe_sweep/sharpe_sweep_20260214_corr0p6_cpv0p08_ptn1000_exit0p12"
+      },
+      "next_sprint": 2
+    },
+    {
+      "sprint": 2,
+      "at": "2026-02-23T22:21:08+00:00",
+      "summary": "retro generated; next sprint planned",
+      "retro_path": "reports/sprint_2_retro.md",
+      "best": {
+        "sharpe": 8.649446022611752,
+        "dd_abs": 0.012889916285242725,
+        "trades": 3666.0,
+        "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+        "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
+      },
+      "next_sprint": 3
+    }
+  ],
+  "done": false,
+  "done_reason": "sprint < 5 (conservative stop guardrail)",
+  "history": [
+    9.384782577212707,
+    8.649446022611752
+  ]
 }

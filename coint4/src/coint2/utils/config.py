@@ -48,6 +48,8 @@ class PairSelectionConfig(BaseModel):
     
     # NEW: Pair tradeability filter parameters
     enable_pair_tradeability_filter: bool = True
+    require_market_metrics: bool = False  # Reject if symbol missing in market metrics snapshot CSV.
+    require_same_quote: bool = False  # NEW: enforce same quote currency (e.g., USDT-USDT, USDC-USDC)
     min_volume_usd_24h: float = 20_000_000  # 20M USD daily volume
     min_days_live: int = 30  # 30 days since listing
     max_funding_rate_abs: float = 0.0003  # 0.03% absolute funding rate

@@ -20,6 +20,15 @@ from coint2.ops.run_queue import (
     select_by_status,
     write_run_queue,
 )
+from coint2.ops.heavy_guardrails import (
+    DEFAULT_ALLOW_ENV,
+    DEFAULT_HOST_ALLOWLIST,
+    DEFAULT_MIN_CPU,
+    DEFAULT_MIN_RAM_GB,
+    HeavyGuardrailConfig,
+    ensure_heavy_run_allowed,
+    parse_host_allowlist,
+)
 
 
 def _rotate_log(log_path: Path) -> None:
@@ -310,6 +319,34 @@ def main() -> int:
         help="Runner script path (relative to project root).",
     )
     parser.add_argument(
+        "--enforce-heavy-guardrails",
+        type=_parse_bool_flag,
+        default=True,
+        help="Require ALLOW_HEAVY_RUN + hostname/resources guardrails before compute.",
+    )
+    parser.add_argument(
+        "--heavy-allow-env",
+        default=DEFAULT_ALLOW_ENV,
+        help="Env var required for heavy execution (must equal '1').",
+    )
+    parser.add_argument(
+        "--heavy-host-allowlist",
+        default=os.environ.get("HEAVY_HOSTNAME_ALLOWLIST", ",".join(DEFAULT_HOST_ALLOWLIST)),
+        help="Comma-separated hostname/IP allowlist for heavy execution.",
+    )
+    parser.add_argument(
+        "--heavy-min-ram-gb",
+        type=float,
+        default=float(os.environ.get("HEAVY_MIN_RAM_GB", DEFAULT_MIN_RAM_GB)),
+        help="Minimum RAM requirement for heavy execution.",
+    )
+    parser.add_argument(
+        "--heavy-min-cpu",
+        type=int,
+        default=int(os.environ.get("HEAVY_MIN_CPU", DEFAULT_MIN_CPU)),
+        help="Minimum CPU core requirement for heavy execution.",
+    )
+    parser.add_argument(
         "--postprocess",
         type=_parse_bool_flag,
         default=False,
@@ -346,6 +383,17 @@ def main() -> int:
     if not queue_paths:
         print("No run_queue.csv files found.")
         return 1
+
+    if args.enforce_heavy_guardrails and not args.dry_run:
+        ensure_heavy_run_allowed(
+            HeavyGuardrailConfig(
+                entrypoint="scripts/optimization/run_wfa_queue.py",
+                allow_env=str(args.heavy_allow_env),
+                host_allowlist=parse_host_allowlist(str(args.heavy_host_allowlist)),
+                min_ram_gb=float(args.heavy_min_ram_gb),
+                min_cpu=int(args.heavy_min_cpu),
+            )
+        )
 
     statuses = [status.strip() for status in args.statuses.split(",") if status.strip()]
     for queue_path in queue_paths:

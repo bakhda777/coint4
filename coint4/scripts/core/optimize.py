@@ -3,11 +3,22 @@
 
 import argparse
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from src.coint2.ops.heavy_guardrails import (
+    DEFAULT_ALLOW_ENV,
+    DEFAULT_HOST_ALLOWLIST,
+    DEFAULT_MIN_CPU,
+    DEFAULT_MIN_RAM_GB,
+    HeavyGuardrailConfig,
+    ensure_heavy_run_allowed,
+    parse_host_allowlist,
+)
 
 
 def run_optimization(
@@ -201,6 +212,34 @@ Examples:
     
     parser.add_argument('--storage',
                        help='Optuna storage URL')
+
+    parser.add_argument(
+        '--skip-heavy-guardrails',
+        action='store_true',
+        help='Disable ALLOW_HEAVY_RUN/host/resource checks (not recommended).',
+    )
+    parser.add_argument(
+        '--heavy-allow-env',
+        default=os.environ.get('HEAVY_ALLOW_ENV', DEFAULT_ALLOW_ENV),
+        help='Env var required for heavy execution (must equal 1).',
+    )
+    parser.add_argument(
+        '--heavy-host-allowlist',
+        default=os.environ.get('HEAVY_HOSTNAME_ALLOWLIST', ','.join(DEFAULT_HOST_ALLOWLIST)),
+        help='Comma-separated hostname/IP allowlist for heavy execution.',
+    )
+    parser.add_argument(
+        '--heavy-min-ram-gb',
+        type=float,
+        default=float(os.environ.get('HEAVY_MIN_RAM_GB', DEFAULT_MIN_RAM_GB)),
+        help='Minimum RAM requirement for heavy execution.',
+    )
+    parser.add_argument(
+        '--heavy-min-cpu',
+        type=int,
+        default=int(os.environ.get('HEAVY_MIN_CPU', DEFAULT_MIN_CPU)),
+        help='Minimum CPU core requirement for heavy execution.',
+    )
     
     # Parse known args to allow additional passthrough
     args, unknown = parser.parse_known_args(argv)
@@ -220,7 +259,25 @@ Examples:
         else:
             i += 1
     
-    return run_optimization(**vars(args), **kwargs)
+    args_dict = vars(args).copy()
+    skip_heavy_guardrails = bool(args_dict.pop('skip_heavy_guardrails'))
+    heavy_allow_env = str(args_dict.pop('heavy_allow_env'))
+    heavy_host_allowlist = str(args_dict.pop('heavy_host_allowlist'))
+    heavy_min_ram_gb = float(args_dict.pop('heavy_min_ram_gb'))
+    heavy_min_cpu = int(args_dict.pop('heavy_min_cpu'))
+
+    if not skip_heavy_guardrails:
+        ensure_heavy_run_allowed(
+            HeavyGuardrailConfig(
+                entrypoint='scripts/core/optimize.py',
+                allow_env=heavy_allow_env,
+                host_allowlist=parse_host_allowlist(heavy_host_allowlist),
+                min_ram_gb=heavy_min_ram_gb,
+                min_cpu=heavy_min_cpu,
+            )
+        )
+
+    return run_optimization(**args_dict, **kwargs)
 
 
 if __name__ == '__main__':

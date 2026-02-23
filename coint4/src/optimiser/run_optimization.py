@@ -711,6 +711,33 @@ def cli_main():
                        help="Количество параллельных процессов (-1 = все ядра)")
     parser.add_argument("--seed", type=int, default=42,
                        help="Seed для воспроизводимости")
+    parser.add_argument(
+        "--skip-heavy-guardrails",
+        action="store_true",
+        help="Disable ALLOW_HEAVY_RUN/host/resource checks (not recommended).",
+    )
+    parser.add_argument(
+        "--heavy-allow-env",
+        default=os.environ.get("HEAVY_ALLOW_ENV", "ALLOW_HEAVY_RUN"),
+        help="Env var required for heavy execution (must equal 1).",
+    )
+    parser.add_argument(
+        "--heavy-host-allowlist",
+        default=os.environ.get("HEAVY_HOSTNAME_ALLOWLIST", "85.198.90.128,coint"),
+        help="Comma-separated hostname/IP allowlist for heavy execution.",
+    )
+    parser.add_argument(
+        "--heavy-min-ram-gb",
+        type=float,
+        default=float(os.environ.get("HEAVY_MIN_RAM_GB", "28")),
+        help="Minimum RAM requirement for heavy execution.",
+    )
+    parser.add_argument(
+        "--heavy-min-cpu",
+        type=int,
+        default=int(os.environ.get("HEAVY_MIN_CPU", "8")),
+        help="Minimum CPU core requirement for heavy execution.",
+    )
     args = parser.parse_args()
 
     # Валидация аргументов
@@ -729,6 +756,23 @@ def cli_main():
         for f in Path("configs/search_spaces").glob("*.yaml"):
             logger.info(f"  - {f}")
         sys.exit(1)
+
+    if not args.skip_heavy_guardrails:
+        from coint2.ops.heavy_guardrails import (
+            HeavyGuardrailConfig,
+            ensure_heavy_run_allowed,
+            parse_host_allowlist,
+        )
+
+        ensure_heavy_run_allowed(
+            HeavyGuardrailConfig(
+                entrypoint="src/optimiser/run_optimization.py:cli_main",
+                allow_env=str(args.heavy_allow_env),
+                host_allowlist=parse_host_allowlist(str(args.heavy_host_allowlist)),
+                min_ram_gb=float(args.heavy_min_ram_gb),
+                min_cpu=int(args.heavy_min_cpu),
+            )
+        )
 
     success = run_optimization(
         n_trials=args.n_trials,

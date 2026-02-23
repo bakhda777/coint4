@@ -51,7 +51,9 @@ def test_load_api_key_reads_secret_file_when_env_missing(
     key_file.write_text("  from-file-key \n", encoding="utf-8")
 
     monkeypatch.delenv("SERVSPACE_API_KEY", raising=False)
+    monkeypatch.delenv("SERVERSPACE_API_KEY", raising=False)
     monkeypatch.setattr(module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(module, "_candidate_key_files", lambda: [key_file])
 
     assert module._load_api_key() == "from-file-key"  # noqa: SLF001
 
@@ -65,10 +67,13 @@ def test_load_api_key_rejects_empty_secret_file(
     key_file.write_text(" \n\t", encoding="utf-8")
 
     monkeypatch.delenv("SERVSPACE_API_KEY", raising=False)
+    monkeypatch.delenv("SERVERSPACE_API_KEY", raising=False)
     monkeypatch.setattr(module, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(module, "_candidate_key_files", lambda: [key_file])
 
-    with pytest.raises(RuntimeError, match="empty"):
+    with pytest.raises(SystemExit) as excinfo:
         module._load_api_key()  # noqa: SLF001
+    assert excinfo.value.code == 2
 
 
 def test_shutdown_is_idempotent_when_server_already_stopped(

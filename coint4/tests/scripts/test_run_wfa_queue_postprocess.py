@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +74,10 @@ def test_run_wfa_queue_postprocess_creates_run_artifacts_and_rollup(tmp_path: Pa
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(app_root / "src")
+    env["ALLOW_HEAVY_RUN"] = "1"
+    env["HEAVY_HOSTNAME_ALLOWLIST"] = f"{socket.gethostname()},127.0.0.1,localhost"
+    env["HEAVY_MIN_CPU"] = "1"
+    env["HEAVY_MIN_RAM_GB"] = "1"
 
     proc = subprocess.run(
         [
@@ -143,6 +148,10 @@ def test_run_wfa_queue_postprocess_can_be_disabled(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(app_root / "src")
+    env["ALLOW_HEAVY_RUN"] = "1"
+    env["HEAVY_HOSTNAME_ALLOWLIST"] = f"{socket.gethostname()},127.0.0.1,localhost"
+    env["HEAVY_MIN_CPU"] = "1"
+    env["HEAVY_MIN_RAM_GB"] = "1"
 
     proc = subprocess.run(
         [
@@ -193,6 +202,10 @@ def test_run_wfa_queue_rebuilds_rollup_on_queue_finish(tmp_path: Path) -> None:
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(app_root / "src")
+    env["ALLOW_HEAVY_RUN"] = "1"
+    env["HEAVY_HOSTNAME_ALLOWLIST"] = f"{socket.gethostname()},127.0.0.1,localhost"
+    env["HEAVY_MIN_CPU"] = "1"
+    env["HEAVY_MIN_RAM_GB"] = "1"
 
     proc = subprocess.run(
         [
@@ -223,3 +236,47 @@ def test_run_wfa_queue_rebuilds_rollup_on_queue_finish(tmp_path: Path) -> None:
     rebuilt = stale_rollup.read_text(encoding="utf-8")
     assert "stale" not in rebuilt
     assert "run_z" in rebuilt
+
+
+def test_run_wfa_queue_blocks_when_allow_heavy_run_missing(tmp_path: Path) -> None:
+    app_root = Path(__file__).resolve().parents[2]
+    script = app_root / "scripts/optimization/run_wfa_queue.py"
+    assert script.exists()
+
+    config_path = tmp_path / "configs" / "sample.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    results_dir = tmp_path / "artifacts" / "wfa" / "runs" / "group_guard" / "run_guard"
+    queue_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "group_guard" / "run_queue.csv"
+    _write_queue_csv(queue_path, config_path, results_dir, status="planned")
+
+    runner_path = tmp_path / "runner.sh"
+    _write_runner_script(runner_path)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(app_root / "src")
+    env["HEAVY_HOSTNAME_ALLOWLIST"] = f"{socket.gethostname()},127.0.0.1,localhost"
+    env["HEAVY_MIN_CPU"] = "1"
+    env["HEAVY_MIN_RAM_GB"] = "1"
+    env.pop("ALLOW_HEAVY_RUN", None)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--queue",
+            str(queue_path),
+            "--runner",
+            str(runner_path),
+            "--parallel",
+            "1",
+        ],
+        cwd=app_root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "BLOCKED" in (proc.stderr + proc.stdout)
+    assert _read_queue_status(queue_path) == "planned"

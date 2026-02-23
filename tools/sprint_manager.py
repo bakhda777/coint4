@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,6 +27,28 @@ DEFAULT_GOAL = AI_DIR / "goal.md"
 DEFAULT_STATE = AI_DIR / "state.json"
 DEFAULT_RETRO_TEMPLATE = AI_DIR / "templates" / "retro.md"
 REPORTS_DIR = PROJECT_ROOT / "reports"
+
+
+@dataclass(frozen=True)
+class CandidateGate:
+    """Unified hard-gate for candidate selection (fail-closed by default)."""
+
+    min_trades: int
+    max_dd_abs: float
+    initial_capital: float
+    max_tail_bucket_loss_pct: Optional[float]
+    require_tail_metrics: bool = True
+
+
+# Canonical (v1) gate for "don't optimize garbage" shortlist in sprint_manager.
+# NOTE: Tail gate uses rollup `tail_loss_*` bucket PnL (pair/period), not step-level tail metrics.
+CANDIDATE_GATE_V1 = CandidateGate(
+    min_trades=200,
+    max_dd_abs=0.50,
+    initial_capital=1000.0,
+    max_tail_bucket_loss_pct=0.20,
+    require_tail_metrics=True,
+)
 
 
 def _log(msg: str) -> None:
@@ -114,6 +137,8 @@ class RunIndexRow:
     sharpe: float
     dd_abs: float
     trades: float
+    tail_loss_worst_pair_pnl: Optional[float]
+    tail_loss_worst_period_pnl: Optional[float]
     run_group: str
     run_id: str
     config_path: str
@@ -136,11 +161,16 @@ def _extract_run_index_rows(payload: list[dict[str, Any]]) -> list[RunIndexRow]:
         dd_abs = abs(dd) if dd is not None else float("nan")
         trades_f = trades if trades is not None else float("nan")
 
+        tail_pair_pnl = _to_float(r.get("tail_loss_worst_pair_pnl"))
+        tail_period_pnl = _to_float(r.get("tail_loss_worst_period_pnl"))
+
         rows.append(
             RunIndexRow(
                 sharpe=float(sharpe),
                 dd_abs=float(dd_abs),
                 trades=float(trades_f),
+                tail_loss_worst_pair_pnl=tail_pair_pnl,
+                tail_loss_worst_period_pnl=tail_period_pnl,
                 run_group=str(r.get("run_group") or ""),
                 run_id=str(r.get("run_id") or ""),
                 config_path=str(r.get("config_path") or ""),
@@ -151,9 +181,62 @@ def _extract_run_index_rows(payload: list[dict[str, Any]]) -> list[RunIndexRow]:
     return rows
 
 
-def _pick_top_candidates(rows: list[RunIndexRow], *, limit: int = 5) -> list[RunIndexRow]:
+def _candidate_gate_reason(row: RunIndexRow, gate: CandidateGate) -> Optional[str]:
+    if not math.isfinite(float(row.trades)):
+        return "trades missing"
+    if float(row.trades) < float(gate.min_trades):
+        return f"trades < {int(gate.min_trades)}"
+
+    if not math.isfinite(float(row.dd_abs)):
+        return "dd missing"
+    if float(row.dd_abs) > float(gate.max_dd_abs):
+        return f"|DD| > {float(gate.max_dd_abs):.2f}"
+
+    if gate.max_tail_bucket_loss_pct is None or float(gate.max_tail_bucket_loss_pct) <= 0:
+        return None
+
+    worst_pair_pnl = row.tail_loss_worst_pair_pnl
+    worst_period_pnl = row.tail_loss_worst_period_pnl
+    if worst_pair_pnl is None or worst_period_pnl is None:
+        return "tail metrics missing" if gate.require_tail_metrics else None
+
+    loss_gate_abs = float(gate.initial_capital) * float(gate.max_tail_bucket_loss_pct)
+    if math.isfinite(float(worst_pair_pnl)) and float(worst_pair_pnl) < -loss_gate_abs:
+        return f"tail_loss_worst_pair_pnl < -{loss_gate_abs:.0f}"
+    if math.isfinite(float(worst_period_pnl)) and float(worst_period_pnl) < -loss_gate_abs:
+        return f"tail_loss_worst_period_pnl < -{loss_gate_abs:.0f}"
+    return None
+
+
+def _pick_top_candidates(
+    rows: list[RunIndexRow],
+    *,
+    limit: int = 5,
+    gate: Optional[CandidateGate] = CANDIDATE_GATE_V1,
+    warnings: Optional[list[str]] = None,
+) -> list[RunIndexRow]:
+    pool = list(rows)
+    if gate is not None:
+        passed = [r for r in pool if _candidate_gate_reason(r, gate) is None]
+        if passed:
+            if warnings is not None and len(passed) != len(pool):
+                tail_abs = (
+                    float(gate.initial_capital) * float(gate.max_tail_bucket_loss_pct)
+                    if gate.max_tail_bucket_loss_pct is not None
+                    else None
+                )
+                tail_txt = f", tail_bucket_pnl>=-{tail_abs:.0f}" if tail_abs is not None else ""
+                warnings.append(
+                    "candidate gate applied: "
+                    f"passed={len(passed)}/{len(pool)} (min_trades={gate.min_trades}, max_dd_abs={gate.max_dd_abs:.2f}{tail_txt})"
+                )
+            pool = passed
+        else:
+            if warnings is not None and pool:
+                warnings.append("candidate gate applied: 0 passed; showing ungated top-by-sharpe for visibility")
+
     # Cheap, informative default: highest Sharpe first; break ties by DD then trades.
-    ranked = sorted(rows, key=lambda x: (-x.sharpe, x.dd_abs, -x.trades))
+    ranked = sorted(pool, key=lambda x: (-x.sharpe, x.dd_abs, -x.trades))
     return ranked[: max(0, limit)]
 
 

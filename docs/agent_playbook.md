@@ -25,6 +25,7 @@
   - генерируем и запускаем очередь прогонов;
   - выполняем queue/watch через `scripts/optimization/run_wfa_queue_powered.py`;
   - после выполнения обязательно прогоняем единый postprocess: `sync_queue_status.py -> build_run_index.py -> rank_multiwindow_robust_runs.py --fullspan-policy-v1`.
+  - heavy запуск делаем только вручную через `coint4/scripts/batch/run_heavy_queue.sh` (policy: `docs/operating_mode_no_exec.md`).
 - Обязательные команды:
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --postprocess true`
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --dry-run --statuses planned,stalled --parallel 1`

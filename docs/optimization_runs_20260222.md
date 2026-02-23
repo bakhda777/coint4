@@ -123,3 +123,131 @@ Postprocess status for reference block (`20260220_*`): `yes` (синхрониз
 - `cd coint4`
 - `SYNC_UP=1 UPDATE_CODE=0 STOP_AFTER=1 SYNC_BACK=1 bash scripts/remote/run_server_job.sh bash -lc 'echo RUN_HOST=$(hostname); bash scripts/optimization/watch_wfa_queue.sh --queue artifacts/wfa/aggregate/20260222_tailguard_r01/run_queue.csv --parallel 10'`
 - Проверка shutdown после завершения: `ssh root@85.198.90.128 "echo ok"` должен перестать отвечать.
+
+## Implementation update: NO-EXEC + guardrails + runner (2026-02-22)
+
+Кодовые изменения:
+
+- Добавлен общий guardrail-модуль: `coint4/src/coint2/ops/heavy_guardrails.py`.
+- Guardrails подключены в heavy entrypoints:
+  - `coint4/scripts/optimization/run_wfa_queue.py`
+  - `coint4/scripts/optimization/watch_wfa_queue.sh`
+  - `coint4/run_wfa_fullcpu.sh`
+  - `coint4/scripts/core/optimize.py`
+  - `coint4/src/optimiser/run_optimization.py` (CLI)
+  - `coint4/scripts/optimization/web_optimizer.py`
+- Добавлен канонический ручной runner: `coint4/scripts/batch/run_heavy_queue.sh`.
+- Добавлена политика: `docs/operating_mode_no_exec.md` (`OPERATING MODE: CODE-ONLY / NO-EXEC`) + ссылка в `docs/optimization_state.md`.
+
+Проверки:
+
+- `make lint` -> `All checks passed!`
+- `make test` -> `359 passed, 7 skipped, 429 deselected`
+- Новые/обновлённые тесты:
+  - `coint4/tests/scripts/test_heavy_guardrails.py`
+  - `coint4/tests/scripts/test_run_heavy_queue.py`
+  - `coint4/tests/scripts/test_run_wfa_queue_postprocess.py` (добавлен негативный сценарий блокировки без `ALLOW_HEAVY_RUN`)
+
+### Tailguard run attempts (`20260222_tailguard_r01`)
+
+Фактические попытки запуска через `run_heavy_queue.sh`:
+
+1. `runner=watch`, `SYNC_UP=1`:
+   - fail: на VPS отсутствовал `coint2.ops.heavy_guardrails` (файл был untracked локально и не попал при `git ls-files` sync).
+2. После добавления нового модуля в tracked set, `runner=watch`:
+   - fail-fast по контракту watcher: `walk_forward.max_steps` в очереди равен `null` (fullspan), а `watch_wfa_queue.sh` разрешает только `<=5`.
+3. `runner=queue` (отдельный fullspan pipeline):
+   - infra failure: `SSH not ready after 15 minutes` в `run_server_job.sh`; затем VPS отправлен в shutdown через API.
+
+Состояние очереди после попыток:
+
+- `coint4/artifacts/wfa/aggregate/20260222_tailguard_r01/run_queue.csv` -> `planned=10`, `completed=0`.
+- Проверка после завершения попытки: `ssh root@85.198.90.128 "echo ok"` -> timeout (VPS недоступен, не оставлен включённым).
+
+Операционный verdict:
+
+- `result=infra_blocked_ssh_unavailable`
+- `selection_mode=shortlist_only` (без изменений baseline/live winner до успешного heavy + postprocess + strict fullspan pass).
+
+## FS-009 execution update: 20260222_tailguard_r02 (final)
+
+Execution record:
+
+- run_group: `20260222_tailguard_r02`
+- queue_path: `coint4/artifacts/wfa/aggregate/20260222_tailguard_r02/run_queue.csv`
+- host: `85.198.90.128` (через `coint4/scripts/remote/run_server_job.sh`)
+- ALLOW_HEAVY_RUN: `1` (remote command)
+- result: `success` (`32/32 completed`)
+- VPS shutdown: `yes` (после завершения `ssh root@85.198.90.128` -> timeout)
+
+Postprocess:
+
+1. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260222_tailguard_r02/run_queue.csv`
+   - result: `no changes (metrics_present=32, missing=0, skipped=0)`
+2. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status`
+   - result: `Run index entries: 8119`
+3. strict rank:
+   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --run-index artifacts/wfa/aggregate/rollup/run_index.csv --contains 20260222_tailguard_r02 --fullspan-policy-v1 --min-windows 1 --tail-worst-gate-pct 0.20 --top 20`
+4. diagnostic rank:
+   - та же команда, но `--tail-worst-gate-pct 0.21`
+
+Strict/diagnostic result (совпадает):
+
+- top-1: `tailguard_risk0p0055_risk0p0055_slusd1p81_max_var_multiplier1p0065_mp21_corr0p335_pv0p39`
+- `score=1.043`, `worst_robust_sh=1.142`, `worst_dd_pct=0.291`, `worst_pnl=1147.93`, `worst_step_pnl=-198.90`
+
+Comparison vs `20260222_tailguard_r01`:
+
+- У лидера те же ключевые метрики (`score=1.043`, `worst_robust_sh=1.142`, `worst_dd_pct=0.291`, `worst_pnl=1147.93`, `worst_step_pnl=-198.90`).
+- Вывод: `r02` не дал улучшения относительно `r01`; цикл закрыт как completed-without-improvement.
+
+Decision:
+
+- `selection_policy=fullspan_v1`
+- `selection_mode=strict_fullspan_pass`
+- `promotion_verdict=deferred_for_optimization`
+- next step: запуск `r03` с новым search-space (выход из локального tailguard-плато).
+
+## FS-009 execution update: 20260222_tailguard_r03 (finalized 2026-02-23)
+
+Execution record:
+
+- run_group: `20260222_tailguard_r03`
+- queue_path: `coint4/artifacts/wfa/aggregate/20260222_tailguard_r03/run_queue.csv`
+- host: `85.198.90.128` (через `coint4/scripts/remote/run_server_job.sh`)
+- ALLOW_HEAVY_RUN: `1` (remote command)
+- result: `success` (`48/48 completed`)
+- VPS shutdown: `yes` (после завершения `ssh root@85.198.90.128` -> timeout)
+
+Postprocess:
+
+1. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260222_tailguard_r03/run_queue.csv`
+   - result: `no changes (metrics_present=48, missing=0, skipped=0)`
+2. `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status`
+   - result: `Run index entries: 8167`
+3. strict rank:
+   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --run-index artifacts/wfa/aggregate/rollup/run_index.csv --contains 20260222_tailguard_r03 --fullspan-policy-v1 --min-windows 1 --min-trades 200 --min-pairs 20 --max-dd-pct 0.50 --min-pnl 0 --initial-capital 1000 --tail-quantile 0.20 --tail-q-soft-loss-pct 0.03 --tail-worst-soft-loss-pct 0.10 --tail-q-penalty 2.0 --tail-worst-penalty 1.0 --tail-worst-gate-pct 0.20 --top 500`
+4. diagnostic rank:
+   - та же команда, но `--tail-worst-gate-pct 0.21`
+
+Strict/diagnostic result (совпадает):
+
+- `strict_pass_count=2`, `diagnostic_pass_count=2`
+- top-1: `tailguard_risk0p0055_risk0p0055_slusd1p81_max_var_multiplier1p0065_mp21_corr0p335_pv0p39_risk0p0055_slusd1p81_max_var_multiplier1p0065_mp21_corr0p335_pv0p39_z1p15_exit0p08_dstop0p02_maxpos18`
+- `score=1.043`, `worst_robust_sh=1.142`, `worst_dd_pct=0.291`, `worst_pnl=1147.93`, `worst_step_pnl=-198.90`
+
+Comparison vs `r02` and `r01` top-1:
+
+| run_group | score | worst_robust_sh | worst_dd_pct | worst_pnl | worst_step_pnl | verdict |
+|---|---:|---:|---:|---:|---:|---|
+| `20260222_tailguard_r01` | 1.043 | 1.142 | 0.291 | 1147.93 | -198.90 | baseline plateau |
+| `20260222_tailguard_r02` | 1.043 | 1.142 | 0.291 | 1147.93 | -198.90 | no improvement |
+| `20260222_tailguard_r03` | 1.043 | 1.142 | 0.291 | 1147.93 | -198.90 | no improvement |
+
+Decision:
+
+- `selection_policy=fullspan_v1`
+- `selection_mode=strict_fullspan_pass`
+- `promotion_verdict=deferred_for_optimization`
+- cycle verdict: `completed-without-improvement` (gap до цели `Sharpe=3.0` остаётся `+1.858`)
+- next step: запуск `r04` с новым search-space, не повторяющим оси `r03`.
