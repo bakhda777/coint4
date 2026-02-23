@@ -66,6 +66,9 @@ postgresql:/
 *.db-shm
 *.db-wal
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
 *.zip
 *.tar
 *.tar.gz
@@ -87,9 +90,12 @@ tasks/**/*.bak.*
 .ralph-tui/iterations/
 .ralph-tui/progress.md
 .ralph-tui/prd.json
+.ralph-tui/prd.restart.json
 .ralph-tui/*.lock
 .ralph-tui/session*.json
 .ralph-tui/worktrees/
+.ralph-tui/*.bak_*
+.ralph-tui/*.bak.*
 .ralph-tui.bak_*/
 .codex/sessions/
 .codex/sessions/**/*.jsonl
@@ -130,3 +136,14 @@ docs/*latest*
 coint4/artifacts/optimization_state/**
 coint4/artifacts/wfa/aggregate/**/logs/**
 coint4/artifacts/wfa/aggregate/rollup/**
+
+# Papers pipeline local runtime outputs (do not commit)
+papers/.locks/
+papers/text/
+papers/digests/
+
+# Non-canonical root-level configs (canonical: coint4/configs/)
+configs/
+
+# Non-canonical nested papers mirror (canonical: papers/)
+coint4/papers/

@@ -1,0 +1,579 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+BD_VERSION = "0.1.0-local"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _eprint(*args: object) -> None:
+    print(*args, file=sys.stderr)
+
+
+def _split_labels(value: str | None) -> list[str]:
+    if not value:
+        return []
+    raw = [x.strip() for x in value.split(",")]
+    out: list[str] = []
+    seen = set()
+    for item in raw:
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _find_repo_beads_dir(start_dir: Path) -> Path | None:
+    cur = start_dir.resolve()
+    while True:
+        candidate = cur / ".beads"
+        if candidate.is_dir():
+            return candidate
+        if cur.parent == cur:
+            return None
+        cur = cur.parent
+
+
+def _default_db_path(cwd: Path) -> Path:
+    beads_dir = _find_repo_beads_dir(cwd) or (cwd / ".beads")
+    return beads_dir / "beads.db"
+
+
+def _connect(db_path: Path) -> sqlite3.Connection:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(db_path))
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _init_db(con: sqlite3.Connection) -> None:
+    cur = con.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL,
+          priority INTEGER NOT NULL,
+          issue_type TEXT NOT NULL,
+          parent TEXT,
+          labels_json TEXT NOT NULL DEFAULT '[]',
+          owner TEXT NOT NULL DEFAULT '',
+          external_ref TEXT,
+          close_reason TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          closed_at TEXT
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deps (
+          issue_id TEXT NOT NULL,
+          depends_on_id TEXT NOT NULL,
+          dependency_type TEXT NOT NULL DEFAULT 'blocks',
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (issue_id, depends_on_id, dependency_type)
+        );
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_issues_parent ON issues(parent);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_issues_type ON issues(issue_type);")
+    con.commit()
+
+
+@dataclass(frozen=True)
+class Bead:
+    id: str
+    title: str
+    description: str
+    status: str
+    priority: int
+    issue_type: str
+    parent: str | None
+    labels: list[str]
+    owner: str
+    external_ref: str | None
+    close_reason: str | None
+    created_at: str
+    updated_at: str
+    closed_at: str | None
+    dependencies: list[dict[str, str]]
+    dependents: list[dict[str, str]]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "priority": self.priority,
+            "issue_type": self.issue_type,
+            "parent": self.parent,
+            "labels": self.labels,
+            "owner": self.owner,
+            "external_ref": self.external_ref,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "closed_at": self.closed_at,
+            "dependency_count": len(self.dependencies),
+            "dependent_count": len(self.dependents),
+            "dependencies": self.dependencies,
+            "dependents": self.dependents,
+        }
+
+
+def _load_issue_row(con: sqlite3.Connection, issue_id: str) -> sqlite3.Row | None:
+    cur = con.cursor()
+    cur.execute("SELECT * FROM issues WHERE id = ?;", (issue_id,))
+    return cur.fetchone()
+
+
+def _load_dependencies(con: sqlite3.Connection, issue_id: str) -> list[dict[str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        "SELECT depends_on_id AS id, dependency_type FROM deps WHERE issue_id = ?;",
+        (issue_id,),
+    )
+    return [{"id": str(r["id"]), "dependency_type": str(r["dependency_type"])} for r in cur.fetchall()]
+
+
+def _load_dependents(con: sqlite3.Connection, issue_id: str) -> list[dict[str, str]]:
+    cur = con.cursor()
+    cur.execute(
+        "SELECT issue_id AS id, dependency_type FROM deps WHERE depends_on_id = ?;",
+        (issue_id,),
+    )
+    return [{"id": str(r["id"]), "dependency_type": str(r["dependency_type"])} for r in cur.fetchall()]
+
+
+def _row_to_bead(con: sqlite3.Connection, row: sqlite3.Row) -> Bead:
+    labels = []
+    try:
+        labels_raw = json.loads(str(row["labels_json"] or "[]"))
+        if isinstance(labels_raw, list):
+            labels = [str(x) for x in labels_raw if str(x).strip()]
+    except Exception:
+        labels = []
+    issue_id = str(row["id"])
+    return Bead(
+        id=issue_id,
+        title=str(row["title"]),
+        description=str(row["description"] or ""),
+        status=str(row["status"]),
+        priority=int(row["priority"]),
+        issue_type=str(row["issue_type"]),
+        parent=str(row["parent"]) if row["parent"] is not None else None,
+        labels=labels,
+        owner=str(row["owner"] or ""),
+        external_ref=str(row["external_ref"]) if row["external_ref"] is not None else None,
+        close_reason=str(row["close_reason"]) if row["close_reason"] is not None else None,
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+        closed_at=str(row["closed_at"]) if row["closed_at"] is not None else None,
+        dependencies=_load_dependencies(con, issue_id),
+        dependents=_load_dependents(con, issue_id),
+    )
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    beads_dir = cwd / ".beads"
+    beads_dir.mkdir(parents=True, exist_ok=True)
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+    finally:
+        con.close()
+    if not args.silent:
+        print(str(beads_dir))
+    return 0
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        issue_id = args.id or f"ralph-tui-{uuid.uuid4().hex[:8]}"
+        now = _now_iso()
+        labels = _split_labels(args.labels or args.label)
+        owner = args.assignee or os.environ.get("USER", "") or ""
+        cur = con.cursor()
+        cur.execute(
+            """
+            INSERT INTO issues (
+              id, title, description, status, priority, issue_type, parent, labels_json, owner,
+              external_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                issue_id,
+                args.title,
+                args.description or "",
+                "open",
+                int(args.priority),
+                args.type,
+                args.parent,
+                json.dumps(labels, ensure_ascii=False),
+                owner,
+                args.external_ref,
+                now,
+                now,
+            ),
+        )
+        con.commit()
+    except sqlite3.IntegrityError as e:
+        _eprint(f"bd create failed: {e}")
+        return 1
+    finally:
+        con.close()
+
+    print(issue_id)
+    return 0
+
+
+def _labels_match(issue_labels: list[str], filter_labels: list[str]) -> bool:
+    if not filter_labels:
+        return True
+    lower = {x.lower() for x in issue_labels}
+    return all(lbl.lower() in lower for lbl in filter_labels)
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        sql = "SELECT * FROM issues WHERE 1=1"
+        params: list[Any] = []
+        if args.type:
+            sql += " AND issue_type = ?"
+            params.append(args.type)
+        if args.parent:
+            sql += " AND parent = ?"
+            params.append(args.parent)
+        if args.status:
+            sql += " AND status = ?"
+            params.append(args.status)
+        elif not getattr(args, "all", False):
+            # Default behavior: only show active issues unless --all is passed.
+            sql += " AND status IN ('open','in_progress')"
+        sql += " ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, priority ASC, updated_at DESC"
+        if args.limit is not None and int(args.limit) > 0:
+            sql += " LIMIT ?"
+            params.append(int(args.limit))
+        cur = con.cursor()
+        cur.execute(sql + ";", tuple(params))
+        rows = cur.fetchall()
+
+        filter_labels = _split_labels(args.label or args.labels)
+        beads: list[dict[str, Any]] = []
+        for row in rows:
+            bead = _row_to_bead(con, row)
+            if not _labels_match(bead.labels, filter_labels):
+                continue
+            beads.append(bead.to_json())
+        print(json.dumps(beads, ensure_ascii=False))
+        return 0
+    finally:
+        con.close()
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        row = _load_issue_row(con, args.id)
+        if not row:
+            print("[]")
+            return 0
+        bead = _row_to_bead(con, row)
+        print(json.dumps([bead.to_json()], ensure_ascii=False))
+        return 0
+    finally:
+        con.close()
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        if args.status not in {"open", "in_progress", "closed", "cancelled"}:
+            _eprint(f"invalid status: {args.status}")
+            return 2
+        now = _now_iso()
+        closed_at = None
+        if args.status == "closed":
+            closed_at = now
+        cur = con.cursor()
+        cur.execute(
+            "UPDATE issues SET status = ?, updated_at = ?, closed_at = COALESCE(closed_at, ?) WHERE id = ?;",
+            (args.status, now, closed_at, args.id),
+        )
+        if cur.rowcount == 0:
+            _eprint(f"bd update failed: issue not found: {args.id}")
+            return 1
+        con.commit()
+        return 0
+    finally:
+        con.close()
+
+
+def cmd_close(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        now = _now_iso()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE issues
+            SET status = 'closed',
+                updated_at = ?,
+                closed_at = COALESCE(closed_at, ?),
+                close_reason = COALESCE(close_reason, ?)
+            WHERE id = ?;
+            """,
+            (now, now, args.reason, args.id),
+        )
+        if cur.rowcount == 0:
+            _eprint(f"bd close failed: issue not found: {args.id}")
+            return 1
+        con.commit()
+        return 0
+    finally:
+        con.close()
+
+
+def _deps_satisfied(con: sqlite3.Connection, issue_id: str) -> bool:
+    cur = con.cursor()
+    cur.execute("SELECT depends_on_id FROM deps WHERE issue_id = ?;", (issue_id,))
+    dep_ids = [str(r[0]) for r in cur.fetchall()]
+    if not dep_ids:
+        return True
+    q = "SELECT id, status FROM issues WHERE id IN ({})".format(",".join("?" * len(dep_ids)))
+    cur.execute(q, tuple(dep_ids))
+    statuses = {str(r["id"]): str(r["status"]) for r in cur.fetchall()}
+    for dep_id in dep_ids:
+        st = statuses.get(dep_id, "open")
+        if st not in {"closed", "cancelled"}:
+            return False
+    return True
+
+
+def cmd_ready(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        sql = "SELECT * FROM issues WHERE issue_type != 'epic' AND status IN ('open','in_progress')"
+        params: list[Any] = []
+        if args.parent:
+            sql += " AND parent = ?"
+            params.append(args.parent)
+        if args.assignee:
+            sql += " AND owner = ?"
+            params.append(args.assignee)
+        if args.priority is not None:
+            sql += " AND priority <= ?"
+            params.append(int(args.priority))
+        sql += " ORDER BY CASE status WHEN 'in_progress' THEN 0 ELSE 1 END, priority ASC, updated_at DESC"
+        cur = con.cursor()
+        cur.execute(sql + ";", tuple(params))
+        rows = cur.fetchall()
+
+        filter_labels = _split_labels(args.label or args.labels)
+        ready: list[dict[str, Any]] = []
+        for row in rows:
+            bead = _row_to_bead(con, row)
+            if not _labels_match(bead.labels, filter_labels):
+                continue
+            if not _deps_satisfied(con, bead.id):
+                continue
+            ready.append(bead.to_json())
+
+        limit = int(args.limit) if args.limit is not None else 10
+        if limit > 0:
+            ready = ready[:limit]
+
+        print(json.dumps(ready, ensure_ascii=False))
+        return 0
+    finally:
+        con.close()
+
+
+def cmd_dep_add(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        now = _now_iso()
+        cur = con.cursor()
+        if not _load_issue_row(con, args.issue):
+            _eprint(f"bd dep add failed: issue not found: {args.issue}")
+            return 1
+        if not _load_issue_row(con, args.depends_on):
+            _eprint(f"bd dep add failed: depends-on issue not found: {args.depends_on}")
+            return 1
+        cur.execute(
+            "INSERT OR IGNORE INTO deps(issue_id, depends_on_id, dependency_type, created_at) VALUES (?,?,?,?);",
+            (args.issue, args.depends_on, "blocks", now),
+        )
+        con.commit()
+        return 0
+    finally:
+        con.close()
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    cwd = Path.cwd()
+    db_path = Path(args.db) if args.db else _default_db_path(cwd)
+    con = _connect(db_path)
+    try:
+        _init_db(con)
+        return 0
+    finally:
+        con.close()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="bd", add_help=True)
+    p.add_argument("--version", action="store_true", help="Print version and exit")
+    sub = p.add_subparsers(dest="cmd")
+
+    sp = sub.add_parser("init", help="Initialize .beads database")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--silent", action="store_true")
+    sp.set_defaults(func=cmd_init)
+
+    sp = sub.add_parser("create", help="Create an issue")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--id", help="Explicit issue id")
+    sp.add_argument("--type", default="task", help="Issue type: task|epic")
+    sp.add_argument("--title", required=True)
+    sp.add_argument("--description", default="")
+    sp.add_argument("--priority", default=2, type=int)
+    sp.add_argument("--parent")
+    sp.add_argument("--external-ref")
+    sp.add_argument("--labels")
+    sp.add_argument("--label")
+    sp.add_argument("--assignee")
+    sp.add_argument("--silent", action="store_true")
+    sp.set_defaults(func=cmd_create)
+
+    sp = sub.add_parser("list", help="List issues")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--json", action="store_true")
+    sp.add_argument("--all", "-a", action="store_true", help="Include closed/cancelled issues")
+    sp.add_argument("--type", help="Filter by type (task|epic)")
+    sp.add_argument("--parent")
+    sp.add_argument("--status")
+    sp.add_argument("--label")
+    sp.add_argument("--labels")
+    sp.add_argument("--limit", default=100, help="0 = unlimited")
+    sp.set_defaults(func=cmd_list)
+
+    sp = sub.add_parser("ready", help="List ready issues (deps satisfied)")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--json", action="store_true")
+    sp.add_argument("--limit", default=10)
+    sp.add_argument("--parent")
+    sp.add_argument("--label")
+    sp.add_argument("--labels")
+    sp.add_argument("--priority")
+    sp.add_argument("--assignee")
+    sp.set_defaults(func=cmd_ready)
+
+    sp = sub.add_parser("show", help="Show issue details")
+    sp.add_argument("id")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_show)
+
+    sp = sub.add_parser("update", help="Update issue fields")
+    sp.add_argument("id")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--status", required=True)
+    sp.set_defaults(func=cmd_update)
+
+    sp = sub.add_parser("close", help="Close an issue")
+    sp.add_argument("id")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.add_argument("--force", action="store_true")
+    sp.add_argument("--reason")
+    sp.set_defaults(func=cmd_close)
+
+    sp = sub.add_parser("sync", help="Sync beads (noop for local bd)")
+    sp.add_argument("--db", help="Path to beads.db")
+    sp.set_defaults(func=cmd_sync)
+
+    sp = sub.add_parser("dep", help="Manage dependencies")
+    dep_sub = sp.add_subparsers(dest="dep_cmd")
+    sp2 = dep_sub.add_parser("add", help="Add dependency (issue depends on depends_on)")
+    sp2.add_argument("issue")
+    sp2.add_argument("depends_on")
+    sp2.add_argument("--db", help="Path to beads.db")
+    sp2.set_defaults(func=cmd_dep_add)
+
+    return p
+
+
+def main(argv: list[str]) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.version:
+        print(f"bd version {BD_VERSION}")
+        return 0
+    if not hasattr(args, "func"):
+        parser.print_help()
+        return 2
+    if getattr(args, "cmd", None) == "list" and not getattr(args, "json", False):
+        _eprint("bd list: only --json output is supported by this implementation")
+        return 2
+    if getattr(args, "cmd", None) == "ready" and not getattr(args, "json", False):
+        _eprint("bd ready: only --json output is supported by this implementation")
+        return 2
+    if getattr(args, "cmd", None) == "show" and not getattr(args, "json", False):
+        _eprint("bd show: only --json output is supported by this implementation")
+        return 2
+    if getattr(args, "cmd", None) == "list":
+        if getattr(args, "limit", None) == "0":
+            args.limit = None
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+log() {
+  printf '[autopilot] %s\n' "$*"
+}
+
+die() {
+  printf '[autopilot][ERROR] %s\n' "$*" >&2
+  exit 1
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "command not found: $1"
+}
+
+require_cmd bd
+require_cmd ralph-tui
+require_cmd python3
+
+STATE_PATH="${REPO_ROOT}/.ai_autopilot/state.json"
+GOAL_PATH="${REPO_ROOT}/.ai_autopilot/goal.md"
+
+[[ -f "${STATE_PATH}" ]] || die "missing state.json: ${STATE_PATH}"
+[[ -f "${GOAL_PATH}" ]] || die "missing goal.md: ${GOAL_PATH}"
+
+if [[ ! -d "${REPO_ROOT}/.beads" ]]; then
+  log "no .beads/ found → bd init"
+  bd init --silent
+fi
+
+EPIC_TITLE="Sharpe>3 autopilot"
+
+find_epic_id() {
+  bd list --json --type epic --limit 0 --all | python3 -c '
+import json, sys
+title = "Sharpe>3 autopilot".strip().lower()
+items = json.loads(sys.stdin.read() or "[]")
+found = ""
+if isinstance(items, list):
+  for row in items:
+    if isinstance(row, dict) and str(row.get("title","")).strip().lower() == title:
+      found = str(row.get("id","")).strip()
+      break
+print(found)
+'
+}
+
+EPIC_ID="$(find_epic_id || true)"
+if [[ -z "${EPIC_ID}" ]]; then
+  log "creating epic: ${EPIC_TITLE}"
+  epic_desc="$(cat <<'EOF'
+Замкнутый autopilot-цикл вокруг ralph-tui + beads:
+- worker (ralph) выполняет задачи спринта,
+- manager (tools/sprint_manager.py) делает Retro/Planning и создаёт следующий спринт.
+
+Цель: устойчивый Sharpe>3 при контроле DD/сделок/хвостов. Тяжёлые прогоны — только remote (85.198.90.128).
+EOF
+)"
+  EPIC_ID="$(bd create --type epic --title "${EPIC_TITLE}" --description "${epic_desc}" --labels "ralph,autopilot" --priority 1 --silent)"
+  bd sync || true
+else
+  log "found epic: ${EPIC_ID}"
+fi
+
+log "epic_id=${EPIC_ID}"
+
+read_state_field() {
+  local field="$1"
+  python3 - <<PY "${STATE_PATH}" "${field}"
+import json, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+field = sys.argv[2]
+data = json.loads(path.read_text(encoding="utf-8"))
+val = data.get(field)
+if isinstance(val, bool):
+    print("true" if val else "false")
+elif val is None:
+    print("")
+else:
+    print(val)
+PY
+}
+
+count_open_tasks_under_epic() {
+  bd list --json --parent "${EPIC_ID}" --limit 0 | python3 -c '
+import json, sys
+items = json.loads(sys.stdin.read() or "[]")
+open_cnt = 0
+if isinstance(items, list):
+  for row in items:
+    if isinstance(row, dict) and str(row.get("status","")) in ("open","in_progress"):
+      open_cnt += 1
+print(open_cnt)
+'
+}
+
+create_initial_sprint_tasks() {
+  local sprint="$1"
+  local label="sprint-${sprint}"
+  local labels="ralph,autopilot,${label}"
+
+  # Idempotency: if sprint tasks already exist, do nothing.
+  local existing
+  existing="$(bd list --json --parent "${EPIC_ID}" --label "autopilot,${label}" --limit 0 --all | python3 -c 'import json,sys; items=json.loads(sys.stdin.read() or "[]"); print(len(items) if isinstance(items,list) else 0)')"
+  if [[ "${existing}" != "0" ]]; then
+    log "sprint ${sprint} tasks already exist (${existing}); skipping creation"
+    return 0
+  fi
+
+  log "creating sprint ${sprint} tasks (labels: ${labels})"
+
+  local desc1 desc2 desc3 desc4 desc5 desc6
+
+  desc1="$(cat <<'EOF'
+Цель: снять «моментальный срез» текущих лучших результатов из rollup run_index.*
+
+Ожидаемый эффект: в репозитории появляется отчёт-таблица baseline для дальнейших сравнений.
+
+Проверка:
+- [ ] Создан файл reports/sprint_1_baseline.md с top-10 строками (Sharpe, |DD|, trades, config_path, run_group)
+- [ ] В конце файла — краткий вывод «что выглядит подозрительно/что проверить дальше»
+
+Ограничение: не запускать тяжёлые прогоны; только чтение существующих артефактов.
+EOF
+)"
+
+  desc2="$(cat <<'EOF'
+Цель: формализовать “качество” кандидата (gates) и критерии остановки.
+
+Ожидаемый эффект: в docs/optimization_state.md есть короткий, однозначный раздел с фильтрами:
+- минимальные trades,
+- ограничение |DD|,
+- tail-loss ограничения,
+- требования к подтверждениям (несколько run_group/holdout).
+
+Проверка:
+- [ ] Обновлён docs/optimization_state.md: добавлен раздел “Gates / Stop condition”
+- [ ] Раздел не противоречит AGENTS.md (remote runs, artifacts paths)
+EOF
+)"
+
+  desc3="$(cat <<'EOF'
+Цель: обновить дневник прогонов текущим контекстом и гипотезами.
+
+Ожидаемый эффект: в docs/optimization_runs_YYYYMMDD.md добавлена запись:
+- что считаем baseline,
+- какие 2–3 гипотезы самые дешёвые/информативные,
+- какой следующий remote run_group планируем и почему.
+
+Проверка:
+- [ ] Создан/обновлён файл docs/optimization_runs_$(date -u +%Y%m%d).md с новой записью
+EOF
+)"
+
+  desc4="$(cat <<'EOF'
+Цель: убедиться, что локально корректно собираются статусы/rollup без “вечного planned”.
+
+Ожидаемый эффект: если есть ручные прогоны/несостыковки статусов — они синхронизированы.
+
+Проверка (best-effort):
+- [ ] Для 1–2 актуальных очередей (run_queue.csv) прогнан scripts/optimization/sync_queue_status.py (если применимо)
+- [ ] Пересобран rollup индекс build_run_index.py (если не слишком долго)
+- [ ] В docs/optimization_runs_YYYYMMDD.md кратко записано, что обновили
+
+Ограничение: не трогать тяжёлые runs/ артефакты.
+EOF
+)"
+
+  desc5="$(cat <<'EOF'
+Цель: подготовить следующий remote-run в виде очереди (без запуска на этом сервере).
+
+Ожидаемый эффект: новая очередь coint4/artifacts/wfa/aggregate/<group>/run_queue.csv с max_steps<=5.
+
+Проверка:
+- [ ] Создан новый датированный run_group и run_queue.csv (6–20 задач)
+- [ ] Явно задан walk_forward.max_steps (<=5)
+- [ ] В описании очереди/дневнике указано, что запускать через coint4/scripts/remote/run_server_job.sh
+EOF
+)"
+
+  desc6="$(cat <<'EOF'
+Цель: Sprint Retro + Plan Next Sprint.
+
+Ожидаемый эффект: .ralph-tui/progress.md содержит краткую ретро-заметку и план следующего remote-блока.
+
+Проверка:
+- [ ] В .ralph-tui/progress.md добавлена секция по спринту (что сделали/выводы/что дальше)
+- [ ] Git commit руками не создавался (autoCommit=true)
+EOF
+)"
+
+  bd create --type task --title "S${sprint}: Baseline snapshot (top-10 rollup)" --description "${desc1}" --labels "${labels}" --priority 1 --parent "${EPIC_ID}" --silent >/dev/null
+  bd create --type task --title "S${sprint}: Gates + stop condition в docs" --description "${desc2}" --labels "${labels}" --priority 1 --parent "${EPIC_ID}" --silent >/dev/null
+  bd create --type task --title "S${sprint}: Обновить дневник прогонов (hypotheses)" --description "${desc3}" --labels "${labels}" --priority 2 --parent "${EPIC_ID}" --silent >/dev/null
+  bd create --type task --title "S${sprint}: Sync queue status + rollup (best-effort)" --description "${desc4}" --labels "${labels}" --priority 2 --parent "${EPIC_ID}" --silent >/dev/null
+  bd create --type task --title "S${sprint}: Подготовить remote run_queue.csv (max_steps<=5)" --description "${desc5}" --labels "${labels}" --priority 3 --parent "${EPIC_ID}" --silent >/dev/null
+  bd create --type task --title "S${sprint}: Sprint Retro + Plan Next Sprint" --description "${desc6}" --labels "${labels}" --priority 4 --parent "${EPIC_ID}" --silent >/dev/null
+
+  bd sync || true
+  log "sprint ${sprint} tasks created"
+}
+
+log "starting loop..."
+
+while true; do
+  done_flag="$(read_state_field done || true)"
+  if [[ "${done_flag}" == "true" ]]; then
+    reason="$(read_state_field done_reason || true)"
+    log "done=true → stopping (${reason})"
+    exit 0
+  fi
+
+  sprint="$(read_state_field sprint || true)"
+  if [[ -z "${sprint}" ]]; then
+    sprint="1"
+  fi
+
+  open_cnt="$(count_open_tasks_under_epic)"
+  if [[ "${open_cnt}" -eq 0 ]]; then
+    log "no open tasks under epic → creating sprint ${sprint}"
+    create_initial_sprint_tasks "${sprint}"
+    open_cnt="$(count_open_tasks_under_epic)"
+  fi
+
+  log "running ralph-tui headless (open tasks: ${open_cnt})"
+  ralph-tui run --headless --no-setup --serial --tracker beads --epic "${EPIC_ID}"
+
+  log "ralph finished; running sprint_manager (review+retro+planning)"
+  python3 tools/sprint_manager.py --epic-id "${EPIC_ID}" --goal "${GOAL_PATH}" --state "${STATE_PATH}"
+
+  log "cycle complete; continuing..."
+done

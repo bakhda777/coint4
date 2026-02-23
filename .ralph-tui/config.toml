@@ -1,12 +1,11 @@
 configVersion = "2.1"
-maxIterations = 10
+maxIterations = 0
 iterationDelay = 0
 outputDir = ".ralph-tui/iterations"
 agent = "codex"
-tracker = "json"
-prompt_template = "./.ralph-tui/templates/json.hbs"
+tracker = "beads"
 progressFile = ".ralph-tui/progress.md"
-autoCommit = false
+autoCommit = true
 subagentTracingDetail = "minimal"
 
 [agentOptions]
@@ -14,7 +13,10 @@ fullAuto = true
 sandbox = "workspace-write"
 
 [trackerOptions]
-path = ".ralph-tui/prd.json"
+beadsDir = ".beads"
 
 [parallel]
 mode = "never"
+
+[sandbox]
+enabled = false

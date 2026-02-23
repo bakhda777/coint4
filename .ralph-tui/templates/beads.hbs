@@ -1,0 +1,56 @@
+## Task: {{taskTitle}}
+
+- **ID**: {{taskId}}
+{{#if epicId}}
+- **Epic**: {{epicId}}{{#if epicTitle}} - {{epicTitle}}{{/if}}
+{{/if}}
+{{#if labels}}
+- **Labels**: {{labels}}
+{{/if}}
+
+{{#if taskDescription}}
+## Description
+{{taskDescription}}
+{{/if}}
+
+{{#if acceptanceCriteria}}
+## Acceptance Criteria
+{{acceptanceCriteria}}
+{{/if}}
+
+{{#if dependsOn}}
+## Prerequisites
+{{dependsOn}}
+{{/if}}
+
+## ОГРАНИЧЕНИЯ КОНТЕКСТА (анти-зацикливание)
+Цель: не тонуть в старых ретро/логах и не пересказывать прошлое вместо выполнения текущего acceptance.
+
+По умолчанию **НЕ читать и НЕ пересказывать** содержимое:
+- `reports/**` (кроме файла, который прямо требуется создать/обновить в текущей задаче)
+- `coint4/artifacts/**` (кроме “маленьких” агрегатов: `coint4/artifacts/wfa/aggregate/**/run_queue.csv` и `coint4/artifacts/wfa/aggregate/rollup/run_index.(md|csv|json)`)
+- `papers/**` (включая `papers/text/**`, `papers/digests/**`)
+- `.ralph-tui/iterations/**` и прочие старые логи/сессии
+- `.beads/**` (не открывать DB-файл; использовать только `bd ...`)
+
+А также избегать больших форматов без явной необходимости:
+- `**/*.parquet`, `**/*.csv`, `**/*.jsonl`, `**/*.log`
+
+Если без этого **нельзя** выполнить acceptance:
+1) Читать **точечно**: 1 файл за раз, максимум ~200 строк (`head`/`tail`/`sed -n`), без простыней.
+2) Не печатать содержимое больших файлов в чат (только краткие выводы/метрики).
+3) В командах использовать `python3`, не `python`.
+
+## Правила ответа
+- Не вести “дневник мыслей” (никаких длинных “I’m noticing / explored / updated plan…”).
+- Писать только сделанные действия и проверяемый результат.
+
+## Workflow
+1) Выполни требования задачи (маленький, точечный diff).
+2) Запусти быстрые проверки проекта (lint/test) только если это уместно и не тяжело.
+3) **Не** делай `git add/commit` (включён `autoCommit=true` у Ralph).
+4) Закрой bead:
+   `bd close {{taskId}} --db {{beadsDbPath}} --reason "Brief description"`
+5) Последней строкой выведи **ровно** (на отдельной строке):
+`<promise>COMPLETE</promise>`
+
