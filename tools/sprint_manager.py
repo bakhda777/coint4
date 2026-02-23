@@ -426,7 +426,17 @@ def main() -> int:
     # Beads sprint task summary (label-driven, best-effort)
     sprint_label = f"sprint-{sprint_n}"
     sprint_tasks = _bd_json(
-        ["list", "--json", "--parent", args.epic_id, "--label", f"autopilot,{sprint_label}", "--limit", "0"],
+        [
+            "list",
+            "--json",
+            "--parent",
+            args.epic_id,
+            "--label",
+            f"autopilot,{sprint_label}",
+            "--limit",
+            "0",
+            "--all",
+        ],
         cwd=repo_root,
         warnings=warnings,
     )
@@ -589,6 +599,7 @@ def main() -> int:
                 f"autopilot,sprint-{next_sprint}",
                 "--limit",
                 "0",
+                "--all",
             ],
             cwd=repo_root,
             warnings=warnings,
