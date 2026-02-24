@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+LOCK_FILE="${REPO_ROOT}/.ai_autopilot/autopilot_loop.lock"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "[autopilot][ERROR] another autopilot_loop is already running (lock: ${LOCK_FILE})" >&2
+  exit 2
+fi
+
 mkdir -p "${REPO_ROOT}/logs"
 RALPH_LOG_PATH="${REPO_ROOT}/logs/ralph_headless.log"
 
@@ -119,6 +126,89 @@ PY
 )"
 
   IFS=$'\t' read -r RALPH_STATUS RALPH_PROGRESS RALPH_LOCK_PID RALPH_LOCKED <<< "${parsed}"
+}
+
+pick_pending_remote_queue() {
+  python3 - <<'PY'
+import csv
+import re
+from pathlib import Path
+
+repo_root = Path.cwd().resolve()
+agg_dir = repo_root / "coint4" / "artifacts" / "wfa" / "aggregate"
+
+pattern = re.compile(r"^(?P<date>\\d{8})_s(?P<sprint>\\d+)_")
+pending = []
+
+if agg_dir.exists():
+    for queue_path in agg_dir.glob("*/run_queue.csv"):
+        group = queue_path.parent.name
+        m = pattern.match(group)
+        if not m:
+            continue
+        try:
+            date_key = int(m.group("date"))
+            sprint_key = int(m.group("sprint"))
+        except Exception:
+            continue
+        try:
+            with queue_path.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                rows = list(reader)
+        except Exception:
+            continue
+        pending_cnt = 0
+        for row in rows:
+            status = str(row.get("status") or "").strip().lower()
+            if status in ("planned", "stalled"):
+                pending_cnt += 1
+        if pending_cnt <= 0:
+            continue
+        rel = queue_path.relative_to(repo_root)
+        pending.append(((date_key, sprint_key, group), pending_cnt, str(rel)))
+
+if not pending:
+    print("")
+else:
+    pending.sort(key=lambda x: (x[0], -x[1], x[2]))
+    print(pending[0][2])
+PY
+}
+
+run_pending_remote_queue() {
+  if [[ "${AUTOPILOT_REMOTE:-1}" != "1" ]]; then
+    return 0
+  fi
+
+  local queue_path
+  queue_path="$(pick_pending_remote_queue || true)"
+  queue_path="$(printf '%s' "${queue_path}" | tr -d '\r' | tr -d '\n')"
+  if [[ -z "${queue_path}" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${queue_path}" ]]; then
+    log "remote-run: pending queue not found: ${queue_path}"
+    return 0
+  fi
+
+  local queue_rel
+  queue_rel="${queue_path#coint4/}"
+  if [[ "${queue_rel}" == "${queue_path}" ]]; then
+    # Unexpected path format; assume it's already relative to app root.
+    queue_rel="${queue_path}"
+  fi
+
+  local parallel
+  parallel="${AUTOPILOT_REMOTE_PARALLEL:-10}"
+
+  log "remote-run: starting queue=${queue_path} (parallel=${parallel})"
+  (
+    cd "${REPO_ROOT}/coint4"
+    SYNC_UP=1 UPDATE_CODE=1 STOP_AFTER=1 SYNC_BACK=1 \
+      bash scripts/remote/run_server_job.sh \
+      bash -lc "ALLOW_HEAVY_RUN=1 bash scripts/optimization/watch_wfa_queue.sh --queue ${queue_rel} --parallel ${parallel}"
+  )
+  log "remote-run: finished queue=${queue_path}"
 }
 
 run_ralph_with_watchdog() {
@@ -416,6 +506,10 @@ while true; do
     log "done=true → stopping (${reason})"
     exit 0
   fi
+
+  # If there is any pending sprint remote queue, execute it first so postprocess tasks
+  # (sync statuses / rollup / ranking) see fresh results.
+  run_pending_remote_queue
 
   sprint="$(read_state_field sprint || true)"
   if [[ -z "${sprint}" ]]; then
