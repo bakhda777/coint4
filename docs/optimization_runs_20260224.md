@@ -216,7 +216,7 @@
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` обновлён (entries=8417).
 
-## S10: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3
+## S11: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3 (ralph-tui-e4fd6db5)
 
 Источник метрик: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (holdout+stress; coverage≈`0.988`).
 
@@ -242,10 +242,12 @@
 - Все 3 варианта проходят базовые gates ширины/покрытия: `pairs_traded>=20`, `total_trades≈5.3k`, `coverage≈0.988`, `pnl>0` в holdout+stress.
 - `v02` и `v03` дают лучший robust-sharpe (tie) и меньший DD/tail, чем `v01`.
 - Tie-breaker `v02 > v03`: `v02` более “консервативный” tradeability-gate (liquidity/funding/tick/min_days_live), меньше риск live-drift при равных backtest-метриках.
+  - `v02`: `liquidity_usd_daily=400k`, `max_avg_funding_pct=0.001`, `max_funding_rate_abs=0.001`, `max_tick_size_pct=0.0005`, `min_days_live=180`
+  - `v03`: `liquidity_usd_daily=200k`, `max_avg_funding_pct=0.08`, `max_funding_rate_abs=0.02`, `max_tick_size_pct=0.01`, `min_days_live=1`
 
 ### Следующий run_group (к Sharpe>3)
 
-Выбор: **tradeability/quality sweep** (не fullspan confirm).
+Выбор: **tradeability/quality sweep** (не ddfocus и не fullspan confirm).
 
 - Следующий run_group: `20260224_tailguard_r08_tradeability_quality_sweep`
 - Цель: поднять `robust-sharpe` (и следом `score(worst_robust_sharpe)`) за счёт агрессивного tradeability/quality отбора вокруг `v02` (без изменения `risk/stop/z/dstop/maxpos`).
