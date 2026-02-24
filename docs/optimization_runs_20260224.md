@@ -216,7 +216,7 @@
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` обновлён (entries=8417).
 
-## S11: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3 (ralph-tui-e4fd6db5)
+## S11/S12: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3 (ralph-tui-e4fd6db5, ralph-tui-4de03f3a)
 
 Источник метрик: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (holdout+stress; coverage≈`0.988`).
 
