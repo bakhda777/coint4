@@ -216,31 +216,30 @@
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` обновлён (entries=8417).
 
-## S11/S12: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3 (ralph-tui-e4fd6db5, ralph-tui-4de03f3a)
+## S14: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3 (ralph-tui-ce764b6e)
 
 Источник метрик: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (holdout+stress; coverage≈`0.988`).
 
 ### Top-3 (по robust-sharpe = `min(sh_holdout, sh_stress)`)
 
 1) `v02_from_r06v03_trade_balanced_B` — **top-1**
-   - holdout: `sh=0.709`, `pnl=325.560`, `dd=-215.031`, `tail_pair_total=181.373`
-   - stress: `sh=0.643`, `pnl=287.493`, `dd=-210.620`, `tail_pair_total=183.813`
-   - robust: `min_sh=0.643` (лучше по `min_sh`, DD и tail относительно v01)
+   - holdout: `sh=0.709`, `pnl=325.560`, `dd_abs=-215.031` (`dd_pct=16.4%`), `tail_pair_total=181.373` (`worst_pair_share=33.4%`)
+   - stress: `sh=0.643`, `pnl=287.493`, `dd_abs=-210.620` (`dd_pct=16.3%`), `tail_pair_total=183.813` (`worst_pair_share=34.5%`)
+   - robust: `min_sh=0.643` (tie с v03; лучше v01 по `min_sh` и DD)
 
 2) `v03_from_r06v05_bidask_only`
-   - holdout: `sh=0.709`, `pnl=325.560`, `dd=-215.031`, `tail_pair_total=181.373`
-   - stress: `sh=0.643`, `pnl=287.493`, `dd=-210.620`, `tail_pair_total=183.813`
-   - robust: `min_sh=0.643` (по rollup метрикам полностью совпал с v02 → считаем tie)
+   - holdout+stress: по rollup-метрикам 1-в-1 совпал с v02 (включая `sh/pnl/dd_pct/tail_pair_total`)
+   - robust: `min_sh=0.643` (tie)
 
 3) `v01_from_r06v02_trade_mild_A`
-   - holdout: `sh=0.646`, `pnl=289.902`, `dd=-247.615`, `tail_pair_total=204.878`
-   - stress: `sh=0.602`, `pnl=265.025`, `dd=-236.945`, `tail_pair_total=206.806`
+   - holdout: `sh=0.646`, `pnl=289.902`, `dd_abs=-247.615` (`dd_pct=18.8%`), `tail_pair_total=204.878` (`worst_pair_share=29.7%`)
+   - stress: `sh=0.602`, `pnl=265.025`, `dd_abs=-236.945` (`dd_pct=18.3%`), `tail_pair_total=206.806` (`worst_pair_share=30.9%`)
    - robust: `min_sh=0.602`
 
 ### Почему top-1
 
 - Все 3 варианта проходят базовые gates ширины/покрытия: `pairs_traded>=20`, `total_trades≈5.3k`, `coverage≈0.988`, `pnl>0` в holdout+stress.
-- `v02` и `v03` дают лучший robust-sharpe (tie) и меньший DD/tail, чем `v01`.
+- `v02` и `v03` дают лучший robust-sharpe (tie) и меньший worst-DD (`~16.4%` vs `~18.8%`) при `pnl>0`, чем `v01`.
 - Tie-breaker `v02 > v03`: `v02` более “консервативный” tradeability-gate (liquidity/funding/tick/min_days_live), меньше риск live-drift при равных backtest-метриках.
   - `v02`: `liquidity_usd_daily=400k`, `max_avg_funding_pct=0.001`, `max_funding_rate_abs=0.001`, `max_tick_size_pct=0.0005`, `min_days_live=180`
   - `v03`: `liquidity_usd_daily=200k`, `max_avg_funding_pct=0.08`, `max_funding_rate_abs=0.02`, `max_tick_size_pct=0.01`, `min_days_live=1`
