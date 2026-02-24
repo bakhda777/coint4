@@ -5,7 +5,7 @@ Last updated: 2026-02-24
 ## Rollup snapshot (source of truth)
 
 Rollup индекс (source of truth): `coint4/artifacts/wfa/aggregate/rollup/run_index.*` (`run_index.csv`, `run_index.json`, `run_index.md`).
-Текущий снимок rollup: `2026-02-24 09:19:13Z` (из `coint4/artifacts/wfa/aggregate/rollup/run_index.md`).
+Текущий снимок rollup: `2026-02-24 10:03:25Z` (из `coint4/artifacts/wfa/aggregate/rollup/run_index.md`).
 
 Текущий best (baseline, alt-holdout top50 sens, rollup):
 - `run_id=holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1` (`run_group=20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens`)
