@@ -151,10 +151,18 @@ class FilterParamsConfig(BaseModel):
 
     min_beta: float = 0.1
     max_beta: float = 10.0
+    # Optional: beta stability across the training slice.
+    # Implemented as |beta_first_half - beta_second_half| / max(|beta_full|, eps).
+    # When set, pairs with unstable hedge ratios are rejected early in the filter.
+    max_beta_drift_ratio: float | None = Field(default=None, ge=0.0)
     min_half_life_days: float = 1
     max_half_life_days: float = 252
     max_hurst_exponent: float = 0.5
     min_mean_crossings: int = 10
+    # Optional: require statistically significant mean reversion via a simple ECM regression
+    #   d_spread_t = c + alpha * spread_{t-1} + e_t
+    # Keep pairs only if tstat(alpha) <= -threshold (alpha < 0 and significant).
+    ecm_alpha_tstat_threshold: float | None = Field(default=None, gt=0.0)
 
 
 class DataProcessingConfig(BaseModel):

@@ -130,6 +130,7 @@ class _FilterWorkerCfg:
     pvalue_threshold: float
     min_beta: float
     max_beta: float
+    max_beta_drift_ratio: Optional[float]
     min_half_life: float
     max_half_life: float
     min_mean_crossings: int
@@ -146,6 +147,52 @@ class _FilterWorkerCfg:
     min_days_live: int
     max_funding_rate_abs: float
     max_tick_size_pct: float
+    ecm_alpha_tstat_threshold: Optional[float]
+
+
+def _ecm_alpha_tstat(spread: pd.Series) -> Optional[float]:
+    """Return t-stat(alpha) for a simple ECM regression:
+
+        d_spread_t = c + alpha * spread_{t-1} + e_t
+
+    The desired sign for mean-reversion is alpha < 0 (t-stat negative).
+    """
+    if spread is None or len(spread) < 20:
+        return None
+    try:
+        arr = spread.to_numpy(dtype=float)
+    except Exception:
+        return None
+    if arr.size < 20:
+        return None
+    x = arr[:-1]
+    y = arr[1:] - arr[:-1]
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+    n = int(x.size)
+    if n < 20:
+        return None
+
+    x_mean = float(x.mean())
+    y_mean = float(y.mean())
+    x_demean = x - x_mean
+    y_demean = y - y_mean
+    sxx = float(np.sum(x_demean * x_demean))
+    if not np.isfinite(sxx) or sxx <= 0:
+        return None
+    sxy = float(np.sum(x_demean * y_demean))
+    alpha = sxy / sxx
+    intercept = y_mean - alpha * x_mean
+    resid = y - (intercept + alpha * x)
+    dof = max(1, n - 2)
+    sigma2 = float(np.sum(resid * resid) / dof)
+    if not np.isfinite(sigma2) or sigma2 < 0:
+        return None
+    se_alpha = float(np.sqrt(sigma2 / sxx))
+    if not np.isfinite(se_alpha) or se_alpha <= 0:
+        return None
+    return float(alpha / se_alpha)
 
 
 def _normalize_n_jobs(n_jobs: Optional[int]) -> int:
@@ -199,6 +246,37 @@ def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWo
     if not (cfg.min_beta <= abs(beta) <= cfg.max_beta):
         return _reject_pair("beta", "beta", f"beta_out_of_range ({beta:.2f})", s1, s2)
 
+    beta_drift_ratio = None
+    if cfg.max_beta_drift_ratio is not None and float(cfg.max_beta_drift_ratio) > 0:
+        n = len(pair_data)
+        mid = n // 2
+        if mid < 10 or (n - mid) < 10:
+            return _reject_pair("beta", "beta_drift", "beta_drift_insufficient", s1, s2)
+
+        def _seg_beta(y: pd.Series, x: pd.Series) -> Optional[float]:
+            try:
+                vx = float(x.var())
+                if not np.isfinite(vx) or vx <= 0:
+                    return None
+                return float(y.cov(x) / vx)
+            except Exception:
+                return None
+
+        beta1 = _seg_beta(pair_data[s1].iloc[:mid], pair_data[s2].iloc[:mid])
+        beta2 = _seg_beta(pair_data[s1].iloc[mid:], pair_data[s2].iloc[mid:])
+        if beta1 is None or beta2 is None or not np.isfinite(beta1) or not np.isfinite(beta2):
+            return _reject_pair("beta", "beta_drift", "beta_drift_nan", s1, s2)
+        denom = max(1e-12, float(abs(beta)))
+        beta_drift_ratio = float(abs(beta2 - beta1) / denom)
+        if beta_drift_ratio > float(cfg.max_beta_drift_ratio):
+            return _reject_pair(
+                "beta",
+                "beta_drift",
+                f"beta_drift_ratio_{beta_drift_ratio:.2f}",
+                s1,
+                s2,
+            )
+
     spread = pair_data[s1] - beta * pair_data[s2]
     mean_crossings = count_mean_crossings(spread)
     if mean_crossings < cfg.min_mean_crossings:
@@ -224,6 +302,14 @@ def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWo
 
     if pvalue >= cfg.pvalue_threshold:
         return _reject_pair("coint", "pvalue", f"pvalue_{pvalue:.3f}", s1, s2)
+
+    ecm_tstat = None
+    if cfg.ecm_alpha_tstat_threshold is not None and float(cfg.ecm_alpha_tstat_threshold) > 0:
+        ecm_tstat = _ecm_alpha_tstat(spread)
+        if ecm_tstat is None or not np.isfinite(float(ecm_tstat)):
+            return _reject_pair("ecm", "ecm", "ecm_tstat_nan", s1, s2)
+        if float(ecm_tstat) > -float(cfg.ecm_alpha_tstat_threshold):
+            return _reject_pair("ecm", "ecm", f"ecm_tstat_{ecm_tstat:.2f}", s1, s2)
 
     hurst_exponent = calculate_hurst_exponent(spread)
     if hurst_exponent > cfg.max_hurst_exponent:
@@ -288,6 +374,10 @@ def _evaluate_pair(pair: Tuple[str, str], price_df: pd.DataFrame, cfg: _FilterWo
         'spread_std': std,
         'pvalue': pvalue,
     }
+    if beta_drift_ratio is not None and np.isfinite(float(beta_drift_ratio)):
+        metrics["beta_drift_ratio"] = float(beta_drift_ratio)
+    if ecm_tstat is not None and np.isfinite(float(ecm_tstat)):
+        metrics["ecm_alpha_tstat"] = float(ecm_tstat)
 
     return ("pass", None, None, None, (s1, s2, beta, mean, std, metrics))
 
@@ -310,6 +400,7 @@ def _filter_pairs_parallel(
         "crossings",
         "half_life",
         "coint",
+        "ecm",
         "hurst",
         "kpss",
         "market",
@@ -323,8 +414,10 @@ def _filter_pairs_parallel(
         'low_correlation': 0,
         'pvalue': 0,
         'beta': 0,
+        'beta_drift': 0,
         'half_life': 0,
         'crossings': 0,
+        'ecm': 0,
         'hurst': 0,
         'kpss': 0,
         'history': 0,
@@ -393,6 +486,7 @@ def _filter_pairs_parallel(
     crossings_passed = _count_after("crossings")
     half_life_passed = _count_after("half_life")
     coint_passed = _count_after("coint")
+    ecm_passed = _count_after("ecm")
     hurst_passed = _count_after("hurst")
     kpss_passed = _count_after("kpss")
     microstructure_passed = _count_after("market")
@@ -403,6 +497,7 @@ def _filter_pairs_parallel(
     logger.info(f"[ФИЛЬТР] После фильтра mean crossings: {crossings_passed} пар")
     logger.info(f"[ФИЛЬТР] После фильтра half-life: {half_life_passed} пар")
     logger.info(f"[ФИЛЬТР] После фильтра коинтеграции: {coint_passed} пар")
+    logger.info(f"[ФИЛЬТР] После фильтра ECM: {ecm_passed} пар")
     logger.info(f"[ФИЛЬТР] После фильтра Hurst: {hurst_passed} пар")
     logger.info(f"[ФИЛЬТР] После фильтра KPSS: {kpss_passed} пар")
     logger.info(f"[ФИЛЬТР] После фильтра market microstructure: {microstructure_passed} пар")
@@ -412,9 +507,10 @@ def _filter_pairs_parallel(
     logger.info(f"  2. Коинтеграция → Beta: {coint_passed} → {beta_passed} пар")
     logger.info(f"  3. Beta → Half-life: {beta_passed} → {half_life_passed} пар")
     logger.info(f"  4. Half-life → Mean crossings: {half_life_passed} → {crossings_passed} пар")
-    logger.info(f"  5. Mean crossings → Hurst: {crossings_passed} → {hurst_passed} пар")
-    logger.info(f"  6. Hurst → KPSS: {hurst_passed} → {kpss_passed} пар")
-    logger.info(f"  7. KPSS → Market microstructure: {kpss_passed} → {microstructure_passed} пар")
+    logger.info(f"  5. Mean crossings → ECM: {crossings_passed} → {ecm_passed} пар")
+    logger.info(f"  6. ECM → Hurst: {ecm_passed} → {hurst_passed} пар")
+    logger.info(f"  7. Hurst → KPSS: {hurst_passed} → {kpss_passed} пар")
+    logger.info(f"  8. KPSS → Market microstructure: {kpss_passed} → {microstructure_passed} пар")
 
     filter_percentages = {
         reason: (count / total_pairs * 100)
@@ -726,6 +822,7 @@ def filter_pairs_by_coint_and_half_life(
     pvalue_threshold: float = 0.05,
     min_beta: float = MIN_BETA,
     max_beta: float = MAX_BETA,
+    max_beta_drift_ratio: Optional[float] = None,
     min_half_life: float = 2,
     max_half_life: float = 100,
     min_mean_crossings: int = 8,
@@ -740,6 +837,7 @@ def filter_pairs_by_coint_and_half_life(
     min_days_live: int = 0,
     max_funding_rate_abs: float = 0.0,
     max_tick_size_pct: float = 0.0,
+    ecm_alpha_tstat_threshold: Optional[float] = None,
     save_filter_reasons: bool = False,
     kpss_pvalue_threshold: Optional[float] = 0.05,
     max_hurst_exponent: float = 0.5,
@@ -775,11 +873,20 @@ def filter_pairs_by_coint_and_half_life(
         return sym in stable_tokens
 
     normalized_jobs = _normalize_n_jobs(n_jobs)
-    if normalized_jobs > 1 and pairs:
+    use_parallel_worker = bool(
+        pairs
+        and (
+            normalized_jobs > 1
+            or max_beta_drift_ratio is not None
+            or ecm_alpha_tstat_threshold is not None
+        )
+    )
+    if use_parallel_worker:
         worker_cfg = _FilterWorkerCfg(
             pvalue_threshold=pvalue_threshold,
             min_beta=min_beta,
             max_beta=max_beta,
+            max_beta_drift_ratio=max_beta_drift_ratio,
             min_half_life=min_half_life,
             max_half_life=max_half_life,
             min_mean_crossings=min_mean_crossings,
@@ -796,12 +903,13 @@ def filter_pairs_by_coint_and_half_life(
             min_days_live=int(min_days_live or 0),
             max_funding_rate_abs=float(max_funding_rate_abs or 0.0),
             max_tick_size_pct=float(max_tick_size_pct or 0.0),
+            ecm_alpha_tstat_threshold=ecm_alpha_tstat_threshold,
         )
         return _filter_pairs_parallel(
             pairs=pairs,
             price_df=price_df,
             cfg=worker_cfg,
-            n_jobs=normalized_jobs,
+            n_jobs=max(1, normalized_jobs),
             parallel_backend=parallel_backend,
             save_filter_reasons=save_filter_reasons,
         )
