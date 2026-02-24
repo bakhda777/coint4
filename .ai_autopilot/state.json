@@ -1,7 +1,7 @@
 {
-  "sprint": 5,
+  "sprint": 6,
   "last_results": {
-    "generatedAt": "2026-02-24T08:22:52+00:00",
+    "generatedAt": "2026-02-24T08:36:39+00:00",
     "sprintReviewed": 5,
     "run_index_path": "/home/claudeuser/coint4/coint4/artifacts/wfa/aggregate/rollup/run_index.json",
     "best": {
@@ -171,13 +171,30 @@
         "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
       },
       "next_sprint": 6
+    },
+    {
+      "sprint": 5,
+      "at": "2026-02-24T08:36:39+00:00",
+      "summary": "retro generated; next sprint planned",
+      "retro_path": "reports/sprint_5_retro.md",
+      "best": {
+        "sharpe": 8.649446022611752,
+        "dd_abs": 0.012889916285242725,
+        "trades": 3666.0,
+        "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+        "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
+      },
+      "next_sprint": 6
     }
   ],
   "auto_stop": false,
   "done": false,
-  "done_reason": "auto_stop disabled (manual stop only)",
+  "done_reason": "auto_stop disabled (set state.auto_stop=true to enable)",
   "history": [
     9.384782577212707,
+    8.649446022611752,
     8.649446022611752,
     8.649446022611752,
     8.649446022611752,

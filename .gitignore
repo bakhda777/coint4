@@ -137,6 +137,7 @@ logs/
 .codex/tmp/
 
 # Autopilot local outputs (do not commit runtime snapshots/reports)
+.ai_autopilot/autopilot_loop.lock
 docs/*latest*
 coint4/artifacts/optimization_state/**
 coint4/artifacts/wfa/aggregate/**/logs/**

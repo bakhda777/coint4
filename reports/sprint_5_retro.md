@@ -43,11 +43,11 @@
 
 ## Решения (decision log)
 Предыдущие:
-- S1: retro generated, but sprint not complete; no planning
 - S1: retro generated; next sprint planned
 - S2: retro generated; next sprint planned
 - S3: retro generated; next sprint planned
 - S4: retro generated; next sprint planned
+- S5: retro generated; next sprint planned
 Новые:
 - S5: зафиксировать результаты и запланировать следующий спринт
 

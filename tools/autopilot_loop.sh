@@ -137,7 +137,7 @@ from pathlib import Path
 repo_root = Path.cwd().resolve()
 agg_dir = repo_root / "coint4" / "artifacts" / "wfa" / "aggregate"
 
-pattern = re.compile(r"^(?P<date>\\d{8})_s(?P<sprint>\\d+)_")
+pattern = re.compile(r"^(?P<date>\d{8})_s(?P<sprint>\d+)_")
 pending = []
 
 if agg_dir.exists():
@@ -195,7 +195,9 @@ run_pending_remote_queue() {
   fi
   queue_path="$(printf '%s' "${queue_path}" | tr -d '\r' | tr -d '\n')"
   if [[ -z "${queue_path}" ]]; then
-    log "remote-run: no pending sprint tailguard queues (pwd=$(pwd))"
+    if [[ "${AUTOPILOT_REMOTE_VERBOSE:-0}" == "1" ]]; then
+      log "remote-run: no pending sprint tailguard queues"
+    fi
     return 0
   fi
   if [[ ! -f "${queue_path}" ]]; then
