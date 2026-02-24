@@ -449,6 +449,11 @@ def _should_stop(
         return True, str(state.get("done_reason") or "done flag already set")
     if bool(state.get("force_done")):
         return True, "force_done=true"
+    # NOTE: Auto-stop is intentionally opt-in. The baseline "best Sharpe from rollup"
+    # is not a reliable proxy for our global objective (robust Sharpe on full history).
+    # This prevents the autopilot from halting prematurely and missing remote runs.
+    if not bool(state.get("auto_stop")):
+        return False, "auto_stop disabled (set state.auto_stop=true to enable)"
     # Conservative: never stop on early sprints.
     sprint_n = int(state.get("sprint") or 1)
     if sprint_n < 5:
