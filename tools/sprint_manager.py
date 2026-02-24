@@ -447,7 +447,17 @@ def _generate_next_sprint_tasks(
             break
     if focus_queue is None:
         for q in queues:
+            if q.priority >= 30:
+                focus_queue = q
+                break
+    if focus_queue is None:
+        for q in queues:
             if q.priority >= 20 and q.pending_count > 0:
+                focus_queue = q
+                break
+    if focus_queue is None:
+        for q in queues:
+            if q.priority >= 20:
                 focus_queue = q
                 break
 
@@ -467,6 +477,12 @@ def _generate_next_sprint_tasks(
         # For fullspan confirms we use stricter trade gate; dd-focus can be looser.
         min_trades = 1000 if focus_queue.priority >= 30 else 200
         parallel = 2 if focus_queue.priority >= 30 else 10
+        needs_run = focus_queue.pending_count > 0
+        run_hint = (
+            "Похоже, очередь уже завершена (planned/stalled=0). Этот пункт можно считать выполненным и перейти к mini-rollup.\n\n"
+            if not needs_run
+            else ""
+        )
 
         tasks = [
             {
@@ -475,7 +491,8 @@ def _generate_next_sprint_tasks(
                 "description": (
                     "Цель: приблизиться к главной цели (Sharpe>3 на fullspan при ограничениях) через информативные WFA-прогоны.\n\n"
                     f"Очередь: `{queue_rel}` (status_counts: {status_txt})\n\n"
-                    "Примечание: автопилот loop пытается запускать pending tailguard-очереди на VPS автоматически. "
+                    + run_hint
+                    + "Примечание: автопилот loop пытается запускать pending tailguard-очереди на VPS автоматически. "
                     "Если это не сработало, можно запустить вручную (85.198.90.128):\n"
                     "```bash\n"
                     "cd coint4\n"
