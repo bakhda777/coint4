@@ -44,7 +44,8 @@ class CandidateGate:
 # NOTE: Tail gate uses rollup `tail_loss_*` bucket PnL (pair/period), not step-level tail metrics.
 CANDIDATE_GATE_V1 = CandidateGate(
     min_trades=200,
-    max_dd_abs=0.50,
+    # Tight drawdown gate for shortlist sanity: if DD is high, Sharpe is likely "fragile".
+    max_dd_abs=0.15,
     initial_capital=1000.0,
     max_tail_bucket_loss_pct=0.20,
     require_tail_metrics=True,
@@ -203,13 +204,18 @@ def _candidate_gate_reason(row: RunIndexRow, gate: CandidateGate) -> Optional[st
 
     worst_pair_pnl = row.tail_loss_worst_pair_pnl
     worst_period_pnl = row.tail_loss_worst_period_pnl
-    if worst_pair_pnl is None or worst_period_pnl is None:
+    if (
+        worst_pair_pnl is None
+        or worst_period_pnl is None
+        or (not math.isfinite(float(worst_pair_pnl)))
+        or (not math.isfinite(float(worst_period_pnl)))
+    ):
         return "tail metrics missing" if gate.require_tail_metrics else None
 
     loss_gate_abs = float(gate.initial_capital) * float(gate.max_tail_bucket_loss_pct)
-    if math.isfinite(float(worst_pair_pnl)) and float(worst_pair_pnl) < -loss_gate_abs:
+    if float(worst_pair_pnl) < -loss_gate_abs:
         return f"tail_loss_worst_pair_pnl < -{loss_gate_abs:.0f}"
-    if math.isfinite(float(worst_period_pnl)) and float(worst_period_pnl) < -loss_gate_abs:
+    if float(worst_period_pnl) < -loss_gate_abs:
         return f"tail_loss_worst_period_pnl < -{loss_gate_abs:.0f}"
     return None
 
