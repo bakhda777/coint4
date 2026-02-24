@@ -206,3 +206,12 @@
 
 Команда исполнения (скелет, запускать с рабочей машины, не здесь):
 - `STOP_AFTER=1 SYNC_BACK=1 bash coint4/scripts/remote/run_server_job.sh bash -lc 'bash scripts/batch/run_heavy_queue.sh --queue artifacts/wfa/aggregate/20260224_s9_tailguard_holdout_oos20230101_20230630_ms5_top6/run_queue.csv'`
+
+## Postprocess: sync queue + rollup (2026-02-24, ralph-tui-dc43a702)
+
+- Best-effort синхронизация статусов очередей (запуск по `artifacts/wfa/aggregate`).
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/sync_queue_status.py --queue-dir artifacts/wfa/aggregate`
+  - Очереди для `20260223_tailguard_r07_fullspan_confirm_top3` и `20260224_s9_tailguard_holdout_oos20230101_20230630_ms5_top6`: статус `completed`.
+- Пересобран rollup индекс:
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+  - `run_index` обновлён (entries=8417).
