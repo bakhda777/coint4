@@ -7,11 +7,21 @@ Last updated: 2026-02-24
 Rollup индекс (source of truth): `coint4/artifacts/wfa/aggregate/rollup/run_index.*` (`run_index.csv`, `run_index.json`, `run_index.md`).
 Текущий снимок rollup: `2026-02-24 10:44:32Z` (из `coint4/artifacts/wfa/aggregate/rollup/run_index.md`).
 
+Mini-rollup r07 (tailguard fullspan confirm top-3): `coint4/artifacts/wfa/aggregate/rollup_r07/run_index.*` (если `cd coint4`: `artifacts/wfa/aggregate/rollup_r07/run_index.*`).
+Текущий снимок mini-rollup r07: `2026-02-24 13:07:25Z` (из `coint4/artifacts/wfa/aggregate/rollup_r07/run_index.md`).
+
 Текущий best (baseline, alt-holdout top50 sens, rollup):
 - `run_id=holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1` (`run_group=20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens`)
 - Config (yaml): `coint4/configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml` (из `config_path`)
 - Sharpe `8.6494`, |DD| `0.0129`, trades `3666` (из `sharpe_ratio_abs`, `max_drawdown_on_equity`, `total_trades`)
 - Run artifacts: `coint4/artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1`
+
+Текущий best (mini-rollup r07, tailguard fullspan confirm top-3):
+- `run_id=holdout_tailguard_r07_fullspan_v02_from_r06v03_trade_balanced_B` (`run_group=20260223_tailguard_r07_fullspan_confirm_top3`)
+- Config (yaml): `coint4/configs/budget1000_autopilot/20260223_tailguard_r07_fullspan_confirm_top3/holdout_tailguard_r07_fullspan_v02_from_r06v03_trade_balanced_B.yaml` (из `config_path`)
+- Sharpe `0.7093`, total_pnl `$325.56`, |DD| `0.1644`, trades `5272`, pairs `20`, coverage `0.9877` (из `sharpe_ratio_abs`, `total_pnl`, `max_drawdown_on_equity`, `total_trades`, `total_pairs_traded`, `coverage_ratio`)
+- Gate check (`CANDIDATE_GATE_V1`): trades `>=200` ✅; `abs(DD)<=0.15` ❌ (`0.1644`); tail-loss proxy ✅ (`tail_loss_worst_pair_pnl=-60.66`, `tail_loss_worst_period_pnl=-45.89`)
+- Run artifacts: `coint4/artifacts/wfa/runs/20260223_tailguard_r07_fullspan_confirm_top3/holdout_tailguard_r07_fullspan_v02_from_r06v03_trade_balanced_B`
 
 Current stage: **US-LOOP-004 (docs + live export) закрыт + выполнены VPS confirm-replay top-10 BL11 и fullspan replay top-3 BL11**: `decision_id=us-loop-003-stop-20260220T0149Z-infra-block`, `stop_reason=INFRA_BLOCKED_SANDBOX_NETWORK: codex backend and serverspace api unreachable; powered runner repeats RC4`. Live winner для cutover пока остаётся baseline `run_group=20260213_budget1000_dd_sprint08_stoplossusd_micro` (`run_id=holdout_prod_final_budget1000_oos20240501_20250630_risk0p006_slusd1p91`, `score=3.530254`, `worst_dd_pct=0.132205`) до отдельного решения по промоуту BL11.
 
