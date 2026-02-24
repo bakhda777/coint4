@@ -1,0 +1,5 @@
+base_config: ../20260223_tailguard_r04/holdout_tailguard_r04_v07_h2_quality_mild.yaml
+walk_forward:
+  start_date: '2023-01-01'
+  end_date: '2023-06-30'
+  max_steps: 5

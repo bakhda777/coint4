@@ -1,0 +1,5 @@
+base_config: ../20260223_tailguard_r07_fullspan_confirm_top3/holdout_tailguard_r07_fullspan_v02_from_r06v03_trade_balanced_B.yaml
+walk_forward:
+  start_date: '2023-01-01'
+  end_date: '2023-06-30'
+  max_steps: 5
