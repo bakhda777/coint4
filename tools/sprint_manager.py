@@ -157,7 +157,7 @@ def _extract_run_index_rows(payload: list[dict[str, Any]]) -> list[RunIndexRow]:
     rows: list[RunIndexRow] = []
     for r in payload:
         status = str(r.get("status") or "").strip().lower()
-        if status and status != "completed":
+        if status != "completed":
             continue
 
         sharpe = _to_float(r.get("sharpe_ratio_abs") or r.get("sharpe"))
