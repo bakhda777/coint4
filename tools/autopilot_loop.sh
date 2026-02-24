@@ -184,9 +184,18 @@ run_pending_remote_queue() {
   fi
 
   local queue_path
-  queue_path="$(pick_pending_remote_queue || true)"
+  local pick_rc=0
+  set +e
+  queue_path="$(pick_pending_remote_queue)"
+  pick_rc=$?
+  set -e
+  if [[ "${pick_rc}" -ne 0 ]]; then
+    log "remote-run: pick_pending_remote_queue failed rc=${pick_rc}"
+    return 0
+  fi
   queue_path="$(printf '%s' "${queue_path}" | tr -d '\r' | tr -d '\n')"
   if [[ -z "${queue_path}" ]]; then
+    log "remote-run: no pending sprint tailguard queues"
     return 0
   fi
   if [[ ! -f "${queue_path}" ]]; then
