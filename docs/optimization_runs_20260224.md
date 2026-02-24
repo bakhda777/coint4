@@ -51,3 +51,12 @@
 
 Команда исполнения (скелет, запускать с рабочей машины, не здесь):
 - `STOP_AFTER=1 SYNC_BACK=1 bash coint4/scripts/remote/run_server_job.sh bash -lc 'bash scripts/batch/run_heavy_queue.sh --queue artifacts/wfa/aggregate/20260224_s4_tailguard_holdout_ms5_top10/run_queue.csv'`
+
+## Postprocess: sync queue + rollup (2026-02-24, refresh)
+
+- Best-effort синхронизация статусов очередей (S1–S4 группы):
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/20260223_s1_remote_ms5_queue/run_queue.csv --queue artifacts/wfa/aggregate/20260223_s2_tailguard_holdout_ms5_top3/run_queue.csv --queue artifacts/wfa/aggregate/20260223_s3_tailguard_holdout_ms5_top6/run_queue.csv --queue artifacts/wfa/aggregate/20260224_s3_tailguard_holdout_ms5_top6/run_queue.csv --queue artifacts/wfa/aggregate/20260224_s4_tailguard_holdout_ms5_top10/run_queue.csv`
+  - Изменений не потребовалось (нет `strategy_metrics.csv` в `results_dir`).
+- Пересобран rollup индекс:
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --no-auto-sync-status --output-dir artifacts/wfa/aggregate/rollup`
+  - `run_index` обновлён (entries=8341).
