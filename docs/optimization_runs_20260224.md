@@ -215,3 +215,37 @@
 - Пересобран rollup индекс:
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` обновлён (entries=8417).
+
+## S10: выводы по `20260223_tailguard_r07_fullspan_confirm_top3` и следующий шаг к Sharpe>3
+
+Источник метрик: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv` (holdout+stress; coverage≈`0.988`).
+
+### Top-3 (по robust-sharpe = `min(sh_holdout, sh_stress)`)
+
+1) `v02_from_r06v03_trade_balanced_B` — **top-1**
+   - holdout: `sh=0.709`, `pnl=325.560`, `dd=-215.031`, `tail_pair_total=181.373`
+   - stress: `sh=0.643`, `pnl=287.493`, `dd=-210.620`, `tail_pair_total=183.813`
+   - robust: `min_sh=0.643` (лучше по `min_sh`, DD и tail относительно v01)
+
+2) `v03_from_r06v05_bidask_only`
+   - holdout: `sh=0.709`, `pnl=325.560`, `dd=-215.031`, `tail_pair_total=181.373`
+   - stress: `sh=0.643`, `pnl=287.493`, `dd=-210.620`, `tail_pair_total=183.813`
+   - robust: `min_sh=0.643` (по rollup метрикам полностью совпал с v02 → считаем tie)
+
+3) `v01_from_r06v02_trade_mild_A`
+   - holdout: `sh=0.646`, `pnl=289.902`, `dd=-247.615`, `tail_pair_total=204.878`
+   - stress: `sh=0.602`, `pnl=265.025`, `dd=-236.945`, `tail_pair_total=206.806`
+   - robust: `min_sh=0.602`
+
+### Почему top-1
+
+- Все 3 варианта проходят базовые gates ширины/покрытия: `pairs_traded>=20`, `total_trades≈5.3k`, `coverage≈0.988`, `pnl>0` в holdout+stress.
+- `v02` и `v03` дают лучший robust-sharpe (tie) и меньший DD/tail, чем `v01`.
+- Tie-breaker `v02 > v03`: `v02` более “консервативный” tradeability-gate (liquidity/funding/tick/min_days_live), меньше риск live-drift при равных backtest-метриках.
+
+### Следующий run_group (к Sharpe>3)
+
+Выбор: **tradeability/quality sweep** (не fullspan confirm).
+
+- Следующий run_group: `20260224_tailguard_r08_tradeability_quality_sweep`
+- Цель: поднять `robust-sharpe` (и следом `score(worst_robust_sharpe)`) за счёт агрессивного tradeability/quality отбора вокруг `v02` (без изменения `risk/stop/z/dstop/maxpos`).
