@@ -137,22 +137,41 @@ from pathlib import Path
 repo_root = Path.cwd().resolve()
 agg_dir = repo_root / "coint4" / "artifacts" / "wfa" / "aggregate"
 
-pattern = re.compile(r"^(?P<date>\d{8})_s(?P<sprint>\d+)_")
-pending = []
+date_re = re.compile(r"^(?P<date>\d{8})_")
+sprint_re = re.compile(r"^(?P<date>\d{8})_s(?P<sprint>\d+)_")
+pending = []  # (prio, date_key, sprint_key, group, pending_cnt, rel_queue_path)
+
+
+def _priority(group: str) -> int:
+    g = group.lower()
+    # Prefer goal-critical queues first: fullspan confirms > ddfocus > sprint ms5 probes.
+    if "fullspan" in g:
+        return 30
+    if "ddfocus" in g:
+        return 20
+    if sprint_re.match(group):
+        return 10
+    return 0
 
 if agg_dir.exists():
     for queue_path in agg_dir.glob("*/run_queue.csv"):
         group = queue_path.parent.name
         if "tailguard" not in group:
             continue
-        m = pattern.match(group)
-        if not m:
+        mdate = date_re.match(group)
+        if not mdate:
             continue
         try:
-            date_key = int(m.group("date"))
-            sprint_key = int(m.group("sprint"))
+            date_key = int(mdate.group("date"))
         except Exception:
             continue
+        sprint_key = 0
+        msprint = sprint_re.match(group)
+        if msprint:
+            try:
+                sprint_key = int(msprint.group("sprint"))
+            except Exception:
+                sprint_key = 0
         try:
             with queue_path.open(newline="", encoding="utf-8") as handle:
                 reader = csv.DictReader(handle)
@@ -167,14 +186,75 @@ if agg_dir.exists():
         if pending_cnt <= 0:
             continue
         rel = queue_path.relative_to(repo_root)
-        pending.append(((date_key, sprint_key, group), pending_cnt, str(rel)))
+        pending.append((_priority(group), date_key, sprint_key, group, pending_cnt, str(rel)))
 
 if not pending:
     print("")
 else:
-    # Prefer newest sprint queues (avoid spending time on stale backlog).
-    pending.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
-    print(pending[0][2])
+    pending.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
+    print(pending[0][5])
+PY
+}
+
+queue_is_ms5_safe() {
+  local queue_path="$1"
+  python3 - <<'PY' "$queue_path"
+import csv
+import re
+import sys
+from pathlib import Path
+
+raw = str(sys.argv[1] or "").strip()
+repo_root = Path.cwd().resolve()
+app_root = repo_root / "coint4"
+queue_path = Path(raw)
+if not queue_path.is_absolute():
+    queue_path = (repo_root / queue_path).resolve()
+
+safe = True
+try:
+    with queue_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+except Exception:
+    safe = False
+else:
+    for row in rows:
+        config_path = str(row.get("config_path") or "").strip()
+        if not config_path:
+            continue
+        path = (app_root / config_path).resolve()
+        if not path.exists():
+            safe = False
+            break
+        found = False
+        max_steps = None
+        try:
+            with path.open() as cfg:
+                for line in cfg:
+                    match = re.match(r"\s*max_steps:\s*(.*)$", line)
+                    if match:
+                        found = True
+                        raw_value = match.group(1).split("#", 1)[0].strip()
+                        if raw_value == "" or raw_value.lower() in {"null", "none", "~"}:
+                            max_steps = None
+                        else:
+                            try:
+                                max_steps = int(raw_value)
+                            except ValueError:
+                                max_steps = None
+                        break
+        except Exception:
+            safe = False
+            break
+        if not found:
+            safe = False
+            break
+        if max_steps is None or max_steps > 5:
+            safe = False
+            break
+
+print("1" if safe else "0")
 PY
 }
 
@@ -212,17 +292,34 @@ run_pending_remote_queue() {
     queue_rel="${queue_path}"
   fi
 
-  local parallel
-  parallel="${AUTOPILOT_REMOTE_PARALLEL:-10}"
+  local ms5_safe="0"
+  ms5_safe="$(queue_is_ms5_safe "${queue_path}" || true)"
 
-  log "remote-run: starting queue=${queue_path} (parallel=${parallel})"
+  local parallel_fast
+  parallel_fast="${AUTOPILOT_REMOTE_PARALLEL:-10}"
+  local parallel_heavy
+  parallel_heavy="${AUTOPILOT_REMOTE_PARALLEL_HEAVY:-2}"
+  local parallel="${parallel_fast}"
+
+  local remote_cmd=""
+  if [[ "${ms5_safe}" == "1" ]]; then
+    parallel="${parallel_fast}"
+    log "remote-run: runner=watch_wfa_queue.sh (max_steps<=5) parallel=${parallel}"
+    remote_cmd="ALLOW_HEAVY_RUN=1 bash scripts/optimization/watch_wfa_queue.sh --queue ${queue_rel} --parallel ${parallel}"
+  else
+    parallel="${parallel_heavy}"
+    log "remote-run: runner=run_wfa_queue.py (fullspan/heavy) parallel=${parallel}"
+    remote_cmd="ALLOW_HEAVY_RUN=1 PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py --queue ${queue_rel} --statuses planned,stalled --parallel ${parallel}"
+  fi
+
+  log "remote-run: starting queue=${queue_path}"
   local rc=0
   set +e
   (
     cd "${REPO_ROOT}/coint4"
     SYNC_UP=1 UPDATE_CODE=1 STOP_AFTER=1 SYNC_BACK=1 \
       bash scripts/remote/run_server_job.sh \
-      bash -lc "ALLOW_HEAVY_RUN=1 bash scripts/optimization/watch_wfa_queue.sh --queue ${queue_rel} --parallel ${parallel}"
+      bash -lc "${remote_cmd}"
   )
   rc=$?
   set -e
@@ -259,6 +356,9 @@ run_ralph_with_watchdog() {
   local last_progress=""
   local last_change_ts
   last_change_ts="$(date +%s)"
+  local heartbeat_seconds=$((5 * 60))
+  local last_heartbeat_ts
+  last_heartbeat_ts="$(date +%s)"
   local seen_session=0
 
   while true; do
@@ -297,6 +397,13 @@ run_ralph_with_watchdog() {
 
     local now_ts
     now_ts="$(date +%s)"
+    if (( now_ts - last_heartbeat_ts >= heartbeat_seconds )); then
+      local since_change=$(( now_ts - last_change_ts ))
+      if [[ "${RALPH_STATUS}" == "running" || "${RALPH_STATUS}" == "paused" ]]; then
+        log "heartbeat: status=${RALPH_STATUS} progress=${RALPH_PROGRESS:-?} since_change=${since_change}s"
+      fi
+      last_heartbeat_ts="${now_ts}"
+    fi
     if (( now_ts - last_change_ts >= stall_seconds )); then
       log "watchdog: no progress change for 20m → restart with --force"
 
@@ -529,7 +636,7 @@ while true; do
     exit 0
   fi
 
-  # If there is any pending sprint remote queue, execute it first so postprocess tasks
+  # If there is any pending tailguard remote queue, execute it first so postprocess tasks
   # (sync statuses / rollup / ranking) see fresh results.
   run_pending_remote_queue
 

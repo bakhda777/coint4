@@ -12,8 +12,10 @@ Responsibilities (best-effort, no heavy compute):
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -50,6 +52,95 @@ CANDIDATE_GATE_V1 = CandidateGate(
     max_tail_bucket_loss_pct=0.20,
     require_tail_metrics=True,
 )
+
+_DATE_RE = re.compile(r"^(?P<date>\d{8})_")
+_SPRINT_RE = re.compile(r"^(?P<date>\d{8})_s(?P<sprint>\d+)_")
+
+
+@dataclass(frozen=True)
+class QueueInfo:
+    run_group: str
+    queue_path: Path
+    priority: int
+    status_counts: dict[str, int]
+
+    @property
+    def pending_count(self) -> int:
+        return int(self.status_counts.get("planned") or 0) + int(self.status_counts.get("stalled") or 0)
+
+
+def _queue_priority(run_group: str) -> int:
+    g = run_group.lower()
+    if "fullspan" in g:
+        return 30
+    if "ddfocus" in g:
+        return 20
+    if _SPRINT_RE.match(run_group):
+        return 10
+    return 0
+
+
+def _scan_tailguard_queues(repo_root: Path) -> list[QueueInfo]:
+    agg_dir = repo_root / "coint4" / "artifacts" / "wfa" / "aggregate"
+    if not agg_dir.exists():
+        return []
+
+    queues: list[QueueInfo] = []
+    for queue_path in agg_dir.glob("*/run_queue.csv"):
+        run_group = queue_path.parent.name
+        if "tailguard" not in run_group:
+            continue
+        if not _DATE_RE.match(run_group):
+            continue
+        try:
+            with queue_path.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                counts: dict[str, int] = {}
+                for row in reader:
+                    status = str(row.get("status") or "").strip().lower()
+                    if not status:
+                        continue
+                    counts[status] = counts.get(status, 0) + 1
+        except Exception:
+            continue
+        queues.append(
+            QueueInfo(
+                run_group=run_group,
+                queue_path=queue_path,
+                priority=_queue_priority(run_group),
+                status_counts=counts,
+            )
+        )
+
+    def _sort_key(q: QueueInfo) -> tuple[int, int, int, str]:
+        date_key = 0
+        sprint_key = 0
+        mdate = _DATE_RE.match(q.run_group)
+        if mdate:
+            try:
+                date_key = int(mdate.group("date"))
+            except Exception:
+                date_key = 0
+        msprint = _SPRINT_RE.match(q.run_group)
+        if msprint:
+            try:
+                sprint_key = int(msprint.group("sprint"))
+            except Exception:
+                sprint_key = 0
+        return (q.priority, date_key, sprint_key, q.run_group)
+
+    queues.sort(key=_sort_key, reverse=True)
+    return queues
+
+
+def _suggest_mini_rollup_dir(run_group: str) -> str:
+    m = re.search(r"_r(?P<r>\d+)_", run_group)
+    if m:
+        return f"artifacts/wfa/aggregate/rollup_r{m.group('r')}"
+    ms = re.search(r"_s(?P<sprint>\d+)_", run_group)
+    if ms:
+        return f"artifacts/wfa/aggregate/rollup_s{ms.group('sprint')}"
+    return f"artifacts/wfa/aggregate/rollup_{run_group}"
 
 
 def _log(msg: str) -> None:
@@ -315,6 +406,7 @@ def _ensure_min_tasks(tasks: list[dict[str, Any]], *, min_count: int, warnings: 
 def _generate_next_sprint_tasks(
     *,
     next_sprint: int,
+    repo_root: Path,
     state: dict[str, Any],
     last_results: Optional[dict[str, Any]],
     warnings: list[str],
@@ -347,70 +439,189 @@ def _generate_next_sprint_tasks(
     if best_results_dir and not best_results_dir.startswith("coint4/"):
         best_results_dir = f"coint4/{best_results_dir}"
 
-    tasks: list[dict[str, Any]] = [
-        {
-            "title": f"S{next_sprint}: Обновить optimization_state.md по текущему rollup",
-            "priority": 1,
-            "description": (
-                "Цель: зафиксировать текущее состояние оптимизаций (best config + метрики).\n\n"
-                f"Ожидаемый эффект: единая точка правды в docs/optimization_state.md (фокус: {focus}).\n\n"
-                "Проверка:\n"
-                "- [ ] Обновлён docs/optimization_state.md: текущий best + метрики (Sharpe, |DD|, trades)\n"
-                "- [ ] Указаны пути к rollup: coint4/artifacts/wfa/aggregate/rollup/run_index.*\n"
-            ),
-        },
-        {
-            "title": f"S{next_sprint}: Подготовить remote-очередь tailguard/holdout на топ-кандидатов",
-            "priority": 2,
-            "description": (
-                "Цель: сформировать следующую информативную серию прогонов на удалённом VPS.\n\n"
-                "Ожидаемый эффект: новая очередь в coint4/artifacts/wfa/aggregate/<group>/run_queue.csv.\n\n"
-                "Проверка:\n"
-                "- [ ] Создан новый run_group (датированный) и run_queue.csv (6–20 задач)\n"
-                "- [ ] Для queue-прогонов явно задан walk_forward.max_steps (<=5)\n"
-                "- [ ] В docs/optimization_runs_YYYYMMDD.md добавлен план: что запускаем и критерии успеха\n"
-                "\n"
-                "Запуск: только через coint4/scripts/remote/run_server_job.sh на 85.198.90.128 (STOP_AFTER=1).\n"
-            ),
-        },
-        {
-            "title": f"S{next_sprint}: Синхронизировать статусы run_queue и пересобрать rollup (если надо)",
-            "priority": 2,
-            "description": (
-                "Цель: чтобы ранкер/rollup видел актуальные результаты (и не было вечных planned).\n\n"
-                "Ожидаемый эффект: корректные статусы в run_queue.csv и актуальный run_index.\n\n"
-                "Проверка:\n"
-                "- [ ] Для затронутых групп запущен scripts/optimization/sync_queue_status.py (best-effort)\n"
-                "- [ ] Пересобран индекс: scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup\n"
-                "- [ ] В ретро/дневнике отмечено, что было обновлено\n"
-                "\n"
-                "Ограничение: не трогать тяжёлые артефакты runs/ (только aggregate/rollup).\n"
-            ),
-        },
-        {
-            "title": f"S{next_sprint}: Улучшить критерий отбора кандидатов (DD/tail/trades) в одном месте",
-            "priority": 3,
-            "description": (
-                "Цель: сделать единый ‘gate’ для кандидатов, чтобы не оптимизировать мусор.\n\n"
-                "Ожидаемый эффект: документированный фильтр (в docs или утилите), который использует менеджер.\n\n"
-                "Проверка:\n"
-                "- [ ] Добавлен/обновлён короткий раздел в docs/optimization_state.md: какие фильтры применяем\n"
-                "- [ ] В tools/sprint_manager.py (или отдельной утилите) эти фильтры отражены как параметры/константы\n"
-            ),
-        },
-        {
-            "title": f"S{next_sprint}: Sprint Retro + Plan Next Sprint",
-            "priority": 4,
-            "description": (
-                "Цель: закрыть спринт осмысленным резюме и подготовить следующий цикл.\n\n"
-                "Ожидаемый эффект: обновлён .ralph-tui/progress.md и согласованные гипотезы на следующий спринт.\n\n"
-                "Проверка:\n"
-                "- [ ] В .ralph-tui/progress.md добавлена секция по спринту (что сделали/выводы)\n"
-                "- [ ] Явно записано: что запускаем дальше на remote VPS и зачем\n"
-                "- [ ] Никаких git commit руками (autoCommit=true)\n"
-            ),
-        },
-    ]
+    queues = _scan_tailguard_queues(repo_root)
+    focus_queue: Optional[QueueInfo] = None
+    for q in queues:
+        if q.priority >= 30 and q.pending_count > 0:
+            focus_queue = q
+            break
+    if focus_queue is None:
+        for q in queues:
+            if q.priority >= 20 and q.pending_count > 0:
+                focus_queue = q
+                break
+
+    tasks: list[dict[str, Any]] = []
+    if focus_queue is not None and focus_queue.priority >= 20:
+        app_root = repo_root / "coint4"
+        queue_rel = str(focus_queue.queue_path.relative_to(app_root))
+        run_group = focus_queue.run_group
+        mini_rollup_dir = _suggest_mini_rollup_dir(run_group)
+        runs_dir = f"artifacts/wfa/runs/{run_group}"
+
+        status_txt = ", ".join(
+            [f"{k}={v}" for k, v in sorted(focus_queue.status_counts.items()) if v and k]
+        )
+        status_txt = status_txt or "-"
+
+        # For fullspan confirms we use stricter trade gate; dd-focus can be looser.
+        min_trades = 1000 if focus_queue.priority >= 30 else 200
+        parallel = 2 if focus_queue.priority >= 30 else 10
+
+        tasks = [
+            {
+                "title": f"S{next_sprint}: Goal step: приблизиться к Sharpe>3 через очередь {run_group}",
+                "priority": 1,
+                "description": (
+                    "Цель: приблизиться к главной цели (Sharpe>3 на fullspan при ограничениях) через информативные WFA-прогоны.\n\n"
+                    f"Очередь: `{queue_rel}` (status_counts: {status_txt})\n\n"
+                    "Примечание: автопилот loop пытается запускать pending tailguard-очереди на VPS автоматически. "
+                    "Если это не сработало, можно запустить вручную (85.198.90.128):\n"
+                    "```bash\n"
+                    "cd coint4\n"
+                    "SYNC_UP=1 UPDATE_CODE=1 STOP_AFTER=1 SYNC_BACK=1 \\\n"
+                    "  bash scripts/remote/run_server_job.sh \\\n"
+                    "  bash -lc 'ALLOW_HEAVY_RUN=1 PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py \\\n"
+                    f"    --queue {queue_rel} --statuses planned,stalled --parallel {parallel}'\n"
+                    "```\n\n"
+                    "Проверка:\n"
+                    "- [ ] В `run_queue.csv` нет `planned/stalled`\n"
+                    "- [ ] VPS выключен после job (SSH timeout)\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: {run_group} mini-rollup + robust ranking (coverage-gated)",
+                "priority": 2,
+                "description": (
+                    "Цель: быстро оценить прогон строго по гейтам (coverage/trades/pairs/DD) без пересборки общего rollup.\n\n"
+                    "Команды (локально, из `coint4/`):\n"
+                    "```bash\n"
+                    "cd coint4\n"
+                    "PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py \\\n"
+                    f"  --queue {queue_rel}\n"
+                    "\n"
+                    "PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py \\\n"
+                    f"  --runs-dir {runs_dir} \\\n"
+                    f"  --queue {queue_rel} \\\n"
+                    f"  --output-dir {mini_rollup_dir} \\\n"
+                    "  --no-auto-sync-status\n"
+                    "\n"
+                    "PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py \\\n"
+                    f"  --run-index {mini_rollup_dir}/run_index.csv \\\n"
+                    f"  --contains {run_group} \\\n"
+                    f"  --fullspan-policy-v1 --min-windows 1 --min-trades {min_trades} --min-pairs 20 --min-pnl 0 \\\n"
+                    "  --min-coverage-ratio 0.95 \\\n"
+                    "  --initial-capital 1000 \\\n"
+                    "  --tail-quantile 0.20 --tail-q-soft-loss-pct 0.03 --tail-worst-soft-loss-pct 0.10 \\\n"
+                    "  --tail-q-penalty 2.0 --tail-worst-penalty 1.0 --tail-worst-gate-pct 0.20 \\\n"
+                    "  --top 50\n"
+                    "```\n\n"
+                    "Проверка:\n"
+                    f"- [ ] {mini_rollup_dir}/run_index.csv создан\n"
+                    "- [ ] В ранкинге есть не меньше 1 кандидата после гейтов coverage/pairs/trades\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Выводы по {run_group} и следующий шаг к Sharpe>3",
+                "priority": 2,
+                "description": (
+                    "Цель: превратить run_index+ranking в конкретное решение по следующей итерации.\n\n"
+                    "Проверка:\n"
+                    "- [ ] В docs/optimization_runs_YYYYMMDD.md добавлен блок: top-3 + почему top-1 (gates/robust)\n"
+                    "- [ ] Записано: какой следующий run_group делаем (ddfocus vs fullspan confirm vs tradeability/quality sweep)\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Обновить optimization_state.md (только после mini-rollup)",
+                "priority": 3,
+                "description": (
+                    "Цель: держать ‘единую точку правды’ по текущему лучшему конфигу и следующему шагу.\n\n"
+                    f"Контекст: baseline из rollup сейчас: {focus}.\n\n"
+                    "Проверка:\n"
+                    "- [ ] docs/optimization_state.md обновлён: лучший кандидат + run_group + гейты\n"
+                    f"- [ ] Указаны артефакты mini-rollup: `{mini_rollup_dir}/run_index.*`\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Sprint Retro + Plan Next Sprint",
+                "priority": 4,
+                "description": (
+                    "Цель: закрыть спринт осмысленным резюме и запланировать следующий ход к главной цели.\n\n"
+                    "Проверка:\n"
+                    "- [ ] В .ralph-tui/progress.md добавлена секция по спринту (что сделали/выводы)\n"
+                    "- [ ] Записано: как это приближает к Sharpe>3 (fullspan/robust)\n"
+                ),
+            },
+        ]
+    else:
+        tasks = [
+            {
+                "title": f"S{next_sprint}: Обновить optimization_state.md по текущему rollup",
+                "priority": 1,
+                "description": (
+                    "Цель: зафиксировать текущее состояние оптимизаций (best config + метрики).\n\n"
+                    f"Ожидаемый эффект: единая точка правды в docs/optimization_state.md (фокус: {focus}).\n\n"
+                    "Проверка:\n"
+                    "- [ ] Обновлён docs/optimization_state.md: текущий best + метрики (Sharpe, |DD|, trades)\n"
+                    "- [ ] Указаны пути к rollup: coint4/artifacts/wfa/aggregate/rollup/run_index.*\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Подготовить remote-очередь tailguard (prefer fullspan/ddfocus over ms5)",
+                "priority": 2,
+                "description": (
+                    "Цель: сформировать следующую серию прогонов, которая приближает к главной цели (Sharpe>3 на fullspan, а не ‘красивые’ ms5).\n\n"
+                    "Ожидаемый эффект: новая очередь в coint4/artifacts/wfa/aggregate/<group>/run_queue.csv.\n\n"
+                    "Рекомендация по формату:\n"
+                    "- fullspan confirm top-3 (если есть кандидаты) или\n"
+                    "- dd-focus вокруг worst-DD окна (fast-loop) или\n"
+                    "- ms5 probe только как дешёвый prefilter (не как финальное доказательство).\n\n"
+                    "Проверка:\n"
+                    "- [ ] Создан новый run_group (датированный) и run_queue.csv (6–20 задач)\n"
+                    "- [ ] Для queue-прогонов явно задан walk_forward.max_steps (<=5) если это ms5 probe\n"
+                    "- [ ] В docs/optimization_runs_YYYYMMDD.md добавлен план: что запускаем и критерии успеха\n"
+                    "\n"
+                    "Запуск: только через coint4/scripts/remote/run_server_job.sh на 85.198.90.128 (STOP_AFTER=1).\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Синхронизировать статусы run_queue и пересобрать rollup (если надо)",
+                "priority": 2,
+                "description": (
+                    "Цель: чтобы ранкер/rollup видел актуальные результаты (и не было вечных planned).\n\n"
+                    "Ожидаемый эффект: корректные статусы в run_queue.csv и актуальный run_index.\n\n"
+                    "Проверка:\n"
+                    "- [ ] Для затронутых групп запущен scripts/optimization/sync_queue_status.py (best-effort)\n"
+                    "- [ ] Пересобран индекс: scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup\n"
+                    "- [ ] В ретро/дневнике отмечено, что было обновлено\n"
+                    "\n"
+                    "Ограничение: не трогать тяжёлые артефакты runs/ (только aggregate/rollup).\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Улучшить критерий отбора кандидатов (DD/tail/trades) в одном месте",
+                "priority": 3,
+                "description": (
+                    "Цель: сделать единый ‘gate’ для кандидатов, чтобы не оптимизировать мусор.\n\n"
+                    "Ожидаемый эффект: документированный фильтр (в docs или утилите), который использует менеджер.\n\n"
+                    "Проверка:\n"
+                    "- [ ] Добавлен/обновлён короткий раздел в docs/optimization_state.md: какие фильтры применяем\n"
+                    "- [ ] В tools/sprint_manager.py (или отдельной утилите) эти фильтры отражены как параметры/константы\n"
+                ),
+            },
+            {
+                "title": f"S{next_sprint}: Sprint Retro + Plan Next Sprint",
+                "priority": 4,
+                "description": (
+                    "Цель: закрыть спринт осмысленным резюме и подготовить следующий цикл.\n\n"
+                    "Ожидаемый эффект: обновлён .ralph-tui/progress.md и согласованные гипотезы на следующий спринт.\n\n"
+                    "Проверка:\n"
+                    "- [ ] В .ralph-tui/progress.md добавлена секция по спринту (что сделали/выводы)\n"
+                    "- [ ] Явно записано: что запускаем дальше на remote VPS и зачем (в привязке к Sharpe>3 fullspan)\n"
+                    "- [ ] Никаких git commit руками (autoCommit=true)\n"
+                ),
+            },
+        ]
 
     if not sharpe_audit_ok:
         target_line = f"- target_run_dir: `{best_results_dir}`\n" if best_results_dir else ""
@@ -700,6 +911,7 @@ def main() -> int:
     next_sprint = sprint_n + 1
     planned_tasks = _generate_next_sprint_tasks(
         next_sprint=next_sprint,
+        repo_root=repo_root,
         state=state,
         last_results=last_results,
         warnings=warnings,
@@ -860,7 +1072,10 @@ def main() -> int:
     if done:
         _log(f"Остановка: done=true ({done_reason})")
     else:
-        _log("Почему такие задачи: сначала дешёвые проверки доверия к метрикам, затем план remote-прогонов и hygiene rollup/queues")
+        _log(
+            "Почему такие задачи: двигаемся к главной цели (Sharpe>3 fullspan) через tailguard-очереди + честный ranking "
+            "(coverage/pairs/trades/DD)"
+        )
         _log(f"Следующий спринт S{next_sprint} (tasks={len(planned_tasks)}, created={len(created_ids)}):")
         for t in planned_tasks:
             title = str(t.get("title") or "").strip()
