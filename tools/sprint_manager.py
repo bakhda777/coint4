@@ -229,23 +229,41 @@ def _pick_top_candidates(
 ) -> list[RunIndexRow]:
     pool = list(rows)
     if gate is not None:
-        passed = [r for r in pool if _candidate_gate_reason(r, gate) is None]
-        if passed:
-            if warnings is not None and len(passed) != len(pool):
-                tail_abs = (
-                    float(gate.initial_capital) * float(gate.max_tail_bucket_loss_pct)
-                    if gate.max_tail_bucket_loss_pct is not None
-                    else None
-                )
-                tail_txt = f", tail_bucket_pnl>=-{tail_abs:.0f}" if tail_abs is not None else ""
+        passed: list[RunIndexRow] = []
+        reject_reasons: dict[str, int] = {}
+        for r in pool:
+            reason = _candidate_gate_reason(r, gate)
+            if reason is None:
+                passed.append(r)
+                continue
+            reject_reasons[reason] = reject_reasons.get(reason, 0) + 1
+
+        if warnings is not None and pool:
+            tail_abs = (
+                float(gate.initial_capital) * float(gate.max_tail_bucket_loss_pct)
+                if gate.max_tail_bucket_loss_pct is not None
+                else None
+            )
+            tail_txt = f", tail_bucket_pnl>=-{tail_abs:.0f}" if tail_abs is not None else ""
+            if passed and len(passed) != len(pool):
                 warnings.append(
                     "candidate gate applied: "
                     f"passed={len(passed)}/{len(pool)} (min_trades={gate.min_trades}, max_dd_abs={gate.max_dd_abs:.2f}{tail_txt})"
                 )
-            pool = passed
-        else:
-            if warnings is not None and pool:
-                warnings.append("candidate gate applied: 0 passed; showing ungated top-by-sharpe for visibility")
+            if not passed:
+                common_rejects = ", ".join(
+                    [
+                        f"{k}={v}"
+                        for k, v in sorted(reject_reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+                    ]
+                )
+                warnings.append(
+                    "candidate gate applied: "
+                    f"0/{len(pool)} passed (fail-closed; min_trades={gate.min_trades}, max_dd_abs={gate.max_dd_abs:.2f}{tail_txt}); "
+                    f"common rejects: {common_rejects or '-'}"
+                )
+
+        pool = passed
 
     # Cheap, informative default: highest Sharpe first; break ties by DD then trades.
     ranked = sorted(pool, key=lambda x: (-x.sharpe, x.dd_abs, -x.trades))
