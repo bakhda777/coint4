@@ -1,9 +1,17 @@
 {
-  "sprint": 6,
+  "sprint": 7,
   "last_results": {
-    "generatedAt": "2026-02-24T08:36:39+00:00",
-    "sprintReviewed": 5,
+    "generatedAt": "2026-02-24T09:34:29+00:00",
+    "sprintReviewed": 6,
     "run_index_path": "/home/claudeuser/coint4/coint4/artifacts/wfa/aggregate/rollup/run_index.json",
+    "candidate_gate": {
+      "version": "v1",
+      "min_trades": 200,
+      "max_dd_abs": 0.15,
+      "initial_capital": 1000.0,
+      "max_tail_bucket_loss_pct": 0.2,
+      "require_tail_metrics": true
+    },
     "best": {
       "sharpe": 8.649446022611752,
       "dd_abs": 0.012889916285242725,
@@ -61,18 +69,18 @@
       }
     ],
     "beads": {
-      "label": "sprint-5",
+      "label": "sprint-6",
       "total": 6,
       "closed": 6,
       "in_progress": 0,
       "open": 0,
       "closed_task_ids": [
-        "ralph-tui-d02fa2fd",
-        "ralph-tui-2133ac36",
-        "ralph-tui-74e06792",
-        "ralph-tui-d6fbfed9",
-        "ralph-tui-7e8c3457",
-        "ralph-tui-3704b4b2"
+        "ralph-tui-13e13cbd",
+        "ralph-tui-22ea02a4",
+        "ralph-tui-93c5e329",
+        "ralph-tui-e717e0c1",
+        "ralph-tui-5fad9883",
+        "ralph-tui-963bfdb7"
       ]
     }
   },
@@ -187,6 +195,22 @@
         "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
       },
       "next_sprint": 6
+    },
+    {
+      "sprint": 6,
+      "at": "2026-02-24T09:34:29+00:00",
+      "summary": "retro generated; next sprint planned",
+      "retro_path": "reports/sprint_6_retro.md",
+      "best": {
+        "sharpe": 8.649446022611752,
+        "dd_abs": 0.012889916285242725,
+        "trades": 3666.0,
+        "run_group": "20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens",
+        "run_id": "holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1",
+        "config_path": "configs/holdout_20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1.yaml",
+        "results_dir": "artifacts/wfa/runs/20260123_relaxed8_nokpss_u250_churnfix_alt_top50_sens/holdout_relaxed8_nokpss_20260123_alt20220901_20230430_pv0p2_hurst0p8_hl0p02_60_corr0p4_ssd50000_kpss1p0_w2m1_t90_fixed_u250_top50_z1p00_exit0p06_hold180_cd180_ms0p1"
+      },
+      "next_sprint": 7
     }
   ],
   "auto_stop": false,
@@ -194,6 +218,7 @@
   "done_reason": "auto_stop disabled (set state.auto_stop=true to enable)",
   "history": [
     9.384782577212707,
+    8.649446022611752,
     8.649446022611752,
     8.649446022611752,
     8.649446022611752,
