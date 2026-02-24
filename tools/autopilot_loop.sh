@@ -202,12 +202,20 @@ run_pending_remote_queue() {
   parallel="${AUTOPILOT_REMOTE_PARALLEL:-10}"
 
   log "remote-run: starting queue=${queue_path} (parallel=${parallel})"
+  local rc=0
+  set +e
   (
     cd "${REPO_ROOT}/coint4"
     SYNC_UP=1 UPDATE_CODE=1 STOP_AFTER=1 SYNC_BACK=1 \
       bash scripts/remote/run_server_job.sh \
       bash -lc "ALLOW_HEAVY_RUN=1 bash scripts/optimization/watch_wfa_queue.sh --queue ${queue_rel} --parallel ${parallel}"
   )
+  rc=$?
+  set -e
+  if [[ "$rc" -ne 0 ]]; then
+    log "remote-run: FAILED rc=${rc} queue=${queue_path}"
+    return 0
+  fi
   log "remote-run: finished queue=${queue_path}"
 }
 
