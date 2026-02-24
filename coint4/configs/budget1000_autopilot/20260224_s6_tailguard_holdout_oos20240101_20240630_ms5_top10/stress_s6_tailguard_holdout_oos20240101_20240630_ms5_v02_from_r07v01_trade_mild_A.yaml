@@ -1,0 +1,5 @@
+base_config: ../20260223_tailguard_r07_fullspan_confirm_top3/stress_tailguard_r07_fullspan_v01_from_r06v02_trade_mild_A.yaml
+walk_forward:
+  start_date: '2024-01-01'
+  end_date: '2024-06-30'
+  max_steps: 5
