@@ -497,6 +497,38 @@ def main() -> int:
     ap.add_argument("--state", default=str(DEFAULT_STATE), help="Path to state.json")
     ap.add_argument("--repo-root", default=str(PROJECT_ROOT), help="Repo root (default: inferred)")
     ap.add_argument("--dry-run", action="store_true", help="Do not create beads tasks")
+    ap.add_argument(
+        "--candidate-min-trades",
+        type=int,
+        default=int(CANDIDATE_GATE_V1.min_trades),
+        help="Candidate gate: minimum total_trades (default: from CANDIDATE_GATE_V1)",
+    )
+    ap.add_argument(
+        "--candidate-max-dd-abs",
+        type=float,
+        default=float(CANDIDATE_GATE_V1.max_dd_abs),
+        help="Candidate gate: maximum abs(max_drawdown_on_equity) (default: from CANDIDATE_GATE_V1)",
+    )
+    ap.add_argument(
+        "--candidate-initial-capital",
+        type=float,
+        default=float(CANDIDATE_GATE_V1.initial_capital),
+        help="Candidate gate: initial capital used for tail bucket PnL threshold (default: from CANDIDATE_GATE_V1)",
+    )
+    ap.add_argument(
+        "--candidate-max-tail-bucket-loss-pct",
+        type=float,
+        default=float(CANDIDATE_GATE_V1.max_tail_bucket_loss_pct or 0.0),
+        help=(
+            "Candidate gate: maximum tail bucket loss as pct of initial capital; "
+            "set <=0 to disable tail gate (default: from CANDIDATE_GATE_V1)"
+        ),
+    )
+    ap.add_argument(
+        "--candidate-allow-missing-tail-metrics",
+        action="store_true",
+        help="Candidate gate: do not reject candidates when tail bucket metrics are missing/invalid (default: fail-closed)",
+    )
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -504,6 +536,13 @@ def main() -> int:
     goal_path = Path(args.goal).resolve()
 
     warnings: list[str] = []
+    candidate_gate = CandidateGate(
+        min_trades=int(args.candidate_min_trades),
+        max_dd_abs=float(args.candidate_max_dd_abs),
+        initial_capital=float(args.candidate_initial_capital),
+        max_tail_bucket_loss_pct=float(args.candidate_max_tail_bucket_loss_pct),
+        require_tail_metrics=not bool(args.candidate_allow_missing_tail_metrics),
+    )
 
     if not state_path.exists():
         raise SystemExit(f"state.json not found: {state_path}")
@@ -521,7 +560,9 @@ def main() -> int:
         try:
             payload = _read_json(run_index_path)
             if isinstance(payload, list):
-                top_rows = _pick_top_candidates(_extract_run_index_rows(payload), limit=5)
+                top_rows = _pick_top_candidates(
+                    _extract_run_index_rows(payload), limit=5, gate=candidate_gate, warnings=warnings
+                )
             else:
                 warnings.append(f"run_index.json unexpected root type: {type(payload).__name__}")
         except Exception as e:
@@ -534,6 +575,14 @@ def main() -> int:
         "generatedAt": _now_iso(),
         "sprintReviewed": sprint_n,
         "run_index_path": str(run_index_path) if run_index_path else None,
+        "candidate_gate": {
+            "version": "v1",
+            "min_trades": candidate_gate.min_trades,
+            "max_dd_abs": candidate_gate.max_dd_abs,
+            "initial_capital": candidate_gate.initial_capital,
+            "max_tail_bucket_loss_pct": candidate_gate.max_tail_bucket_loss_pct,
+            "require_tail_metrics": candidate_gate.require_tail_metrics,
+        },
         "best": (
             {
                 "sharpe": best_row.sharpe,
