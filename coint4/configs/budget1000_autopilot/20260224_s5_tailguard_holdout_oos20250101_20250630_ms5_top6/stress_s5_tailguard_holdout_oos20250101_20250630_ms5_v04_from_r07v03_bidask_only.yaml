@@ -1,0 +1,5 @@
+base_config: ../20260223_tailguard_r07_fullspan_confirm_top3/stress_tailguard_r07_fullspan_v03_from_r06v05_bidask_only.yaml
+walk_forward:
+  start_date: '2025-01-01'
+  end_date: '2025-06-30'
+  max_steps: 5
