@@ -1,0 +1,6 @@
+base_config: ../20260223_tailguard_r05b_ddfocus_fixend/stress_tailguard_r05b_ddfocus_fixend_v11_h2_quality_beta_tight.yaml
+walk_forward:
+  start_date: '2024-05-01'
+  end_date: '2025-06-30'
+  max_steps: 5
+

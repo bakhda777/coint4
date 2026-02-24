@@ -1,0 +1,6 @@
+base_config: ../20260223_tailguard_r04/stress_tailguard_r04_v11_h3_stability_mild.yaml
+walk_forward:
+  start_date: '2024-05-01'
+  end_date: '2025-06-30'
+  max_steps: 5
+
