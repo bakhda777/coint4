@@ -144,3 +144,12 @@
 
 Команда исполнения (скелет, запускать с рабочей машины, не здесь):
 - `STOP_AFTER=1 SYNC_BACK=1 bash coint4/scripts/remote/run_server_job.sh bash -lc 'bash scripts/batch/run_heavy_queue.sh --queue artifacts/wfa/aggregate/20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6/run_queue.csv'`
+
+## Postprocess: sync queue + rollup (2026-02-24, ralph-tui-18f44b61)
+
+- Best-effort синхронизация статусов очередей (точечно по группам): `20260223_s1_remote_ms5_queue`, `20260223_s2_tailguard_holdout_ms5_top3`, `20260223_s3_tailguard_holdout_ms5_top6`, `20260224_s3_tailguard_holdout_ms5_top6`, `20260224_s4_tailguard_holdout_ms5_top10`, `20260224_s5_tailguard_holdout_oos20250101_20250630_ms5_top6`, `20260224_s6_tailguard_holdout_oos20240101_20240630_ms5_top10`, `20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6`.
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
+  - Изменений не потребовалось.
+- Пересобран rollup индекс:
+  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
+  - `run_index` обновлён (entries=8385).
