@@ -1,0 +1,5 @@
+base_config: ../20260223_tailguard_r05b_ddfocus_fixend/holdout_tailguard_r05b_ddfocus_fixend_v03_h1_trade_balanced_B.yaml
+walk_forward:
+  start_date: '2024-07-01'
+  end_date: '2024-12-31'
+  max_steps: 5
