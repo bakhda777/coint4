@@ -195,7 +195,7 @@ run_pending_remote_queue() {
   fi
   queue_path="$(printf '%s' "${queue_path}" | tr -d '\r' | tr -d '\n')"
   if [[ -z "${queue_path}" ]]; then
-    log "remote-run: no pending sprint tailguard queues"
+    log "remote-run: no pending sprint tailguard queues (pwd=$(pwd))"
     return 0
   fi
   if [[ ! -f "${queue_path}" ]]; then
