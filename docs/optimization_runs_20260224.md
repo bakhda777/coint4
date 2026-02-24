@@ -1,4 +1,4 @@
-# Optimization runs — 2026-02-24 (S3–S5: remote tailguard holdout queues)
+# Optimization runs — 2026-02-24 (S3–S7: remote tailguard holdout queues)
 
 ## S3: remote tailguard holdout (top-6, max_steps<=5) — план
 
@@ -122,3 +122,25 @@
 - Пересобран rollup индекс:
   - `cd coint4 && PYTHONPATH=src ./.venv/bin/python3 scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
   - `run_index` обновлён (entries=8373).
+
+## S7: remote tailguard holdout (top-6, OOS 2023-07-01 → 2023-12-31, max_steps<=5) — план
+
+**run_group:** `20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6` (12 задач; 6 кандидатов × holdout+stress)
+
+Что запускаем (кандидаты):
+- Baseline: `tailguard_r04_v07_h2_quality_mild`.
+- Top-3 из `20260223_tailguard_r07_fullspan_confirm_top3` (v01/v02/v03).
+- Top-2 из `20260223_tailguard_r05b_ddfocus_fixend` (v14/v11).
+- Во всех конфигах: `walk_forward.start_date: 2023-07-01`, `walk_forward.end_date: 2023-12-31`, `walk_forward.max_steps: 5` (queue-guardrail).
+
+Артефакты/очередь:
+- `coint4/artifacts/wfa/aggregate/20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6/run_queue.csv`
+- результаты: `coint4/artifacts/wfa/runs/20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6/<run_id>/`
+
+Критерии успеха (после выполнения):
+- Holdout: `coverage_ratio>=0.95`, `min_pairs>=20`, `min_trades>=200`, `pnl>0`, и `worst_dd_pct<=0.20`.
+- Stress: `pnl>0` и `worst_dd_pct<=0.25` (при прочих равных).
+- Победитель: максимальный `score(worst_robust_sharpe)` среди вариантов, прошедших gates.
+
+Команда исполнения (скелет, запускать с рабочей машины, не здесь):
+- `STOP_AFTER=1 SYNC_BACK=1 bash coint4/scripts/remote/run_server_job.sh bash -lc 'bash scripts/batch/run_heavy_queue.sh --queue artifacts/wfa/aggregate/20260224_s7_tailguard_holdout_oos20230701_20231231_ms5_top6/run_queue.csv'`
