@@ -143,6 +143,8 @@ pending = []
 if agg_dir.exists():
     for queue_path in agg_dir.glob("*/run_queue.csv"):
         group = queue_path.parent.name
+        if "tailguard" not in group:
+            continue
         m = pattern.match(group)
         if not m:
             continue
@@ -170,7 +172,8 @@ if agg_dir.exists():
 if not pending:
     print("")
 else:
-    pending.sort(key=lambda x: (x[0], -x[1], x[2]))
+    # Prefer newest sprint queues (avoid spending time on stale backlog).
+    pending.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
     print(pending[0][2])
 PY
 }
