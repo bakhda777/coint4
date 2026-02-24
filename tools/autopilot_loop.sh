@@ -129,12 +129,18 @@ run_ralph_with_watchdog() {
   cleanup_stale_ralph_lock_and_sessions
 
   : >> "${RALPH_LOG_PATH}"
-  tail -n 0 -F "${RALPH_LOG_PATH}" &
-  local tail_pid=$!
-  trap 'kill -TERM "${tail_pid}" 2>/dev/null || true; wait "${tail_pid}" 2>/dev/null || true' RETURN
+  local tail_pid=""
+  # By default, do NOT tail the ralph log from inside the loop. It easily causes duplicated lines
+  # when multiple loops/tails exist (or when stdout is redirected). If you want follow-mode:
+  #   AUTOPILOT_FOLLOW_LOG=1 bash tools/autopilot_loop.sh
+  if [[ "${AUTOPILOT_FOLLOW_LOG:-0}" == "1" && -t 2 ]]; then
+    tail -n 0 -F "${RALPH_LOG_PATH}" >&2 &
+    tail_pid=$!
+    trap 'if [[ -n "${tail_pid}" ]]; then kill -TERM "${tail_pid}" 2>/dev/null || true; wait "${tail_pid}" 2>/dev/null || true; fi' RETURN
+  fi
 
   log "starting ralph-tui headless (log: ${RALPH_LOG_PATH})"
-  ralph-tui run --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> logs/ralph_headless.log 2>&1 &
+  ralph-tui run --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> "${RALPH_LOG_PATH}" 2>&1 &
   local run_pid=$!
   log "ralph-tui run pid=${run_pid}"
 
@@ -195,7 +201,7 @@ run_ralph_with_watchdog() {
 
       cleanup_ralph_lock_and_sessions
 
-      ralph-tui run --force --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> logs/ralph_headless.log 2>&1 &
+      ralph-tui run --force --headless --no-setup --serial --tracker beads --epic "${epic_id}" </dev/null >> "${RALPH_LOG_PATH}" 2>&1 &
       run_pid=$!
       log "ralph restarted pid=${run_pid}"
 

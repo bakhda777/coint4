@@ -63,6 +63,12 @@ def _today_ymd() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def _is_sharpe_audit_task(task: dict[str, Any]) -> bool:
+    title = str(task.get("title") or "").strip().lower()
+    # Be tolerant to quote types, punctuation and prefixes like "S3:".
+    return "sharpe" in title and "слишком высокий" in title
+
+
 def _to_float(value: object) -> Optional[float]:
     if value is None:
         return None
@@ -285,6 +291,7 @@ def _ensure_min_tasks(tasks: list[dict[str, Any]], *, min_count: int, warnings: 
 def _generate_next_sprint_tasks(
     *,
     next_sprint: int,
+    state: dict[str, Any],
     last_results: Optional[dict[str, Any]],
     warnings: list[str],
 ) -> list[dict[str, Any]]:
@@ -307,6 +314,15 @@ def _generate_next_sprint_tasks(
 
     focus = ", ".join(focus_bits) if focus_bits else "baseline неизвестен (артефакты не найдены)"
 
+    audits = state.get("audits") if isinstance(state.get("audits"), dict) else {}
+    sharpe_audit = audits.get("sharpe_consistency") if isinstance(audits, dict) else None
+    sharpe_audit_ok = bool(sharpe_audit.get("ok")) if isinstance(sharpe_audit, dict) else False
+
+    best = last_results.get("best") if isinstance(last_results, dict) else None
+    best_results_dir = str(best.get("results_dir") or "") if isinstance(best, dict) else ""
+    if best_results_dir and not best_results_dir.startswith("coint4/"):
+        best_results_dir = f"coint4/{best_results_dir}"
+
     tasks: list[dict[str, Any]] = [
         {
             "title": f"S{next_sprint}: Обновить optimization_state.md по текущему rollup",
@@ -317,20 +333,6 @@ def _generate_next_sprint_tasks(
                 "Проверка:\n"
                 "- [ ] Обновлён docs/optimization_state.md: текущий best + метрики (Sharpe, |DD|, trades)\n"
                 "- [ ] Указаны пути к rollup: coint4/artifacts/wfa/aggregate/rollup/run_index.*\n"
-            ),
-        },
-        {
-            "title": f"S{next_sprint}: Проверить ‘слишком высокий Sharpe’ на консистентность метрик",
-            "priority": 1,
-            "description": (
-                "Цель: исключить артефакты расчёта Sharpe/annualization/данных.\n\n"
-                "Ожидаемый эффект: понимание, можно ли доверять топовым Sharpe из run_index.\n\n"
-                "Проверка:\n"
-                "- [ ] Запущен tools/audit_sharpe.py (или validate_single_rerun.py) для 1–3 топовых прогонов\n"
-                "- [ ] Краткий вывод добавлен в docs/optimization_runs_YYYYMMDD.md\n"
-                "- [ ] Если найден баг/несовпадение — заведена отдельная задача/фикс (маленькая, в 1 итерацию)\n"
-                "\n"
-                "Ограничение: не запускать тяжёлые прогоны здесь; только аудит уже имеющихся артефактов.\n"
             ),
         },
         {
@@ -385,6 +387,30 @@ def _generate_next_sprint_tasks(
             ),
         },
     ]
+
+    if not sharpe_audit_ok:
+        target_line = f"- target_run_dir: `{best_results_dir}`\n" if best_results_dir else ""
+        tasks.insert(
+            1,
+            {
+                "title": f"S{next_sprint}: Проверить ‘слишком высокий Sharpe’ на консистентность метрик",
+                "priority": 1,
+                "description": (
+                    "Цель: исключить артефакты расчёта Sharpe/annualization/данных.\n\n"
+                    "Ожидаемый эффект: понимание, можно ли доверять топовым Sharpe из run_index.\n\n"
+                    "Контекст:\n"
+                    f"{target_line}"
+                    "\n"
+                    "Проверка:\n"
+                    "- [ ] Запущен tools/audit_sharpe.py (или validate_single_rerun.py) для 1–3 топовых прогонов\n"
+                    + (f"  - например: `python3 tools/audit_sharpe.py --runs-glob '{best_results_dir}'`\n" if best_results_dir else "")
+                    + "- [ ] Краткий вывод добавлен в docs/optimization_runs_YYYYMMDD.md\n"
+                    "- [ ] Если найден баг/несовпадение — заведена отдельная задача/фикс (маленькая, в 1 итерацию)\n"
+                    "\n"
+                    "Ограничение: не запускать тяжёлые прогоны здесь; только аудит уже имеющихся артефактов.\n"
+                ),
+            },
+        )
 
     return _ensure_min_tasks(tasks, min_count=6, warnings=warnings)
 
@@ -534,6 +560,22 @@ def main() -> int:
         "open": len(open_),
         "closed_task_ids": [str(t.get("id")) for t in closed],
     }
+
+    # Sticky "done once" audits: if the Sharpe-consistency audit task was closed in this sprint,
+    # record it into state so it won't be re-scheduled every sprint.
+    if any(_is_sharpe_audit_task(t) for t in closed):
+        audits = state.get("audits")
+        if not isinstance(audits, dict):
+            audits = {}
+            state["audits"] = audits
+        sharpe_audit = audits.get("sharpe_consistency")
+        if not isinstance(sharpe_audit, dict):
+            sharpe_audit = {}
+            audits["sharpe_consistency"] = sharpe_audit
+        sharpe_audit.setdefault("ok", True)
+        sharpe_audit.setdefault("at", _now_iso())
+        sharpe_audit.setdefault("sprint", sprint_n)
+
     sprint_complete = len(sprint_tasks) > 0 and len(open_) == 0 and len(in_progress) == 0
 
     # Step B: retro report
@@ -578,7 +620,12 @@ def main() -> int:
 
     # Step C: next sprint planning
     next_sprint = sprint_n + 1
-    planned_tasks = _generate_next_sprint_tasks(next_sprint=next_sprint, last_results=last_results, warnings=warnings)
+    planned_tasks = _generate_next_sprint_tasks(
+        next_sprint=next_sprint,
+        state=state,
+        last_results=last_results,
+        warnings=warnings,
+    )
     planned_titles = "\n".join([f"- {t['title']}" for t in planned_tasks])
 
     rendered = _render_template(
