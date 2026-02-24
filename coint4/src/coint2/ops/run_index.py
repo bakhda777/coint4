@@ -73,6 +73,53 @@ class RunIndexEntry:
     tail_loss_worst_period_share: Optional[float]
 
 
+def _needs_coverage_recompute(entry: RunIndexEntry) -> bool:
+    """Detect invalid/suspicious coverage fields.
+
+    We treat out-of-range values as invalid, because older runs could write
+    observed days outside the configured [start_date, end_date] window,
+    which inflates coverage_ratio > 1 and breaks downstream gating.
+    """
+    cov = entry.coverage_ratio
+    if cov is None:
+        return True
+    try:
+        cov_f = float(cov)
+    except (TypeError, ValueError):
+        return True
+    if not math.isfinite(cov_f):
+        return True
+
+    # Accept small float noise, but fail-closed on clear out-of-range values.
+    tol = 1e-9
+    if cov_f < -tol or cov_f > 1.0 + tol:
+        return True
+
+    exp = entry.expected_test_days
+    obs = entry.observed_test_days
+    if exp is not None and obs is not None:
+        try:
+            exp_f = float(exp)
+            obs_f = float(obs)
+        except (TypeError, ValueError):
+            return True
+        if math.isfinite(exp_f) and math.isfinite(obs_f):
+            # observed > expected implies missing_test_days < 0, i.e. out-of-window rows.
+            if obs_f > exp_f + tol:
+                return True
+
+    miss = entry.missing_test_days
+    if miss is not None:
+        try:
+            miss_f = float(miss)
+        except (TypeError, ValueError):
+            return True
+        if math.isfinite(miss_f) and miss_f < -1e-6:
+            return True
+
+    return False
+
+
 def _normalize_path(path: Path, project_root: Path) -> str:
     target = path
     if not target.is_absolute():
@@ -863,10 +910,13 @@ def build_run_index(
 
         # Coverage metrics (fail-closed): prefer values from strategy_metrics.csv, but when absent
         # (legacy runs) compute from daily_pnl.csv + config walk_forward dates.
+        #
+        # Also: older runs could emit observed_test_days outside the configured window, leading
+        # to coverage_ratio > 1. Treat those values as invalid and recompute (opt-in).
         if (
             compute_legacy_coverage
             and entry.metrics_present
-            and (entry.coverage_ratio is None or not math.isfinite(float(entry.coverage_ratio)))
+            and _needs_coverage_recompute(entry)
         ):
             walk_forward = config_payload.get("walk_forward")
             if isinstance(walk_forward, dict):

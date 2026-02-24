@@ -27,6 +27,55 @@ def _write_metrics(path: Path, *, sharpe: float = 0.5) -> None:
         writer.writerow([sharpe, 100.0, -20.0, 200, 50, 10.0, -5.0, 2.0])
 
 
+def _write_metrics_with_coverage(
+    path: Path,
+    *,
+    sharpe: float = 0.5,
+    expected_test_days: float = 3.0,
+    observed_test_days: float = 5.0,
+    coverage_ratio: float = 5.0 / 3.0,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "sharpe_ratio_abs",
+                "total_pnl",
+                "max_drawdown_abs",
+                "total_trades",
+                "total_pairs_traded",
+                "best_pair_pnl",
+                "worst_pair_pnl",
+                "avg_pnl_per_pair",
+                "expected_test_days",
+                "observed_test_days",
+                "coverage_ratio",
+                "zero_pnl_days",
+                "zero_pnl_days_pct",
+                "missing_test_days",
+            ]
+        )
+        writer.writerow(
+            [
+                sharpe,
+                100.0,
+                -20.0,
+                200,
+                50,
+                10.0,
+                -5.0,
+                2.0,
+                expected_test_days,
+                observed_test_days,
+                coverage_ratio,
+                0.0,
+                0.0,
+                expected_test_days - observed_test_days,
+            ]
+        )
+
+
 def _write_daily_pnl(path: Path, rows) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as handle:
@@ -220,6 +269,68 @@ def test_build_run_index_legacy_coverage_fallback_clips_to_config_dates(tmp_path
     assert entries[0].coverage_ratio is None
 
     # Opt-in: compute legacy coverage, but clip observed days to the configured test window.
+    entries = build_run_index(runs_dir, [queue_path], tmp_path, compute_legacy_coverage=True)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.expected_test_days == 3.0
+    assert entry.observed_test_days == 3.0
+    assert entry.coverage_ratio == 1.0
+    assert entry.zero_pnl_days == 2.0
+    assert math.isclose(float(entry.zero_pnl_days_pct or 0.0), 2.0 / 3.0, rel_tol=1e-9)
+    assert entry.missing_test_days == 0.0
+
+
+def test_build_run_index_recomputes_invalid_coverage_when_opted_in(tmp_path: Path) -> None:
+    runs_dir = tmp_path / "artifacts" / "wfa" / "runs"
+    run_dir = runs_dir / "group_cov_bad" / "run_cov_bad"
+
+    # Simulate an older run that wrote out-of-window days into observed_test_days/coverage_ratio.
+    _write_metrics_with_coverage(run_dir / "strategy_metrics.csv", sharpe=0.7)
+    _write_daily_pnl(
+        run_dir / "daily_pnl.csv",
+        [
+            ("2024-01-01", 0.0),  # outside window
+            ("2024-01-02", 0.0),  # inside window, zero
+            ("2024-01-03", 1.0),  # inside window, non-zero
+            ("2024-01-04", 0.0),  # inside window, zero
+            ("2024-01-05", 0.0),  # outside window
+        ],
+    )
+
+    cfg_path = tmp_path / "configs" / "run_cov_bad.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "walk_forward:",
+                "  start_date: '2024-01-02'",
+                "  end_date: '2024-01-04'",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    queue_path = (
+        tmp_path
+        / "artifacts"
+        / "wfa"
+        / "aggregate"
+        / "group_cov_bad"
+        / "run_queue.csv"
+    )
+    _write_queue(
+        queue_path,
+        [("configs/run_cov_bad.yaml", "artifacts/wfa/runs/group_cov_bad/run_cov_bad", "completed")],
+    )
+
+    # Default: keep whatever strategy_metrics.csv wrote.
+    entries = build_run_index(runs_dir, [queue_path], tmp_path)
+    assert len(entries) == 1
+    assert entries[0].coverage_ratio is not None
+    assert float(entries[0].coverage_ratio) > 1.0
+
+    # Opt-in: recompute invalid coverage from daily_pnl.csv + config dates.
     entries = build_run_index(runs_dir, [queue_path], tmp_path, compute_legacy_coverage=True)
     assert len(entries) == 1
     entry = entries[0]
