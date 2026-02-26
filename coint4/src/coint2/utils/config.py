@@ -24,6 +24,9 @@ class PairSelectionConfig(BaseModel):
     max_half_life_days: float
     min_mean_crossings: int
     min_correlation: float = 0.5  # НОВЫЙ параметр для фильтрации по корреляции
+    # How to rank candidate pairs for backtesting / portfolio concurrency decisions.
+    # Supported: "spread_std" (default), "composite_v1".
+    rank_mode: str | None = None
 
     # Extended filters
     adaptive_quantiles: bool | None = None
@@ -225,6 +228,12 @@ class PortfolioConfig(BaseModel):
     min_position_size_pct: float = 0.005
     max_position_size_pct: float = 0.02
     volatility_adjustment_factor: float = 2.0
+    # How to rank new entry signals when max_active_positions is binding (portfolio simulator).
+    # Supported: "abs_signal" (default), "abs_signal_x_pair_quality".
+    entry_rank_mode: str = "abs_signal"
+    # Strength of pair-quality bias when entry_rank_mode uses pair-quality weights.
+    # 0.0 disables the bias. Values > 1.0 are allowed but can dominate z-score strength.
+    entry_pair_quality_alpha: float = 0.0
 
     # -------- Validators --------
     @model_validator(mode="after")

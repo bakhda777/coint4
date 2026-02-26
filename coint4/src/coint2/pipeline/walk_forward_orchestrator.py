@@ -37,6 +37,7 @@ from coint2.engine.numba_engine import NumbaPairBacktester as PairBacktester
 from coint2.core.portfolio import Portfolio
 from coint2.utils.vectorized_ops import VectorizedStatsCalculator, vectorized_eval_expression
 from coint2.pipeline.cost_model import apply_fully_costed_model
+from coint2.pipeline.pair_ranking import apply_entry_rank, rank_pairs
 
 def convert_hours_to_periods(hours: float, bar_minutes: int) -> int:
     """
@@ -179,6 +180,7 @@ def _simulate_realistic_portfolio(
     cfg,
     all_positions=None,
     all_scores=None,
+    pair_entry_weights: list[float] | None = None,
     return_diagnostics: bool = False,
 ):
     """
@@ -248,6 +250,14 @@ def _simulate_realistic_portfolio(
     max_positions = int(getattr(portfolio_cfg, "max_active_positions", 0) or 0)
     if max_positions < 1:
         max_positions = 1
+
+    entry_rank_mode = str(getattr(portfolio_cfg, "entry_rank_mode", "abs_signal") or "abs_signal")
+    pair_quality_alpha = float(getattr(portfolio_cfg, "entry_pair_quality_alpha", 0.0) or 0.0)
+    pair_quality_by_col: dict[str, float] = {}
+    if pair_entry_weights:
+        for i, w in enumerate(pair_entry_weights):
+            pair_quality_by_col[f"pair_{i}"] = float(w)
+
     portfolio_pnl = pd.Series(0.0, index=pnl_df.index)
     turnover_units = pd.Series(0.0, index=pnl_df.index)
     exposure_units = pd.Series(0.0, index=pnl_df.index)
@@ -261,6 +271,12 @@ def _simulate_realistic_portfolio(
     _hard_stop_day_counted = False
 
     logger.info(f"🎯 СИМУЛЯЦИЯ ПОРТФЕЛЯ: {len(all_pnls)} пар, лимит {max_positions} позиций")
+    if entry_rank_mode.strip().lower() != "abs_signal" and pair_quality_alpha > 0:
+        logger.info(
+            "📌 Entry ranking: mode=%s, pair_quality_alpha=%.2f",
+            entry_rank_mode,
+            pair_quality_alpha,
+        )
     if daily_stop_pct > 0:
         logger.info(
             "🛡️ Portfolio safeguards: daily_stop=%.2f%%, deleverage_start=%.2f%%, deleverage_factor=%.2f",
@@ -324,10 +340,16 @@ def _simulate_realistic_portfolio(
             for pair_name in current_signals.index:
                 if current_entries[pair_name] and pair_name not in active_positions:
                     if scores_df is not None and pair_name in scores_df.columns:
-                        strength = abs(scores_df.loc[timestamp, pair_name])
+                        base_strength = abs(scores_df.loc[timestamp, pair_name])
                     else:
-                        strength = abs(current_pnls[pair_name])
-                    new_signals.append((pair_name, strength))
+                        base_strength = abs(current_pnls[pair_name])
+                    strength = apply_entry_rank(
+                        float(base_strength),
+                        pair_quality=pair_quality_by_col.get(pair_name),
+                        entry_rank_mode=entry_rank_mode,
+                        pair_quality_alpha=pair_quality_alpha,
+                    )
+                    new_signals.append((pair_name, float(strength)))
 
             # 3. Сортируем новые сигналы по силе
             new_signals.sort(key=lambda x: x[1], reverse=True)
@@ -1933,11 +1955,11 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                             pairs = filtered_pairs
 
         # Select all filtered pairs for trading (no limit here)
-        # Сортируем пары по качеству (по убыванию std, что означает большую волатильность спреда)
-        # max_active_positions теперь ограничивает только одновременно открытые позиции
+        # max_active_positions ограничивает только одновременно открытые позиции.
+        pair_quality_weights_by_name: dict[str, float] = {}
         if pairs:
-            # Сортируем пары по стандартному отклонению спреда (больше = потенциально более прибыльно)
-            quality_sorted_pairs = sorted(pairs, key=lambda x: abs(x[4]), reverse=True)  # x[4] = std
+            rank_mode = str(getattr(cfg.pair_selection, "rank_mode", None) or "spread_std")
+            quality_sorted_pairs, pair_quality_weights_by_name = rank_pairs(pairs, rank_mode)
             active_pairs = quality_sorted_pairs  # Берем ВСЕ отфильтрованные пары
             max_pairs = int(getattr(cfg.pair_selection, "max_pairs", 0) or 0)
             if max_pairs > 0 and len(active_pairs) > max_pairs:
@@ -1954,9 +1976,19 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                     max_pairs,
                     len(active_pairs),
                 )
-            logger.info("  Топ-3 пары по волатильности спреда:")
+            logger.info("  Pair ranking: mode=%s", rank_mode)
+            logger.info("  Топ-3 пары по качеству:")
             for i, (s1, s2, beta, mean, std, metrics) in enumerate(active_pairs[:3], 1):
-                logger.info(f"    {i}. {s1}-{s2}: beta={beta:.4f}, std={std:.4f}")
+                quality = pair_quality_weights_by_name.get(f"{s1}-{s2}", float("nan"))
+                logger.info(
+                    "    %d. %s-%s: beta=%.4f, std=%.4f, quality=%.3f",
+                    i,
+                    s1,
+                    s2,
+                    beta,
+                    std,
+                    quality,
+                )
         else:
             active_pairs = []
         
@@ -2107,11 +2139,16 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 all_pnl_series = [result['pnl_series'] for result in successful_results]
                 all_positions = [result.get('positions', pd.Series(dtype=float)) for result in successful_results]
                 all_scores = [result.get('z_scores', pd.Series(dtype=float)) for result in successful_results]
+                pair_entry_weights = [
+                    float(pair_quality_weights_by_name.get(result["trade_stat"]["pair"], 0.5))
+                    for result in successful_results
+                ]
                 step_pnl, step_diagnostics = _simulate_realistic_portfolio(
                     all_pnl_series,
                     cfg,
                     all_positions=all_positions,
                     all_scores=all_scores,
+                    pair_entry_weights=pair_entry_weights,
                     return_diagnostics=True,
                 )
                 step_turnover_units = step_diagnostics.get("turnover_units", pd.Series(dtype=float))
