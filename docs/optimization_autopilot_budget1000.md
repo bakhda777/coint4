@@ -40,6 +40,11 @@
    - `cd coint4`
    - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --dry-run --reset`
 
+1a) Offline планировщик следующего батча (без VPS): продвигает `state.json` по уже completed очередям (по `rollup/run_index.csv`), генерирует следующий planned `run_queue.csv`+configs и выходит.
+   - `cd coint4`
+   - первый шаг: `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --plan-next --reset`
+   - продолжение: `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --plan-next --resume`
+
 2) Полный запуск (запускает VPS, ждёт завершения очередей, постпроцессит, продолжает до stop-condition):
    - `cd coint4`
    - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/autopilot_budget1000.py --config configs/autopilot/budget1000.yaml --reset`

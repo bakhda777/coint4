@@ -1093,7 +1093,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Reset controller state (creates a timestamped .bak copy if state.json exists).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Generate next queue only; do not run VPS.")
+    parser.add_argument(
+        "--plan-next",
+        action="store_true",
+        help=(
+            "Offline planner: advance controller state using already-completed queues, "
+            "ensure the next non-completed queue exists, then exit (never runs VPS)."
+        ),
+    )
     args = parser.parse_args(argv)
+    if args.dry_run and args.plan_next:
+        raise SystemExit("--dry-run and --plan-next are mutually exclusive")
 
     app_root = _resolve_app_root()
     repo_root = _resolve_repo_root(app_root)
@@ -1391,45 +1401,54 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Ensure queue + configs are tracked for SYNC_UP=1.
             # NOTE: SYNC_UP=1 uploads only `git ls-files` => stage every referenced config file
             # (not just the directory pathspec), otherwise VPS execution will see missing configs.
-            tracked_paths: List[Path] = []
-            tracked_paths.append(Path("coint4") / queue_path.relative_to(app_root))
-            for cfg_rel in queue_configs:
-                tracked_paths.append(Path("coint4") / cfg_rel)
-            _ensure_tracked_for_sync_up(
-                repo_root=repo_root,
-                paths_rel_repo=tracked_paths,
-                auto_stage=auto_stage,
-            )
+            if not args.plan_next:
+                tracked_paths: List[Path] = []
+                tracked_paths.append(Path("coint4") / queue_path.relative_to(app_root))
+                for cfg_rel in queue_configs:
+                    tracked_paths.append(Path("coint4") / cfg_rel)
+                _ensure_tracked_for_sync_up(
+                    repo_root=repo_root,
+                    paths_rel_repo=tracked_paths,
+                    auto_stage=auto_stage,
+                )
 
             if args.dry_run:
                 print(f"[autopilot] dry-run: generated/ready queue: {queue_path.relative_to(app_root)}")
                 return 0
 
-            # Run on VPS (heavy) unless the queue is already completed locally.
-            if _queue_is_fully_completed(queue_path, app_root=app_root):
-                print(f"[autopilot] queue already completed, skipping VPS run: {queue_path.relative_to(app_root)}")
-            else:
-                _run_vps_queue(
-                    repo_root=repo_root,
-                    run_group=run_group,
-                    queue_rel_app_root=str(queue_path.relative_to(app_root)),
-                    sync_up=sync_up,
-                    stop_after=stop_after,
-                )
+            queue_completed = _queue_is_fully_completed(queue_path, app_root=app_root)
+            if args.plan_next and not queue_completed:
+                print(f"[autopilot] plan-next: next queue to run: {queue_path.relative_to(app_root)}")
+                return 0
 
-            # Local postprocess: canonical metrics + rollup rebuild.
-            post_cmd = [
-                str(py),
-                "scripts/optimization/postprocess_queue.py",
-                "--queue",
-                str(queue_path.relative_to(app_root)),
-                "--bar-minutes",
-                str(bar_minutes),
-                "--build-rollup",
-            ]
-            if overwrite_canonical:
-                post_cmd.append("--overwrite-canonical")
-            _run(post_cmd, cwd=app_root, env=env_py, check=True)
+            if not args.plan_next:
+                # Run on VPS (heavy) unless the queue is already completed locally.
+                if queue_completed:
+                    print(
+                        f"[autopilot] queue already completed, skipping VPS run: {queue_path.relative_to(app_root)}"
+                    )
+                else:
+                    _run_vps_queue(
+                        repo_root=repo_root,
+                        run_group=run_group,
+                        queue_rel_app_root=str(queue_path.relative_to(app_root)),
+                        sync_up=sync_up,
+                        stop_after=stop_after,
+                    )
+
+                # Local postprocess: canonical metrics + rollup rebuild.
+                post_cmd = [
+                    str(py),
+                    "scripts/optimization/postprocess_queue.py",
+                    "--queue",
+                    str(queue_path.relative_to(app_root)),
+                    "--bar-minutes",
+                    str(bar_minutes),
+                    "--build-rollup",
+                ]
+                if overwrite_canonical:
+                    post_cmd.append("--overwrite-canonical")
+                _run(post_cmd, cwd=app_root, env=env_py, check=True)
 
             # Selection for this sweep.
             selection = select_best_multiwindow(
