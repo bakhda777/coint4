@@ -121,6 +121,21 @@ Engine обязан:
 - итоговый `score` и `gate_failures[]` (если есть),
 - `profile` (short_oos_v1/fullspan_v1) и все параметры порогов/penalty.
 
+## Evaluator protocol v2 (multi-objective)
+
+`v2` добавляет формальный multi-objective ранжирующий слой поверх тех же hard-gates:
+- objective vector: `worst_robust_sh`, `q_robust_sh`, `avg_robust_sh`, `worst_dd_pct(min)`, `worst_pnl`;
+- primary rank: Pareto front (dominance);
+- secondary rank: utility decomposition по нормализованным objective-компонентам и weights.
+
+Контракт fail-closed:
+- missing/non-finite objective value трактуется как worst-case в dominance;
+- decomposition сохраняет компонент `missing=true` и нулевой normalized contribution.
+
+Референс-реализация:
+- `coint4/src/coint2/ops/evaluator.py`
+- интеграция в ранкер: `coint4/scripts/optimization/rank_multiwindow_robust_runs.py --evaluator-protocol v2`
+
 ## Similarity / diversity (v1)
 
 MVP similarity — **только по genome** (параметрам), без curve-matching.
@@ -192,4 +207,3 @@ Decision включает:
 - Нет paired `holdout_*/stress_*` => кандидат не проходит `metrics_present`.
 - Нет `daily_pnl.csv` там, где требуется `fullspan_v1` => `NO_PROMOTE`.
 - Любая неоднозначность в метриках/окнах/статусах => кандидат не в elite/promote.
-

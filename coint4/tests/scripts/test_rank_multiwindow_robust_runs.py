@@ -535,6 +535,39 @@ def test_hybrid_mode_uses_weighted_score_formula(tmp_path: Path, monkeypatch, ca
     assert float(top_row["score"]) == pytest.approx(expected, abs=1e-3)
 
 
+def test_evaluator_protocol_v2_uses_pareto_plus_decomposition(tmp_path: Path, monkeypatch, capsys) -> None:
+    module = _load_rank_module(tmp_path)
+    run_index = _build_run_index_for_score_modes(tmp_path)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "rank_multiwindow_robust_runs.py",
+            "--run-index",
+            str(run_index),
+            "--min-windows",
+            "5",
+            "--min-trades",
+            "1",
+            "--min-pairs",
+            "1",
+            "--top",
+            "2",
+            "--evaluator-protocol",
+            "v2",
+        ],
+    )
+    rc = module.main()
+    assert rc == 0
+
+    top_row = _first_rank_row(capsys.readouterr().out)
+    assert top_row["score_mode"] == "evaluator_v2"
+    assert top_row["variant_id"] == "variant_b"
+    assert top_row["pareto_front"] == "1"
+    assert "worst_robust_sh:" in top_row["decomposition"]
+
+
 def test_pair_concentration_gate_rejects_overconcentrated_variant(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

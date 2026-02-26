@@ -18,6 +18,12 @@ Alternative objectives (`--score-mode`):
   - hybrid:    score = w_worst * worst + w_q * q_score + w_avg * avg
                with weights from `--hybrid-*-weight` (normalized to sum=1)
 
+Evaluator protocol v2 (`--evaluator-protocol v2`):
+  - primary rank: Pareto front over objective vector
+    [worst_robust_sh, q_robust_sh, avg_robust_sh, worst_dd_pct(min), worst_pnl]
+  - tie-break inside front: weighted utility decomposition (normalized objective terms)
+  - emitted in table columns: pareto_front, dominated_by, decomposition
+
 Optional fullspan contract (`--fullspan-policy-v1`):
   score_fullspan_v1 = worst_robust_sharpe
       - tail_q_penalty * max(0, (-q_tail / initial_capital) - tail_q_soft_loss_pct)
@@ -32,7 +38,7 @@ import argparse
 import csv
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -99,6 +105,9 @@ class _RankRow:
     worst_tail_period_share: Optional[float]
     worst_step_pnl: Optional[float]
     q_step_pnl: Optional[float]
+    pareto_front: Optional[int] = None
+    dominated_by: Optional[int] = None
+    decomposition: Optional[str] = None
 
 
 def _to_bool(value: str) -> bool:
@@ -353,6 +362,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--evaluator-protocol",
+        choices=("v1", "v2"),
+        default="v1",
+        help=(
+            "Ranking protocol: v1 uses scalar score_mode objective, "
+            "v2 uses formal multi-objective evaluator (Pareto + utility decomposition)."
+        ),
+    )
+    parser.add_argument(
         "--quantile-q",
         type=float,
         default=0.20,
@@ -375,6 +393,42 @@ def main() -> int:
         type=float,
         default=0.20,
         help="Hybrid weight for average robust Sharpe (default: 0.20).",
+    )
+    parser.add_argument(
+        "--v2-weight-worst-robust",
+        type=float,
+        default=0.45,
+        help="Evaluator v2 utility weight for worst robust Sharpe objective.",
+    )
+    parser.add_argument(
+        "--v2-weight-quantile-robust",
+        type=float,
+        default=0.20,
+        help="Evaluator v2 utility weight for quantile robust Sharpe objective.",
+    )
+    parser.add_argument(
+        "--v2-weight-avg-robust",
+        type=float,
+        default=0.10,
+        help="Evaluator v2 utility weight for average robust Sharpe objective.",
+    )
+    parser.add_argument(
+        "--v2-weight-worst-dd",
+        type=float,
+        default=0.20,
+        help="Evaluator v2 utility weight for worst drawdown objective (minimize).",
+    )
+    parser.add_argument(
+        "--v2-weight-worst-pnl",
+        type=float,
+        default=0.05,
+        help="Evaluator v2 utility weight for worst robust PnL objective.",
+    )
+    parser.add_argument(
+        "--v2-decomposition-top",
+        type=int,
+        default=3,
+        help="How many strongest objective terms to include in v2 decomposition output.",
     )
     parser.add_argument(
         "--fullspan-policy-v1",
@@ -442,6 +496,10 @@ def main() -> int:
         raise SystemExit("--max-tail-pair-share must be in [0, 1]")
     if args.max_tail_period_share is not None and not (0.0 <= float(args.max_tail_period_share) <= 1.0):
         raise SystemExit("--max-tail-period-share must be in [0, 1]")
+    if args.v2_decomposition_top < 1:
+        raise SystemExit("--v2-decomposition-top must be >= 1")
+    if args.fullspan_policy_v1 and str(args.evaluator_protocol) == "v2":
+        raise SystemExit("--evaluator-protocol v2 cannot be combined with --fullspan-policy-v1")
     hybrid_worst_weight, hybrid_q_weight, hybrid_avg_weight = _hybrid_weights(args)
 
     project_root = Path(__file__).resolve().parents[2]
@@ -726,7 +784,65 @@ def main() -> int:
             )
         )
 
-    if args.fullspan_policy_v1:
+    if str(args.evaluator_protocol) == "v2" and rows:
+        from coint2.ops.evaluator import (
+            CandidateEvaluationInput,
+            ObjectiveSpec,
+            format_decomposition,
+            rank_candidates_v2,
+        )
+
+        v2_specs = [
+            ObjectiveSpec(name="worst_robust_sh", direction="maximize", weight=float(args.v2_weight_worst_robust)),
+            ObjectiveSpec(name="q_robust_sh", direction="maximize", weight=float(args.v2_weight_quantile_robust)),
+            ObjectiveSpec(name="avg_robust_sh", direction="maximize", weight=float(args.v2_weight_avg_robust)),
+            ObjectiveSpec(name="worst_dd_pct", direction="minimize", weight=float(args.v2_weight_worst_dd)),
+            ObjectiveSpec(name="worst_pnl", direction="maximize", weight=float(args.v2_weight_worst_pnl)),
+        ]
+
+        inputs = [
+            CandidateEvaluationInput(
+                candidate_id=f"{row.run_group}::{row.variant}",
+                objectives={
+                    "worst_robust_sh": float(row.worst_robust),
+                    "q_robust_sh": float(row.q_robust),
+                    "avg_robust_sh": float(row.avg_robust),
+                    "worst_dd_pct": float(row.worst_dd),
+                    "worst_pnl": row.worst_pnl,
+                },
+            )
+            for row in rows
+        ]
+        ranked = rank_candidates_v2(inputs, objective_specs=v2_specs)
+        ranked_map = {item.candidate_id: item for item in ranked}
+        rows = [
+            replace(
+                row,
+                score=float(ranked_map[f"{row.run_group}::{row.variant}"].utility_score),
+                score_mode="evaluator_v2",
+                pareto_front=int(ranked_map[f"{row.run_group}::{row.variant}"].pareto_front),
+                dominated_by=int(ranked_map[f"{row.run_group}::{row.variant}"].dominated_by),
+                decomposition=format_decomposition(
+                    ranked_map[f"{row.run_group}::{row.variant}"].decomposition,
+                    top_n=int(args.v2_decomposition_top),
+                ),
+            )
+            for row in rows
+        ]
+
+    if str(args.evaluator_protocol) == "v2":
+        rows.sort(
+            key=lambda row: (
+                row.pareto_front if row.pareto_front is not None else 10**9,
+                -row.score,
+                -row.worst_robust,
+                -row.q_robust,
+                -row.avg_robust,
+                row.worst_dd,
+                row.variant,
+            )
+        )
+    elif args.fullspan_policy_v1:
         # Canonical tie-break for fullspan: worst_robust_pnl -> worst_dd_pct -> avg_robust_sharpe.
         rows.sort(
             key=lambda row: (
@@ -780,17 +896,17 @@ def main() -> int:
     q_robust_label = f"q{int(round(args.quantile_q * 100)):02d}_robust_sh"
     q_step_label = f"q{int(round(args.tail_quantile * 100)):02d}_step_pnl"
     print(
-        "| rank | score_mode | score | worst_robust_sh | {q_robust_label} | avg_robust_sh | worst_dd_pct | avg_dd_pct | worst_psr | worst_dsr | windows | variant_id | sample_config | run_group | worst_pnl | avg_pnl | worst_pair_tail_share | worst_period_tail_share | worst_step_pnl | {q_step_label} |".format(
+        "| rank | score_mode | score | worst_robust_sh | {q_robust_label} | avg_robust_sh | worst_dd_pct | avg_dd_pct | worst_psr | worst_dsr | windows | variant_id | sample_config | run_group | worst_pnl | avg_pnl | worst_pair_tail_share | worst_period_tail_share | worst_step_pnl | {q_step_label} | pareto_front | dominated_by | decomposition |".format(
             q_robust_label=q_robust_label,
             q_step_label=q_step_label,
         )
     )
     print(
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|"
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"
     )
     for idx, row in enumerate(rows, 1):
         print(
-            "| {rank} | {mode} | {score} | {worst} | {qrobust} | {avg} | {wdd} | {add} | {wpsr} | {wdsr} | {n} | {variant} | {cfg} | {group} | {wpnl} | {apnl} | {wpair} | {wperiod} | {wstep} | {qstep} |".format(
+            "| {rank} | {mode} | {score} | {worst} | {qrobust} | {avg} | {wdd} | {add} | {wpsr} | {wdsr} | {n} | {variant} | {cfg} | {group} | {wpnl} | {apnl} | {wpair} | {wperiod} | {wstep} | {qstep} | {pareto} | {dominated_by} | {decomposition} |".format(
                 rank=idx,
                 mode=row.score_mode,
                 score=_fmt(row.score, digits=3),
@@ -811,6 +927,9 @@ def main() -> int:
                 wperiod=_fmt(row.worst_tail_period_share, digits=3),
                 wstep=_fmt(row.worst_step_pnl, digits=2),
                 qstep=_fmt(row.q_step_pnl, digits=2),
+                pareto=row.pareto_front if row.pareto_front is not None else "-",
+                dominated_by=row.dominated_by if row.dominated_by is not None else "-",
+                decomposition=(row.decomposition or "-"),
             )
         )
     _print_concentration_rejects(
