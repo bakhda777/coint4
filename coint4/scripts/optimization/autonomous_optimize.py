@@ -287,6 +287,7 @@ class AutonomousOptimizer:
             "last_decision_id": "",
             "last_decision_action": "",
             "last_decision_explanation_md": "",
+            "trajectory_memory": [],
             "last_progress_log_utc": "",
             "last_updated_utc": _utc_now(),
         }
@@ -320,8 +321,99 @@ class AutonomousOptimizer:
                 seen.add(text)
                 normalized.append(text)
             state[key] = normalized
+        self._normalize_trajectory_memory(state)
         state["last_updated_utc"] = _utc_now()
         self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _trajectory_memory_limit(self) -> int:
+        value = _to_int(os.environ.get("COINT4_TRAJECTORY_MEMORY_MAX"))
+        if isinstance(value, int) and value > 0:
+            return min(1000, value)
+        return 200
+
+    def _normalize_trajectory_memory(self, state: Dict[str, Any]) -> None:
+        values = state.get("trajectory_memory")
+        if not isinstance(values, list):
+            state["trajectory_memory"] = []
+            return
+        normalized: list[Dict[str, Any]] = []
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            action = str(item.get("action") or "").strip()
+            result = str(item.get("result") or "").strip()
+            reflection = str(item.get("reflection") or "").strip()
+            if not (action or result or reflection):
+                continue
+            iteration = _to_int(item.get("iteration"))
+            normalized.append(
+                {
+                    "ts_utc": str(item.get("ts_utc") or "").strip() or _utc_now(),
+                    "iteration": int(iteration or 0),
+                    "run_group": str(item.get("run_group") or "").strip(),
+                    "action": action,
+                    "result": result,
+                    "reflection": reflection,
+                }
+            )
+        limit = self._trajectory_memory_limit()
+        if len(normalized) > limit:
+            normalized = normalized[-limit:]
+        state["trajectory_memory"] = normalized
+
+    def _append_trajectory_memory(
+        self,
+        state: Dict[str, Any],
+        *,
+        action: str,
+        result: str,
+        reflection: str,
+    ) -> None:
+        values = state.get("trajectory_memory")
+        if not isinstance(values, list):
+            values = []
+        action_text = str(action or "").strip()
+        result_text = str(result or "").strip()
+        reflection_text = str(reflection or "").strip()
+        if not (action_text or result_text or reflection_text):
+            return
+        iteration = _to_int(state.get("iteration"))
+        values.append(
+            {
+                "ts_utc": _utc_now(),
+                "iteration": int(iteration or 0),
+                "run_group": str(state.get("current_run_group") or "").strip(),
+                "action": action_text,
+                "result": result_text,
+                "reflection": reflection_text,
+            }
+        )
+        limit = self._trajectory_memory_limit()
+        if len(values) > limit:
+            values = values[-limit:]
+        state["trajectory_memory"] = values
+
+    def _trajectory_memory_tail(self, state: Dict[str, Any], *, limit: int = 20) -> list[Dict[str, Any]]:
+        values = state.get("trajectory_memory")
+        if not isinstance(values, list):
+            return []
+        out: list[Dict[str, Any]] = []
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            out.append(
+                {
+                    "ts_utc": str(item.get("ts_utc") or "").strip(),
+                    "iteration": int(_to_int(item.get("iteration")) or 0),
+                    "run_group": str(item.get("run_group") or "").strip(),
+                    "action": str(item.get("action") or "").strip(),
+                    "result": str(item.get("result") or "").strip(),
+                    "reflection": str(item.get("reflection") or "").strip(),
+                }
+            )
+        if len(out) > limit:
+            return out[-limit:]
+        return out
 
     def _env(self) -> Dict[str, str]:
         env = os.environ.copy()
@@ -1270,6 +1362,7 @@ class AutonomousOptimizer:
             "repo_root": str(self.repo_root),
             "app_root": str(self.app_root),
             "state": state,
+            "trajectory_memory": self._trajectory_memory_tail(state, limit=20),
             "stop_policy": self.stop_policy,
             "canonical_sources": {
                 "run_index_csv": _safe_rel(self.rollup_csv, self.repo_root),
@@ -1344,6 +1437,7 @@ class AutonomousOptimizer:
             "используй historical evidence и не утверждай NO_COMPLETED_RUNS без проверки historical_* полей.\n"
             "Анализируй не только последний batch: обязательно проверяй глобальный rollup index "
             "(context.canonical_sources.run_index_csv) и кросс-batch динамику.\n"
+            "Используй context.trajectory_memory как краткую память прошлых action/result/reflection между итерациями.\n"
             "В критериях отбора строго соблюдай stop_policy, включая min_pnl.\n"
             "Периоды walk_forward фиксируются вне агента (по bridge11 windows), их подбирать/менять не нужно.\n"
             "Для run_next_batch: сформируй actionable queue_entries (обычно 10-25, если нет явных ограничений),\n"
@@ -2904,6 +2998,11 @@ class AutonomousOptimizer:
                 )
             )
             delay = max_wait
+        action = str(state.get("last_decision_action") or "").strip()
+        if not action:
+            action = "wait" if phase.startswith("waiting") else str(phase or "wait").strip()
+        reflection = str(state.get("last_decision_explanation_md") or "").strip() or reason
+        self._append_trajectory_memory(state, action=action, result=phase, reflection=reflection)
         self._next_iteration_delay_sec = int(delay)
         state["status"] = "running"
         state["last_error"] = reason
@@ -3052,6 +3151,20 @@ class AutonomousOptimizer:
             state["last_error"] = f"RANK_NOT_READY:{rank.details or 'NO_DATA'}"
             state["last_iteration_phase"] = "rank_pending"
 
+        reflection = ""
+        if rank.ok and rank.score is not None:
+            reflection = (
+                f"score={rank.score:.6f}; run_name={rank.run_name or 'n/a'}; "
+                f"config_path={rank.config_path or 'n/a'}; source={rank.source}"
+            )
+        else:
+            reflection = f"rank_not_ready:{rank.details or 'NO_DATA'}"
+        self._append_trajectory_memory(
+            state,
+            action=str(state.get("last_decision_action") or "run_existing_queue"),
+            result=str(state.get("last_iteration_phase") or "rank_pending"),
+            reflection=reflection,
+        )
         state["status"] = "running"
         self.save_state(state)
         self.write_best_params(state)
@@ -3091,6 +3204,13 @@ class AutonomousOptimizer:
             state["status"] = "done"
             state["last_error"] = str(payload.get("stop_reason") or "").strip()
             state["last_iteration_phase"] = "stopped_by_codex"
+            reflection = str(payload.get("human_explanation_md") or "").strip() or str(payload.get("stop_reason") or "").strip()
+            self._append_trajectory_memory(
+                state,
+                action=next_action or "stop",
+                result="stopped_by_codex",
+                reflection=reflection,
+            )
             self.save_state(state)
             self.write_best_params(state)
             self.write_final_report(state)
@@ -3249,6 +3369,20 @@ class AutonomousOptimizer:
         state["status"] = "running"
         state["last_error"] = "RANK_UPDATED"
         state["last_iteration_phase"] = "rank_ok"
+        reflection = ""
+        if rank.ok and rank.score is not None:
+            reflection = (
+                f"score={rank.score:.6f}; run_name={rank.run_name or 'n/a'}; "
+                f"config_path={rank.config_path or 'n/a'}; source={rank.source}"
+            )
+        else:
+            reflection = f"rank_not_ready:{rank.details or 'NO_DATA'}"
+        self._append_trajectory_memory(
+            state,
+            action=next_action or str(state.get("last_decision_action") or "run_next_batch"),
+            result="rank_ok",
+            reflection=reflection,
+        )
         self.save_state(state)
         self.write_best_params(state)
         self.write_final_report(state)

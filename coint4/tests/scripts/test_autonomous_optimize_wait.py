@@ -344,6 +344,79 @@ def test_codex_wait_logs_human_explanation_and_memo(tmp_path: Path, monkeypatch)
     assert explanation in memo_text
 
 
+def test_codex_wait_records_trajectory_memory(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    decisions = [
+        _decision_payload(
+            decision_id="wait-memory-1",
+            next_action="wait",
+            stop=False,
+            stop_reason="need more completed runs",
+            human_explanation_md="",
+            queue_entries=[],
+        )
+    ]
+    monkeypatch.setattr(runner, "decide_with_codex", _mock_decide_with_codex(module, runner, decisions))
+    monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
+
+    state = runner._default_state()
+    result = runner.run_iteration(state=state)
+    memory = result.get("trajectory_memory")
+
+    assert isinstance(memory, list) and memory
+    entry = memory[-1]
+    assert entry["action"] == "wait"
+    assert entry["result"] == "waiting_codex"
+    assert entry["reflection"] == "need more completed runs"
+
+
+def test_trajectory_memory_limit_is_enforced(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    monkeypatch.setenv("COINT4_TRAJECTORY_MEMORY_MAX", "2")
+
+    state = runner._default_state()
+    runner._append_trajectory_memory(state, action="run_next_batch", result="rank_ok", reflection="round 1")
+    runner._append_trajectory_memory(state, action="wait", result="waiting_codex", reflection="round 2")
+    runner._append_trajectory_memory(state, action="stop", result="stopped_by_codex", reflection="round 3")
+
+    memory = state["trajectory_memory"]
+    assert len(memory) == 2
+    assert [row["action"] for row in memory] == ["wait", "stop"]
+
+
+def test_build_decision_context_includes_trajectory_memory_tail(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    state = runner._default_state()
+    state["trajectory_memory"] = [
+        {
+            "ts_utc": "2026-02-26T00:00:00Z",
+            "iteration": 1,
+            "run_group": "rg_a",
+            "action": "run_next_batch",
+            "result": "rank_ok",
+            "reflection": "improved",
+        },
+        {
+            "ts_utc": "2026-02-26T00:01:00Z",
+            "iteration": 2,
+            "run_group": "rg_b",
+            "action": "wait",
+            "result": "waiting_codex",
+            "reflection": "need data",
+        },
+    ]
+
+    context = runner._build_decision_context(state)
+    tail = context.get("trajectory_memory")
+
+    assert isinstance(tail, list) and len(tail) == 2
+    assert tail[-1]["action"] == "wait"
+    assert tail[-1]["result"] == "waiting_codex"
+
+
 def test_decision_prompt_requires_pnl_and_dd_in_human_output(tmp_path: Path) -> None:
     module = _load_autonomous_module(tmp_path)
     runner = _setup_runner(module, tmp_path)
