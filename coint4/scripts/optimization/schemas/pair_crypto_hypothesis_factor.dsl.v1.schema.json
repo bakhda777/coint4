@@ -1,0 +1,246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pair-crypto-hypothesis-factor-dsl-v1",
+  "title": "pair-crypto hypothesis/factor DSL v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dsl_version",
+    "strategy_scope",
+    "hypotheses"
+  ],
+  "properties": {
+    "dsl_version": {
+      "type": "string",
+      "enum": [
+        "pair_crypto_hypothesis_factor.v1"
+      ]
+    },
+    "strategy_scope": {
+      "type": "string",
+      "enum": [
+        "pair_crypto"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generated_by",
+        "generated_at"
+      ],
+      "properties": {
+        "generated_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "generated_at": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 40
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hypothesis_id",
+          "title",
+          "thesis",
+          "priority",
+          "confidence",
+          "expected_effect",
+          "factors",
+          "wfa_checks"
+        ],
+        "properties": {
+          "hypothesis_id": {
+            "type": "string",
+            "pattern": "^HYP-[A-Z0-9_]{3,32}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 200
+          },
+          "thesis": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 1000
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "expected_effect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sharpe",
+              "drawdown",
+              "turnover"
+            ],
+            "properties": {
+              "sharpe": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down",
+                  "neutral"
+                ]
+              },
+              "drawdown": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down",
+                  "neutral"
+                ]
+              },
+              "turnover": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down",
+                  "neutral"
+                ]
+              },
+              "notes": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            }
+          },
+          "factors": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "factor_id",
+                "category",
+                "target_key",
+                "op",
+                "value",
+                "rationale"
+              ],
+              "properties": {
+                "factor_id": {
+                  "type": "string",
+                  "pattern": "^F-[A-Z0-9_]{2,32}$"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "signal",
+                    "selection",
+                    "risk",
+                    "execution",
+                    "cost",
+                    "regime",
+                    "portfolio",
+                    "data"
+                  ]
+                },
+                "target_key": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+$"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "set",
+                    "scale",
+                    "offset",
+                    "enable",
+                    "disable"
+                  ]
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "integer",
+                    "string",
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "bounds": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "lower",
+                    "upper"
+                  ],
+                  "properties": {
+                    "lower": {
+                      "type": "number"
+                    },
+                    "upper": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 500
+                }
+              }
+            }
+          },
+          "wfa_checks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "enum": [
+                "oos_sharpe",
+                "oos_total_pnl",
+                "max_drawdown_on_equity",
+                "worst_window_dd",
+                "turnover_ratio",
+                "tail_loss_concentration",
+                "pair_stability_hysteresis",
+                "trade_count"
+              ]
+            }
+          },
+          "linked_papers": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{12}(?:-[0-9a-f]{6}(?:-[0-9]+)?)?$"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      }
+    }
+  }
+}

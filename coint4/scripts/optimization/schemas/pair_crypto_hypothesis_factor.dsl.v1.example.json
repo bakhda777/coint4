@@ -1,0 +1,62 @@
+{
+  "dsl_version": "pair_crypto_hypothesis_factor.v1",
+  "strategy_scope": "pair_crypto",
+  "metadata": {
+    "generated_by": "codex",
+    "generated_at": "2026-02-26T00:00:00Z",
+    "source": "manual_example"
+  },
+  "hypotheses": [
+    {
+      "hypothesis_id": "HYP-TAIL_GUARD_01",
+      "title": "Tail guard via regime-aware stop tuning",
+      "thesis": "A tighter regime-aware stop can reduce worst-window drawdown while preserving OOS Sharpe for pair-crypto mean reversion.",
+      "priority": 2,
+      "confidence": 0.73,
+      "expected_effect": {
+        "sharpe": "up",
+        "drawdown": "down",
+        "turnover": "neutral",
+        "notes": "Expect fewer tail losses during high-volatility regimes."
+      },
+      "factors": [
+        {
+          "factor_id": "F-RISK_STOP_01",
+          "category": "risk",
+          "target_key": "backtest.pair_stop_loss_usd",
+          "op": "set",
+          "value": 12.5,
+          "bounds": {
+            "lower": 8.0,
+            "upper": 20.0
+          },
+          "rationale": "Reduce tail losses from spread dislocations without fully disabling entries."
+        },
+        {
+          "factor_id": "F-RISK_VAR_01",
+          "category": "risk",
+          "target_key": "backtest.max_var_multiplier",
+          "op": "set",
+          "value": 0.006,
+          "bounds": {
+            "lower": 0.004,
+            "upper": 0.01
+          },
+          "rationale": "Constrain risk allocation during unstable periods to limit downside concentration."
+        }
+      ],
+      "wfa_checks": [
+        "oos_sharpe",
+        "max_drawdown_on_equity",
+        "worst_window_dd",
+        "tail_loss_concentration",
+        "trade_count"
+      ],
+      "linked_papers": [
+        "c50273f8c577",
+        "072130146eb9"
+      ],
+      "notes": "Keep max_steps <= 5 for queue-based WFA runs."
+    }
+  ]
+}
