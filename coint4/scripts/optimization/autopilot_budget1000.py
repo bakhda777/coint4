@@ -3,7 +3,7 @@
 
 Goal: reduce manual loop "run -> wait -> ask Codex -> generate next queue".
 This tool performs a coordinate-ascent style micro-sweep over a list of knobs:
-  - generate multi-window holdout+stress queue (small)
+  - generate multi-window holdout queue (small)
   - run it on VPS via scripts/remote/run_server_job.sh (STOP_AFTER=1)
   - post-process locally (sync statuses, canonical_metrics.json, rollup run_index)
   - select best by worst-window robust Sharpe with DD + sanity gates
@@ -36,12 +36,7 @@ import yaml
 _OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
 
 
-STRESS_OVERRIDES: Dict[str, Any] = {
-    "backtest.commission_pct": 0.0006,
-    "backtest.commission_rate_per_leg": 0.0006,
-    "backtest.slippage_pct": 0.001,
-    "backtest.slippage_stress_multiplier": 2.0,
-}
+# NOTE: Stress runs (paired holdout+stress) are intentionally disabled for now.
 
 
 def _utc_now_iso() -> str:
@@ -282,10 +277,10 @@ def select_best_multiwindow(
     rows = _load_run_index(run_index_path)
     rows = [r for r in rows if r.run_group == run_group]
 
-    paired: Dict[str, Dict[str, _RunIndexRow]] = {}
+    holdouts: Dict[str, _RunIndexRow] = {}
     for r in rows:
         kind, base_id = _kind_and_base_id(r.run_id)
-        if kind not in {"holdout", "stress"}:
+        if kind == "stress":
             continue
         if not r.metrics_present:
             continue
@@ -293,19 +288,14 @@ def select_best_multiwindow(
             continue
         if r.status.lower() != "completed":
             continue
-        paired.setdefault(base_id, {})[kind] = r
+        holdouts[base_id] = r
 
     windows_by_variant: Dict[str, List[Tuple[str, float, float, Optional[float], Optional[float], _RunIndexRow]]] = {}
-    for base_id, pair in paired.items():
-        h = pair.get("holdout")
-        s = pair.get("stress")
-        if h is None or s is None:
-            continue
-
-        robust_sharpe = min(float(h.sharpe), float(s.sharpe))
-        dd_pct = max(abs(float(h.dd_pct)), abs(float(s.dd_pct)))
-        robust_psr = min(float(h.psr), float(s.psr)) if h.psr is not None and s.psr is not None else None
-        robust_dsr = min(float(h.dsr), float(s.dsr)) if h.dsr is not None and s.dsr is not None else None
+    for base_id, h in holdouts.items():
+        robust_sharpe = float(h.sharpe)
+        dd_pct = abs(float(h.dd_pct))
+        robust_psr = float(h.psr) if h.psr is not None else None
+        robust_dsr = float(h.dsr) if h.dsr is not None else None
         window = _parse_window(base_id)
         variant = _variant_id(base_id)
         windows_by_variant.setdefault(variant, []).append((window, robust_sharpe, dd_pct, robust_psr, robust_dsr, h))
@@ -457,21 +447,8 @@ def _generate_sweep_queue(
             holdout_yaml = configs_dir / f"{holdout_name}.yaml"
             holdout_results_dir = f"{runs_dir_rel}/{run_group}/{holdout_name}"
 
-            stress_cfg = json.loads(json.dumps(holdout_cfg))
-            for skey, sval in STRESS_OVERRIDES.items():
-                set_nested(stress_cfg, skey, sval)
-            if not _is_valid_config_combo(stress_cfg):
-                continue
-            stress_sig = _config_signature(stress_cfg)
-            if stress_sig in seen:
-                continue
-            stress_name = _build_filename(base_name, sweep_tags, "stress")
-            stress_yaml = configs_dir / f"{stress_name}.yaml"
-            stress_results_dir = f"{runs_dir_rel}/{run_group}/{stress_name}"
-
             configs_dir.mkdir(parents=True, exist_ok=True)
             holdout_yaml.write_text(yaml.dump(holdout_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
-            stress_yaml.write_text(yaml.dump(stress_cfg, default_flow_style=False, allow_unicode=True), encoding="utf-8")
 
             entries.append(
                 RunQueueEntry(
@@ -480,16 +457,8 @@ def _generate_sweep_queue(
                     status="planned",
                 )
             )
-            entries.append(
-                RunQueueEntry(
-                    config_path=str(stress_yaml.relative_to(app_root)),
-                    results_dir=stress_results_dir,
-                    status="planned",
-                )
-            )
 
             seen.add(holdout_sig)
-            seen.add(stress_sig)
 
     queue_path = queue_dir / "run_queue.csv"
     if not entries:
@@ -994,7 +963,7 @@ def _render_final_report(*, state: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Примечания")
     lines.append("")
-    lines.append("- База: multi-window worst-case robust Sharpe = min_window(min(holdout, stress)).")
+    lines.append("- База: multi-window worst-case Sharpe = min_window(holdout_sharpe).")
     lines.append("- Score (если включён dd_penalty): score = worst_robust_sharpe - dd_penalty * max(0, worst_dd_pct - dd_target_pct).")
     lines.append("- Heavy execution выполняется только на VPS через run_server_job.sh (STOP_AFTER=1).")
     lines.append("- Heavy артефакты `coint4/artifacts/wfa/runs_clean/**` не коммитить.")
@@ -1158,6 +1127,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             raise SystemExit("config.windows entries must be [start_date,end_date]")
         windows.append((str(item[0]), str(item[1])))
+    windows_spec: List[List[str]] = [[start, end] for start, end in windows]
 
     exec_cfg = cfg.get("execution") or {}
     sync_up = bool(exec_cfg.get("sync_up", True))
@@ -1337,7 +1307,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     "values": values,
                     "current_value": current_value,
                 },
-                "windows": windows,
+                "windows": windows_spec,
             }
 
             def _spec_matches() -> bool:

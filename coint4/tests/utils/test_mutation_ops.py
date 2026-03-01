@@ -153,6 +153,62 @@ def test_coordinate_sweep_v1_budget_and_order() -> None:
     assert sweep[0]["backtest.max_var_multiplier"] == 0.2
 
 
+def test_coordinate_sweep_v1_respects_max_keys_when_keys_provided() -> None:
+    knob_space = _knob_space()
+    rng = np.random.default_rng(123)
+    parent = {
+        "backtest.max_var_multiplier": 0.3,
+        "portfolio.max_active_positions": 15,
+        "pair_selection.require_same_quote": False,
+        "pair_selection.mode": "b",
+    }
+    sweep = coordinate_sweep_v1(
+        parent,
+        knob_space=knob_space,
+        rng=rng,
+        budget=20,
+        params={
+            "keys": [
+                "portfolio.max_active_positions",
+                "backtest.max_var_multiplier",
+                "pair_selection.require_same_quote",
+            ],
+            "max_keys": 1,
+        },
+    )
+    assert sweep
+    watched = [
+        "portfolio.max_active_positions",
+        "backtest.max_var_multiplier",
+        "pair_selection.require_same_quote",
+    ]
+    union_changed = set()
+    for child in sweep:
+        for key in watched:
+            if child[key] != parent[key]:
+                union_changed.add(key)
+    assert len(union_changed) <= 1
+
+
+def test_coordinate_sweep_v1_supports_bool_keys() -> None:
+    knob_space = _knob_space()
+    rng = np.random.default_rng(0)
+    parent = {
+        "backtest.max_var_multiplier": 0.3,
+        "portfolio.max_active_positions": 15,
+        "pair_selection.require_same_quote": False,
+        "pair_selection.mode": "b",
+    }
+    sweep = coordinate_sweep_v1(
+        parent,
+        knob_space=knob_space,
+        rng=rng,
+        budget=10,
+        params={"keys": ["pair_selection.require_same_quote"]},
+    )
+    assert {bool(item["pair_selection.require_same_quote"]) for item in sweep} == {False, True}
+
+
 def test_apply_operator_v1_dispatch_smoke() -> None:
     knob_space = _knob_space()
     rng = np.random.default_rng(0)
@@ -165,4 +221,3 @@ def test_apply_operator_v1_dispatch_smoke() -> None:
     out = apply_operator_v1("mutate_step_v1", parents=[parent], knob_space=knob_space, rng=rng, params={"key": "pair_selection.mode"})
     assert len(out) == 1
     assert out[0]["pair_selection.mode"] in {"a", "c"}
-

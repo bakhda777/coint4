@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import subprocess
@@ -39,30 +40,88 @@ def _rotate_log(log_path: Path) -> None:
     log_path.rename(rotated)
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _tail_text(path: Path, *, max_lines: int = 200, max_bytes: int = 200_000) -> str:
+    """Best-effort tail helper for large-ish logs."""
+    if not path.exists():
+        return ""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = int(handle.tell() or 0)
+            handle.seek(max(0, size - int(max_bytes)))
+            chunk = handle.read()
+        text = chunk.decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            return ""
+    lines = text.splitlines()[-int(max_lines) :]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def _run_entry(
     entry: RunQueueEntry, runner: Path, project_root: Path, rotate_logs: bool
 ) -> str:
     results_dir = project_root / entry.results_dir
-    results_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        results_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        return "stalled"
     log_path = results_dir / "run.log"
+    status_path = results_dir / "run_status.json"
     if rotate_logs:
         _rotate_log(log_path)
-    with log_path.open("w") as handle:
-        cmd = [str(runner), entry.config_path, entry.results_dir]
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        handle.write(f"[run_wfa_queue] {timestamp} cmd: {shlex.join(cmd)}\n")
-        handle.flush()
-        process = subprocess.run(
-            cmd,
-            cwd=project_root,
-            stdout=handle,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+    cmd = [str(runner), entry.config_path, entry.results_dir]
+    started_utc = _utc_now_iso()
+    started_ts = datetime.now(timezone.utc)
+    try:
+        with log_path.open("w", encoding="utf-8") as handle:
+            timestamp = started_utc
+            handle.write(f"[run_wfa_queue] {timestamp} cmd: {shlex.join(cmd)}\n")
+            handle.flush()
+            process = subprocess.run(
+                cmd,
+                cwd=project_root,
+                stdout=handle,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+    except Exception:  # noqa: BLE001
+        return "stalled"
+    finished_ts = datetime.now(timezone.utc)
+    finished_utc = _utc_now_iso()
     metrics_path = results_dir / "strategy_metrics.csv"
-    if process.returncode == 0 and metrics_path.exists():
-        return "completed"
-    return "stalled"
+    status = "completed" if process.returncode == 0 and metrics_path.exists() else "stalled"
+
+    payload = {
+        "status": status,
+        "returncode": int(process.returncode),
+        "cmd": cmd,
+        "cwd": str(project_root),
+        "config_path": str(entry.config_path),
+        "results_dir": str(entry.results_dir),
+        "started_utc": started_utc,
+        "finished_utc": finished_utc,
+        "duration_sec": float((finished_ts - started_ts).total_seconds()),
+        "has_strategy_metrics": bool(metrics_path.exists()),
+    }
+    try:
+        status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+    if status != "completed":
+        try:
+            (results_dir / "run_log_tail.txt").write_text(_tail_text(log_path), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
+    return status
 
 
 def _update_status(
@@ -116,7 +175,10 @@ def _run_queue(
         }
         for future in as_completed(futures):
             entry = futures[future]
-            status = future.result()
+            try:
+                status = future.result()
+            except Exception:  # noqa: BLE001
+                status = "stalled"
             _update_status(queue_path, entries, entry, status, lock)
 
 

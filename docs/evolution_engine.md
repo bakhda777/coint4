@@ -207,3 +207,41 @@ Decision включает:
 - Нет paired `holdout_*/stress_*` => кандидат не проходит `metrics_present`.
 - Нет `daily_pnl.csv` там, где требуется `fullspan_v1` => `NO_PROMOTE`.
 - Любая неоднозначность в метриках/окнах/статусах => кандидат не в elite/promote.
+
+## v2 контур (LLM + parity)
+
+Реализованные v2-компоненты:
+- proposer + policy: `coint4/scripts/optimization/evolve_next_batch.py`
+  - LLM override (`--llm-propose --llm-model --llm-effort`)
+  - IR mode: `--ir-mode patch_ast` (ConfigPatch AST) + gates:
+    - complexity/redundancy: `--ast-max-complexity-score`, `--ast-max-redundancy-similarity`
+    - semantic verifier: `--llm-verify-semantic` (best-effort; deterministic fallback)
+  - policy scale (`--policy-scale auto|micro|macro`) с поддержкой `crossover_uniform_v1`
+  - decision/state артефакты в `artifacts/wfa/aggregate/<controller_group>/`
+- critic/reflection: `coint4/scripts/optimization/reflect_next_action.py`
+  - формирует `action -> result -> reflection` JSON для trajectory memory
+- transfer/generalization: `coint4/scripts/optimization/transfer_generalization_report.py`
+  - устойчивость по окнам и transfer score (`worst_robust_sharpe - std`)
+- one-command orchestration: `coint4/scripts/optimization/evolution_orchestrate.py`
+  - plan -> (optional run) -> postprocess -> rank -> reflect
+  - heavy run по умолчанию не запускается без явного `--run-command`
+- reproducibility + ablation report: `coint4/scripts/optimization/build_parity_ablation_report.py`
+  - агрегирует решения/метрики и строит parity checklist.
+- final factor pool: `coint4/scripts/optimization/build_factor_pool.py`
+  - консолидирует top вариантов из `run_index.csv` + decisions (hypothesis/IR/parents).
+
+Канонический запуск планирования батча:
+```bash
+cd coint4
+PYTHONPATH=src ./.venv/bin/python scripts/optimization/evolve_next_batch.py \
+  --base-config configs/prod_final_budget1000.yaml \
+  --controller-group <controller_group> \
+  --run-group <run_group> \
+  --contains <tag> \
+  --ir-mode patch_ast \
+  --num-variants 12 \
+  --window 2022-06-01,2023-04-30 \
+  --window 2023-10-01,2024-09-30 \
+  --window 2024-05-01,2025-06-30 \
+  --llm-propose --llm-model gpt-5.2 --llm-effort xhigh --llm-verify-semantic
+```

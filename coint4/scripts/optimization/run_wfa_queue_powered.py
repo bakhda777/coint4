@@ -7,7 +7,9 @@ import argparse
 import csv
 import importlib.util
 import json
+import math
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -30,6 +32,8 @@ class _PoweredFailure(RuntimeError):
 
 
 _SP_MODULE = None
+
+_OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
 
 
 def _find_repo_root(start_path: Path | None = None) -> Path:
@@ -243,6 +247,8 @@ def _run_scp_file(source: Path, destination_user: str, destination_host: str, de
     scp_cmd = [
         "scp",
         "-o",
+        "ConnectTimeout=10",
+        "-o",
         "StrictHostKeyChecking=accept-new",
         "-P",
         str(int(port)),
@@ -263,8 +269,11 @@ def _run_scp_file(source: Path, destination_user: str, destination_host: str, de
 
     output = f"{proc.stdout or ''}{proc.stderr or ''}"
     if proc.returncode != 0:
+        tail = (output or "").strip()[-1200:]
+        if tail:
+            log(f"powered: scp_error_output_tail=\n{tail}")
         raise _PoweredFailure(
-            f"SCP failed for {target}",
+            f"SCP failed rc={proc.returncode} target={target}",
             error_class="REMOTE_SYNC_FAILED",
             fatal=True,
         )
@@ -371,6 +380,248 @@ def _remote_rank_result_local_path(project_root: Path, run_group: str) -> Path:
     )
 
 
+def _ranker_parse_best_row(table_text: str) -> Optional[dict[str, str]]:
+    """Parse rank_multiwindow_robust_runs.py markdown table and return the rank=1 row."""
+    lines = [line.strip() for line in (table_text or "").splitlines() if line.strip().startswith("|")]
+    if len(lines) < 3:
+        return None
+    header = [chunk.strip() for chunk in lines[0].strip("|").split("|")]
+    if not header:
+        return None
+    for line in lines[2:]:
+        cols = [chunk.strip() for chunk in line.strip("|").split("|")]
+        if len(cols) != len(header):
+            continue
+        row = dict(zip(header, cols))
+        if str(row.get("rank") or "").strip() != "1":
+            continue
+        return row
+    return None
+
+
+def _ranker_to_float(value: object) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text == "-":
+            return None
+        return float(text)
+    except Exception:
+        return None
+
+
+def _ranker_gate_diagnostics_from_run_index(
+    run_index_path: Path,
+    *,
+    run_group: str,
+    min_windows: int,
+    min_trades: float,
+    min_pairs: float,
+    min_coverage_ratio: float,
+    max_dd_pct: float,
+    min_pnl: float,
+    min_psr: Optional[float] = None,
+    min_dsr: Optional[float] = None,
+) -> dict:
+    """Compute a compact gate rejection summary for a run_group.
+
+    This mirrors the ranker logic enough to answer: "why did strict ranking
+    produce zero candidates?" without guessing.
+    """
+
+    def _to_bool(raw: object) -> bool:
+        return str(raw or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def _to_float(raw: object) -> Optional[float]:
+        try:
+            text = str(raw or "").strip()
+            if not text:
+                return None
+            return float(text)
+        except Exception:
+            return None
+
+    def _kind_and_base_id(run_id: str) -> tuple[Optional[str], str]:
+        if run_id.startswith("holdout_"):
+            return "holdout", run_id[len("holdout_") :]
+        if run_id.startswith("stress_"):
+            return "stress", run_id[len("stress_") :]
+        return None, run_id
+
+    def _variant_id(base_id: str) -> str:
+        return _OOS_RE.sub("", base_id)
+
+    rows_total = 0
+    rows_matched_group = 0
+    paired_base_ids = 0
+    paired_complete_windows = 0
+
+    paired: dict[str, dict[str, dict]] = {}
+    with run_index_path.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            rows_total += 1
+            if str(row.get("run_group") or "").strip() != str(run_group):
+                continue
+            rows_matched_group += 1
+
+            run_id = str(row.get("run_id") or "").strip()
+            kind, base_id = _kind_and_base_id(run_id)
+            if kind == "stress":
+                continue
+            if kind is None:
+                kind = "holdout"
+            paired.setdefault(base_id, {})[kind] = {
+                "status": str(row.get("status") or "").strip(),
+                "metrics_present": _to_bool(row.get("metrics_present")),
+                "config_path": str(row.get("config_path") or "").strip(),
+                "sharpe": _to_float(row.get("sharpe_ratio_abs")),
+                "pnl": _to_float(row.get("total_pnl")),
+                "dd_pct": _to_float(row.get("max_drawdown_on_equity")),
+                "trades": _to_float(row.get("total_trades")),
+                "pairs": _to_float(row.get("total_pairs_traded")),
+                "coverage": _to_float(row.get("coverage_ratio")),
+                "psr": _to_float(row.get("psr")),
+                "dsr": _to_float(row.get("dsr")),
+            }
+
+    paired_base_ids = len(paired)
+
+    # Aggregate per-variant stats across windows (holdout-only).
+    windows_by_variant: dict[str, list[dict]] = {}
+    for base_id, slots in paired.items():
+        holdout = slots.get("holdout")
+        if holdout is None:
+            continue
+        if not holdout.get("metrics_present"):
+            continue
+        if str(holdout.get("status") or "").lower() != "completed":
+            continue
+        if holdout.get("sharpe") is None:
+            continue
+        if holdout.get("dd_pct") is None:
+            continue
+
+        paired_complete_windows += 1
+
+        robust_sh = float(holdout["sharpe"])
+        dd_pct_v = float(abs(float(holdout["dd_pct"])))
+        trades_min = float(holdout.get("trades") or 0.0)
+        pairs_min = float(holdout.get("pairs") or 0.0)
+
+        robust_cov = None
+        if holdout.get("coverage") is not None:
+            hcov = float(holdout["coverage"])
+            if math.isfinite(hcov):
+                robust_cov = float(hcov)
+
+        robust_pnl = None
+        if holdout.get("pnl") is not None:
+            robust_pnl = float(holdout["pnl"])
+
+        robust_psr = None
+        if holdout.get("psr") is not None:
+            robust_psr = float(holdout["psr"])
+
+        robust_dsr = None
+        if holdout.get("dsr") is not None:
+            robust_dsr = float(holdout["dsr"])
+
+        variant = _variant_id(base_id)
+        windows_by_variant.setdefault(variant, []).append(
+            {
+                "robust_sh": robust_sh,
+                "dd_pct": dd_pct_v,
+                "trades_min": trades_min,
+                "pairs_min": pairs_min,
+                "robust_cov": robust_cov,
+                "robust_pnl": robust_pnl,
+                "robust_psr": robust_psr,
+                "robust_dsr": robust_dsr,
+            }
+        )
+
+    variants_total = len(windows_by_variant)
+    rejects = {
+        "min_windows": 0,
+        "max_dd_pct": 0,
+        "min_trades": 0,
+        "min_pairs": 0,
+        "coverage_missing": 0,
+        "coverage_below": 0,
+        "min_pnl": 0,
+        "min_psr": 0,
+        "min_dsr": 0,
+    }
+    passing = 0
+    for _variant, items in windows_by_variant.items():
+        windows = int(len(items))
+        if windows < int(max(1, min_windows)):
+            rejects["min_windows"] += 1
+        worst_dd = max(float(item["dd_pct"]) for item in items)
+        if worst_dd > float(max_dd_pct):
+            rejects["max_dd_pct"] += 1
+        trades = min(float(item["trades_min"]) for item in items)
+        if trades < float(min_trades):
+            rejects["min_trades"] += 1
+        pairs = min(float(item["pairs_min"]) for item in items)
+        if pairs < float(min_pairs):
+            rejects["min_pairs"] += 1
+
+        covs = [item["robust_cov"] for item in items if item.get("robust_cov") is not None]
+        worst_cov = min(covs) if covs else None
+        if worst_cov is None or len(covs) != len(items):
+            rejects["coverage_missing"] += 1
+        elif float(worst_cov) < float(min_coverage_ratio):
+            rejects["coverage_below"] += 1
+
+        pnls = [item["robust_pnl"] for item in items if item.get("robust_pnl") is not None]
+        worst_pnl = min(pnls) if pnls else None
+        if worst_pnl is None or float(worst_pnl) < float(min_pnl):
+            rejects["min_pnl"] += 1
+
+        psrs = [item["robust_psr"] for item in items if item.get("robust_psr") is not None]
+        worst_psr = min(psrs) if psrs else None
+        if min_psr is not None and (worst_psr is None or float(worst_psr) < float(min_psr)):
+            rejects["min_psr"] += 1
+
+        dsrs = [item["robust_dsr"] for item in items if item.get("robust_dsr") is not None]
+        worst_dsr = min(dsrs) if dsrs else None
+        if min_dsr is not None and (worst_dsr is None or float(worst_dsr) < float(min_dsr)):
+            rejects["min_dsr"] += 1
+
+        passed = True
+        passed = passed and windows >= int(max(1, min_windows))
+        passed = passed and worst_dd <= float(max_dd_pct)
+        passed = passed and trades >= float(min_trades)
+        passed = passed and pairs >= float(min_pairs)
+        passed = passed and worst_cov is not None and len(covs) == len(items) and float(worst_cov) >= float(min_coverage_ratio)
+        passed = passed and worst_pnl is not None and float(worst_pnl) >= float(min_pnl)
+        if min_psr is not None:
+            passed = passed and worst_psr is not None and float(worst_psr) >= float(min_psr)
+        if min_dsr is not None:
+            passed = passed and worst_dsr is not None and float(worst_dsr) >= float(min_dsr)
+        if passed:
+            passing += 1
+
+    binding = []
+    if variants_total > 0:
+        for key, value in rejects.items():
+            if int(value) >= int(variants_total):
+                binding.append(key)
+
+    return {
+        "rows_total": int(rows_total),
+        "rows_matched_group": int(rows_matched_group),
+        "paired_base_ids": int(paired_base_ids),
+        "paired_complete_windows": int(paired_complete_windows),
+        "variants_total": int(variants_total),
+        "variants_passing_all": int(passing),
+        "rejects": rejects,
+        "binding_gates": binding,
+    }
+
+
 def _remote_rank_and_sync(
     *,
     host: str,
@@ -384,229 +635,205 @@ def _remote_rank_and_sync(
     port: int,
     log: Callable[[str], None],
 ) -> Path:
-    queue_rel = str(queue_relative).replace("\\", "/")
-    rank_out_rel = f"artifacts/wfa/aggregate/{run_group}/rank_result.json"
-    remote_py = textwrap.dedent(
-        """
-        import csv
-        import json
-        import os
-        import pathlib
-        import subprocess
-        import sys
-        import tempfile
-
-        def _to_float(value):
-            try:
-                if value is None:
-                    return None
-                text = str(value).strip()
-                if not text:
-                    return None
-                return float(text)
-            except Exception:
-                return None
-
-        def _normalize(path):
-            return str(path or "").strip().replace("\\\\", "/")
-
-        repo = pathlib.Path.cwd()
-        run_group = str(os.environ.get("RUN_GROUP") or "").strip()
-        queue_rel = str(os.environ.get("QUEUE_REL") or "").strip()
-        rank_out_rel = str(os.environ.get("RANK_OUT_REL") or "").strip()
-        out_path = repo / rank_out_rel
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-
-        result = {
-            "ok": False,
-            "run_group": run_group,
-            "best_run_name": "",
-            "best_config_path": "",
-            "best_score": None,
-            "worst_robust_sharpe": None,
-            "worst_dd_pct": None,
-            "details": "NO_COMPLETED_METRICS_YET",
-        }
-
-        try:
-            queue_path = pathlib.Path(queue_rel)
-            if not queue_path.is_absolute():
-                queue_path = repo / queue_path
-
-            run_ids = set()
-            results_dirs = set()
-            config_paths = set()
-            if queue_path.exists():
-                with queue_path.open("r", encoding="utf-8", newline="") as handle:
-                    for row in csv.DictReader(handle):
-                        run_id = str(row.get("run_name") or row.get("run_id") or "").strip()
-                        if run_id:
-                            run_ids.add(run_id)
-                        results_dir = _normalize(row.get("results_dir"))
-                        if results_dir:
-                            results_dirs.add(results_dir)
-                        config_path = _normalize(row.get("config_path"))
-                        if config_path:
-                            config_paths.add(config_path)
-
-            if not (run_ids or results_dirs or config_paths):
-                result["details"] = "QUEUE_EMPTY_OR_UNREADABLE"
-            else:
-                run_index = repo / "artifacts/wfa/aggregate/rollup/run_index.csv"
-                if not run_index.exists():
-                    result["details"] = "RUN_INDEX_MISSING"
-                else:
-                    tmp_fd, tmp_name = tempfile.mkstemp(
-                        prefix="rank_scope_",
-                        suffix=".csv",
-                        dir=str(run_index.parent),
-                    )
-                    os.close(tmp_fd)
-                    scoped_path = pathlib.Path(tmp_name)
-                    scoped_rows = 0
-                    try:
-                        with run_index.open("r", encoding="utf-8", newline="") as src, scoped_path.open(
-                            "w", encoding="utf-8", newline=""
-                        ) as dst:
-                            reader = csv.DictReader(src)
-                            fieldnames = list(reader.fieldnames or [])
-                            if not fieldnames:
-                                result["details"] = "RUN_INDEX_INVALID_HEADER"
-                            else:
-                                writer = csv.DictWriter(dst, fieldnames=fieldnames)
-                                writer.writeheader()
-                                for row in reader:
-                                    run_id = str(row.get("run_id") or "").strip()
-                                    results_dir = _normalize(row.get("results_dir"))
-                                    config_path = _normalize(row.get("config_path"))
-                                    is_match = False
-                                    if run_ids and run_id in run_ids:
-                                        is_match = True
-                                    if results_dirs and results_dir in results_dirs:
-                                        is_match = True
-                                    if config_paths and config_path in config_paths:
-                                        is_match = True
-                                    if not is_match:
-                                        continue
-                                    writer.writerow(row)
-                                    scoped_rows += 1
-
-                        if scoped_rows <= 0:
-                            result["details"] = "NO_MATCHING_ROWS_IN_RUN_INDEX"
-                        else:
-                            rank_cmd = [
-                                sys.executable,
-                                "scripts/optimization/rank_multiwindow_robust_runs.py",
-                                "--run-index",
-                                str(scoped_path),
-                                "--contains",
-                                run_group,
-                                "--top",
-                                "1",
-                            ]
-                            proc = subprocess.run(rank_cmd, capture_output=True, text=True, check=False)
-                            parsed = False
-                            table_lines = [
-                                line.strip()
-                                for line in (proc.stdout or "").splitlines()
-                                if line.strip().startswith("|")
-                            ]
-                            if len(table_lines) >= 3:
-                                header = [chunk.strip() for chunk in table_lines[0].strip("|").split("|")]
-                            else:
-                                header = []
-                            for line in table_lines[2:]:
-                                if not header:
-                                    continue
-                                cols = [chunk.strip() for chunk in line.strip("|").split("|")]
-                                if len(cols) != len(header):
-                                    continue
-                                row = dict(zip(header, cols))
-                                if str(row.get("rank") or "").strip() != "1":
-                                    continue
-                                best_score = _to_float(row.get("score"))
-                                worst_robust = _to_float(row.get("worst_robust_sh"))
-                                if best_score is None:
-                                    best_score = worst_robust
-                                if worst_robust is None:
-                                    worst_robust = best_score
-                                worst_dd = _to_float(row.get("worst_dd_pct"))
-                                best_run_name = str(row.get("variant_id") or "").strip()
-                                best_config_path = str(row.get("sample_config") or "").strip()
-                                if best_score is None or not best_run_name:
-                                    continue
-                                result.update(
-                                    {
-                                        "ok": True,
-                                        "run_group": run_group,
-                                        "best_run_name": best_run_name,
-                                        "best_config_path": best_config_path,
-                                        "best_score": best_score,
-                                        "worst_robust_sharpe": worst_robust,
-                                        "worst_dd_pct": worst_dd,
-                                        "details": "REMOTE_RANK_OK",
-                                    }
-                                )
-                                parsed = True
-                                break
-                            if not parsed:
-                                result["details"] = "NO_COMPLETED_METRICS_YET"
-                    finally:
-                        try:
-                            scoped_path.unlink()
-                        except Exception:
-                            pass
-        except Exception as exc:  # noqa: BLE001
-            result["ok"] = False
-            result["details"] = f"REMOTE_RANK_EXCEPTION:{type(exc).__name__}:{exc}"
-
-        out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
-        print(json.dumps(result, ensure_ascii=False))
-        """
-    ).strip()
-    rank_cmd = (
-        f"cd {shlex.quote(str(remote_repo))} "
-        f"&& RUN_GROUP={shlex.quote(run_group)} "
-        f"QUEUE_REL={shlex.quote(queue_rel)} "
-        f"RANK_OUT_REL={shlex.quote(rank_out_rel)} "
-        f"PYTHONPATH=src {shlex.quote(remote_python)} - <<'PY'\n"
-        f"{remote_py}\n"
-        "PY"
-    )
-
-    _run_remote_command(
-        host,
-        user,
-        rank_cmd,
-        log_path=log_path,
-        port=port,
-        log=log,
-        command_purpose="remote-rank",
-    )
-
     local_rank_path = _remote_rank_result_local_path(project_root, run_group)
-    _fetch_remote_file(
-        source_user=user,
-        source_host=host,
-        source=remote_repo / rank_out_rel,
-        destination=local_rank_path,
-        port=port,
-        log=log,
-    )
-    ok = None
-    details = ""
+
+    # Rank locally based on the synced rollup index. This avoids the ambiguous
+    # "NO_COMPLETED_METRICS_YET" when strict gates reject everything, and makes
+    # the result immediately usable by autonomous_optimize.py without depending
+    # on remote parsing quirks.
+    run_index = project_root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+    local_rank_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict = {
+        "ok": False,
+        "run_group": str(run_group),
+        "best_run_name": "",
+        "best_config_path": "",
+        "best_score": None,
+        "worst_robust_sharpe": None,
+        "worst_dd_pct": None,
+        "details": "RANK_NOT_READY",
+    }
+
+    def _apply_best_row(row: dict[str, str], *, mode: str) -> None:
+        best_score = _ranker_to_float(row.get("score"))
+        worst_robust = _ranker_to_float(row.get("worst_robust_sh"))
+        if best_score is None:
+            best_score = worst_robust
+        if worst_robust is None:
+            worst_robust = best_score
+        worst_dd = _ranker_to_float(row.get("worst_dd_pct"))
+        best_run_name = str(row.get("variant_id") or "").strip()
+        best_config_path = str(row.get("sample_config") or "").strip()
+        payload.update(
+            {
+                "ok": True,
+                "best_run_name": best_run_name,
+                "best_config_path": best_config_path,
+                "best_score": best_score,
+                "worst_robust_sharpe": worst_robust,
+                "worst_dd_pct": worst_dd,
+                "details": f"RANK_OK_{mode.upper()}",
+            }
+        )
+
     try:
-        payload = json.loads(local_rank_path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict):
-            ok = bool(payload.get("ok"))
-            details = str(payload.get("details") or "").strip()
+        if not run_index.exists():
+            payload["details"] = "RUN_INDEX_MISSING_LOCAL"
+            local_rank_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            log(f"powered: local_rank ok=false path={local_rank_path} details={payload['details']}")
+            return local_rank_path
+
+        strict = {
+            "min_windows": 3,
+            "min_trades": 200,
+            "min_pairs": 20,
+            "min_coverage_ratio": 0.95,
+            "max_dd_pct": 0.40,
+            "min_pnl": 0.0,
+            "min_psr": None,
+            "min_dsr": None,
+        }
+        try:
+            strict_diag = _ranker_gate_diagnostics_from_run_index(
+                run_index,
+                run_group=str(run_group),
+                min_windows=int(strict["min_windows"]),
+                min_trades=float(strict["min_trades"]),
+                min_pairs=float(strict["min_pairs"]),
+                min_coverage_ratio=float(strict["min_coverage_ratio"]),
+                max_dd_pct=float(strict["max_dd_pct"]),
+                min_pnl=float(strict["min_pnl"]),
+                min_psr=strict["min_psr"],
+                min_dsr=strict["min_dsr"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            strict_diag = {"error": f"{type(exc).__name__}:{exc}"}
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(project_root / "src")
+
+        strict_cmd = [
+            sys.executable,
+            "scripts/optimization/rank_multiwindow_robust_runs.py",
+            "--run-index",
+            str(run_index),
+            "--contains",
+            str(run_group),
+            "--top",
+            "1",
+            "--min-windows",
+            str(int(strict["min_windows"])),
+            "--min-trades",
+            str(int(strict["min_trades"])),
+            "--min-pairs",
+            str(int(strict["min_pairs"])),
+            "--min-coverage-ratio",
+            str(float(strict["min_coverage_ratio"])),
+            "--max-dd-pct",
+            str(float(strict["max_dd_pct"])),
+            "--min-pnl",
+            str(float(strict["min_pnl"])),
+        ]
+        proc = subprocess.run(strict_cmd, cwd=str(project_root), env=env, capture_output=True, text=True, check=False)
+        best_row = _ranker_parse_best_row(proc.stdout or "")
+
+        payload["strict_gates"] = strict
+        payload["strict_diag"] = strict_diag
+        payload["strict_rank_rc"] = int(proc.returncode)
+
+        if best_row:
+            _apply_best_row(best_row, mode="strict")
         else:
-            ok = None
-    except Exception:  # noqa: BLE001
-        ok = None
-        details = "LOCAL_RANK_RESULT_PARSE_FAILED"
-    log(f"powered: remote_rank ok={ok} path={remote_repo / rank_out_rel} details={details or 'n/a'}")
-    log(f"powered: scp_fetch rank_result.json -> {local_rank_path}")
+            payload["strict_rank_stderr_tail"] = (proc.stderr or "").strip()[-800:]
+
+            variants_total = None
+            if isinstance(strict_diag, dict):
+                try:
+                    variants_total = int(strict_diag.get("variants_total") or 0)
+                except (TypeError, ValueError):
+                    variants_total = None
+            if variants_total is not None and variants_total <= 0:
+                payload["ok"] = False
+                payload["details"] = "NO_COMPLETED_METRICS_FOR_RUN_GROUP"
+            else:
+                fallback = {
+                    "min_windows": 1,
+                    "min_trades": 0,
+                    "min_pairs": 0,
+                    "min_coverage_ratio": 0.0,
+                    "max_dd_pct": 1.00,
+                    # Avoid negative scientific notation: argparse treats '-1e6' as a flag.
+                    "min_pnl": -1000000000.0,
+                }
+                fallback_cmd = [
+                    sys.executable,
+                    "scripts/optimization/rank_multiwindow_robust_runs.py",
+                    "--run-index",
+                    str(run_index),
+                    "--contains",
+                    str(run_group),
+                    "--top",
+                    "1",
+                    "--min-windows",
+                    str(int(fallback["min_windows"])),
+                    "--min-trades",
+                    str(int(fallback["min_trades"])),
+                    "--min-pairs",
+                    str(int(fallback["min_pairs"])),
+                    "--min-coverage-ratio",
+                    str(float(fallback["min_coverage_ratio"])),
+                    "--max-dd-pct",
+                    str(float(fallback["max_dd_pct"])),
+                    "--min-pnl",
+                    str(float(fallback["min_pnl"])),
+                ]
+                proc_fb = subprocess.run(
+                    fallback_cmd,
+                    cwd=str(project_root),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                best_row_fb = _ranker_parse_best_row(proc_fb.stdout or "")
+                payload["fallback_gates"] = fallback
+                payload["fallback_rank_rc"] = int(proc_fb.returncode)
+                if best_row_fb:
+                    _apply_best_row(best_row_fb, mode="fallback")
+                    binding = strict_diag.get("binding_gates") if isinstance(strict_diag, dict) else None
+                    if isinstance(binding, list) and binding:
+                        payload["details"] = "RANK_OK_FALLBACK_STRICT_BINDING:" + ",".join(
+                            [str(item) for item in binding[:4] if str(item)]
+                        )
+                else:
+                    payload["ok"] = False
+                    payload["details"] = "NO_VARIANTS_MATCHED_EVEN_AFTER_FALLBACK"
+                    payload["fallback_rank_stderr_tail"] = (proc_fb.stderr or "").strip()[-800:]
+
+        local_rank_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        # Convenience copy next to the run_group artifacts (local workspace only).
+        try:
+            group_rank_path = (
+                project_root / "artifacts" / "wfa" / "aggregate" / str(run_group) / "rank_result.json"
+            )
+            group_rank_path.parent.mkdir(parents=True, exist_ok=True)
+            group_rank_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
+        log(
+            "powered: local_rank ok={ok} path={path} details={details}".format(
+                ok=str(bool(payload.get("ok"))).lower(),
+                path=str(local_rank_path),
+                details=str(payload.get("details") or ""),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        payload["ok"] = False
+        payload["details"] = f"LOCAL_RANK_EXCEPTION:{type(exc).__name__}:{exc}"
+        local_rank_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        log(f"powered: local_rank ok=false path={local_rank_path} details={payload['details']}")
     return local_rank_path
 
 
@@ -1128,6 +1355,150 @@ def _read_queue_config_paths(queue_path: Path) -> list[tuple[str, Path]]:
     return paths
 
 
+def _detect_queue_field(fieldnames: Iterable[str], *, candidates: set[str], contains: str | None = None) -> str | None:
+    for key in fieldnames:
+        normalized = (key or "").strip().lower().replace(" ", "")
+        if normalized in candidates:
+            return key
+    if contains:
+        for key in fieldnames:
+            if key and contains in key.lower():
+                return key
+    return None
+
+
+def _read_queue_stalled_rows(queue_path: Path) -> list[dict[str, str]]:
+    with queue_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        fieldnames = list(reader.fieldnames or [])
+
+    if not rows:
+        return []
+
+    status_field = _detect_queue_field(fieldnames, candidates={"status"}, contains="status")
+    results_field = _detect_queue_field(
+        fieldnames,
+        candidates={"results_dir", "resultsdir", "results", "run_dir", "rundir"},
+        contains="results",
+    )
+    config_field = _detect_queue_field(
+        fieldnames,
+        candidates={"config_path", "configpath", "config", "configfile"},
+        contains="config",
+    )
+    if status_field is None or results_field is None:
+        return []
+
+    stalled = []
+    for row in rows:
+        status = str(row.get(status_field) or "").strip().lower()
+        if status != "stalled":
+            continue
+        stalled.append(
+            {
+                "status": "stalled",
+                "results_dir": str(row.get(results_field) or "").strip(),
+                "config_path": str(row.get(config_field) or "").strip() if config_field else "",
+            }
+        )
+    return stalled
+
+
+def _fetch_stalled_diagnostics(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    queue_path: Path,
+    project_root: Path,
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> None:
+    try:
+        stalled_rows = _read_queue_stalled_rows(queue_path)
+    except Exception as exc:  # noqa: BLE001
+        log(f"powered: stalled_diagnostics queue_parse_failed err={type(exc).__name__}:{exc}")
+        return
+
+    if not stalled_rows:
+        log("powered: stalled_diagnostics none")
+        return
+
+    run_group = _derive_run_group(queue_path)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_dir = project_root / "artifacts" / "wfa" / "aggregate" / run_group / "stalled_diagnostics" / stamp
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = {"run_group": run_group, "stamp": stamp, "stalled": []}
+    for row in stalled_rows:
+        results_rel = str(row.get("results_dir") or "").strip().replace("\\", "/")
+        if not results_rel:
+            continue
+        run_id = Path(results_rel).name or "unknown_run"
+        remote_run_dir = remote_repo / results_rel
+        remote_status = remote_run_dir / "run_status.json"
+        remote_log = remote_run_dir / "run.log"
+
+        status_cmd = (
+            "if [ -f {path} ]; then cat {path}; else echo MISSING_RUN_STATUS:{path}; fi".format(
+                path=shlex.quote(str(remote_status)),
+            )
+        )
+        rc_status, out_status = _exec_ssh_command(
+            host,
+            user,
+            status_cmd,
+            log_path,
+            port=int(port),
+            command_purpose=f"stalled-status:{run_id}",
+            log=log,
+        )
+
+        status_text = (out_status or "").strip()
+        status_json_path = out_dir / f"{run_id}__run_status.json"
+        status_txt_path = out_dir / f"{run_id}__run_status.txt"
+        if status_text.startswith("{") and status_text.endswith("}"):
+            try:
+                json.loads(status_text)
+            except Exception:  # noqa: BLE001
+                status_txt_path.write_text(status_text + "\n", encoding="utf-8")
+            else:
+                status_json_path.write_text(status_text + "\n", encoding="utf-8")
+        else:
+            status_txt_path.write_text(status_text + "\n", encoding="utf-8")
+
+        log_cmd = (
+            "if [ -f {path} ]; then tail -n 200 {path}; else echo MISSING_RUN_LOG:{path}; fi".format(
+                path=shlex.quote(str(remote_log)),
+            )
+        )
+        rc_log, out_log = _exec_ssh_command(
+            host,
+            user,
+            log_cmd,
+            log_path,
+            port=int(port),
+            command_purpose=f"stalled-log-tail:{run_id}",
+            log=log,
+        )
+        (out_dir / f"{run_id}__run_log_tail.txt").write_text(out_log or "", encoding="utf-8")
+
+        summary["stalled"].append(
+            {
+                "run_id": run_id,
+                "results_dir": results_rel,
+                "config_path": str(row.get("config_path") or ""),
+                "rc_status": int(rc_status),
+                "rc_log": int(rc_log),
+            }
+        )
+
+    (out_dir / "SUMMARY.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    log(f"powered: stalled_diagnostics wrote_dir={out_dir} count={len(summary['stalled'])}")
+
+
 def _sync_configs_bulk(
     *,
     host: str,
@@ -1191,6 +1562,155 @@ def _sync_configs_bulk(
 
     log(f"powered: synced configs bulk: {len(rel_paths)} files")
     return len(rel_paths)
+
+
+def _sync_repo_code(
+    *,
+    host: str,
+    user: str,
+    project_root: Path,
+    remote_repo: Path,
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> None:
+    """Sync local code (src/ + scripts/) to the remote repo.
+
+    Motivation: in autonomous mode we often mutate code locally while the heavy WFA
+    execution happens on the compute VPS. Without an explicit sync, the remote
+    repo can lag behind and produce metrics that don't match current gating/ranking
+    logic (e.g. coverage alignment when walk_forward.max_steps truncates execution).
+    """
+    includes = []
+    # Include rollup index (small, tracked) so remote rebuilds can preserve historical metrics
+    # even after remote run artifacts are cleaned up.
+    for rel in (
+        "src",
+        "scripts",
+        "pyproject.toml",
+        "requirements.txt",
+        "pytest.ini",
+        "artifacts/wfa/aggregate/rollup",
+    ):
+        if (project_root / rel).exists():
+            includes.append(rel)
+    if not includes:
+        log("powered: sync_code skipped (no include paths found)")
+        return
+
+    # NOTE: do not rely on remote /tmp for code sync. Some images mount /tmp small or noexec.
+    # Stream a tarball directly over SSH into remote_repo.
+    # Exclude generated caches (especially numba .nbc/.nbi) to avoid cross-LLVM corruption
+    # when syncing between machines.
+    tar_cmd = [
+        "tar",
+        "--exclude=__pycache__",
+        "--exclude=*.pyc",
+        "--exclude=*.nbc",
+        "--exclude=*.nbi",
+        "--exclude=.pytest_cache",
+        "--exclude=.mypy_cache",
+        "--exclude=.ruff_cache",
+        "-czf",
+        "-",
+        "-C",
+        str(project_root),
+        *includes,
+    ]
+    remote_unpack_cmd = (
+        f"mkdir -p {shlex.quote(str(remote_repo))} "
+        f"&& tar -xzf - -C {shlex.quote(str(remote_repo))}"
+    )
+    remote_shell_cmd = f"bash -lc {shlex.quote(remote_unpack_cmd)}"
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-p",
+        str(int(port)),
+        f"{user}@{host}",
+        remote_shell_cmd,
+    ]
+
+    log(f"powered: sync_code stream_start includes={includes}")
+    log(f"powered: sync_code tar_cmd={shlex.join(tar_cmd)} | ssh ...")
+    log(f"powered: sync_code ssh_cmd={shlex.join(ssh_cmd)}")
+
+    try:
+        try:
+            tar_proc = subprocess.Popen(
+                tar_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise _PoweredFailure(
+                f"tar executable missing: {exc}",
+                error_class="LOCAL_BUNDLE_FAILED",
+                fatal=True,
+            ) from exc
+
+        assert tar_proc.stdout is not None
+        try:
+            ssh_proc = subprocess.Popen(
+                ssh_cmd,
+                stdin=tar_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            tar_proc.kill()
+            raise _PoweredFailure(
+                f"SSH executable missing: {exc}",
+                error_class="SSH_BINARY_MISSING",
+                fatal=True,
+            ) from exc
+        finally:
+            # Ensure tar gets SIGPIPE if ssh exits early.
+            try:
+                tar_proc.stdout.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+        ssh_out, ssh_err = ssh_proc.communicate()
+        tar_rc = tar_proc.wait()
+        ssh_rc = int(ssh_proc.returncode or 0)
+
+        tar_err_bytes = b""
+        try:
+            if tar_proc.stderr is not None:
+                tar_err_bytes = tar_proc.stderr.read() or b""
+        except Exception:  # noqa: BLE001
+            tar_err_bytes = b""
+
+        if tar_rc != 0 or ssh_rc != 0:
+            tar_err = tar_err_bytes.decode("utf-8", errors="replace")
+            combined = f"{ssh_out or ''}{ssh_err or ''}{tar_err or ''}"
+            tail = (combined or "").strip()[-1200:]
+            if tail:
+                log(f"powered: sync_code stream_error_output_tail=\n{tail}")
+            raise _PoweredFailure(
+                f"sync_code stream failed rc_tar={tar_rc} rc_ssh={ssh_rc}",
+                error_class="REMOTE_SYNC_FAILED",
+                fatal=True,
+            )
+
+        log(f"powered: sync_code ok includes={includes}")
+    except _PoweredFailure as exc:
+        # Best-effort: do not abort the whole powered run if code sync fails.
+        log(
+            "powered: sync_code failed error_class={cls} fatal={fatal} msg={msg}; continue without code sync".format(
+                cls=exc.error_class,
+                fatal=str(bool(exc.fatal)).lower(),
+                msg=str(exc),
+            )
+        )
+        return
 
 
 def _sync_inputs(
@@ -1311,6 +1831,32 @@ def _sync_inputs(
     _write_log(log_path, f"powered: synced queue={queue_uploaded} configs={copied}")
 
 
+def _cleanup_remote_run_artifacts(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    run_group: str,
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> None:
+    """Delete remote heavy WFA artifacts for this run_group (best-effort upstream)."""
+    remote_runs = remote_repo / "artifacts" / "wfa" / "runs" / run_group
+    remote_runs_clean = remote_repo / "artifacts" / "wfa" / "runs_clean" / run_group
+    cmd = f"rm -rf {shlex.quote(str(remote_runs))} {shlex.quote(str(remote_runs_clean))}"
+    log(f"powered: cleanup_remote_runs run_group={run_group}")
+    _run_remote_command(
+        host,
+        user,
+        cmd,
+        log_path=log_path,
+        port=port,
+        log=log,
+        command_purpose="cleanup-remote-runs",
+    )
+
+
 def _build_remote_command(
     remote_repo: Path,
     remote_python: str,
@@ -1326,7 +1872,8 @@ def _build_remote_command(
         "export MKL_NUM_THREADS=1; "
         "export OPENBLAS_NUM_THREADS=1; "
         "export NUMBA_NUM_THREADS=1; "
-        "export NUMEXPR_NUM_THREADS=1;"
+        "export NUMEXPR_NUM_THREADS=1; "
+        "export ALLOW_HEAVY_RUN=1;"
     )
     return (
         f"{thread_exports} "
@@ -1969,12 +2516,85 @@ def _wait_for_completion(
     port: int,
     timeout_sec: int,
     poll_sec: int,
+    watchdog: bool = False,
+    watchdog_stale_sec: int = 900,
+    watchdog_restart: bool = False,
+    watchdog_parallel: Optional[int] = None,
+    watchdog_postprocess: bool = False,
+    watchdog_max_restarts: int = 3,
     log: Callable[[str], None],
 ) -> None:
     deadline = time.time() + max(1, int(timeout_sec))
     attempt = 0
     all_done_without_metrics_streak = 0
     all_done_without_metrics_grace = 2
+    last_counts: Optional[dict[str, int]] = None
+    last_change_ts = time.time()
+    last_watchdog_ts = 0.0
+    restarts = 0
+
+    def _restart_queue(*, statuses: str, rationale: str) -> bool:
+        nonlocal last_change_ts, last_counts, last_watchdog_ts, restarts
+
+        if not watchdog_restart:
+            return False
+        statuses = str(statuses or "").strip()
+        if not statuses:
+            return False
+        if watchdog_parallel is None or int(watchdog_parallel) < 1:
+            log("powered: wait_completion watchdog_restart skipped: parallel not set")
+            return False
+        if restarts >= max(0, int(watchdog_max_restarts)):
+            log(
+                "powered: wait_completion watchdog_restart skipped: max_restarts reached "
+                f"restarts={restarts} max={int(watchdog_max_restarts)}"
+            )
+            return False
+
+        cmd = _build_remote_command(
+            remote_repo,
+            remote_python,
+            queue_relative,
+            statuses=statuses,
+            parallel=int(watchdog_parallel),
+            postprocess=bool(watchdog_postprocess),
+        )
+        log(
+            "powered: wait_completion watchdog_restart start statuses={statuses} rationale={rationale} "
+            "parallel={parallel} attempt={attempt}/{max_attempts}".format(
+                statuses=statuses,
+                rationale=rationale,
+                parallel=int(watchdog_parallel),
+                attempt=restarts + 1,
+                max_attempts=int(watchdog_max_restarts),
+            )
+        )
+        try:
+            _run_remote_command(
+                host,
+                user,
+                cmd,
+                log_path=log_path,
+                port=int(port),
+                log=log,
+                command_purpose="queue-run",
+            )
+        except _PoweredFailure as exc:
+            log(
+                "powered: wait_completion watchdog_restart failed error_class={cls} fatal={fatal}; continue".format(
+                    cls=exc.error_class,
+                    fatal=str(bool(exc.fatal)).lower(),
+                )
+            )
+            if exc.fatal:
+                raise
+            return False
+
+        restarts += 1
+        last_counts = None
+        last_change_ts = time.time()
+        last_watchdog_ts = 0.0
+        return True
 
     while True:
         attempt += 1
@@ -1999,6 +2619,24 @@ def _wait_for_completion(
             f"counts={counts} has_metrics={has_metrics}"
         )
 
+        normalized_counts: dict[str, int] = {}
+        if isinstance(counts, dict):
+            for key, value in counts.items():
+                norm_key = str(key or "").strip().lower()
+                if not norm_key:
+                    continue
+                try:
+                    normalized_counts[norm_key] = int(value or 0)
+                except (TypeError, ValueError):
+                    normalized_counts[norm_key] = 0
+        else:
+            normalized_counts = {}
+
+        now_ts = time.time()
+        if last_counts is None or normalized_counts != last_counts:
+            last_counts = dict(normalized_counts)
+            last_change_ts = now_ts
+
         if all_done and has_metrics:
             log("powered: wait_completion completion detected")
             return
@@ -2015,6 +2653,48 @@ def _wait_for_completion(
                 return
         else:
             all_done_without_metrics_streak = 0
+
+        if watchdog and watchdog_restart:
+            planned = int(normalized_counts.get("planned", 0))
+            stalled = int(normalized_counts.get("stalled", 0))
+            running = int(normalized_counts.get("running", 0))
+
+            # If nothing is running but there is work pending, don't just wait forever.
+            if running == 0 and (planned + stalled) > 0:
+                if _restart_queue(statuses="planned,stalled", rationale="PENDING_WITHOUT_RUNNING"):
+                    continue
+
+            # If queue is stuck with running rows and no progress for long enough, mark stale
+            # running rows as stalled and restart them (bounded).
+            stale_threshold = max(60, int(watchdog_stale_sec))
+            if running > 0 and (now_ts - last_change_ts) >= stale_threshold:
+                if (now_ts - last_watchdog_ts) >= max(30, int(poll_sec)):
+                    last_watchdog_ts = now_ts
+                    watchdog_payload = _remote_watchdog_stale_running(
+                        host=host,
+                        user=user,
+                        remote_repo=remote_repo,
+                        remote_python=remote_python,
+                        queue_relative=queue_relative,
+                        port=int(port),
+                        stale_sec=stale_threshold,
+                        log_path=log_path,
+                        log=log,
+                    )
+                    changed = int(watchdog_payload.get("changed") or 0)
+                    rationale = str(watchdog_payload.get("rationale") or "WATCHDOG_RESULT").strip()
+                    log(
+                        "powered: wait_completion watchdog checked stale_sec={stale} running={running} "
+                        "changed={changed} rationale={rationale}".format(
+                            stale=int(stale_threshold),
+                            running=int(watchdog_payload.get("running") or running),
+                            changed=int(changed),
+                            rationale=rationale,
+                        )
+                    )
+                    if changed > 0:
+                        if _restart_queue(statuses="planned,stalled", rationale=rationale):
+                            continue
 
         if time.time() >= deadline:
             raise _PoweredFailure(
@@ -2049,6 +2729,43 @@ def _remote_rebuild_rollup(
         port=port,
         log=log,
         command_purpose="remote-build-run-index",
+    )
+
+
+def _remote_postprocess_queue(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    remote_python: str,
+    queue_relative: str,
+    log_path: Path,
+    port: int,
+    log: Callable[[str], None],
+) -> None:
+    """Run best-effort postprocess on remote (canonical metrics + rollup rebuild).
+
+    This is intentionally a separate step from run_wfa_queue.py so failures in
+    recompute_canonical_metrics do not crash the queue runner.
+    """
+    queue_rel = str(queue_relative).replace("\\", "/")
+    cmd = (
+        f"cd {shlex.quote(str(remote_repo))} "
+        f"&& PYTHONPATH=src {shlex.quote(remote_python)} "
+        "scripts/optimization/postprocess_queue.py "
+        f"--queue {shlex.quote(queue_rel)} "
+        "--bar-minutes 15 "
+        "--overwrite-canonical "
+        "--build-rollup"
+    )
+    _run_remote_command(
+        host,
+        user,
+        cmd,
+        log_path=log_path,
+        port=port,
+        log=log,
+        command_purpose="remote-postprocess-queue",
     )
 
 
@@ -2184,6 +2901,17 @@ def run_powered_queue(
             print(json.dumps(probe, ensure_ascii=False, sort_keys=True), flush=True)
             return 0
 
+        if bool(getattr(args, "sync_code", False)):
+            _sync_repo_code(
+                host=args.compute_host,
+                user=args.ssh_user,
+                project_root=project_root,
+                remote_repo=remote_repo,
+                port=int(args.ssh_port),
+                log_path=log_path,
+                log=log,
+            )
+
         chosen_parallel = _resolve_parallel(
             args.parallel,
             host=args.compute_host,
@@ -2214,7 +2942,9 @@ def run_powered_queue(
 
         assert remote_repo is not None
         assert remote_python is not None
-        selected_statuses = str(args.statuses or "").strip()
+        raw_statuses = str(args.statuses or "").strip()
+        statuses_auto_mode = raw_statuses.lower() == "auto"
+        selected_statuses = raw_statuses
         auto_statuses_rationale = "EXPLICIT"
         should_wait_completion = bool(args.wait_completion)
         failed_retry_mode = False
@@ -2380,19 +3110,48 @@ def run_powered_queue(
                 port=int(args.ssh_port),
                 timeout_sec=int(args.wait_timeout_sec),
                 poll_sec=int(args.wait_poll_sec),
+                watchdog=bool(getattr(args, "watchdog", False)),
+                watchdog_stale_sec=int(getattr(args, "watchdog_stale_sec", 900)),
+                watchdog_restart=bool(getattr(args, "watchdog", False)) and bool(statuses_auto_mode),
+                watchdog_parallel=int(chosen_parallel),
+                watchdog_postprocess=bool(args.postprocess),
                 log=log,
             )
 
-        _remote_rebuild_rollup(
-            host=args.compute_host,
-            user=args.ssh_user,
-            remote_repo=remote_repo,
-            remote_python=remote_python,
-            queue_relative=remote_queue_name,
-            log_path=log_path,
-            port=int(args.ssh_port),
-            log=log,
-        )
+        postprocess_ok = False
+        if bool(args.postprocess):
+            try:
+                _remote_postprocess_queue(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    remote_python=remote_python,
+                    queue_relative=remote_queue_name,
+                    log_path=log_path,
+                    port=int(args.ssh_port),
+                    log=log,
+                )
+                postprocess_ok = True
+            except _PoweredFailure as exc:
+                log(
+                    "powered: postprocess failed error_class={cls} fatal={fatal} msg={msg}; fallback build_run_index".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                        msg=str(exc),
+                    )
+                )
+
+        if not postprocess_ok:
+            _remote_rebuild_rollup(
+                host=args.compute_host,
+                user=args.ssh_user,
+                remote_repo=remote_repo,
+                remote_python=remote_python,
+                queue_relative=remote_queue_name,
+                log_path=log_path,
+                port=int(args.ssh_port),
+                log=log,
+            )
         _sync_rollup_back(
             host=args.compute_host,
             user=args.ssh_user,
@@ -2401,6 +3160,16 @@ def run_powered_queue(
             queue_path=queue_path,
             queue_relative=queue_relative,
             port=int(args.ssh_port),
+            log=log,
+        )
+        _fetch_stalled_diagnostics(
+            host=args.compute_host,
+            user=args.ssh_user,
+            remote_repo=remote_repo,
+            queue_path=queue_path,
+            project_root=project_root,
+            port=int(args.ssh_port),
+            log_path=log_path,
             log=log,
         )
         _remote_rank_and_sync(
@@ -2415,6 +3184,25 @@ def run_powered_queue(
             port=int(args.ssh_port),
             log=log,
         )
+        if should_wait_completion and bool(getattr(args, "cleanup_remote_runs", False)):
+            try:
+                _cleanup_remote_run_artifacts(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    run_group=_derive_run_group(queue_path),
+                    port=int(args.ssh_port),
+                    log_path=log_path,
+                    log=log,
+                )
+            except _PoweredFailure as exc:
+                log(
+                    "powered: cleanup_remote_runs failed error_class={cls} fatal={fatal} msg={msg}; continue".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                        msg=str(exc),
+                    )
+                )
 
         return int(remote_rc)
     finally:
@@ -2476,6 +3264,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--serverspace-server-id", default=None)
     parser.add_argument("--preflight", type=_parse_bool_flag, default=True)
     parser.add_argument("--sync-inputs", type=_parse_bool_flag, default=True)
+    parser.add_argument(
+        "--sync-code",
+        type=_parse_bool_flag,
+        default=None,
+        help=(
+            "Sync local code (src/ + scripts/) to the remote repo before execution. "
+            "Default: true for full queue runs (autonomous/non-interactive/wait_completion), otherwise false."
+        ),
+    )
     parser.add_argument(
         "--force-remote-queue-overwrite",
         type=_parse_bool_flag,
@@ -2549,6 +3346,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Only probe remote queue counts (planned/running/stalled/completed) and exit.",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--cleanup-remote-runs",
+        type=_parse_bool_flag,
+        default=None,
+        help=(
+            "Delete remote artifacts/wfa/runs/<run_group> and runs_clean/<run_group> after sync-back. "
+            "Default: true in non-interactive/autonomous runs, otherwise false."
+        ),
+    )
     args = parser.parse_args(argv)
 
     autonomous_mode = str(os.environ.get("AUTONOMOUS_MODE") or "").strip() == "1"
@@ -2561,6 +3367,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         args.wait_completion = bool(autonomous_mode)
     if args.sync_configs_bulk is None:
         args.sync_configs_bulk = bool(autonomous_mode)
+    if args.sync_code is None:
+        args.sync_code = bool(
+            autonomous_mode
+            or non_interactive
+            or bool(args.wait_completion)
+            or bool(args.sync_configs_bulk)
+            or bool(args.bootstrap_venv)
+        )
+    if args.cleanup_remote_runs is None:
+        args.cleanup_remote_runs = bool(autonomous_mode or non_interactive)
     if args.watchdog is None:
         args.watchdog = bool(autonomous_mode)
     if int(args.watchdog_stale_sec) <= 0:
@@ -2603,7 +3419,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     _emit(
         "powered: mode bootstrap_repo={repo} bootstrap_venv={venv} bootstrap_remote_dir={root} "
         "wait_completion={wait} wait_timeout_sec={timeout} wait_poll_sec={poll} "
-        "sync_configs_bulk={bulk} watchdog={watchdog} watchdog_stale_sec={stale}".format(
+        "sync_configs_bulk={bulk} sync_code={code} watchdog={watchdog} watchdog_stale_sec={stale}".format(
             repo=bool(args.bootstrap_repo),
             venv=bool(args.bootstrap_venv),
             root=str(args.bootstrap_remote_dir),
@@ -2611,6 +3427,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             timeout=int(args.wait_timeout_sec),
             poll=int(args.wait_poll_sec),
             bulk=bool(args.sync_configs_bulk),
+            code=bool(getattr(args, "sync_code", False)),
             watchdog=bool(getattr(args, "watchdog", False)),
             stale=int(getattr(args, "watchdog_stale_sec", 900)),
         ),

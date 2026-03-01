@@ -62,7 +62,14 @@ if [[ "$NO_MEMORY_MAP" == "1" ]]; then
   CLI_ARGS+=(--no-memory-map)
 fi
 
-"$ROOT_DIR/.venv/bin/coint2" walk-forward "${CLI_ARGS[@]}" &
+if [[ -x "$ROOT_DIR/.venv/bin/coint2" ]]; then
+  COINT2_LAUNCH=("$ROOT_DIR/.venv/bin/coint2")
+else
+  # Fallback when console_scripts were not installed into the current venv.
+  COINT2_LAUNCH=("$ROOT_DIR/.venv/bin/python" -m coint2.cli)
+fi
+
+"${COINT2_LAUNCH[@]}" walk-forward "${CLI_ARGS[@]}" &
 WORKER_PID=$!
 echo "$WORKER_PID" > "$WORKER_PID_FILE"
 echo "[run_wfa_fullcpu] worker_pid=$WORKER_PID"

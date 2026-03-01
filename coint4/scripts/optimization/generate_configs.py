@@ -20,16 +20,6 @@ Usage examples:
     --output-dir configs/notional_sweep/ \
     --queue-dir artifacts/wfa/aggregate/notional_sweep/
 
-  # With paired holdout/stress generation
-  python scripts/optimization/generate_configs.py \
-    --base configs/sprint34_tp15_tr90_holdout.yaml \
-    --tag oos_validation \
-    --sweep 'walk_forward.start_date=["2022-06-01"]' \
-    --sweep 'walk_forward.end_date=["2023-04-30"]' \
-    --with-stress \
-    --output-dir configs/oos_validation/ \
-    --queue-dir artifacts/wfa/aggregate/oos_validation/
-
 Sweep modes:
   - Multiple --sweep flags with same-length arrays: zipped (paired) iteration
   - Single --sweep flag: iterate over values
@@ -51,16 +41,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import yaml
-
-
-# --- Stress config overrides ---
-STRESS_OVERRIDES = {
-    "backtest.commission_pct": 0.0006,
-    "backtest.commission_rate_per_leg": 0.0006,
-    "backtest.slippage_pct": 0.001,
-    "backtest.slippage_stress_multiplier": 2.0,
-}
-
 
 def parse_sweep(spec: str) -> Tuple[str, List[Any]]:
     """Parse a sweep spec like 'walk_forward.start_date=["2022-06-01","2023-10-01"]'."""
@@ -237,11 +217,6 @@ def main() -> None:
         default=[],
         help="Sweep spec: 'key=[val1,val2,...]' (repeatable)",
     )
-    parser.add_argument(
-        "--with-stress",
-        action="store_true",
-        help="Generate paired stress configs alongside holdout",
-    )
     parser.add_argument("--zip", action="store_true", dest="zip_mode",
                         help="Force zipped (not cartesian) iteration")
     parser.add_argument(
@@ -305,8 +280,6 @@ def main() -> None:
 
     print(f"Base config: {base_path}")
     print(f"Sweeps: {len(sweeps)} parameters, {len(permutations)} combinations")
-    if args.with_stress:
-        print(f"With stress: {len(permutations) * 2} total configs")
     print()
 
     for combo in permutations:
@@ -349,28 +322,6 @@ def main() -> None:
             results_dir=holdout_results,
             status="planned",
         ))
-
-        # Build stress config if requested
-        if args.with_stress:
-            stress_cfg = copy.deepcopy(holdout_cfg)
-            for skey, sval in STRESS_OVERRIDES.items():
-                set_nested(stress_cfg, skey, sval)
-
-            stress_name = build_filename(base_name, sweep_tags, "stress")
-            stress_yaml = output_dir / f"{stress_name}.yaml"
-            stress_results = f"{runs_base}/{args.tag}/{stress_name}"
-
-            if args.dry_run:
-                print(f"  [stress]  {stress_yaml.name}")
-            else:
-                with stress_yaml.open("w") as f:
-                    yaml.dump(stress_cfg, f, default_flow_style=False, allow_unicode=True)
-
-            entries.append(RunQueueEntry(
-                config_path=str(stress_yaml),
-                results_dir=stress_results,
-                status="planned",
-            ))
 
     # Write run queue
     queue_path = queue_dir / "run_queue.csv"

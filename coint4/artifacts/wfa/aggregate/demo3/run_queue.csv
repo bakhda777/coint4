@@ -1,2 +1,0 @@
-run_name,config_path,results_dir,status
-r1,configs/a.yaml,artifacts/wfa/runs/demo3/r1,planned

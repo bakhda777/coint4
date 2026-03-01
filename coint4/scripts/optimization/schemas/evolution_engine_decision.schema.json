@@ -40,6 +40,7 @@
     },
     "controller_group": { "type": "string" },
     "run_group": { "type": "string" },
+    "ir_mode": { "type": ["string", "null"], "enum": ["knob", "patch_ast", null] },
     "queue_path": { "type": "string" },
     "base_config_path": { "type": "string" },
     "knob_space": {
@@ -107,6 +108,15 @@
           }
         },
         "fullspan_policy_v1": { "type": ["object", "null"] }
+      }
+    },
+    "patch_ast_gates": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "max_complexity_score": { "type": "number", "minimum": 0.0 },
+        "max_redundancy_similarity": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "llm_verify_semantic": { "type": "boolean" }
       }
     },
     "similarity": {
@@ -196,6 +206,9 @@
         "parents": { "type": "array", "items": { "type": "string" } },
         "genome": { "$ref": "#/definitions/genome" },
         "materialization": { "$ref": "#/definitions/materialization" },
+        "ir_mode": { "type": ["string", "null"], "enum": ["knob", "patch_ast", null] },
+        "patch_path": { "type": ["string", "null"] },
+        "patch_ir": { "type": ["object", "null"], "additionalProperties": true },
         "notes": { "type": ["string", "null"] },
         "similarity": {
           "type": ["object", "null"],
@@ -209,4 +222,3 @@
     }
   }
 }
-

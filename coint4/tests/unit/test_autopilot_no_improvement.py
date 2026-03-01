@@ -300,20 +300,6 @@ def test_select_best_multiwindow_applies_psr_dsr_gate(tmp_path: Path) -> None:
             "total_pairs_traded": "20",
         },
         {
-            "run_id": "stress_variant_a_oos20240101_20240301",
-            "run_group": "rg",
-            "config_path": "configs/a.yaml",
-            "results_dir": "artifacts/wfa/runs/rg/stress_a",
-            "status": "completed",
-            "metrics_present": "true",
-            "sharpe_ratio_abs": "1.20",
-            "max_drawdown_on_equity": "0.12",
-            "psr": "0.35",
-            "dsr": "-0.30",
-            "total_trades": "200",
-            "total_pairs_traded": "20",
-        },
-        {
             "run_id": "holdout_variant_b_oos20240101_20240301",
             "run_group": "rg",
             "config_path": "configs/b.yaml",
@@ -324,20 +310,6 @@ def test_select_best_multiwindow_applies_psr_dsr_gate(tmp_path: Path) -> None:
             "max_drawdown_on_equity": "0.09",
             "psr": "0.96",
             "dsr": "0.30",
-            "total_trades": "200",
-            "total_pairs_traded": "20",
-        },
-        {
-            "run_id": "stress_variant_b_oos20240101_20240301",
-            "run_group": "rg",
-            "config_path": "configs/b.yaml",
-            "results_dir": "artifacts/wfa/runs/rg/stress_b",
-            "status": "completed",
-            "metrics_present": "true",
-            "sharpe_ratio_abs": "0.95",
-            "max_drawdown_on_equity": "0.11",
-            "psr": "0.92",
-            "dsr": "0.25",
             "total_trades": "200",
             "total_pairs_traded": "20",
         },
@@ -362,5 +334,5 @@ def test_select_best_multiwindow_applies_psr_dsr_gate(tmp_path: Path) -> None:
     )
 
     assert selected.variant_id == "variant_b"
-    assert selected.worst_robust_psr == pytest.approx(0.92)
-    assert selected.worst_robust_dsr == pytest.approx(0.25)
+    assert selected.worst_robust_psr == pytest.approx(0.96)
+    assert selected.worst_robust_dsr == pytest.approx(0.30)

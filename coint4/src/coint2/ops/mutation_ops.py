@@ -224,18 +224,51 @@ def coordinate_sweep_v1(
 
     keys: list[str]
     if requested_keys:
-        unknown = sorted(set(requested_keys) - set(knob_by_key))
+        # Preserve order but drop duplicates early to avoid repeated axes.
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in requested_keys:
+            token = str(item or "").strip()
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            deduped.append(token)
+        unknown = sorted(set(deduped) - set(knob_by_key))
         if unknown:
             raise ValueError(f"coordinate_sweep_v1: unknown keys in params.keys: {unknown}")
-        keys = list(requested_keys)
+        keys = list(deduped)
+        # Respect max_keys even when keys are explicitly provided.
+        if len(keys) > max_keys:
+            weights = np.asarray(
+                [max(0.0, float(knob_by_key[key].weight or 1.0)) for key in keys],
+                dtype=float,
+            )
+            if float(weights.sum()) > 0.0 and np.isfinite(weights).all():
+                p = weights / float(weights.sum())
+                chosen = rng.choice(len(keys), size=int(max_keys), replace=False, p=p)
+            else:
+                chosen = rng.choice(len(keys), size=int(max_keys), replace=False)
+            idxs = sorted(int(idx) for idx in chosen)
+            keys = [keys[idx] for idx in idxs]
     else:
         keys = _default_coordinate_keys(knob_space, max_keys=max_keys)
 
     sweep_axes: list[tuple[str, list[GenomeValue]]] = []
     for key in keys:
         spec = knob_by_key[key]
+        if spec.type == "bool":
+            current = sanitized.get(key)
+            if current is None:
+                values = [False, True]
+            else:
+                values = _unique([bool(current), not bool(current)])
+            sweep_axes.append((key, values))
+            continue
+
         if spec.type not in {"int", "float"}:
-            raise ValueError(f"coordinate_sweep_v1 only supports numeric knobs (key={key}, type={spec.type})")
+            raise ValueError(
+                f"coordinate_sweep_v1 only supports numeric/bool knobs (key={key}, type={spec.type})"
+            )
         if spec.step is None or float(spec.step) <= 0.0:
             raise ValueError(f"coordinate_sweep_v1 requires step for numeric knob (key={key})")
 

@@ -1,0 +1,5 @@
+base_config: configs/prod_final_budget1000.yaml
+filter_params:
+  max_half_life_days: 70
+pair_selection:
+  min_correlation: 0.38000000000000006

@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCRIPTS_OPT = REPO_ROOT / "scripts" / "optimization"
+SCRIPTS_OPT = REPO_ROOT / "coint4" / "scripts" / "optimization"
+if not SCRIPTS_OPT.exists():
+    SCRIPTS_OPT = REPO_ROOT / "scripts" / "optimization"
 if str(SCRIPTS_OPT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_OPT))
 

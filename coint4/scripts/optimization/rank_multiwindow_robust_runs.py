@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Rank WFA runs across multiple OOS windows by robust Sharpe.
+"""Rank WFA runs across multiple OOS windows (holdout-only).
 
-This script consumes the rollup run index and pairs runs where the run_id starts
-with `holdout_` / `stress_` and the remainder (base id) matches, within the same
-run_group.
+This script consumes the rollup run index and selects holdout runs (run_id
+starts with `holdout_`, or has no kind prefix) within the same run_group.
 
 It then aggregates *across OOS windows* for the same variant. OOS windows are
 detected by the filename tag pattern: `_oosYYYYMMDD_YYYYMMDD`.
 
 Default objective:
-  robust_sharpe_window = min(holdout_sharpe, stress_sharpe)
+  robust_sharpe_window = holdout_sharpe
   score = min_window(robust_sharpe_window)
 
 Alternative objectives (`--score-mode`):
@@ -28,8 +27,7 @@ Optional fullspan contract (`--fullspan-policy-v1`):
   score_fullspan_v1 = worst_robust_sharpe
       - tail_q_penalty * max(0, (-q_tail / initial_capital) - tail_q_soft_loss_pct)
       - tail_worst_penalty * max(0, (-worst_tail / initial_capital) - tail_worst_soft_loss_pct)
-where `q_tail` / `worst_tail` are computed from robust daily PnL:
-  robust_daily_pnl_t = min(holdout_daily_pnl_t, stress_daily_pnl_t)
+where `q_tail` / `worst_tail` are computed from holdout daily PnL.
 """
 
 from __future__ import annotations
@@ -81,7 +79,6 @@ class _WindowStats:
     robust_tail_period_share: Optional[float]
     tail_samples: Tuple[float, ...]
     holdout: _Entry
-    stress: _Entry
 
 
 @dataclass(frozen=True)
@@ -214,16 +211,12 @@ def _load_daily_pnl_map(path: Path) -> Dict[str, float]:
         return out
 
 
-def _load_robust_daily_tail(project_root: Path, holdout: _Entry, stress: _Entry) -> Tuple[float, ...]:
-    holdout_daily = _load_daily_pnl_map(_resolve_path(project_root, holdout.results_dir) / "daily_pnl.csv")
-    stress_daily = _load_daily_pnl_map(_resolve_path(project_root, stress.results_dir) / "daily_pnl.csv")
-    if not holdout_daily or not stress_daily:
+def _load_daily_tail(project_root: Path, run: _Entry) -> Tuple[float, ...]:
+    daily = _load_daily_pnl_map(_resolve_path(project_root, run.results_dir) / "daily_pnl.csv")
+    if not daily:
         return ()
-
-    common_dates = sorted(set(holdout_daily).intersection(stress_daily))
-    if not common_dates:
-        return ()
-    return tuple(min(holdout_daily[day], stress_daily[day]) for day in common_dates)
+    # Keep order stable for quantile computations.
+    return tuple(daily[day] for day in sorted(daily))
 
 
 def _fullspan_score(
@@ -278,7 +271,7 @@ def _print_concentration_rejects(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Rank paired holdout/stress WFA runs across OOS windows (robust Sharpe)")
+    parser = argparse.ArgumentParser(description="Rank holdout WFA runs across OOS windows (multi-window Sharpe)")
     parser.add_argument(
         "--run-index",
         default="artifacts/wfa/aggregate/rollup/run_index.csv",
@@ -304,7 +297,7 @@ def main() -> int:
         type=float,
         default=0.95,
         help=(
-            "Gate: worst-window coverage_ratio (min(holdout, stress)) must be >= this "
+            "Gate: worst-window coverage_ratio must be >= this "
             "(default: 0.95). Missing/non-finite coverage fails closed."
         ),
     )
@@ -318,7 +311,7 @@ def main() -> int:
         "--min-pnl",
         type=float,
         default=0.0,
-        help="Gate: worst window PnL (min(window min(holdout_total_pnl, stress_total_pnl))) must be >= this (default: 0.0).",
+        help="Gate: worst window PnL (holdout total_pnl) must be >= this (default: 0.0).",
     )
     parser.add_argument(
         "--min-psr",
@@ -534,68 +527,47 @@ def main() -> int:
                 )
             )
 
-    # Step 1: pair holdout/stress within each run_group by base_id.
-    paired: Dict[Tuple[str, str], Dict[str, _Entry]] = {}
+    # Step 1: collect holdout runs (stress rows are ignored).
+    holdouts: Dict[Tuple[str, str], _Entry] = {}
     for entry in entries:
         kind, base_id = _kind_and_base_id(entry.run_id)
-        if kind not in {"holdout", "stress"}:
+        if kind == "stress":
             continue
 
         meta = " | ".join([entry.run_group, base_id, entry.run_id, entry.config_path, entry.results_dir, entry.status])
         if args.contains and not _matches_all(meta, args.contains):
             continue
 
-        key = (entry.run_group, base_id)
-        slot = paired.setdefault(key, {})
-        slot[kind] = entry
+        holdouts[(entry.run_group, base_id)] = entry
 
-    # Step 2: compute per-window robust metrics and aggregate by variant.
+    # Step 2: compute per-window metrics and aggregate by variant.
     windows_by_variant: Dict[Tuple[str, str], List[_WindowStats]] = {}
-    for (run_group, base_id), pair in paired.items():
-        holdout = pair.get("holdout")
-        stress = pair.get("stress")
-        if holdout is None or stress is None:
+    for (run_group, base_id), holdout in holdouts.items():
+        if not holdout.metrics_present:
             continue
-        if not (holdout.metrics_present and stress.metrics_present):
+        if holdout.sharpe is None or holdout.dd_pct is None:
             continue
-        if holdout.sharpe is None or stress.sharpe is None:
+        if not args.include_noncompleted and holdout.status.lower() != "completed":
             continue
-        if holdout.dd_pct is None or stress.dd_pct is None:
-            continue
-        if not args.include_noncompleted:
-            if holdout.status.lower() != "completed" or stress.status.lower() != "completed":
-                continue
 
-        robust_sharpe = min(holdout.sharpe, stress.sharpe)
-        dd_pct = max(abs(holdout.dd_pct), abs(stress.dd_pct))
-        robust_psr = None
-        if holdout.psr is not None and stress.psr is not None:
-            robust_psr = min(holdout.psr, stress.psr)
-        robust_dsr = None
-        if holdout.dsr is not None and stress.dsr is not None:
-            robust_dsr = min(holdout.dsr, stress.dsr)
-        robust_pnl = None
-        if holdout.pnl is not None and stress.pnl is not None:
-            robust_pnl = min(holdout.pnl, stress.pnl)
+        robust_sharpe = float(holdout.sharpe)
+        dd_pct = float(abs(holdout.dd_pct))
+        robust_psr = holdout.psr
+        robust_dsr = holdout.dsr
+        robust_pnl = holdout.pnl
+
         robust_coverage = None
-        if holdout.coverage_ratio is not None and stress.coverage_ratio is not None:
-            holdout_cov = float(holdout.coverage_ratio)
-            stress_cov = float(stress.coverage_ratio)
-            if math.isfinite(holdout_cov) and math.isfinite(stress_cov):
-                robust_coverage = min(holdout_cov, stress_cov)
-        robust_tail_pair_share = None
-        if holdout.tail_loss_worst_pair_share is not None and stress.tail_loss_worst_pair_share is not None:
-            robust_tail_pair_share = max(holdout.tail_loss_worst_pair_share, stress.tail_loss_worst_pair_share)
-        robust_tail_period_share = None
-        if holdout.tail_loss_worst_period_share is not None and stress.tail_loss_worst_period_share is not None:
-            robust_tail_period_share = max(
-                holdout.tail_loss_worst_period_share,
-                stress.tail_loss_worst_period_share,
-            )
+        if holdout.coverage_ratio is not None:
+            cov = float(holdout.coverage_ratio)
+            if math.isfinite(cov):
+                robust_coverage = cov
+
+        robust_tail_pair_share = holdout.tail_loss_worst_pair_share
+        robust_tail_period_share = holdout.tail_loss_worst_period_share
 
         tail_samples: Tuple[float, ...] = ()
         if args.fullspan_policy_v1:
-            tail_samples = _load_robust_daily_tail(project_root, holdout, stress)
+            tail_samples = _load_daily_tail(project_root, holdout)
 
         window = _parse_window(base_id)
         variant = _variant_id(base_id)
@@ -612,7 +584,6 @@ def main() -> int:
                 robust_tail_period_share=robust_tail_period_share,
                 tail_samples=tail_samples,
                 holdout=holdout,
-                stress=stress,
             )
         )
 
@@ -634,12 +605,8 @@ def main() -> int:
         if worst_dd > max(0.0, args.max_dd_pct):
             continue
 
-        min_trades = min(
-            min(item.holdout.trades or 0.0, item.stress.trades or 0.0) for item in items
-        )
-        min_pairs = min(
-            min(item.holdout.pairs or 0.0, item.stress.pairs or 0.0) for item in items
-        )
+        min_trades = min(float(item.holdout.trades or 0.0) for item in items)
+        min_pairs = min(float(item.holdout.pairs or 0.0) for item in items)
         if min_trades < args.min_trades or min_pairs < args.min_pairs:
             continue
 

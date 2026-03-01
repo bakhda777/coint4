@@ -27,6 +27,7 @@ env/
 .augment/
 .trae/
 .claude/
+.codex/
 
 # OS
 .DS_Store
@@ -135,6 +136,9 @@ logs/
 # Codex local runtime snapshots/temp
 .codex/shell_snapshots/
 .codex/tmp/
+.codex/*.sqlite
+.codex/*.sqlite-wal
+.codex/*.sqlite-shm
 
 # Autopilot local outputs (do not commit runtime snapshots/reports)
 .ai_autopilot/autopilot_loop.lock

@@ -24,8 +24,22 @@ def _args() -> SimpleNamespace:
         once=False,
         until_done=False,
         max_iterations=None,
+        planner_mode="legacy",
         use_codex_exec=True,
         codex_model="",
+        evolution_controller_group="",
+        evolution_run_prefix="autonomous_evo",
+        evolution_contains=[],
+        evolution_num_variants=12,
+        evolution_ir_mode="patch_ast",
+        evolution_policy_scale="auto",
+        evolution_ast_max_complexity_score=60.0,
+        evolution_ast_max_redundancy_similarity=0.85,
+        evolution_patch_max_attempts=8,
+        evolution_llm_model="gpt-5.2",
+        evolution_llm_effort="xhigh",
+        evolution_llm_timeout_sec=180,
+        evolution_llm_verify_semantic=True,
         plan_only=False,
         wait_timeout_sec=21600,
         wait_poll_sec=60,
@@ -69,6 +83,9 @@ def _setup_runner(module, tmp_path: Path):
     runner.ensure_next_batch = app_root / "scripts" / "optimization" / "loop_orchestrator" / "ensure_next_batch.py"
     runner.build_run_index = app_root / "scripts" / "optimization" / "build_run_index.py"
     runner.rank_script = app_root / "scripts" / "optimization" / "rank_multiwindow_robust_runs.py"
+    runner.evolve_next_batch = app_root / "scripts" / "optimization" / "evolve_next_batch.py"
+    runner.reflect_next_action = app_root / "scripts" / "optimization" / "reflect_next_action.py"
+    runner.build_factor_pool = app_root / "scripts" / "optimization" / "build_factor_pool.py"
     runner.codex_schema_path = schema_dst
     runner._ensure_codex_auth_ready = lambda: True
     runner._run_codex_json = lambda *args, **kwargs: None
@@ -284,6 +301,93 @@ def test_codex_run_iteration_uses_single_decision_per_cycle(tmp_path: Path, monk
 
     assert calls["n"] == 1
     assert result["last_iteration_phase"] == "rank_ok"
+
+
+def test_evolution_mode_dispatches_to_evolution_iteration(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    runner.args.planner_mode = "evolution"
+
+    called = {"n": 0}
+
+    def _fake_evolution(*, state):
+        called["n"] += 1
+        state["last_iteration_phase"] = "rank_ok"
+        return state
+
+    monkeypatch.setattr(runner, "_run_iteration_evolution", _fake_evolution)
+    monkeypatch.setattr(runner, "_run_iteration_local", lambda **kwargs: (_ for _ in ()).throw(AssertionError("legacy path should not run")))
+    monkeypatch.setattr(runner, "decide_with_codex", lambda _state: (_ for _ in ()).throw(AssertionError("codex path should not run")))
+
+    state = runner._default_state()
+    result = runner.run_iteration(state=state)
+
+    assert called["n"] == 1
+    assert result["last_iteration_phase"] == "rank_ok"
+
+
+def test_plan_next_queue_with_evolution_reads_decision_queue(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    runner.args.planner_mode = "evolution"
+    runner.args.use_codex_exec = False
+    runner.args.evolution_contains = []
+    runner.args.evolution_controller_group = ""
+
+    runner.evolve_next_batch.parent.mkdir(parents=True, exist_ok=True)
+    runner.evolve_next_batch.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    decision_run_group = "rg_evo_test"
+    decision_queue_rel = f"artifacts/wfa/aggregate/{decision_run_group}/run_queue.csv"
+    decision_queue_path = runner.app_root / decision_queue_rel
+    decision_queue_path.parent.mkdir(parents=True, exist_ok=True)
+    decision_queue_path.write_text(
+        "config_path,results_dir,status\nconfigs/a.yaml,artifacts/wfa/runs_clean/rg_evo_test/run1,planned\n",
+        encoding="utf-8",
+    )
+
+    def _fake_run_subprocess(*, cmd, cwd, iteration_log, env=None):
+        assert "evolve_next_batch.py" in " ".join(cmd)
+        idx = cmd.index("--controller-group")
+        controller_group = cmd[idx + 1]
+        decision_dir = runner.app_root / "artifacts" / "wfa" / "aggregate" / controller_group / "decisions"
+        decision_dir.mkdir(parents=True, exist_ok=True)
+        (decision_dir / "decision_test.json").write_text(
+            json.dumps(
+                {
+                    "decision_id": "evo-d1",
+                    "run_group": decision_run_group,
+                    "queue_path": decision_queue_rel,
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        class _Proc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return _Proc()
+
+    monkeypatch.setattr(runner, "_run_subprocess", _fake_run_subprocess)
+
+    state = runner._default_state()
+    iteration_log = runner._iteration_log_path("rg_plan_test", 0)
+    plan = runner._plan_next_queue_with_evolution(
+        state=state,
+        iteration=0,
+        run_group=decision_run_group,
+        iteration_log=iteration_log,
+    )
+
+    assert plan.queue.run_group == decision_run_group
+    assert plan.queue.queue_path == decision_queue_path
+    assert plan.queue.ready_rows == 1
+    assert state["last_decision_id"] == "evo-d1"
+    assert state["last_decision_action"] == "run_next_batch_evolution"
 
 
 def test_codex_stop_marks_state_done(tmp_path: Path, monkeypatch) -> None:

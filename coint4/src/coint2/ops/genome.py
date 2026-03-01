@@ -213,7 +213,7 @@ def genome_distance_weighted_l1_v1(
         # bool/string/categorical: exact match only
         total += w * (0.0 if av == bv else 1.0)
 
-    return float(total)
+    return float(round(total, 12))
 
 
 def genome_similarity_v1(distance: float) -> float:

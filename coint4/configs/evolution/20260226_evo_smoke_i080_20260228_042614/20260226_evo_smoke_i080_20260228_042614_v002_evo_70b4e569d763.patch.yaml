@@ -1,0 +1,5 @@
+base_config: configs/evolution/20260226_evo_smoke_i079_20260228_040128/20260226_evo_smoke_i079_20260228_040128_v001_evo_64bf572f02fb_oos20240501_20250630.yaml
+filter_params:
+  max_half_life_days: 65
+pair_selection:
+  min_correlation: 0.38000000000000006

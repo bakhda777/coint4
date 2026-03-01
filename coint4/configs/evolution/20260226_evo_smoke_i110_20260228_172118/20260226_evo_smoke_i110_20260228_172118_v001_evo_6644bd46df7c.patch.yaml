@@ -1,0 +1,3 @@
+base_config: configs/evolution/20260226_evo_smoke_i109_20260228_164147/20260226_evo_smoke_i109_20260228_164147_v001_evo_d18793e71110_oos20231001_20240930.yaml
+pair_selection:
+  min_correlation: 0.3

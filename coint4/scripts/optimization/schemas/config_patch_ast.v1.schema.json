@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coint4/scripts/optimization/schemas/config_patch_ast.v1.schema.json",
+  "title": "ConfigPatch AST v1",
+  "description": "Canonical JSON shape for the derived ConfigPatch AST view used for complexity/redundancy gates.",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "children"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" }
+        }
+      }
+    }
+  },
+  "$ref": "#/$defs/node"
+}

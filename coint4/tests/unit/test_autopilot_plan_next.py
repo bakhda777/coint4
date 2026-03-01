@@ -91,16 +91,13 @@ def _write_rollup_for_variant(
     risk_tag: str,
 ) -> None:
     holdout = [r for r in queue_rows if "holdout_" in (r.get("results_dir") or "") and risk_tag in (r.get("results_dir") or "")]
-    stress = [r for r in queue_rows if "stress_" in (r.get("results_dir") or "") and risk_tag in (r.get("results_dir") or "")]
     assert len(holdout) == 1
-    assert len(stress) == 1
 
     def _run_id(results_dir: str) -> str:
         # artifacts/.../<run_group>/<run_id>
         return Path(results_dir).name
 
     holdout_id = _run_id(str(holdout[0]["results_dir"]))
-    stress_id = _run_id(str(stress[0]["results_dir"]))
 
     rollup_path = app_root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
     rollup_path.parent.mkdir(parents=True, exist_ok=True)
@@ -129,20 +126,6 @@ def _write_rollup_for_variant(
                 "metrics_present": "True",
                 "sharpe_ratio_abs": "2.0",
                 "max_drawdown_on_equity": "-0.05",
-                "total_trades": "10",
-                "total_pairs_traded": "3",
-            }
-        )
-        writer.writerow(
-            {
-                "run_id": stress_id,
-                "run_group": run_group,
-                "config_path": str(stress[0]["config_path"]),
-                "results_dir": str(stress[0]["results_dir"]),
-                "status": "completed",
-                "metrics_present": "True",
-                "sharpe_ratio_abs": "1.0",
-                "max_drawdown_on_equity": "-0.07",
                 "total_trades": "10",
                 "total_pairs_traded": "3",
             }

@@ -3,11 +3,14 @@ SHELL := /bin/bash
 
 COINT4_DIR := coint4
 COINT4_VENV_BIN := $(COINT4_DIR)/.venv/bin
-LOOP_HOME ?= /home/claudeuser/coint4
+LOOP_HOME ?= $(HOME)
 
 # Queue path is relative to app root (coint4/). Override if needed.
 VPS_WFA_QUEUE ?= artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv
 LOOP_USE_CODEX_EXEC ?= 1
+LOOP_PLANNER_MODE ?= evolution
+LOOP_RESUME ?= 1
+LOOP_EVOLUTION_NUM_VARIANTS ?= 12
 CODEX_ENV_FILE ?= /etc/coint4/codex.env
 # codex auth mode for loop targets:
 #   subscription (default): use existing `codex login` session (recommended; no API key usage).
@@ -19,6 +22,12 @@ ifeq ($(LOOP_USE_CODEX_EXEC),1)
 LOOP_CODEX_FLAG := --use-codex-exec
 else
 LOOP_CODEX_FLAG :=
+endif
+
+ifeq ($(LOOP_RESUME),1)
+LOOP_RESUME_FLAG := --resume
+else
+LOOP_RESUME_FLAG :=
 endif
 
 define _ensure_venv
@@ -37,8 +46,8 @@ help:
 	@echo "  make test-slow   Run pytest -m slow"
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
-	@echo "  make loop        Closed loop (autonomous_optimize --until-done; Codex exec + local fallback)"
-	@echo "  make loop-once   One closed-loop pass (autonomous_optimize --once; Codex exec + local fallback)"
+	@echo "  make loop        Closed loop (autonomous_optimize --until-done; planner mode configurable)"
+	@echo "  make loop-once   One closed-loop pass (autonomous_optimize --once; planner mode configurable)"
 	@echo "  make loop-api-power Legacy one-shot baseline via API power-cycle wrapper"
 	@echo "  make preflight-loop Run loop preflight (remote policy + secrets + SSH + hygiene/lint/test)"
 	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
@@ -50,6 +59,9 @@ help:
 	@echo "  - Most commands use coint4/.venv/bin/* directly (no need for 'poetry run')."
 	@echo "  - 'make setup' requires Poetry to be installed."
 	@echo "  - loop auth mode: LOOP_CODEX_AUTH_MODE=subscription|api-key|auto (default: subscription)."
+	@echo "  - planner mode: LOOP_PLANNER_MODE=evolution|legacy (default: evolution)."
+	@echo "  - loop resume: LOOP_RESUME=1|0 (default: 1; resume if state=done)."
+	@echo "  - evolution: LOOP_EVOLUTION_NUM_VARIANTS=<n> (default: 12; variants per batch)."
 
 .PHONY: setup
 setup:
@@ -90,7 +102,7 @@ loop-closed:
 		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
 		HOME="$(LOOP_HOME)" \
 		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
-		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --until-done $(LOOP_CODEX_FLAG)
+		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --until-done $(LOOP_RESUME_FLAG) --planner-mode "$(LOOP_PLANNER_MODE)" --evolution-num-variants "$(LOOP_EVOLUTION_NUM_VARIANTS)" $(LOOP_CODEX_FLAG)
 
 .PHONY: loop-once
 loop-once:
@@ -100,7 +112,7 @@ loop-once:
 		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
 		HOME="$(LOOP_HOME)" \
 		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
-		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --once $(LOOP_CODEX_FLAG)
+		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --once $(LOOP_RESUME_FLAG) --planner-mode "$(LOOP_PLANNER_MODE)" --evolution-num-variants "$(LOOP_EVOLUTION_NUM_VARIANTS)" $(LOOP_CODEX_FLAG)
 
 .PHONY: loop-api-power
 loop-api-power:

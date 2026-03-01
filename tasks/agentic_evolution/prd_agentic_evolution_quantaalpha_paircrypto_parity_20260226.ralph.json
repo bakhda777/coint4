@@ -1,0 +1,194 @@
+{
+  "name": "agentic_evolution_quantaalpha_paircrypto_parity_20260226",
+  "description": "Parity implementation for QuanAlpha-style agentic evolution loop on pair-crypto setup.",
+  "branchName": "ralph-session/3f79a0fa",
+  "userStories": [
+    {
+      "id": "QA-001",
+      "title": "Formal parity blueprint и checklist",
+      "description": "Формальный paper-to-code parity blueprint.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "parity",
+        "docs"
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "QA-002",
+      "title": "Pair-crypto hypothesis/factor DSL v1",
+      "description": "DSL и схема для структурированных гипотез.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "dsl",
+        "llm"
+      ],
+      "dependsOn": [
+        "QA-001"
+      ]
+    },
+    {
+      "id": "QA-003",
+      "title": "Materializer DSL -> executable config patch",
+      "description": "Безопасная материализация DSL в YAML patch.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "dsl",
+        "materializer"
+      ],
+      "dependsOn": [
+        "QA-002"
+      ]
+    },
+    {
+      "id": "QA-004",
+      "title": "LLM proposer v2 (multi-candidate structured output)",
+      "description": "Генерация следующего батча через structured LLM policy и операторы.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "llm",
+        "proposer"
+      ],
+      "dependsOn": [
+        "QA-003"
+      ]
+    },
+    {
+      "id": "QA-005",
+      "title": "Semantic + structural gates v1",
+      "description": "Fail-closed гейты на уровне DSL/policy/selection.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "gates",
+        "safety"
+      ],
+      "dependsOn": [
+        "QA-004"
+      ]
+    },
+    {
+      "id": "QA-006",
+      "title": "Trajectory memory store",
+      "description": "История action->result->reflection в состоянии цикла.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "memory"
+      ],
+      "dependsOn": [
+        "QA-004"
+      ]
+    },
+    {
+      "id": "QA-007",
+      "title": "Evaluator protocol v2 (multi-objective)",
+      "description": "Pareto + decomposition evaluator protocol.",
+      "acceptanceCriteria": [],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "evaluator",
+        "ranking"
+      ],
+      "dependsOn": [
+        "QA-005"
+      ]
+    },
+    {
+      "id": "QA-008",
+      "title": "LLM critic/reflection loop",
+      "description": "Structured critic/reflection этап для trajectory memory.",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "critic",
+        "reflection"
+      ],
+      "dependsOn": [
+        "QA-006",
+        "QA-007"
+      ]
+    },
+    {
+      "id": "QA-009",
+      "title": "Operator policy v2 (micro/macro + crossover)",
+      "description": "Политика операторов с micro/macro режимами и crossover.",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "operators",
+        "policy"
+      ],
+      "dependsOn": [
+        "QA-004",
+        "QA-007"
+      ]
+    },
+    {
+      "id": "QA-010",
+      "title": "Transfer/generalization protocol для pair crypto",
+      "description": "Отчёт transfer/generalization по OOS окнам.",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "generalization",
+        "report"
+      ],
+      "dependsOn": [
+        "QA-007"
+      ]
+    },
+    {
+      "id": "QA-011",
+      "title": "One-command orchestration (plan->run->postprocess->rank->reflect)",
+      "description": "Единая оркестрация шага эволюции в одном CLI.",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "orchestration"
+      ],
+      "dependsOn": [
+        "QA-004",
+        "QA-008",
+        "QA-010"
+      ]
+    },
+    {
+      "id": "QA-012",
+      "title": "Reproducibility + ablation parity report",
+      "description": "Автоматический parity/ablation отчёт по решениям и run_index.",
+      "acceptanceCriteria": [],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "reproducibility",
+        "ablation",
+        "parity"
+      ],
+      "dependsOn": [
+        "QA-011"
+      ]
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-26T19:08:00.000Z",
+    "updatedAt": "2026-02-26T21:40:00.000Z",
+    "version": "v1",
+    "sourcePrd": "quantaalpha_paircrypto_parity_20260226"
+  }
+}

@@ -54,26 +54,18 @@ def _build_run_index(tmp_path: Path) -> Path:
     run_group = "rg_fullspan"
     rows: list[dict[str, str]] = []
 
-    def add_pair(
+    def add_holdout(
         *,
         base_id: str,
-        holdout_sharpe: float,
-        stress_sharpe: float,
-        holdout_psr: float,
-        stress_psr: float,
-        holdout_dsr: float,
-        stress_dsr: float,
-        holdout_pnl: float,
-        stress_pnl: float,
-        holdout_dd_pct: float,
-        stress_dd_pct: float,
-        holdout_daily: list[float],
-        stress_daily: list[float],
+        sharpe: float,
+        psr: float,
+        dsr: float,
+        pnl: float,
+        dd_pct: float,
+        daily: list[float],
     ) -> None:
         holdout_results = tmp_path / "runs" / f"holdout_{base_id}"
-        stress_results = tmp_path / "runs" / f"stress_{base_id}"
-        _write_daily_pnl(holdout_results / "daily_pnl.csv", holdout_daily)
-        _write_daily_pnl(stress_results / "daily_pnl.csv", stress_daily)
+        _write_daily_pnl(holdout_results / "daily_pnl.csv", daily)
 
         rows.append(
             {
@@ -83,31 +75,11 @@ def _build_run_index(tmp_path: Path) -> Path:
                 "config_path": f"configs/{base_id}_holdout.yaml",
                 "status": "completed",
                 "metrics_present": "true",
-                "sharpe_ratio_abs": str(holdout_sharpe),
-                "psr": str(holdout_psr),
-                "dsr": str(holdout_dsr),
-                "total_pnl": str(holdout_pnl),
-                "max_drawdown_on_equity": str(holdout_dd_pct),
-                "total_trades": "500",
-                "total_pairs_traded": "30",
-                "max_drawdown_abs": "-100",
-                "total_costs": "10",
-                "coverage_ratio": "1.0",
-            }
-        )
-        rows.append(
-            {
-                "run_id": f"stress_{base_id}",
-                "run_group": run_group,
-                "results_dir": str(stress_results),
-                "config_path": f"configs/{base_id}_stress.yaml",
-                "status": "completed",
-                "metrics_present": "true",
-                "sharpe_ratio_abs": str(stress_sharpe),
-                "psr": str(stress_psr),
-                "dsr": str(stress_dsr),
-                "total_pnl": str(stress_pnl),
-                "max_drawdown_on_equity": str(stress_dd_pct),
+                "sharpe_ratio_abs": str(sharpe),
+                "psr": str(psr),
+                "dsr": str(dsr),
+                "total_pnl": str(pnl),
+                "max_drawdown_on_equity": str(dd_pct),
                 "total_trades": "500",
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
@@ -117,36 +89,24 @@ def _build_run_index(tmp_path: Path) -> Path:
         )
 
     # Better robust Sharpe, but catastrophic left tail on robust daily PnL.
-    add_pair(
+    add_holdout(
         base_id="variant_a",
-        holdout_sharpe=1.50,
-        stress_sharpe=1.20,
-        holdout_psr=0.42,
-        stress_psr=0.35,
-        holdout_dsr=-0.30,
-        stress_dsr=-0.50,
-        holdout_pnl=120.0,
-        stress_pnl=100.0,
-        holdout_dd_pct=0.10,
-        stress_dd_pct=0.12,
-        holdout_daily=[12.0, -320.0, 20.0],
-        stress_daily=[8.0, -300.0, 9.0],
+        sharpe=1.50,
+        psr=0.42,
+        dsr=-0.30,
+        pnl=120.0,
+        dd_pct=0.10,
+        daily=[12.0, -320.0, 20.0],
     )
     # Lower robust Sharpe, but acceptable tail profile.
-    add_pair(
+    add_holdout(
         base_id="variant_b",
-        holdout_sharpe=1.00,
-        stress_sharpe=0.95,
-        holdout_psr=0.96,
-        stress_psr=0.93,
-        holdout_dsr=0.40,
-        stress_dsr=0.25,
-        holdout_pnl=80.0,
-        stress_pnl=70.0,
-        holdout_dd_pct=0.08,
-        stress_dd_pct=0.10,
-        holdout_daily=[-55.0, 20.0, 15.0],
-        stress_daily=[-50.0, 11.0, 12.0],
+        sharpe=1.00,
+        psr=0.96,
+        dsr=0.40,
+        pnl=80.0,
+        dd_pct=0.08,
+        daily=[-55.0, 20.0, 15.0],
     )
 
     run_index = tmp_path / "run_index.csv"
@@ -175,9 +135,7 @@ def _build_run_index_for_score_modes(tmp_path: Path) -> Path:
     def add_variant_window(variant: str, start: str, end: str, robust_sharpe: float) -> None:
         base_id = f"{variant}_oos{start}_{end}"
         holdout_results = tmp_path / "runs" / f"holdout_{base_id}"
-        stress_results = tmp_path / "runs" / f"stress_{base_id}"
         holdout_results.mkdir(parents=True, exist_ok=True)
-        stress_results.mkdir(parents=True, exist_ok=True)
 
         rows.append(
             {
@@ -187,31 +145,11 @@ def _build_run_index_for_score_modes(tmp_path: Path) -> Path:
                 "config_path": f"configs/{base_id}_holdout.yaml",
                 "status": "completed",
                 "metrics_present": "true",
-                "sharpe_ratio_abs": str(robust_sharpe + 0.10),
+                "sharpe_ratio_abs": str(robust_sharpe),
                 "psr": "0.95",
                 "dsr": "0.20",
                 "total_pnl": "100.0",
                 "max_drawdown_on_equity": "0.10",
-                "total_trades": "500",
-                "total_pairs_traded": "30",
-                "max_drawdown_abs": "-100",
-                "total_costs": "10",
-                "coverage_ratio": "1.0",
-            }
-        )
-        rows.append(
-            {
-                "run_id": f"stress_{base_id}",
-                "run_group": run_group,
-                "results_dir": str(stress_results),
-                "config_path": f"configs/{base_id}_stress.yaml",
-                "status": "completed",
-                "metrics_present": "true",
-                "sharpe_ratio_abs": str(robust_sharpe),
-                "psr": "0.95",
-                "dsr": "0.20",
-                "total_pnl": "90.0",
-                "max_drawdown_on_equity": "0.11",
                 "total_trades": "500",
                 "total_pairs_traded": "30",
                 "max_drawdown_abs": "-100",
@@ -242,20 +180,15 @@ def _build_run_index_for_concentration_gates(tmp_path: Path) -> Path:
     def _share(value: float | None) -> str:
         return "" if value is None else str(value)
 
-    def add_pair(
+    def add_holdout(
         *,
         base_id: str,
-        holdout_sharpe: float,
-        stress_sharpe: float,
-        holdout_pair_share: float | None,
-        stress_pair_share: float | None,
-        holdout_period_share: float | None,
-        stress_period_share: float | None,
+        sharpe: float,
+        pair_share: float | None,
+        period_share: float | None,
     ) -> None:
         holdout_results = tmp_path / "runs" / f"holdout_{base_id}"
-        stress_results = tmp_path / "runs" / f"stress_{base_id}"
         holdout_results.mkdir(parents=True, exist_ok=True)
-        stress_results.mkdir(parents=True, exist_ok=True)
 
         rows.append(
             {
@@ -265,7 +198,7 @@ def _build_run_index_for_concentration_gates(tmp_path: Path) -> Path:
                 "config_path": f"configs/{base_id}_holdout.yaml",
                 "status": "completed",
                 "metrics_present": "true",
-                "sharpe_ratio_abs": str(holdout_sharpe),
+                "sharpe_ratio_abs": str(sharpe),
                 "psr": "0.95",
                 "dsr": "0.20",
                 "total_pnl": "120.0",
@@ -275,59 +208,28 @@ def _build_run_index_for_concentration_gates(tmp_path: Path) -> Path:
                 "max_drawdown_abs": "-100",
                 "total_costs": "10",
                 "coverage_ratio": "1.0",
-                "tail_loss_worst_pair_share": _share(holdout_pair_share),
-                "tail_loss_worst_period_share": _share(holdout_period_share),
-            }
-        )
-        rows.append(
-            {
-                "run_id": f"stress_{base_id}",
-                "run_group": run_group,
-                "results_dir": str(stress_results),
-                "config_path": f"configs/{base_id}_stress.yaml",
-                "status": "completed",
-                "metrics_present": "true",
-                "sharpe_ratio_abs": str(stress_sharpe),
-                "psr": "0.95",
-                "dsr": "0.20",
-                "total_pnl": "100.0",
-                "max_drawdown_on_equity": "0.12",
-                "total_trades": "500",
-                "total_pairs_traded": "30",
-                "max_drawdown_abs": "-100",
-                "total_costs": "10",
-                "coverage_ratio": "1.0",
-                "tail_loss_worst_pair_share": _share(stress_pair_share),
-                "tail_loss_worst_period_share": _share(stress_period_share),
+                "tail_loss_worst_pair_share": _share(pair_share),
+                "tail_loss_worst_period_share": _share(period_share),
             }
         )
 
-    add_pair(
+    add_holdout(
         base_id="variant_a",
-        holdout_sharpe=1.30,
-        stress_sharpe=1.20,
-        holdout_pair_share=0.92,
-        stress_pair_share=0.88,
-        holdout_period_share=0.58,
-        stress_period_share=0.56,
+        sharpe=1.30,
+        pair_share=0.92,
+        period_share=0.58,
     )
-    add_pair(
+    add_holdout(
         base_id="variant_b",
-        holdout_sharpe=1.00,
-        stress_sharpe=0.95,
-        holdout_pair_share=0.35,
-        stress_pair_share=0.30,
-        holdout_period_share=0.40,
-        stress_period_share=0.42,
+        sharpe=1.00,
+        pair_share=0.35,
+        period_share=0.40,
     )
-    add_pair(
+    add_holdout(
         base_id="variant_c",
-        holdout_sharpe=1.10,
-        stress_sharpe=1.05,
-        holdout_pair_share=0.30,
-        stress_pair_share=0.28,
-        holdout_period_share=None,
-        stress_period_share=None,
+        sharpe=1.10,
+        pair_share=0.30,
+        period_share=None,
     )
 
     run_index = tmp_path / "run_index_concentration.csv"

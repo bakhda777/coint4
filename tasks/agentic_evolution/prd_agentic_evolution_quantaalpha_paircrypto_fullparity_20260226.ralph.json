@@ -1,0 +1,224 @@
+{
+  "name": "agentic_evolution_quantaalpha_paircrypto_fullparity_20260226",
+  "description": "Bring coint4 pair-crypto evolution loop to 100% QuantaAlpha parity (adapted): ConfigPatch AST IR + semantic/complexity/redundancy gates + trajectory mutation/crossover segments + final factor pool.",
+  "branchName": "ralph-session/3f79a0fa",
+  "userStories": [
+    {
+      "id": "QPCI-01",
+      "title": "ConfigPatch AST IR v1 (schema + example + docs)",
+      "description": "Ввести канонический IR для изменения конфига: ConfigPatch AST (операторы над dotted keys).",
+      "acceptanceCriteria": [
+        "Есть JSON schema для ConfigPatch AST v1 и пример payload.",
+        "Есть docs с описанием IR и связью с QuantaAlpha parity (pair-crypto).",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "ir",
+        "ast",
+        "docs"
+      ],
+      "dependsOn": [],
+      "completionNotes": "IR закреплён как DSL schema+example (`coint4/scripts/optimization/schemas/pair_crypto_hypothesis_factor.dsl.v1.*`) + derived AST view для gates (`coint4/src/coint2/ops/config_patch_ast.py`). Документация: `docs/quantaalpha_paircrypto_parity.md`, `docs/pair_crypto_config_patch_ast_v1.md`. Добавлены schema+example для AST view: `coint4/scripts/optimization/schemas/config_patch_ast.v1.*`. make lint/test: OK."
+    },
+    {
+      "id": "QPCI-02",
+      "title": "Compiler: IR -> YAML patch -> YAML config (fail-closed)",
+      "description": "Материализация ConfigPatch AST в исполняемый patch/config с безопасными корнями и типами.",
+      "acceptanceCriteria": [
+        "Компилятор/материализатор применяет операции к base/parent config.",
+        "Fail-closed на unsafe roots, type mismatch, invalid numeric bounds.",
+        "Есть unit tests на materialization/apply.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "compiler",
+        "safety"
+      ],
+      "dependsOn": [
+        "QPCI-01"
+      ],
+      "completionNotes": "Materializer/validator реализован в `coint4/scripts/optimization/hypothesis_factor_dsl.py` (safe roots, type checks, bounds, fail-closed). Patch AST proposals materialize patch->config в `coint4/scripts/optimization/evolve_next_batch.py` (ir_mode=patch_ast). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-03",
+      "title": "Semantic consistency gate (LLM verifier) for h<->IR<->config",
+      "description": "LLM-based проверка согласованности гипотезы, IR и материализованного конфига; при провале — отклонять кандидата (fail-closed).",
+      "acceptanceCriteria": [
+        "Есть verifier, возвращающий structured JSON verdict (ok/reasons).",
+        "Gate интегрирован в pipeline генерации кандидатов (до записи queue/config).",
+        "Есть deterministic fallback при отсутствии codex с явным reason.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 1,
+      "passes": true,
+      "labels": [
+        "llm",
+        "semantic",
+        "gates"
+      ],
+      "dependsOn": [
+        "QPCI-02"
+      ],
+      "completionNotes": "Semantic gate: `coint4/scripts/optimization/semantic_consistency_gate.py` (deterministic + optional codex exec verifier). Интеграция в `coint4/scripts/optimization/evolve_next_batch.py` через `--llm-verify-semantic` (best-effort, deterministic fallback). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-04",
+      "title": "Complexity control for ConfigPatch AST",
+      "description": "Ввести complexity score и лимиты (SL/PC/|F|), reject/regen если нарушено.",
+      "acceptanceCriteria": [
+        "Реализован расчет complexity score для ConfigPatch AST.",
+        "Есть конфигурируемые пороги/лимиты (CLI или константы), fail-closed по умолчанию.",
+        "Есть unit tests для score/threshold поведения.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "complexity",
+        "gates"
+      ],
+      "dependsOn": [
+        "QPCI-01"
+      ],
+      "completionNotes": "Complexity score: `coint4/src/coint2/ops/config_patch_ast.py` (+ `coint4/src/coint2/ops/config_patch_gates.py` thresholds). CLI thresholds wired in `coint4/scripts/optimization/evolve_next_batch.py` (patch_ast). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-05",
+      "title": "Redundancy control (AST similarity) vs factor zoo",
+      "description": "Ввести redundancy score на основе AST matching и reject/regen дубликаты (anti-crowding).",
+      "acceptanceCriteria": [
+        "Реализован расчет структурной similarity для ConfigPatch AST (не только по числам).",
+        "Есть порог redundancy и логика reject/regen в генераторе кандидатов.",
+        "Есть unit tests для similarity и порога.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "redundancy",
+        "ast",
+        "gates"
+      ],
+      "dependsOn": [
+        "QPCI-01"
+      ],
+      "completionNotes": "Redundancy similarity: `coint4/src/coint2/ops/config_patch_ast.py` + gate wrapper `coint4/src/coint2/ops/config_patch_gates.py`. Включено в `coint4/scripts/optimization/evolve_next_batch.py` (zoo + threshold). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-06",
+      "title": "Diversified planning initialization (batch diversity)",
+      "description": "Генерация N кандидатов должна быть диверсифицированной; low redundancy внутри батча.",
+      "acceptanceCriteria": [
+        "Pipeline учитывает принятые в батче IR и не допускает слишком похожие кандидаты.",
+        "Есть явная конфигурация/threshold на diversity (на базе redundancy gate).",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "diversity",
+        "planning"
+      ],
+      "dependsOn": [
+        "QPCI-04",
+        "QPCI-05"
+      ],
+      "completionNotes": "Diversity внутри батча enforced через `batch_ast_zoo` и redundancy gate в `coint4/scripts/optimization/evolve_next_batch.py` (patch_ast). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-07",
+      "title": "Trajectory-level mutation (localized rewrite of IR segment)",
+      "description": "Mutation должен локализовать “плохой сегмент” (по failure_mode) и переписывать только его.",
+      "acceptanceCriteria": [
+        "Есть mapping failure_mode -> IR segment (roots/ops) и логика localized rewrite.",
+        "Lineage/parents фиксируются в decision артефактах.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 3,
+      "passes": true,
+      "labels": [
+        "mutation",
+        "trajectory"
+      ],
+      "dependsOn": [
+        "QPCI-02"
+      ],
+      "completionNotes": "Targeted mutation planning: `coint4/src/coint2/ops/evolution_targeting.py` (failure_mode -> operator_kind + keys/hypothesis). Используется в `coint4/scripts/optimization/evolve_next_batch.py` для локальной мутации сегмента (keys/roots). Lineage фиксируется (parents). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-08",
+      "title": "Trajectory-level crossover (segment recombination)",
+      "description": "Crossover должен комбинировать совместимые сегменты IR из нескольких родителей.",
+      "acceptanceCriteria": [
+        "Есть segment-level crossover для ConfigPatch AST (не только per-key uniform).",
+        "Есть правила конфликтов (один target_key) и fail-closed на invalid merge.",
+        "Lineage/parents фиксируются в decision артефактах.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 3,
+      "passes": true,
+      "labels": [
+        "crossover",
+        "trajectory",
+        "ast"
+      ],
+      "dependsOn": [
+        "QPCI-02"
+      ],
+      "completionNotes": "Segment-level crossover реализован в `coint4/scripts/optimization/evolve_next_batch.py` (patch_ast mode) как merge по root-сегментам dotted keys + fail-closed на конфликтах; lineage фиксируется (parents). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-09",
+      "title": "Decision/state artifacts: store hypothesis/IR + gate results",
+      "description": "Артефакты поколения должны хранить hypothesis/IR и результаты gates для воспроизводимости и анализа.",
+      "acceptanceCriteria": [
+        "Decision JSON включает hypothesis/IR + gate results per proposal.",
+        "State JSON хранит минимальную историю поколений + ссылки на решения.",
+        "Есть schema update + тест на стабильный формат.",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 2,
+      "passes": true,
+      "labels": [
+        "artifacts",
+        "reproducibility"
+      ],
+      "dependsOn": [
+        "QPCI-03",
+        "QPCI-04",
+        "QPCI-05"
+      ],
+      "completionNotes": "Decision schema расширена: `coint4/scripts/optimization/schemas/evolution_engine_decision.schema.json`. `evolve_next_batch.py` пишет proposals с hypothesis/patch_ir + gate results + parents и state history (`evolution_state.json`). make lint/test: OK."
+    },
+    {
+      "id": "QPCI-10",
+      "title": "Final factor pool builder (JSON+MD) from run_index + decisions",
+      "description": "Консолидировать лучшие варианты в “factor pool”: hypothesis/IR/metrics/lineage.",
+      "acceptanceCriteria": [
+        "Есть скрипт builder, который читает rollup run_index + decisions и пишет pool JSON+MD.",
+        "Pool включает lineage, gates и ключевые метрики (worst_robust_sharpe/DD/trades/pairs).",
+        "Команды качества проходят: make lint, make test."
+      ],
+      "priority": 4,
+      "passes": true,
+      "labels": [
+        "pool",
+        "report"
+      ],
+      "dependsOn": [
+        "QPCI-09"
+      ],
+      "completionNotes": "Factor pool builder: `coint4/scripts/optimization/build_factor_pool.py` (reads run_index + decisions; outputs JSON+MD). make lint/test: OK."
+    }
+  ],
+  "metadata": {
+    "createdAt": "2026-02-26T00:00:00.000Z",
+    "updatedAt": "2026-02-26T21:24:35Z",
+    "version": "v1",
+    "sourcePrd": "QuantaAlpha full parity (pair-crypto)"
+  }
+}

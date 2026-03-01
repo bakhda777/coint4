@@ -1,0 +1,27 @@
+{
+  "label": "PATCH",
+  "children": [
+    {
+      "label": "backtest",
+      "children": [
+        {
+          "label": "zscore_entry_threshold",
+          "children": [
+            { "label": "op:set", "children": [] }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "portfolio",
+      "children": [
+        {
+          "label": "risk_per_position_pct",
+          "children": [
+            { "label": "op:offset", "children": [] }
+          ]
+        }
+      ]
+    }
+  ]
+}

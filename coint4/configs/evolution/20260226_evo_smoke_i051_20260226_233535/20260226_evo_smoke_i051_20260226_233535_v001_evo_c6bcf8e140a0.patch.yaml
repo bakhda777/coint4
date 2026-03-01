@@ -1,0 +1,3 @@
+backtest:
+  zscore_entry_threshold: 1.2
+base_config: configs/prod_final_budget1000.yaml

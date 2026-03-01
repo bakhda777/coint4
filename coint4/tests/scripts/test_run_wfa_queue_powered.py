@@ -649,8 +649,9 @@ def test_run_powered_queue_waits_after_queue_run(
     assert "queue-run" in events
     assert "wait_completion" in events
     assert events.index("wait_completion") > events.index("queue-run")
-    assert events.index("remote_rollup") > events.index("wait_completion")
-    assert events.index("sync_rollup_back") > events.index("remote_rollup")
+    assert "remote-postprocess-queue" in events
+    assert events.index("remote-postprocess-queue") > events.index("wait_completion")
+    assert events.index("sync_rollup_back") > events.index("remote-postprocess-queue")
     assert events.index("remote_rank") > events.index("sync_rollup_back")
 
 
@@ -896,19 +897,12 @@ def test_bootstrap_repo_when_remote_repo_missing(tmp_path: Path, monkeypatch: py
     assert any(path.endswith("/opt/coint4") for path in mkdir_calls)
 
 
-def test_remote_rank_and_sync_fetches_rank_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remote_rank_and_sync_writes_local_payload_when_run_index_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = _load_powered_module(tmp_path)
 
     monkeypatch.setattr(module, "_run_remote_command", lambda *args, **kwargs: 0)
-
-    def _fake_fetch(source_user, source_host, source, destination, *, port, log):
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(
-            '{\n  "ok": false,\n  "run_group": "group",\n  "details": "NO_COMPLETED_METRICS_YET"\n}\n',
-            encoding="utf-8",
-        )
-
-    monkeypatch.setattr(module, "_fetch_remote_file", _fake_fetch)
 
     logs: list[str] = []
     local_path = module._remote_rank_and_sync(
@@ -927,9 +921,8 @@ def test_remote_rank_and_sync_fetches_rank_result(tmp_path: Path, monkeypatch: p
     assert local_path.exists()
     payload = json.loads(local_path.read_text(encoding="utf-8"))
     assert payload["ok"] is False
-    assert payload["details"] == "NO_COMPLETED_METRICS_YET"
-    assert any("remote_rank ok=False" in entry for entry in logs)
-    assert any("scp_fetch rank_result.json" in entry for entry in logs)
+    assert payload["details"] == "RUN_INDEX_MISSING_LOCAL"
+    assert any("local_rank ok=false" in entry for entry in logs)
 
 
 def test_auto_statuses_runs_planned_stalled_when_ready(
@@ -1202,7 +1195,7 @@ def test_auto_statuses_skips_queue_run_when_only_running(
     assert rc == 0
     assert len(watchdog_calls) == 1
     assert "queue-run" not in events
-    assert "remote_rollup" in events
+    assert "remote-postprocess-queue" in events
     assert "sync_rollup_back" in events
     assert "remote_rank" in events
 
@@ -1279,6 +1272,6 @@ def test_auto_statuses_completed_total_skips_queue_run_but_rollup_and_rank(
     assert rc == 0
     assert "queue-run" not in events
     assert "wait_completion" not in events
-    assert "remote_rollup" in events
+    assert "remote-postprocess-queue" in events
     assert "sync_rollup_back" in events
     assert "remote_rank" in events

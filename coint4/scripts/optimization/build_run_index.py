@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -11,6 +12,7 @@ from typing import Iterable, List, Optional
 from coint2.ops.run_queue import load_run_queue, write_run_queue
 
 from coint2.ops.run_index import (
+    RunIndexEntry,
     build_run_index,
     write_run_index_csv,
     write_run_index_json,
@@ -148,6 +150,91 @@ def _resolve_results_dir(raw: str, *, project_root: Path) -> Path:
     return project_root / path
 
 
+_MERGE_METRIC_FIELDS = (
+    "metrics_path",
+    "metrics_present",
+    "sharpe_ratio_abs",
+    "sharpe_ratio_abs_raw",
+    "sharpe_ratio_on_returns",
+    "psr",
+    "dsr",
+    "dsr_trials",
+    "total_pnl",
+    "max_drawdown_abs",
+    "max_drawdown_on_equity",
+    "total_trades",
+    "total_pairs_traded",
+    "total_costs",
+    "total_days",
+    "expected_test_days",
+    "observed_test_days",
+    "coverage_ratio",
+    "zero_pnl_days",
+    "zero_pnl_days_pct",
+    "missing_test_days",
+    "volatility",
+    "win_rate",
+    "best_pair_pnl",
+    "worst_pair_pnl",
+    "avg_pnl_per_pair",
+    "tail_loss_pair_total_abs",
+    "tail_loss_worst_pair",
+    "tail_loss_worst_pair_pnl",
+    "tail_loss_worst_pair_share",
+    "tail_loss_period_total_abs",
+    "tail_loss_worst_period",
+    "tail_loss_worst_period_pnl",
+    "tail_loss_worst_period_share",
+)
+
+
+def _load_existing_index(output_dir: Path) -> dict[tuple[str, str], dict]:
+    """Load existing run_index.json as typed-ish dicts for merge preservation.
+
+    This is critical when heavy run artifacts are cleaned up on the compute VPS:
+    we still want to preserve the last known metrics in the rollup index.
+    """
+    json_path = output_dir / "run_index.json"
+    if not json_path.exists():
+        return {}
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(payload, list):
+        return {}
+    out: dict[tuple[str, str], dict] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        run_group = str(item.get("run_group") or "").strip()
+        run_id = str(item.get("run_id") or "").strip()
+        # run_group can be empty for absolute results_dir paths outside repo-root (tests, ad-hoc runs).
+        if not run_id:
+            continue
+        out[(run_group, run_id)] = item
+    return out
+
+
+def _merge_existing_metrics(entries: list[RunIndexEntry], existing: dict[tuple[str, str], dict]) -> int:
+    merged = 0
+    for entry in entries:
+        if entry.metrics_present:
+            continue
+        if str(entry.status or "").strip().lower() != "completed":
+            continue
+        prev = existing.get((str(entry.run_group or ""), str(entry.run_id or "")))
+        if not prev:
+            continue
+        if str(prev.get("metrics_present") or "").strip().lower() not in {"1", "true", "yes", "y", "on"}:
+            continue
+        for field in _MERGE_METRIC_FIELDS:
+            if field in prev:
+                setattr(entry, field, prev.get(field))
+        merged += 1
+    return merged
+
+
 def _sync_queue_status_from_metrics(
     *,
     queue_paths: Iterable[Path],
@@ -236,6 +323,19 @@ def main() -> int:
         action="store_false",
         help="Disable auto queue status sync before rollup build.",
     )
+    parser.add_argument(
+        "--merge-existing",
+        dest="merge_existing",
+        action="store_true",
+        default=True,
+        help="Merge metrics from existing rollup run_index.json when artifacts are missing (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-merge-existing",
+        dest="merge_existing",
+        action="store_false",
+        help="Disable merge with existing rollup run_index.json.",
+    )
     parser.add_argument("--top-n", type=int, default=10, help="Top N runs to list.")
     args = parser.parse_args()
 
@@ -254,12 +354,18 @@ def main() -> int:
             updatable_statuses=("planned", "running", "stalled", "active"),
         )
 
+    existing = _load_existing_index(output_dir) if bool(args.merge_existing) else {}
+
     entries = build_run_index(
         runs_dir,
         queue_paths,
         project_root,
         compute_legacy_coverage=bool(args.compute_legacy_coverage),
     )
+    if existing:
+        merged = _merge_existing_metrics(entries, existing)
+        if merged:
+            print(f"Merged metrics from existing rollup for {merged} completed run(s).")
     entries = sorted(entries, key=lambda e: (e.run_group, e.run_id))
 
     output_dir.mkdir(parents=True, exist_ok=True)

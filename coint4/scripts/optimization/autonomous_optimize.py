@@ -93,6 +93,14 @@ class CodexDecision:
     exec_log_path: Path
 
 
+@dataclass
+class EvolutionPlan:
+    queue: QueueTarget
+    controller_group: str
+    run_prefix: str
+    decision_path: Path
+
+
 class AutonomousOptimizer:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -121,6 +129,9 @@ class AutonomousOptimizer:
         self.ensure_next_batch = self.app_root / "scripts" / "optimization" / "loop_orchestrator" / "ensure_next_batch.py"
         self.build_run_index = self.app_root / "scripts" / "optimization" / "build_run_index.py"
         self.rank_script = self.app_root / "scripts" / "optimization" / "rank_multiwindow_robust_runs.py"
+        self.evolve_next_batch = self.app_root / "scripts" / "optimization" / "evolve_next_batch.py"
+        self.reflect_next_action = self.app_root / "scripts" / "optimization" / "reflect_next_action.py"
+        self.build_factor_pool = self.app_root / "scripts" / "optimization" / "build_factor_pool.py"
         self.codex_schema_path = (
             self.app_root
             / "scripts"
@@ -270,6 +281,76 @@ class AutonomousOptimizer:
         walk_forward["start_date"] = fixed_start
         walk_forward["end_date"] = fixed_end
 
+    def _planner_mode(self) -> str:
+        raw_mode = str(getattr(self.args, "planner_mode", "") or "").strip().lower()
+        if raw_mode in {"legacy", "evolution"}:
+            return raw_mode
+        return "legacy"
+
+    def _bridge11_payload(self) -> Dict[str, Any]:
+        payload = _read_yaml(self.bridge11_path)
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
+    def _bridge11_base_config_rel(self) -> str:
+        payload = self._bridge11_payload()
+        raw_base = str(payload.get("base_config") or "").strip()
+        if raw_base:
+            return raw_base
+        return "configs/prod_final_budget1000.yaml"
+
+    def _bridge11_windows(self) -> list[tuple[str, str]]:
+        payload = self._bridge11_payload()
+        windows = payload.get("windows") if isinstance(payload.get("windows"), list) else []
+        out: list[tuple[str, str]] = []
+        for item in windows:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            start = str(item[0] or "").strip()
+            end = str(item[1] or "").strip()
+            if not start or not end:
+                continue
+            out.append((start, end))
+        return out
+
+    def _evolution_controller_group(self, state: Dict[str, Any]) -> str:
+        existing = str(state.get("evolution_controller_group") or "").strip()
+        if existing:
+            return existing
+        cli_value = str(getattr(self.args, "evolution_controller_group", "") or "").strip()
+        if cli_value:
+            state["evolution_controller_group"] = cli_value
+            return cli_value
+        env_value = str(os.environ.get("COINT4_EVOLUTION_CONTROLLER_GROUP") or "").strip()
+        if env_value:
+            state["evolution_controller_group"] = env_value
+            return env_value
+        fallback = f"{datetime.now(timezone.utc).strftime('%Y%m%d')}_autonomous_evolution"
+        state["evolution_controller_group"] = fallback
+        return fallback
+
+    def _evolution_run_prefix(self, state: Dict[str, Any]) -> str:
+        existing = str(state.get("evolution_run_prefix") or "").strip()
+        if existing:
+            return existing
+        cli_value = str(getattr(self.args, "evolution_run_prefix", "") or "").strip()
+        if cli_value:
+            state["evolution_run_prefix"] = cli_value
+            return cli_value
+        env_value = str(os.environ.get("COINT4_EVOLUTION_RUN_PREFIX") or "").strip()
+        if env_value:
+            state["evolution_run_prefix"] = env_value
+            return env_value
+        fallback = "autonomous_evo"
+        state["evolution_run_prefix"] = fallback
+        return fallback
+
+    def _next_evolution_run_group(self, state: Dict[str, Any], *, iteration: int) -> str:
+        prefix = self._evolution_run_prefix(state)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return f"{prefix}_i{int(iteration) + 1:03d}_{stamp}"
+
     def _default_state(self) -> Dict[str, Any]:
         return {
             "status": "running",
@@ -287,6 +368,11 @@ class AutonomousOptimizer:
             "last_decision_id": "",
             "last_decision_action": "",
             "last_decision_explanation_md": "",
+            "planner_mode": "",
+            "evolution_controller_group": "",
+            "evolution_run_prefix": "",
+            "last_evolution_decision_path": "",
+            "last_evolution_reflection_path": "",
             "trajectory_memory": [],
             "last_progress_log_utc": "",
             "last_updated_utc": _utc_now(),
@@ -1935,6 +2021,27 @@ class AutonomousOptimizer:
                 ready += 1
         return ready
 
+    def _queue_status_counts(self, queue_path: Path) -> Dict[str, int]:
+        try:
+            rows = self._read_queue_rows(queue_path)
+        except Exception:  # noqa: BLE001
+            return {}
+        counts: Dict[str, int] = {}
+        for row in rows:
+            status = str(row.get("status") or "planned").strip().lower() or "planned"
+            counts[status] = int(counts.get(status, 0) or 0) + 1
+        return counts
+
+    @staticmethod
+    def _is_stalled_only_counts(counts: Dict[str, int]) -> bool:
+        stalled = int(counts.get("stalled", 0) or 0)
+        completed = int(counts.get("completed", 0) or 0)
+        pending_total = sum(
+            int(counts.get(name, 0) or 0)
+            for name in ("planned", "running", "queued", "pending", "active", "partial")
+        )
+        return stalled > 0 and completed == 0 and pending_total == 0
+
     def _is_demo_queue(self, queue_path: Path) -> bool:
         run_group = str(queue_path.parent.name or "").strip().lower()
         if run_group.startswith("demo"):
@@ -2133,15 +2240,31 @@ class AutonomousOptimizer:
                 cmd.extend(["-m", str(self.args.codex_model).strip()])
 
             self.log("autonomous: codex exec start")
-            proc = subprocess.run(
-                cmd,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=max(30, int(timeout_sec)),
-                env=codex_env,
-            )
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=max(30, int(timeout_sec)),
+                    env=codex_env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                # Fail-open: codex helper timeouts should never crash the main loop.
+                stdout_text = self._sanitize_external_text(str(getattr(exc, "output", "") or ""))
+                stderr_text = self._sanitize_external_text(str(getattr(exc, "stderr", "") or ""))
+                self.log(
+                    "autonomous: codex exec timeout timeout={timeout}s; fallback deterministic stdout={stdout} stderr={stderr}".format(
+                        timeout=int(timeout_sec),
+                        stdout=stdout_text[-500:] if stdout_text else "",
+                        stderr=stderr_text[-500:] if stderr_text else "",
+                    )
+                )
+                return None
+            except Exception as exc:  # noqa: BLE001
+                self.log(f"autonomous: codex exec error {type(exc).__name__}: {exc}; fallback deterministic")
+                return None
             if proc.returncode != 0:
                 self.log(f"autonomous: codex exec failed rc={proc.returncode}; fallback deterministic")
                 return None
@@ -3013,6 +3136,440 @@ class AutonomousOptimizer:
         self._exit_after_iteration_wait = True
         return state
 
+    def _plan_next_queue_with_evolution(
+        self,
+        *,
+        state: Dict[str, Any],
+        iteration: int,
+        run_group: str,
+        iteration_log: Path,
+    ) -> EvolutionPlan:
+        if not self.evolve_next_batch.exists():
+            raise RuntimeError(f"missing planner script: {self.evolve_next_batch}")
+
+        controller_group = self._evolution_controller_group(state)
+        run_prefix = self._evolution_run_prefix(state)
+        base_config = self._bridge11_base_config_rel()
+        windows = self._bridge11_windows()
+        num_variants = _to_int(getattr(self.args, "evolution_num_variants", None))
+        if not isinstance(num_variants, int) or num_variants <= 0:
+            num_variants = 12
+
+        contains_tokens = [
+            str(token).strip()
+            for token in list(getattr(self.args, "evolution_contains", []) or [])
+            if str(token).strip()
+        ]
+        if not contains_tokens:
+            contains_tokens.append(run_prefix)
+        previous_group = str(state.get("current_run_group") or "").strip()
+        if previous_group and previous_group not in contains_tokens:
+            contains_tokens.append(previous_group)
+
+        decision_dir = self.app_root / "artifacts" / "wfa" / "aggregate" / controller_group / "decisions"
+        decision_dir.mkdir(parents=True, exist_ok=True)
+        known_decisions = {path.resolve() for path in decision_dir.glob("*.json")}
+        planner_env = self._env()
+        if bool(self.args.use_codex_exec):
+            if not self._ensure_codex_auth_ready():
+                reason = str(self._codex_auth_reason or "CODEX_AUTH_REQUIRED").strip()
+                raise RuntimeError(reason)
+            selected_home = str(self._codex_exec_home or "").strip()
+            if selected_home:
+                planner_env["HOME"] = selected_home
+
+        cmd = [
+            str(self.python_exec),
+            "scripts/optimization/evolve_next_batch.py",
+            "--base-config",
+            base_config,
+            "--controller-group",
+            controller_group,
+            "--run-group",
+            run_group,
+            "--num-variants",
+            str(int(num_variants)),
+            "--ir-mode",
+            str(getattr(self.args, "evolution_ir_mode", "patch_ast") or "patch_ast"),
+            "--dedupe-distance",
+            str(float(getattr(self.args, "evolution_dedupe_distance", 0.0) or 0.0)),
+            "--max-changed-keys",
+            str(int(getattr(self.args, "evolution_max_changed_keys", 8) or 8)),
+            "--policy-scale",
+            str(getattr(self.args, "evolution_policy_scale", "auto") or "auto"),
+            "--ast-max-complexity-score",
+            str(float(getattr(self.args, "evolution_ast_max_complexity_score", 120.0) or 120.0)),
+            "--ast-max-redundancy-similarity",
+            str(float(getattr(self.args, "evolution_ast_max_redundancy_similarity", 1.0) or 1.0)),
+            "--patch-max-attempts",
+            str(int(getattr(self.args, "evolution_patch_max_attempts", 8) or 8)),
+        ]
+        for token in contains_tokens:
+            cmd.extend(["--contains", token])
+        for start, end in windows:
+            cmd.extend(["--window", f"{start},{end}"])
+
+        if bool(self.args.use_codex_exec):
+            llm_model = str(getattr(self.args, "codex_model", "") or "").strip() or str(
+                getattr(self.args, "evolution_llm_model", "gpt-5.2") or "gpt-5.2"
+            ).strip()
+            cmd.extend(
+                [
+                    "--llm-propose",
+                    "--llm-model",
+                    llm_model,
+                    "--llm-effort",
+                    str(getattr(self.args, "evolution_llm_effort", "high") or "high"),
+                    "--llm-timeout-sec",
+                    str(int(getattr(self.args, "evolution_llm_timeout_sec", 300) or 300)),
+                ]
+            )
+            if bool(getattr(self.args, "evolution_llm_verify_semantic", True)):
+                cmd.append("--llm-verify-semantic")
+
+        proc = self._run_subprocess(
+            cmd=cmd,
+            cwd=self.app_root,
+            env=planner_env,
+            iteration_log=iteration_log,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"EVOLVE_NEXT_BATCH_RC{proc.returncode}")
+
+        decision_paths = sorted(decision_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not decision_paths:
+            raise RuntimeError("EVOLUTION_DECISION_MISSING")
+        latest_new = [path for path in decision_paths if path.resolve() not in known_decisions]
+        decision_path = latest_new[0] if latest_new else decision_paths[0]
+
+        try:
+            decision_payload = json.loads(decision_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"EVOLUTION_DECISION_INVALID_JSON:{type(exc).__name__}") from exc
+        if not isinstance(decision_payload, dict):
+            raise RuntimeError("EVOLUTION_DECISION_INVALID_PAYLOAD")
+
+        queue_rel = str(decision_payload.get("queue_path") or "").strip()
+        if not queue_rel:
+            raise RuntimeError("EVOLUTION_QUEUE_PATH_EMPTY")
+        queue_path = self._resolve_app_path(queue_rel)
+        if not queue_path.exists():
+            raise RuntimeError("EVOLUTION_QUEUE_PATH_MISSING")
+        ready_rows = self._count_ready_rows(queue_path)
+        if ready_rows <= 0:
+            raise RuntimeError("EVOLUTION_QUEUE_EMPTY")
+
+        planned_run_group = str(decision_payload.get("run_group") or "").strip() or run_group
+        decision_id = str(decision_payload.get("decision_id") or "").strip() or decision_path.stem
+        state["last_decision_id"] = decision_id
+        state["last_decision_action"] = "run_next_batch_evolution"
+        state["last_decision_explanation_md"] = (
+            f"evolution planner: controller_group={controller_group}, "
+            f"run_group={planned_run_group}, queue={_safe_rel(queue_path, self.app_root)}"
+        )
+        state["planner_mode"] = "evolution"
+        state["evolution_controller_group"] = controller_group
+        state["evolution_run_prefix"] = run_prefix
+        state["last_evolution_decision_path"] = _safe_rel(decision_path, self.repo_root)
+
+        queue = QueueTarget(
+            run_group=planned_run_group,
+            queue_path=queue_path,
+            source="evolution_planner",
+            ready_rows=ready_rows,
+        )
+        return EvolutionPlan(
+            queue=queue,
+            controller_group=controller_group,
+            run_prefix=run_prefix,
+            decision_path=decision_path,
+        )
+
+    def _run_evolution_reflection(
+        self,
+        *,
+        plan: EvolutionPlan,
+        iteration_log: Path,
+    ) -> Dict[str, Any]:
+        if not self.reflect_next_action.exists():
+            return {}
+        reflections_dir = self.app_root / "artifacts" / "wfa" / "aggregate" / plan.controller_group / "reflections"
+        reflections_dir.mkdir(parents=True, exist_ok=True)
+        reflection_path = reflections_dir / f"reflection_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
+
+        cmd = [
+            str(self.python_exec),
+            "scripts/optimization/reflect_next_action.py",
+            "--decision",
+            str(plan.decision_path),
+            "--run-index",
+            str(self.rollup_csv),
+            "--contains",
+            plan.queue.run_group,
+            "--output-json",
+            str(reflection_path),
+        ]
+        reflection_env = self._env()
+        if bool(self.args.use_codex_exec):
+            if not self._ensure_codex_auth_ready():
+                return {}
+            selected_home = str(self._codex_exec_home or "").strip()
+            if selected_home:
+                reflection_env["HOME"] = selected_home
+            llm_model = str(getattr(self.args, "codex_model", "") or "").strip() or str(
+                getattr(self.args, "evolution_llm_model", "gpt-5.2") or "gpt-5.2"
+            ).strip()
+            cmd.extend(
+                [
+                    "--llm-critic",
+                    "--llm-model",
+                    llm_model,
+                    "--llm-timeout-sec",
+                    str(int(getattr(self.args, "evolution_llm_timeout_sec", 300) or 300)),
+                ]
+            )
+
+        proc = self._run_subprocess(
+            cmd=cmd,
+            cwd=self.app_root,
+            env=reflection_env,
+            iteration_log=iteration_log,
+        )
+        if proc.returncode != 0 or not reflection_path.exists():
+            return {}
+        try:
+            payload = json.loads(reflection_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        payload["__path"] = _safe_rel(reflection_path, self.repo_root)
+        return payload
+
+    def _build_factor_pool_from_evolution(self, *, plan: EvolutionPlan, iteration_log: Path) -> None:
+        if not self.build_factor_pool.exists():
+            return
+        output_dir = self.app_root / "artifacts" / "wfa" / "aggregate" / plan.controller_group
+        output_dir.mkdir(parents=True, exist_ok=True)
+        pool_json = output_dir / f"factor_pool_{plan.queue.run_group}.json"
+        pool_md = output_dir / f"factor_pool_{plan.queue.run_group}.md"
+        cmd = [
+            str(self.python_exec),
+            "scripts/optimization/build_factor_pool.py",
+            "--controller-group",
+            plan.controller_group,
+            "--run-index",
+            str(self.rollup_csv),
+            "--decisions-dir",
+            str(output_dir / "decisions"),
+            "--contains",
+            plan.run_prefix,
+            "--top",
+            "20",
+            "--output-json",
+            str(pool_json),
+            "--output-md",
+            str(pool_md),
+        ]
+        proc = self._run_subprocess(
+            cmd=cmd,
+            cwd=self.app_root,
+            env=self._env(),
+            iteration_log=iteration_log,
+        )
+        if proc.returncode != 0:
+            self.log(f"autonomous: factor_pool build skipped rc={proc.returncode}")
+
+    def _run_iteration_evolution(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
+        self._exit_after_iteration_wait = False
+        self._next_iteration_delay_sec = max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60))
+        iteration = int(state.get("iteration") or 0)
+        planned_run_group = self._next_evolution_run_group(state, iteration=iteration)
+        iteration_log = self._iteration_log_path(planned_run_group, iteration)
+
+        try:
+            plan = self._plan_next_queue_with_evolution(
+                state=state,
+                iteration=iteration,
+                run_group=planned_run_group,
+                iteration_log=iteration_log,
+            )
+        except Exception as exc:  # noqa: BLE001
+            reason = f"EVOLUTION_PLAN_ERROR:{type(exc).__name__}:{exc}"
+            current_group = str(state.get("current_run_group") or "").strip()
+            current_queue = self._queue_target_for_run_group(
+                current_group,
+                source="evolution_plan_error_reuse_queue",
+            )
+            if (
+                current_queue is not None
+                and current_queue.ready_rows > 0
+                and not self._is_demo_queue(current_queue.queue_path)
+                and not self._is_ignored_queue(current_queue.queue_path, state)
+            ):
+                self.log(
+                    "autonomous: evolution planner failed; reuse existing ready queue "
+                    f"{_safe_rel(current_queue.queue_path, self.app_root)} reason={reason}"
+                )
+                return self._run_iteration_local(state=state)
+            return self._wait_and_exit(
+                state=state,
+                reason=reason,
+                phase="waiting_plan",
+            )
+
+        queue = plan.queue
+        if self._is_demo_queue(queue.queue_path):
+            self._record_ignored_queue(state, queue)
+            return self._wait_and_exit(
+                state=state,
+                reason="SKIP_QUEUE:DEMO_QUEUE",
+                phase="skipping_queue",
+            )
+        if self._is_ignored_queue(queue.queue_path, state):
+            return self._wait_and_exit(
+                state=state,
+                reason="SKIP_QUEUE:IGNORED_QUEUE",
+                phase="skipping_queue",
+            )
+        if queue.ready_rows < 1:
+            return self._wait_and_exit(
+                state=state,
+                reason="NO_VALID_QUEUES",
+                phase="waiting_queue",
+            )
+
+        state["iteration"] = iteration + 1
+        state["current_run_group"] = queue.run_group
+        state["iteration_started_utc"] = _utc_now()
+        state["status"] = "running"
+        state["last_error"] = ""
+        state["last_iteration_phase"] = "started"
+        state["planner_mode"] = "evolution"
+        self.save_state(state)
+        self.write_final_report(state)
+
+        self.log(
+            f"autonomous: evolution iteration={iteration + 1} queue={_safe_rel(queue.queue_path, self.app_root)} "
+            f"source={queue.source} ready={queue.ready_rows}"
+        )
+        self.log_progress_snapshot(state, phase="pre-run")
+
+        if bool(self.args.plan_only):
+            return self._wait_and_exit(state=state, reason="PLAN_ONLY_MODE", phase="planned")
+
+        rc_powered = self._run_powered_queue(queue, iteration_log=iteration_log)
+        self.log_progress_snapshot(state, phase="post-run")
+        if rc_powered != 0:
+            fail_reason = self._latest_powered_fail_reason(queue.run_group)
+            fail_reason_norm = str(fail_reason or "").strip().upper() or "UNKNOWN"
+            if fail_reason_norm in {
+                "LOCAL_CONFIG_MISSING",
+                "QUEUE_MISSING",
+                "QUEUE_PARSE_ERROR",
+                "QUEUE_REL_EMPTY",
+            } or fail_reason_norm.startswith("QUEUE_"):
+                self._record_ignored_queue(state, queue)
+                return self._wait_and_exit(
+                    state=state,
+                    reason=f"SKIP_QUEUE:{fail_reason_norm}",
+                    phase="skipping_queue",
+                )
+            return self._wait_and_exit(
+                state=state,
+                reason=f"POWERED_WAIT:{fail_reason_norm}",
+                phase="waiting_powered",
+            )
+
+        if bool(self.args.local_rollup_rebuild):
+            rc_rollup = self._rebuild_rollup(iteration_log=iteration_log)
+            if rc_rollup != 0:
+                return self._wait_and_exit(
+                    state=state,
+                    reason=f"BUILD_RUN_INDEX_RC{rc_rollup}",
+                    phase="waiting_rollup",
+                )
+        else:
+            self.log("autonomous: skip local build_run_index (using powered sync-back rollup)")
+
+        queue_counts = self._queue_status_counts(queue.queue_path)
+        has_completed_metrics, metrics_reason = self._has_completed_metrics_for_queue(queue.queue_path)
+        if self._is_stalled_only_counts(queue_counts) and not has_completed_metrics:
+            self.log(
+                "autonomous: skip local stalled-only queue {queue} counts={counts} metrics={metrics}".format(
+                    queue=_safe_rel(queue.queue_path, self.app_root),
+                    counts=json.dumps(queue_counts, ensure_ascii=False, sort_keys=True),
+                    metrics=str(metrics_reason or "NO_DATA"),
+                )
+            )
+            self._record_ignored_queue(state, queue)
+            return self._wait_and_exit(
+                state=state,
+                reason="SKIP_QUEUE:LOCAL_STALLED_ONLY",
+                phase="skipping_queue",
+                wait_seconds=1,
+            )
+
+        rank = self._rank_from_remote_result(queue.run_group)
+        if rank.ok and rank.score is not None:
+            prev_best = _to_float(state.get("best_score"))
+            if self._improved(current=rank.score, best=prev_best):
+                state["best_score"] = rank.score
+                state["best_run_name"] = rank.run_name
+                state["best_config_path"] = rank.config_path
+                state["no_improvement_streak"] = 0
+            else:
+                state["no_improvement_streak"] = int(state.get("no_improvement_streak") or 0) + 1
+            state["last_error"] = "RANK_UPDATED"
+            state["last_iteration_phase"] = "rank_ok"
+        else:
+            state["last_error"] = f"RANK_NOT_READY:{rank.details or 'NO_DATA'}"
+            state["last_iteration_phase"] = "rank_pending"
+
+        reflection_payload = self._run_evolution_reflection(plan=plan, iteration_log=iteration_log)
+        next_action = str(reflection_payload.get("next_action") or "").strip() if reflection_payload else ""
+        reflection_text = str(reflection_payload.get("reflection") or "").strip() if reflection_payload else ""
+        if not reflection_text:
+            if rank.ok and rank.score is not None:
+                reflection_text = (
+                    f"score={rank.score:.6f}; run_name={rank.run_name or 'n/a'}; "
+                    f"config_path={rank.config_path or 'n/a'}; source={rank.source}"
+                )
+            else:
+                reflection_text = f"rank_not_ready:{rank.details or 'NO_DATA'}"
+        state["last_evolution_reflection_path"] = str(reflection_payload.get("__path") if reflection_payload else "")
+
+        if next_action == "stop":
+            state["status"] = "done"
+            state["last_error"] = str(reflection_payload.get("reflection") or "REFLECTION_STOP").strip()
+            state["last_iteration_phase"] = "stopped_by_reflection"
+            self._append_trajectory_memory(
+                state,
+                action="stop",
+                result="stopped_by_reflection",
+                reflection=reflection_text,
+            )
+            self._build_factor_pool_from_evolution(plan=plan, iteration_log=iteration_log)
+            self.save_state(state)
+            self.write_best_params(state)
+            self.write_final_report(state)
+            return state
+
+        action = next_action or "run_next_batch"
+        self._append_trajectory_memory(
+            state,
+            action=action,
+            result=str(state.get("last_iteration_phase") or "rank_pending"),
+            reflection=reflection_text,
+        )
+        self._build_factor_pool_from_evolution(plan=plan, iteration_log=iteration_log)
+        self.save_state(state)
+        self.write_best_params(state)
+        self.write_final_report(state)
+        self._next_iteration_delay_sec = 0
+        self._exit_after_iteration_wait = True
+        return state
+
     def _run_iteration_local(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
         self._exit_after_iteration_wait = False
         self._next_iteration_delay_sec = max(1, int(getattr(self.args, "wait_poll_sec", 60) or 60))
@@ -3174,6 +3731,9 @@ class AutonomousOptimizer:
         return state
 
     def run_iteration(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
+        if self._planner_mode() == "evolution":
+            return self._run_iteration_evolution(state=state)
+
         if not bool(self.args.use_codex_exec):
             return self._run_iteration_local(state=state)
 
@@ -3396,14 +3956,20 @@ class AutonomousOptimizer:
         self.log(
             f"autonomous: start once={bool(self.args.once)} until_done={bool(self.args.until_done)} "
             f"max_iterations={self.args.max_iterations} plan_only={bool(self.args.plan_only)} "
+            f"planner_mode={self._planner_mode()} "
             f"use_codex_exec={bool(self.args.use_codex_exec)} "
             f"wait_timeout_sec={int(self.args.wait_timeout_sec)} wait_poll_sec={int(self.args.wait_poll_sec)} "
             f"local_rollup_rebuild={bool(self.args.local_rollup_rebuild)}"
         )
 
         if state.get("status") == "done" and not bool(self.args.once):
-            self.log("autonomous: state is done; nothing to do")
-            return 0
+            if bool(getattr(self.args, "resume", False)):
+                self.log("autonomous: state is done; resume=true; continue")
+                state["status"] = "running"
+                self.save_state(state)
+            else:
+                self.log("autonomous: state is done; nothing to do")
+                return 0
 
         loop_forever = bool(self.args.until_done) and not bool(self.args.once)
         if not bool(self.args.until_done) and not bool(self.args.once):
@@ -3472,9 +4038,112 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Autonomous optimization orchestrator")
     parser.add_argument("--once", action="store_true", help="Run only one iteration.")
     parser.add_argument("--until-done", action="store_true", help="Run iterations until stop criteria.")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the last saved iteration even if the state is marked done.",
+    )
     parser.add_argument("--max-iterations", type=int, default=None, help="Override max iterations.")
+    parser.add_argument(
+        "--planner-mode",
+        choices=["legacy", "evolution"],
+        default="evolution",
+        help="Planner mode: legacy Codex decision schema or evolution (ConfigPatch AST pipeline).",
+    )
     parser.add_argument("--use-codex-exec", action="store_true", help="Enable optional codex exec helpers.")
     parser.add_argument("--codex-model", default="", help="Optional model override for codex exec.")
+    parser.add_argument(
+        "--evolution-controller-group",
+        default="",
+        help="Override controller group for evolution planner state/decisions.",
+    )
+    parser.add_argument(
+        "--evolution-run-prefix",
+        default="autonomous_evo",
+        help="Run group prefix for evolution planner batches.",
+    )
+    parser.add_argument(
+        "--evolution-contains",
+        action="append",
+        default=[],
+        help="Optional contains token for evolution diagnostics filtering (repeatable).",
+    )
+    parser.add_argument(
+        "--evolution-num-variants",
+        type=int,
+        default=12,
+        help="Number of variants per evolution batch.",
+    )
+    parser.add_argument(
+        "--evolution-ir-mode",
+        choices=["knob", "patch_ast"],
+        default="patch_ast",
+        help="Evolution candidate IR mode.",
+    )
+    parser.add_argument(
+        "--evolution-dedupe-distance",
+        type=float,
+        default=0.0,
+        help="Evolution dedupe distance for generated candidates.",
+    )
+    parser.add_argument(
+        "--evolution-max-changed-keys",
+        type=int,
+        default=8,
+        help="Max changed keys per evolution candidate.",
+    )
+    parser.add_argument(
+        "--evolution-policy-scale",
+        choices=["auto", "micro", "macro"],
+        default="auto",
+        help="Evolution operator policy scale.",
+    )
+    parser.add_argument(
+        "--evolution-ast-max-complexity-score",
+        type=float,
+        default=120.0,
+        help="Max complexity score for patch_ast mode.",
+    )
+    parser.add_argument(
+        "--evolution-ast-max-redundancy-similarity",
+        type=float,
+        default=1.0,
+        help="Max redundancy similarity for patch_ast mode.",
+    )
+    parser.add_argument(
+        "--evolution-patch-max-attempts",
+        type=int,
+        default=8,
+        help="Max generation attempts per variant in patch_ast mode.",
+    )
+    parser.add_argument(
+        "--evolution-llm-model",
+        default="gpt-5.2",
+        help="LLM model for evolution proposer/critic when --use-codex-exec is enabled.",
+    )
+    parser.add_argument(
+        "--evolution-llm-effort",
+        default="high",
+        help="LLM effort hint for evolution proposer.",
+    )
+    parser.add_argument(
+        "--evolution-llm-timeout-sec",
+        type=int,
+        default=300,
+        help="Timeout for LLM proposer/critic calls in evolution planner.",
+    )
+    parser.add_argument(
+        "--evolution-llm-verify-semantic",
+        action="store_true",
+        default=True,
+        help="Enable LLM semantic consistency verification in patch_ast mode.",
+    )
+    parser.add_argument(
+        "--no-evolution-llm-verify-semantic",
+        action="store_false",
+        dest="evolution_llm_verify_semantic",
+        help="Disable LLM semantic consistency verification in patch_ast mode.",
+    )
     parser.add_argument("--plan-only", action="store_true", help="Prepare/plan one iteration without powered run.")
     parser.add_argument(
         "--wait-timeout-sec",

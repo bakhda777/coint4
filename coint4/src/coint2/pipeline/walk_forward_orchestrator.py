@@ -2383,11 +2383,23 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
             }
         
         logger.info(f"  ⇢ Расчет расширенных метрик (волатильность, Calmar ratio, и др.)...")
+        expected_test_start = str(cfg.walk_forward.start_date)
+        expected_test_end = str(cfg.walk_forward.end_date)
+        # When walk_forward.max_steps truncates execution, the configured end_date can be far
+        # beyond the executed test window. Use the effective executed test bounds so coverage_ratio
+        # measures "missing days" within what we actually ran.
+        if walk_forward_steps:
+            try:
+                expected_test_start = str(walk_forward_steps[0][2].date())
+                expected_test_end = str(walk_forward_steps[-1][3].date())
+            except Exception:  # noqa: BLE001
+                expected_test_start = str(cfg.walk_forward.start_date)
+                expected_test_end = str(cfg.walk_forward.end_date)
         extended_metrics = calculate_extended_metrics(
             pnl_series,
             equity_series,
-            expected_test_start=str(cfg.walk_forward.start_date),
-            expected_test_end=str(cfg.walk_forward.end_date),
+            expected_test_start=expected_test_start,
+            expected_test_end=expected_test_end,
         )
         logger.info(f"  ✅ Расширенные метрики рассчитаны: {len(extended_metrics)} показателей")
         
@@ -2444,24 +2456,11 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
     logger.info(f"⇢ Создание отчетов и сохранение результатов...")
     with time_block("generating reports"):
         results_dir = Path(cfg.results_dir)
-        
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save core artifacts first. Downstream queue/ranking relies on these files.
+        logger.info("  ⇢ Сохранение ключевых артефактов (strategy_metrics/equity_curve/stats)...")
         try:
-            logger.info(f"  ⇢ Создание отчета о производительности...")
-            create_performance_report(
-                equity_curve=equity_series,
-                pnl_series=pnl_series,
-                metrics=all_metrics,
-                pair_counts=pair_count_data,
-                results_dir=results_dir,
-                strategy_name="CointegrationStrategy"
-            )
-            logger.info(f"  ✓ Отчет о производительности создан")
-            
-            summary = format_metrics_summary(all_metrics)
-            print(summary)
-            
-            # Save data
-            logger.info(f"  ⇢ Сохранение данных в CSV файлы...")
             # Приводим все числовые значения к float для избежания проблем с типами Arrow
             clean_metrics = {}
             for key, value in all_metrics.items():
@@ -2469,19 +2468,26 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                     clean_metrics[key] = float(value)
                 else:
                     clean_metrics[key] = value
-            
+
             metrics_df = pd.DataFrame([clean_metrics])
-            metrics_df.to_csv(results_dir / "strategy_metrics.csv", index=False)
-            logger.info(f"📋 Метрики сохранены: {results_dir / 'strategy_metrics.csv'}")
-            
+            metrics_path = results_dir / "strategy_metrics.csv"
+            metrics_df.to_csv(metrics_path, index=False)
+            if not metrics_path.exists() or metrics_path.stat().st_size <= 0:
+                raise RuntimeError(f"failed to write non-empty strategy_metrics.csv: {metrics_path}")
+            logger.info(f"📋 Метрики сохранены: {metrics_path}")
+
             if not pnl_series.empty:
-                pnl_series.to_csv(results_dir / "daily_pnl.csv", header=['PnL'])
-                logger.info(f"📈 Дневные P&L сохранены: {results_dir / 'daily_pnl.csv'} ({len(pnl_series)} записей)")
-            
-            if not equity_series.empty:
-                equity_series.to_csv(results_dir / "equity_curve.csv", header=['Equity'])
-                logger.info(f"💹 Кривая капитала сохранена: {results_dir / 'equity_curve.csv'} ({len(equity_series)} точек)")
-            
+                pnl_series.to_csv(results_dir / "daily_pnl.csv", header=["PnL"])
+                logger.info(
+                    f"📈 Дневные P&L сохранены: {results_dir / 'daily_pnl.csv'} ({len(pnl_series)} записей)"
+                )
+
+            # equity_curve.csv is required for canonical recompute + Sharpe audit.
+            if equity_series.empty:
+                raise RuntimeError("equity_series is empty; refusing to write equity_curve.csv")
+            equity_series.to_csv(results_dir / "equity_curve.csv", header=["Equity"])
+            logger.info(f"💹 Кривая капитала сохранена: {results_dir / 'equity_curve.csv'} ({len(equity_series)} точек)")
+
             if trade_stats:
                 trades_df = pd.DataFrame(trade_stats)
                 trades_df.to_csv(results_dir / "trade_statistics.csv", index=False)
@@ -2491,14 +2497,37 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
                 trades_log_df = pd.DataFrame(all_trades_log)
                 trades_log_df.to_csv(results_dir / "trades_log.csv", index=False)
                 logger.info(f"📓 Детальный лог сделок сохранен: {results_dir / 'trades_log.csv'} ({len(trades_log_df)} записей)")
-            
-            logger.info(f"🎉 Walk-Forward анализ полностью завершен!")
-            logger.info(f"📊 Все отчеты и данные сохранены в: {results_dir}")
-            logger.info(f"💼 Итоговый капитал: ${portfolio.get_current_equity():,.2f}")
-            logger.info(f"⏱️  Общее время выполнения: {time.time() - start_time:.1f} секунд")
-                
         except Exception as e:
-            logger.error(f"Ошибка при создании отчетов: {e}")
+            # Fail-closed: if we cannot write the core artifacts, the run must be treated as failed
+            # (otherwise queues can mark "completed" with no metrics and the loop stalls).
+            logger.error(f"Ошибка при сохранении ключевых артефактов: {e}")
+            raise
+
+        # Optional: performance report and human-readable summary.
+        try:
+            logger.info("  ⇢ Создание отчета о производительности...")
+            create_performance_report(
+                equity_curve=equity_series,
+                pnl_series=pnl_series,
+                metrics=all_metrics,
+                pair_counts=pair_count_data,
+                results_dir=results_dir,
+                strategy_name="CointegrationStrategy",
+            )
+            logger.info("  ✓ Отчет о производительности создан")
+        except Exception as e:
+            logger.error(f"Ошибка при создании отчета о производительности: {e}")
+
+        try:
+            summary = format_metrics_summary(all_metrics)
+            print(summary)
+        except Exception as e:
+            logger.error(f"Ошибка при форматировании summary: {e}")
+
+        logger.info("🎉 Walk-Forward анализ полностью завершен!")
+        logger.info(f"📊 Все отчеты и данные сохранены в: {results_dir}")
+        logger.info(f"💼 Итоговый капитал: ${portfolio.get_current_equity():,.2f}")
+        logger.info(f"⏱️  Общее время выполнения: {time.time() - start_time:.1f} секунд")
 
     # Cleanup memory-mapped data
     if use_memory_map:
