@@ -28,7 +28,10 @@ DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 
 
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
+FULLSPAN_CYCLE_CACHE_FILE="$STATE_DIR/fullspan_cycle_cache.json"
 FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
+FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
+FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 
 mkdir -p "$STATE_DIR"
@@ -66,6 +69,17 @@ from collections import defaultdict
 from pathlib import Path
 
 
+INITIAL_CAPITAL = 1000.0
+HARDFAIL_MAP = {
+    "metrics_missing": "METRICS_MISSING",
+    "trades_gate_fail": "TRADES_FAIL",
+    "pairs_gate_fail": "PAIRS_FAIL",
+    "dd_gate_fail": "DD_FAIL",
+    "economic_gate_fail": "ECONOMIC_FAIL",
+    "step_gate_fail": "STEP_FAIL",
+}
+
+
 def to_float(value, default=None):
     try:
         return float((value or '').strip())
@@ -81,7 +95,7 @@ def is_true(value):
 
 def hard_gate_pass(row):
     if not row:
-        return False, "missing_row"
+        return False, "metrics_missing"
     if not is_true(row.get("metrics_present", "")):
         return False, "metrics_missing"
 
@@ -89,7 +103,10 @@ def hard_gate_pass(row):
     total_pairs = to_float(row.get("total_pairs_traded"), 0.0)
     worst_dd = abs(to_float(row.get("max_drawdown_on_equity"), 0.0) or 0.0)
     worst_robust_pnl = to_float(row.get("total_pnl"), 0.0)
-    worst_step = to_float(row.get("tail_loss_worst_period_pnl", 0), to_float(row.get("tail_loss_worst_pair_pnl", 0), 0.0))
+    worst_step = to_float(
+        row.get("tail_loss_worst_period_pnl"),
+        to_float(row.get("tail_loss_worst_pair_pnl", 0), 0.0),
+    )
 
     if total_trades < 200:
         return False, "trades_gate_fail"
@@ -99,7 +116,7 @@ def hard_gate_pass(row):
         return False, "dd_gate_fail"
     if worst_robust_pnl < 0:
         return False, "economic_gate_fail"
-    if worst_step < -200:
+    if worst_step < (-0.20 * INITIAL_CAPITAL):
         return False, "step_gate_fail"
     return True, "pass"
 
@@ -108,12 +125,31 @@ def quantile(values, q):
     vals = sorted(v for v in values if v is not None and v == v)
     if not vals:
         return None
-    if n := len(vals):
-        if n == 1:
-            return vals[0]
-        idx = min(max(int((n - 1) * q), 0), n - 1)
-        return vals[idx]
-    return None
+    if not vals:
+        return None
+    n = len(vals)
+    if n == 1:
+        return vals[0]
+    idx = min(max(int((n - 1) * q), 0), n - 1)
+    return vals[idx]
+
+
+def score_fullspan_v1_like(sharpes, tails):
+    if not sharpes or not tails:
+        return None
+    try:
+        worst_robust = min(sharpes)
+        q20 = quantile(tails, 0.20)
+        worst_step = min(tails)
+        if q20 is None:
+            q20 = worst_step
+        return (
+            float(worst_robust)
+            - (2.0 * max(0.0, (-q20 / INITIAL_CAPITAL) - 0.03))
+            - (1.0 * max(0.0, (-worst_step / INITIAL_CAPITAL) - 0.10))
+        )
+    except Exception:
+        return None
 
 
 def canonical_base(run_id):
@@ -128,6 +164,13 @@ def load_state(path: Path):
         return data.get('queues', {}) if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def canonical_state_reason(raw: str) -> str:
+    if not raw:
+        return ""
+    return HARDFAIL_MAP.get(raw, str(raw).strip().upper() or "METRICS_MISSING")
+
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
@@ -164,191 +207,230 @@ if orphan_file and orphan_file.exists():
     except Exception:
         orphan = {}
 
-out = []
-for p in sorted(queue_root.rglob('run_queue.csv')):
-    try:
-        rows = list(csv.DictReader(p.open(newline='')))
-    except Exception:
-        continue
 
-    st = defaultdict(int)
-    for r in rows:
-        st[(r.get('status') or '').strip().lower()] += 1
+def emit_scores():
+    out = []
 
-    planned = int(st.get('planned', 0))
-    running = int(st.get('running', 0))
-    stalled = int(st.get('stalled', 0))
-    failed = int(st.get('failed', 0)) + int(st.get('error', 0))
-    completed = int(st.get('completed', 0))
-    total = len(rows)
-
-    if total == 0:
-        continue
-
-    pending = planned + running + stalled + failed
-    if pending == 0:
-        continue
-
-    queue_rel = str(p)
-    if queue_rel in orphan:
+    for p in sorted(queue_root.rglob('run_queue.csv')):
         try:
-            if now < float(orphan.get(queue_rel, 0.0)):
+            rows = list(csv.DictReader(p.open(newline='')))
+        except Exception:
+            continue
+
+        st = defaultdict(int)
+        for r in rows:
+            st[(r.get('status') or '').strip().lower()] += 1
+
+        planned = int(st.get('planned', 0))
+        running = int(st.get('running', 0))
+        stalled = int(st.get('stalled', 0))
+        failed = int(st.get('failed', 0)) + int(st.get('error', 0))
+        completed = int(st.get('completed', 0))
+        total = len(rows)
+
+        if total == 0:
+            continue
+
+        pending = planned + running + stalled + failed
+        if pending == 0:
+            continue
+
+        queue_rel = str(p)
+        if queue_rel in orphan:
+            try:
+                if now < float(orphan.get(queue_rel, 0.0)):
+                    continue
+            except Exception:
+                pass
+
+        mtime = float(p.stat().st_mtime)
+        age_min = max(0.0, (now - mtime) / 60.0)
+
+        by_base = defaultdict(lambda: {'holdout': None, 'stress': None, 'status': None})
+
+        for row in rows:
+            results_dir = (row.get('results_dir') or '').strip()
+            if not results_dir:
                 continue
-        except Exception:
-            pass
+            run_id = Path(results_dir).name.strip()
+            base = canonical_base(run_id)
+            if run_id.startswith('holdout_'):
+                by_base[base]['holdout'] = run_index.get(run_id)
+            elif run_id.startswith('stress_'):
+                by_base[base]['stress'] = run_index.get(run_id)
+            else:
+                by_base[base]['holdout'] = run_index.get(run_id)
+            by_base[base]['status'] = (row.get('status') or '').strip().lower()
 
-    mtime = float(p.stat().st_mtime)
-    age_min = max(0.0, (now - mtime) / 60.0)
+        pass_configs = 0
+        fail_configs = 0
+        unknown_configs = 0
+        fail_reasons = []
+        robust_sharpes = []
+        worst_steps = []
+        by_state_reason = defaultdict(int)
 
-    by_base = defaultdict(lambda: {'holdout': None, 'stress': None, 'status': None})
+        state_entry = state_by_queue.get(queue_rel, {})
+        state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip().upper()
+        state_strict_status = str(state_entry.get('strict_gate_status', '') or '').strip()
+        state_strict_reason = str(state_entry.get('strict_gate_reason', '') or '').strip()
 
-    for row in rows:
-        results_dir = (row.get('results_dir') or '').strip()
-        if not results_dir:
-            continue
-        run_id = Path(results_dir).name.strip()
-        base = canonical_base(run_id)
-        if run_id.startswith('holdout_'):
-            by_base[base]['holdout'] = run_index.get(run_id)
-        elif run_id.startswith('stress_'):
-            by_base[base]['stress'] = run_index.get(run_id)
-        else:
-            by_base[base]['holdout'] = run_index.get(run_id)
-        by_base[base]['status'] = (row.get('status') or '').strip().lower()
+        for base, bundle in by_base.items():
+            h = bundle.get('holdout')
+            s = bundle.get('stress')
 
-    pass_configs = 0
-    fail_configs = 0
-    unknown_configs = 0
-    fail_reasons = []
-    robust_sharpes = []
-    worst_steps = []
-    state_entry = state_by_queue.get(queue_rel, {})
-    state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip()
+            if h is None and s is None:
+                unknown_configs += 1
+                continue
 
-    for base, bundle in by_base.items():
-        h = bundle.get('holdout')
-        s = bundle.get('stress')
+            h_ok = True
+            s_ok = True
+            h_reason = ""
+            s_reason = ""
 
-        if h is None and s is None:
-            unknown_configs += 1
-            continue
-
-        h_ok = True
-        s_ok = True
-
-        if h is None:
-            h_ok = False
-        else:
-            ok, reason = hard_gate_pass(h)
-            if not ok:
-                fail_reasons.append(reason)
+            if h is None:
                 h_ok = False
+                h_reason = "metrics_missing"
+            else:
+                ok, reason = hard_gate_pass(h)
+                if not ok:
+                    h_ok = False
+                    h_reason = reason
 
-        if s is None:
-            s_ok = False
-        else:
-            ok, reason = hard_gate_pass(s)
-            if not ok:
-                fail_reasons.append(reason)
+            if s is None:
                 s_ok = False
+                s_reason = "metrics_missing"
+            else:
+                ok, reason = hard_gate_pass(s)
+                if not ok:
+                    s_ok = False
+                    s_reason = reason
 
-        if h_ok and s_ok:
-            pass_configs += 1
-            h_sh = to_float(h.get('sharpe_ratio_abs'))
-            s_sh = to_float(s.get('sharpe_ratio_abs'))
-            if h_sh is not None and s_sh is not None:
-                robust_sharpes.append(min(h_sh, s_sh))
+            if h_ok and s_ok:
+                pass_configs += 1
 
-            h_tail = to_float(h.get('tail_loss_worst_pair_pnl'), None)
-            s_tail = to_float(s.get('tail_loss_worst_pair_pnl'), None)
-            h_tail2 = to_float(h.get('tail_loss_worst_period_pnl'), None)
-            s_tail2 = to_float(s.get('tail_loss_worst_period_pnl'), None)
-            tails = [v for v in (h_tail, s_tail, h_tail2, s_tail2) if v is not None]
-            if tails:
-                worst_steps.append(min(tails))
-        elif (not h_ok) and (not s_ok):
-            fail_configs += 1
+                h_sh = to_float(h.get('sharpe_ratio_abs'))
+                s_sh = to_float(s.get('sharpe_ratio_abs'))
+                if h_sh is not None and s_sh is not None:
+                    robust_sharpes.append(min(h_sh, s_sh))
+
+                h_tail = to_float(h.get('tail_loss_worst_pair_pnl'), None)
+                s_tail = to_float(s.get('tail_loss_worst_pair_pnl'), None)
+                h_tail2 = to_float(h.get('tail_loss_worst_period_pnl'), None)
+                s_tail2 = to_float(s.get('tail_loss_worst_period_pnl'), None)
+                tails = [v for v in (h_tail, s_tail, h_tail2, s_tail2) if v is not None]
+                if tails:
+                    worst_steps.append(min(tails))
+            elif (not h_ok) and (not s_ok):
+                fail_configs += 1
+                reason = HARDFAIL_MAP.get(h_reason, HARDFAIL_MAP.get(s_reason, None))
+                if reason:
+                    fail_reasons.append(reason)
+                    by_state_reason[reason] += 1
+            else:
+                unknown_configs += 1
+                reason = HARDFAIL_MAP.get(h_reason, HARDFAIL_MAP.get(s_reason, None))
+                if reason:
+                    by_state_reason[reason] += 0.1
+
+        total_configs = pass_configs + fail_configs + unknown_configs
+
+        strict_gate_status = "FULLSPAN_PREFILTER_PASSED"
+        strict_gate_reason = ""
+
+        if state_verdict == "REJECT" or state_strict_status == "FULLSPAN_PREFILTER_REJECT":
+            promotion_potential = "REJECT"
+            gate_status = "HARD_FAIL"
+            strict_gate_status = "FULLSPAN_PREFILTER_REJECT"
+            gate_reason = canonical_state_reason(state_strict_reason or "METRICS_MISSING")
+        elif total_configs == 0:
+            promotion_potential = "UNKNOWN"
+            gate_status = "OPEN"
+            strict_gate_status = "FULLSPAN_PREFILTER_UNKNOWN"
+            gate_reason = "insufficient_history"
+        elif pass_configs == 0 and fail_configs > 0:
+            promotion_potential = "REJECT"
+            gate_status = "HARD_FAIL"
+            strict_gate_status = "FULLSPAN_PREFILTER_REJECT"
+            if fail_reasons:
+                gate_reason = fail_reasons[0]
+            else:
+                # deterministic fallback for full-reject queue
+                gate_reason = "METRICS_MISSING"
         else:
-            unknown_configs += 1
+            promotion_potential = "POSSIBLE"
+            gate_status = "OPEN"
+            if fail_configs > 0:
+                strict_gate_status = "FULLSPAN_PREFILTER_DEGRADED"
+            gate_reason = "history_probe"
 
-    total_configs = pass_configs + fail_configs + unknown_configs
+        if strict_gate_status in ("FULLSPAN_PREFILTER_REJECT", "HARD_FAIL") and gate_status == "HARD_FAIL":
+            strict_gate_reason = gate_reason
 
-    if total_configs == 0:
-        promotion_potential = "UNKNOWN"
-        gate_status = "OPEN"
-        gate_reason = "insufficient_history"
-    elif pass_configs == 0 and fail_configs > 0:
-        promotion_potential = "REJECT"
-        gate_status = "HARD_FAIL"
-        gate_reason = fail_reasons[0] if fail_reasons else "hard_gate_fail"
-    else:
-        promotion_potential = "POSSIBLE"
-        gate_status = "OPEN"
-        gate_reason = "history_probe"
+        if strict_gate_status in ("FULLSPAN_PREFILTER_REJECT", "HARD_FAIL") and strict_gate_reason:
+            strict_gate_reason = canonical_state_reason(strict_gate_reason)
 
-    if state_verdict == "REJECT":
-        promotion_potential = "REJECT"
-        gate_status = "HARD_FAIL"
-        gate_reason = "state_reject"
+        if gate_status == "OPEN" and strict_gate_status == "FULLSPAN_PREFILTER_PASSED":
+            # keep fullspan strict signal as state marker
+            strict_gate_reason = ""
 
-    fs_score = None
-    if robust_sharpes and worst_steps:
-        try:
-            worst_robust = min(robust_sharpes)
-            q20_step = quantile(worst_steps, 0.20)
-            worst_step = min(worst_steps)
-            if q20_step is None:
-                q20_step = worst_step
-            fs_score = worst_robust - (2.0 * max(0.0, (-q20_step / 1000.0) - 0.03)) - (1.0 * max(0.0, (-worst_step / 1000.0) - 0.10))
-        except Exception:
-            fs_score = None
+        fs_score = score_fullspan_v1_like(robust_sharpes, worst_steps)
 
-    stale_count = failed
-    pre_rank_score = 0.0
-    if fs_score is not None:
-        pre_rank_score += float(fs_score) * 12.0
-    else:
-        pre_rank_score -= 20.0
+        stale_count = failed
+        pre_rank_score = 0.0
+        if fs_score is not None:
+            pre_rank_score += float(fs_score) * 12.0
+        else:
+            pre_rank_score -= 20.0
 
-    pre_rank_score += pass_configs * 8.0
-    pre_rank_score += unknown_configs * 1.0
-    pre_rank_score -= fail_configs * 4.5
-    pre_rank_score -= stale_count * 1.2
-    pre_rank_score -= age_min * 0.3
+        pre_rank_score += pass_configs * 8.0
+        pre_rank_score += unknown_configs * 0.5
+        pre_rank_score -= fail_configs * 4.5
+        pre_rank_score -= stale_count * 1.2
+        pre_rank_score -= age_min * 0.3
 
-    urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
+        pre_rank_score += 20.0 if strict_gate_status == "FULLSPAN_PREFILTER_PASSED" else 0.0
 
-    if gate_status == "HARD_FAIL" and promotion_potential == "REJECT":
-        pre_rank_score -= 10000
+        if state_verdict == "PROMOTE_ELIGIBLE":
+            pre_rank_score += 10.0
+        elif state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"):
+            pre_rank_score += 3.0
 
-    out.append((
-        -pre_rank_score,
-        -urgency,
-        -int(mtime),
-        queue_rel,
-        planned,
-        running,
-        stalled,
-        failed,
-        completed,
-        total,
-        f"{urgency:.3f}",
-        promotion_potential,
-        gate_status,
-        gate_reason,
-        f"{pre_rank_score:.3f}",
-    ))
+        urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
 
-out.sort()
+        if gate_status == "HARD_FAIL" and promotion_potential == "REJECT":
+            pre_rank_score -= 10000
 
-with out_csv.open('w', encoding='utf-8', newline='') as f:
-    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score\n')
-    if not out:
-        raise SystemExit(0)
+        out.append((
+            -pre_rank_score,
+            -urgency,
+            -int(mtime),
+            queue_rel,
+            planned,
+            running,
+            stalled,
+            failed,
+            completed,
+            total,
+            f"{urgency:.3f}",
+            promotion_potential,
+            gate_status,
+            gate_reason,
+            f"{pre_rank_score:.3f}",
+            strict_gate_status,
+            strict_gate_reason,
+        ))
 
-    out = out[:pre_rank_top_k]
-    _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, potential, gate_status, gate_reason, pre_rank = out[0]
-    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)},{potential},{gate_status},{gate_reason},{pre_rank}\n")
+    out.sort()
+
+    with out_csv.open('w', encoding='utf-8', newline='') as f:
+        f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason\n')
+        if not out:
+            raise SystemExit(0)
+
+        out = out[:pre_rank_top_k]
+        _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
+        f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)},{potential},{gate_status},{gate_reason},{pre_rank},{strict_gate_status},{strict_gate_reason}\n")
 PY
 }
 
@@ -655,45 +737,84 @@ fullspan_state_set() {
   local top_score="${7:-}"
   local rejection_reason="${8:-}"
   local confirm_count="${9:-0}"
+  local strict_gate_status="${10:-FULLSPAN_PREFILTER_UNKNOWN}"
+  local strict_gate_reason="${11:-}"
+  local run_groups_csv="${12:-}"
+  local strict_summary_path="${13:-}"
 
   local ts
   ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$verdict" "$strict_pass_count" "$strict_run_groups" "$top_run_group" "$top_variant" "$top_score" "$rejection_reason" "$confirm_count" "$ts" <<'PY'
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$verdict" "$strict_pass_count" "$strict_run_groups" "$top_run_group" "$top_variant" "$top_score" "$rejection_reason" "$confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path" "$ts" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-path, queue, verdict, strict_pass_count, strict_run_groups, top_run_group, top_variant, top_score, rejection_reason, confirm_count, ts = sys.argv[1:12]
+state_file = Path(sys.argv[1])
+queue = sys.argv[2]
+verdict = sys.argv[3]
+strict_pass_count = sys.argv[4]
+strict_run_groups = sys.argv[5]
+top_run_group = sys.argv[6]
+top_variant = sys.argv[7]
+top_score = sys.argv[8]
+rejection_reason = sys.argv[9]
+confirm_count = sys.argv[10]
+strict_gate_status = sys.argv[11]
+strict_gate_reason = sys.argv[12]
+run_groups_csv = sys.argv[13]
+strict_summary_path = sys.argv[14]
+ts = sys.argv[15]
+
 state = {}
-state_file = Path(path)
 if state_file.exists():
     try:
-        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state = json.loads(state_file.read_text(encoding='utf-8'))
     except Exception:
         state = {}
 if not isinstance(state, dict):
     state = {}
-queues = state.get("queues", {})
+
+queues = state.get('queues', {})
 if not isinstance(queues, dict):
     queues = {}
+
+run_groups = [item for item in (run_groups_csv.split('||') if run_groups_csv else []) if item]
+
+try:
+    strict_pass_count_i = int(float(strict_pass_count or 0))
+except Exception:
+    strict_pass_count_i = 0
+try:
+    strict_run_groups_i = int(float(strict_run_groups or 0))
+except Exception:
+    strict_run_groups_i = 0
+try:
+    confirm_count_i = int(float(confirm_count or 0))
+except Exception:
+    confirm_count_i = 0
+
 queues[queue] = {
     "promotion_verdict": verdict,
-    "strict_pass_count": int(float(strict_pass_count)),
-    "strict_run_group_count": int(float(strict_run_groups)),
+    "strict_pass_count": strict_pass_count_i,
+    "strict_run_group_count": strict_run_groups_i,
     "top_run_group": top_run_group,
     "top_variant": top_variant,
     "top_score": top_score,
     "rejection_reason": rejection_reason,
-    "confirm_count": int(float(confirm_count)),
+    "confirm_count": confirm_count_i,
     "selection_policy": "fullspan_v1",
     "selection_mode": "fullspan",
+    "strict_gate_status": strict_gate_status,
+    "strict_gate_reason": strict_gate_reason,
+    "run_groups": run_groups,
+    "strict_summary_path": strict_summary_path,
     "last_update": ts,
 }
-state["queues"] = queues
-state["state_version"] = 1
+state['queues'] = queues
+state['state_version'] = state.get('state_version', 2)
 state_file.parent.mkdir(parents=True, exist_ok=True)
-state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
 }
 
@@ -706,17 +827,263 @@ import json
 import sys
 from pathlib import Path
 
-path, queue, field, default_value = sys.argv[1:5]
-state = Path(path)
-if not state.exists():
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+field = sys.argv[3]
+default_value = sys.argv[4]
+if not path.exists():
     print(default_value)
     raise SystemExit(0)
 try:
-    data = json.loads(state.read_text(encoding="utf-8"))
-    val = data.get("queues", {}).get(queue, {}).get(field, default_value)
+    data = json.loads(path.read_text(encoding='utf-8'))
+    queues = data.get('queues', {})
+    if isinstance(queues, dict):
+        print(queues.get(queue, {}).get(field, default_value))
+        raise SystemExit(0)
 except Exception:
-    val = default_value
-print(val)
+    pass
+print(default_value)
+PY
+}
+
+fullspan_state_metric_get() {
+  local metric="$1"
+  local default_value="${2:-0}"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$metric" "$default_value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+metric = sys.argv[2]
+default_value = sys.argv[3]
+if not path.exists():
+    print(default_value)
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+    metrics = data.get('runtime_metrics', {})
+    if isinstance(metrics, dict):
+        print(metrics.get(metric, default_value))
+        raise SystemExit(0)
+except Exception:
+    pass
+print(default_value)
+PY
+}
+
+fullspan_state_metric_inc() {
+  local metric="$1"
+  local delta="${2:-1}"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$metric" "$delta" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+metric = sys.argv[2]
+delta = sys.argv[3]
+state = {}
+if path.exists():
+    try:
+        state = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+metrics = state.get('runtime_metrics', {})
+if not isinstance(metrics, dict):
+    metrics = {}
+try:
+    d = int(float(delta))
+except Exception:
+    d = 0
+try:
+    metrics[metric] = int(metrics.get(metric, 0)) + d
+except Exception:
+    metrics[metric] = 0
+state['runtime_metrics'] = metrics
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+fullspan_state_metric_set() {
+  local metric="$1"
+  local value="$2"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$metric" "$value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+metric = sys.argv[2]
+value = sys.argv[3]
+state = {}
+if path.exists():
+    try:
+        state = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+metrics = state.get('runtime_metrics', {})
+if not isinstance(metrics, dict):
+    metrics = {}
+try:
+    metrics[metric] = int(value)
+except Exception:
+    metrics[metric] = value
+state['runtime_metrics'] = metrics
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+fullspan_cycle_cache_get() {
+  local queue="$1"
+  local fingerprint="$2"
+  local summary_path="$3"
+  python3 - "$FULLSPAN_CYCLE_CACHE_FILE" "$queue" "$fingerprint" "$summary_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+fingerprint = sys.argv[3]
+summary_path = Path(sys.argv[4])
+if not path.exists():
+    raise SystemExit(1)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    raise SystemExit(1)
+queues = data.get('queues', {})
+if not isinstance(queues, dict):
+    raise SystemExit(1)
+entry = queues.get(queue)
+if not isinstance(entry, dict):
+    raise SystemExit(1)
+if str(entry.get('fingerprint', '')) != str(fingerprint):
+    raise SystemExit(1)
+if not summary_path.exists():
+    raise SystemExit(1)
+print('1')
+PY
+}
+
+fullspan_cycle_cache_set() {
+  local queue="$1"
+  local fingerprint="$2"
+  local strict_pass_count="$3"
+  local strict_run_group_count="$4"
+  local summary_path="$5"
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  python3 - "$FULLSPAN_CYCLE_CACHE_FILE" "$queue" "$fingerprint" "$strict_pass_count" "$strict_run_group_count" "$summary_path" "$ts" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+fingerprint = sys.argv[3]
+try:
+    strict_pass_count = int(float(sys.argv[4]))
+except Exception:
+    strict_pass_count = 0
+try:
+    strict_run_group_count = int(float(sys.argv[5]))
+except Exception:
+    strict_run_group_count = 0
+summary_path = sys.argv[6]
+ts = sys.argv[7]
+state = {}
+if path.exists():
+    try:
+        state = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+queues = state.get('queues', {})
+if not isinstance(queues, dict):
+    queues = {}
+queues[queue] = {
+    'fingerprint': str(fingerprint),
+    'strict_pass_count': strict_pass_count,
+    'strict_run_group_count': strict_run_group_count,
+    'summary_path': summary_path,
+    'last_update': ts,
+}
+state['queues'] = queues
+state['version'] = state.get('version', 1)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+
+fullspan_confirm_count_for_queue() {
+  local top_run_group="$1"
+  local top_variant="$2"
+
+  if [[ -z "$top_run_group" && -z "$top_variant" ]]; then
+    echo 0
+    return 0
+  fi
+
+  if [[ ! -f "$RUN_INDEX_PATH" ]]; then
+    echo 0
+    return 0
+  fi
+
+  python3 - "$RUN_INDEX_PATH" "$top_run_group" "$top_variant" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+run_index_path = Path(sys.argv[1])
+top_run_group = (sys.argv[2] or "").strip()
+top_variant = (sys.argv[3] or "").strip()
+
+if not run_index_path.exists():
+    print(0)
+    raise SystemExit(0)
+
+run_groups = set()
+try:
+    with run_index_path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            status = (row.get("status") or "").strip().lower()
+            if status != "completed":
+                continue
+
+            run_group = (row.get("run_group") or "").strip()
+            run_id = (row.get("run_id") or "").strip()
+            config_path = (row.get("config_path") or "").strip().lower()
+            results_dir = (row.get("results_dir") or "").strip().lower()
+
+            variant_match = bool(top_variant) and (
+                top_variant.lower() in run_id.lower() or top_variant.lower() in config_path
+            )
+            group_match = bool(top_run_group) and (
+                top_run_group in run_group or top_run_group in run_id
+            )
+            if not (variant_match or group_match):
+                continue
+
+            run_dir_hint = "confirm" in (run_group + "/" + run_id + "/" + results_dir).lower()
+            if not run_dir_hint:
+                continue
+
+            if run_group:
+                run_groups.add(run_group)
+
+    print(len(run_groups))
+except Exception:
+    print(0)
 PY
 }
 
@@ -724,10 +1091,10 @@ run_fullspan_cycle() {
   local queue_rel="$1"
   local queue_path="$2"
   local queue_name="$3"
+
   if [[ -z "$queue_rel" || -z "$queue_path" ]]; then
     return 0
   fi
-
   if [[ ! -f "$queue_path" ]]; then
     return 0
   fi
@@ -736,63 +1103,208 @@ run_fullspan_cycle() {
   safe_name="$(printf '%s' "$queue_rel" | tr '/.' '__')"
   local cycle_log="$STATE_DIR/fullspan_cycle_${safe_name}.log"
   local cycle_summary="$STATE_DIR/fullspan_cycle_${safe_name}.json"
+  local now_epoch
+  now_epoch="$(date +%s)"
 
-  if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]] && grep -Fxq "$queue_rel" "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null; then
-    if [[ -s "$cycle_summary" ]]; then
+  local run_index_sig="none"
+  if [[ -f "$RUN_INDEX_PATH" ]]; then
+    run_index_sig="$(sha256sum "$RUN_INDEX_PATH" | awk '{print $1}')"
+  fi
+
+  local queue_sig
+  queue_sig="$(python3 - "$queue_path" <<'PY'
+import csv
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    with path.open(newline='', encoding='utf-8') as f:
+        rows = list(csv.DictReader(f))
+except Exception:
+    rows = []
+h = hashlib.sha256()
+h.update(json.dumps(rows, sort_keys=True).encode('utf-8'))
+print(h.hexdigest())
+PY
+)"
+
+  local decision_fingerprint
+  decision_fingerprint="${queue_sig}|${run_index_sig}|${PROMOTION_SELECTION_PROFILE}|${PROMOTION_SELECTION_MODE}|${FULLSPAN_POLICY_NAME}|${PROMOTION_PRE_RANK_TOPK}|${FULLSPAN_CONFIRM_MIN_GROUPS}|${FULLSPAN_CONFIRM_MIN_REPLIES}"
+
+  if [[ -s "$cycle_summary" ]] && fullspan_cycle_cache_get "$queue_rel" "$decision_fingerprint" "$cycle_summary" >/dev/null 2>&1; then
+    log "decision_cycle_cached queue=$queue_rel fingerprint=$decision_fingerprint"
+    parsed="$(python3 - "$cycle_summary" - <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+strict_data = data.get('strict', {})
+run_groups = strict_data.get('run_groups', []) or []
+print(int(strict_data.get('pass_count', 0) or 0))
+print(int(strict_data.get('run_group_count', 0) or 0))
+print('||'.join(run_groups))
+print(strict_data.get('top_run_group', '') or '')
+print(strict_data.get('top_variant', '') or '')
+print(strict_data.get('top_score', '') or '')
+print((strict_data.get('rejection_reason_line', '') or '').replace('\n', ' '))
+PY
+)"
+
+    if [[ -n "$parsed" ]]; then
+      readarray -t parsed_lines <<< "$parsed"
+      strict_pass_count="${parsed_lines[0]:-0}"
+      strict_run_group_count="${parsed_lines[1]:-0}"
+      strict_run_groups="${parsed_lines[2]:-}"
+      top_run_group="${parsed_lines[3]:-}"
+      top_variant="${parsed_lines[4]:-}"
+      top_score="${parsed_lines[5]:-}"
+      strict_rejection_reason="${parsed_lines[6]:-}"
+
+      local confirm_count
+      confirm_count="0"
+      if [[ "$strict_pass_count" -gt 0 ]]; then
+        confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+      fi
+
+      if [[ "$strict_pass_count" -le 0 ]]; then
+        fullspan_state_set "$queue_rel" "REJECT" \
+          "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+          "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+      elif (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
+        if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
+          fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
+            "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+            "" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+        else
+          fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
+            "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+            "pending_confirm" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+        fi
+      else
+        fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" \
+          "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+          "insufficient_run_groups" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+      fi
+
+      fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
+      printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
       return 0
     fi
   fi
 
-  log "decision_cycle_start queue=$queue_rel cycle_log=$cycle_log"
+  log "decision_cycle_start queue=$queue_rel cycle_log=$cycle_log fingerprint=$decision_fingerprint"
 
-  local strict_pass_count=0
-  local strict_run_group_count=0
-  local top_run_group=""
-  local top_variant=""
-  local top_score=""
-  local strict_rejection_reason=""
+  fullspan_state_metric_inc "fullspan_cycle_counter" 1
+  local cycle_count
+  cycle_count="$(fullspan_state_metric_get fullspan_cycle_counter 0)"
 
   (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue "$queue_rel" --contains "$queue_name" --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
-  local rc=$?
+  local cycle_rc=$?
+
+  strict_pass_count=0
+  strict_run_group_count=0
+  strict_run_groups=""
+  top_run_group=""
+  top_variant=""
+  top_score=""
+  strict_rejection_reason=""
 
   if [[ -f "$cycle_summary" ]]; then
-    local parsed
-    parsed="$(python3 - "$cycle_summary" -c "import json,sys; d=json.load(open(sys.argv[1])); s=d.get('strict', {}); print(int(s.get('pass_count',0) or 0)); print(int(s.get('run_group_count',0) or 0)); print(s.get('top_run_group', '') or ''); print(s.get('top_variant', '') or ''); print(s.get('top_score', '') or ''); print((s.get('rejection_reason_line', '') or '').replace('\n',' ') )" )"
+    parsed="$(python3 - "$cycle_summary" - <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+strict_data = data.get('strict', {})
+run_groups = strict_data.get('run_groups', []) or []
+print(int(strict_data.get('pass_count', 0) or 0))
+print(int(strict_data.get('run_group_count', 0) or 0))
+print('||'.join(run_groups))
+print(strict_data.get('top_run_group', '') or '')
+print(strict_data.get('top_variant', '') or '')
+print(strict_data.get('top_score', '') or '')
+print((strict_data.get('rejection_reason_line', '') or '').replace('\n', ' '))
+PY
+)"
     readarray -t parsed_lines <<< "$parsed"
     strict_pass_count="${parsed_lines[0]:-0}"
     strict_run_group_count="${parsed_lines[1]:-0}"
-    top_run_group="${parsed_lines[2]:-}"
-    top_variant="${parsed_lines[3]:-}"
-    top_score="${parsed_lines[4]:-}"
-    strict_rejection_reason="${parsed_lines[5]:-}"
+    strict_run_groups="${parsed_lines[2]:-}"
+    top_run_group="${parsed_lines[3]:-}"
+    top_variant="${parsed_lines[4]:-}"
+    top_score="${parsed_lines[5]:-}"
+    strict_rejection_reason="${parsed_lines[6]:-}"
   fi
 
-  if [[ "$rc" -eq 0 ]]; then
-    log "decision_cycle_ok queue=$queue_rel strict_pass_count=$strict_pass_count strict_run_group_count=$strict_run_group_count"
-    if [[ "$strict_pass_count" -le 0 ]]; then
-      fullspan_state_set "$queue_rel" "REJECT" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "no_strict_fullspan" "0"
+  local confirm_count
+  confirm_count="0"
+  if [[ "$strict_pass_count" -gt 0 ]]; then
+    confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+  fi
+
+  if (( cycle_rc == 0 )); then
+    if (( strict_pass_count <= 0 )); then
+      fullspan_state_set "$queue_rel" "REJECT" \
+        "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+        "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+      fullspan_state_metric_inc "strict_fullspan_reject_count" 1
+      fullspan_state_metric_set "cycles_since_last_strict_pass" "$cycle_count"
+      fullspan_state_metric_set "last_decision_epoch" "$now_epoch"
       log_decision_note "$queue_rel" "FULLSPAN_REJECT" "no_strict_fullspan_pass ${strict_rejection_reason}" "await_fullspan_improvement"
-    elif [[ "$strict_run_group_count" -ge 2 ]]; then
-      local current_confirm_count
-      current_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
-      if [[ "$current_confirm_count" -ge 2 ]]; then
-        fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "" "$current_confirm_count"
-        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "strict_pass_and_min_run_groups" "candidate_still_queued_or_candidate_or_waiting"
-      else
-        fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "pending_confirm" "$current_confirm_count"
-        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "strict_pass_run_groups=$strict_run_group_count confirm_count=$current_confirm_count" "need_vps_confirm_replay"
-      fi
     else
-      fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "insufficient_run_groups" "0"
-      log_decision_note "$queue_rel" "FULLSPAN_STRICT_PASS" "strict_pass_count=$strict_pass_count run_groups=$strict_run_group_count" "need_additional_run_groups"
+      fullspan_state_metric_inc "strict_fullspan_pass_count" 1
+      local prev_pass_cycle
+      prev_pass_cycle="$(fullspan_state_metric_get last_strict_pass_cycle 0)"
+      if [[ -n "$prev_pass_cycle" && "$prev_pass_cycle" != "0" ]]; then
+        if awk -v a="$prev_pass_cycle" -v b="$cycle_count" 'BEGIN {if (b>=a) exit 0; else exit 1}'; then
+          fullspan_state_metric_set "cycles_to_last_strict_pass" "$((cycle_count - prev_pass_cycle))"
+        fi
+      fi
+      fullspan_state_metric_set "last_strict_pass_cycle" "$cycle_count"
+      fullspan_state_metric_set "cycles_since_last_strict_pass" "0"
+      fullspan_state_metric_set "last_strict_pass_epoch" "$now_epoch"
+      fullspan_state_metric_set "last_decision_epoch" "$now_epoch"
+
+      if (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
+        if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
+          fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
+            "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+            "" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+          fullspan_state_metric_set "promotion_eligible_count" "$(( $(fullspan_state_metric_get promotion_eligible_count 0) + 1 ))"
+          log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "strict_pass_and_min_run_groups+confirm" "candidate_still_queued_or_candidate_or_waiting"
+        else
+          fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
+            "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+            "pending_confirm" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+          fullspan_state_metric_set "confirm_pending_count" "$(( $(fullspan_state_metric_get confirm_pending_count 0) + 1 ))"
+          log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "strict_pass_run_groups=$strict_run_group_count confirm_count=$confirm_count" "need_vps_confirm_replay"
+        fi
+      else
+        fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" \
+          "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+          "insufficient_run_groups" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+        fullspan_state_metric_set "confirm_pending_count" "$(( $(fullspan_state_metric_get confirm_pending_count 0) + 1 ))"
+        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PASS" "strict_pass_count=$strict_pass_count run_groups=$strict_run_group_count" "need_additional_run_groups"
+      fi
     fi
+
+    fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
     printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
   else
-    log "decision_cycle_fail queue=$queue_rel rc=$rc"
+    log "decision_cycle_fail queue=$queue_rel rc=$cycle_rc"
+    fullspan_state_metric_set "decision_cycle_fail_count" "$(( $(fullspan_state_metric_get decision_cycle_fail_count 0) + 1 ))"
   fi
 
   return 0
 }
+
 
 heartbeat_update() {
   local queue_rel="$1"
@@ -1082,7 +1594,7 @@ while true; do
     continue
   fi
 
-  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score < <(tail -n 1 "$CANDIDATE_FILE")
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     log_state "idle now=none completed=all"
@@ -1104,16 +1616,19 @@ while true; do
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
   state_rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
   state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+  state_strict_gate_status="$(fullspan_state_get "$queue_rel" "strict_gate_status" "FULLSPAN_PREFILTER_UNKNOWN")"
+  state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
 
-  if [[ "$state_verdict" == "REJECT" ]]; then
+  if [[ "$state_verdict" == "REJECT" || "$state_strict_gate_status" == "FULLSPAN_PREFILTER_REJECT" ]]; then
     promotion_verdict="REJECT"
     promotion_potential="REJECT"
     gate_status="HARD_FAIL"
-    gate_reason="${state_rejection_reason:-state_reject}"
+    gate_reason="${state_strict_gate_reason:-${state_rejection_reason:-state_reject}}"
   elif [[ "$state_verdict" == "PROMOTE_ELIGIBLE" ]]; then
     promotion_verdict="PROMOTE_ELIGIBLE"
+    gate_status="OPEN"
   elif [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
     promotion_verdict="DEFER_CONFIRM"
   fi
@@ -1148,7 +1663,7 @@ while true; do
     no_progress_streak_by_queue["$queue_rel"]="$no_progress_count"
     if (( no_progress_count >= NO_PROGRESS_STALE_CYCLES )); then
       mark_orphan "$queue_rel" "no_progress_streak_${no_progress_count}"
-      fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "no_progress_streak" "$state_confirm_count"
+      fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "no_progress_streak" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT"
       log_decision_note "$queue_rel" "FULLSPAN_NO_PROGRESS_FAIL_CLOSED" "no_progress_streak=${no_progress_count}" "retry_orphan_closed"
       log "no_progress_fail_closed queue=$queue_rel streak=$no_progress_count pending=$pending"
       sleep 2

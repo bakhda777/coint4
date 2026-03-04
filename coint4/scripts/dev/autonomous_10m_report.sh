@@ -87,6 +87,8 @@ state_verdict="none"
 state_pass_count="0"
 state_run_group_count="0"
 state_confirm_count="0"
+state_strict_gate_status=""
+state_strict_gate_reason=""
 if [[ -n "$current_queue" && -f "$FULLSPAN_DECISION_STATE_FILE" ]]; then
   state_fields="$(python3 - "$FULLSPAN_DECISION_STATE_FILE" "$current_queue" <<'PY'
 import json
@@ -107,12 +109,40 @@ except Exception:
 if not state:
     print('none 0 0 0')
     raise SystemExit(0)
-print(f"{state.get('promotion_verdict', 'none')} {state.get('strict_pass_count', 0)} {state.get('strict_run_group_count', 0)} {state.get('confirm_count', 0)}")
+print(f"{state.get('promotion_verdict', 'none')} {state.get('strict_pass_count', 0)} {state.get('strict_run_group_count', 0)} {state.get('confirm_count', 0)} {state.get('strict_gate_status', '')} {state.get('strict_gate_reason', '')}")
 PY
-)"
-  read -r state_verdict state_pass_count state_run_group_count state_confirm_count <<< "$state_fields"
+  )"
+  read -r state_verdict state_pass_count state_run_group_count state_confirm_count state_strict_gate_status state_strict_gate_reason <<< "$state_fields"
 fi
 
+fullspan_state_pass_metric="0"
+fullspan_state_reject_metric="0"
+fullspan_state_confirm_pending_metric="0"
+fullspan_state_promo_metric="0"
+fullspan_state_cycle_since_last_pass="0"
+fullspan_state_last_strict_pass_epoch="0"
+if [[ -f "$FULLSPAN_DECISION_STATE_FILE" ]]; then
+  fullspan_metrics="$(python3 - "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print('0 0 0 0 0 0')
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+    m = data.get('runtime_metrics', {}) if isinstance(data, dict) else {}
+except Exception:
+    print('0 0 0 0 0 0')
+    raise SystemExit(0)
+print(f"{m.get('strict_fullspan_pass_count', 0)} {m.get('strict_fullspan_reject_count', 0)} {m.get('confirm_pending_count', 0)} {m.get('promotion_eligible_count', 0)} {m.get('cycles_since_last_strict_pass', 0)} {m.get('last_strict_pass_epoch', 0)}")
+PY
+  )"
+  read -r fullspan_state_pass_metric fullspan_state_reject_metric fullspan_state_confirm_pending_metric fullspan_state_promo_metric fullspan_state_cycle_since_last_pass fullspan_state_last_strict_pass_epoch <<< "$fullspan_metrics"
+fi
+  
 orphans="0"
 if [[ -f "$ORPHAN_FILE" ]]; then
   orphans="$(python3 - "$ORPHAN_FILE" <<'PY'
@@ -186,3 +216,16 @@ printf "fullspan_state_verdict=%s\n" "$state_verdict"
 printf "fullspan_state_passes=%s\n" "$state_pass_count"
 printf "fullspan_state_run_groups=%s\n" "$state_run_group_count"
 printf "fullspan_state_confirm=%s\n" "$state_confirm_count"
+printf "fullspan_state_gate=%s/%s\n" "${state_strict_gate_status:-none}" "${state_strict_gate_reason:-none}"
+printf "fullspan_state_metrics_pass=%s\n" "$fullspan_state_pass_metric"
+printf "fullspan_state_metrics_hard_reject=%s\n" "$fullspan_state_reject_metric"
+printf "fullspan_state_metrics_confirm_pending=%s\n" "$fullspan_state_confirm_pending_metric"
+printf "fullspan_state_metrics_promo_eligible=%s\n" "$fullspan_state_promo_metric"
+printf "fullspan_state_cycles_since_last_strict_pass=%s\n" "$fullspan_state_cycle_since_last_pass"
+if [[ "${fullspan_state_last_strict_pass_epoch}" != "0" ]]; then
+  now_epoch=$(date +%s)
+  avg_hours=$(( (now_epoch - fullspan_state_last_strict_pass_epoch) / 3600 ))
+  printf "fullspan_state_hours_since_last_strict_pass=%s\n" "$avg_hours"
+else
+  printf "fullspan_state_hours_since_last_strict_pass=none\n"
+fi
