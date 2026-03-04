@@ -112,7 +112,7 @@ def hard_gate_pass(row):
         return False, "trades_gate_fail"
     if total_pairs < 20:
         return False, "pairs_gate_fail"
-    if worst_dd > 0.50:
+    if worst_dd > 0.20:
         return False, "dd_gate_fail"
     if worst_robust_pnl < 0:
         return False, "economic_gate_fail"

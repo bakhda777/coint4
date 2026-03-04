@@ -44,7 +44,7 @@ Last updated: 2026-02-22
 - `min_windows=1` для fullspan replay (одно fullspan-окно допустимо).
 - `min_trades=200`.
 - `min_pairs=20`.
-- `max_dd_pct=0.50`.
+- `max_dd_pct=0.20`.
 - `min_pnl=0`.
 - `initial_capital=1000`.
 - `tail_quantile=0.20`.
@@ -109,7 +109,7 @@ PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_r
   --min-windows 1 \
   --min-trades 200 \
   --min-pairs 20 \
-  --max-dd-pct 0.50 \
+  --max-dd-pct 0.20 \
   --min-pnl 0 \
   --initial-capital 1000 \
   --tail-quantile 0.20 \

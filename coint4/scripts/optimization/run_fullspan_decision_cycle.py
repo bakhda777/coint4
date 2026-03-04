@@ -222,7 +222,7 @@ def main() -> int:
     parser.add_argument(
         "--max-dd-pct",
         type=float,
-        default=0.50,
+        default=0.20,
     )
     parser.add_argument(
         "--min-pnl",
