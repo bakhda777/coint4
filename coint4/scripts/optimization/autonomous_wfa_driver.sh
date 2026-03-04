@@ -14,7 +14,11 @@ SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
+ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
+HEARTBEAT_STATE="$STATE_DIR/heartbeat_state.json"
 STALE_RUNNING_SEC="${STALE_RUNNING_SEC:-900}"
+ORPHAN_STALE_SECONDS="${ORPHAN_STALE_SECONDS:-600}"
+ORPHAN_COOLDOWN_SECONDS="${ORPHAN_COOLDOWN_SECONDS:-1800}"
 
 mkdir -p "$STATE_DIR"
 
@@ -35,7 +39,13 @@ fi
 trap 'flock -u 9; rm -f "$LOCK_FILE"' EXIT
 
 find_candidate() {
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" <<'PY'
+  local skip_orphans="${1:-1}"
+  local orphan_path=""
+  if [[ "$skip_orphans" == "1" && -f "$ORPHAN_FILE" ]]; then
+    orphan_path="$ORPHAN_FILE"
+  fi
+
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" <<'PY'
 import csv
 import sys
 import time
@@ -44,9 +54,26 @@ from pathlib import Path
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
+orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 now = time.time()
-out = []
 
+orphan = {}
+if orphan_file and orphan_file.exists():
+    try:
+        with orphan_file.open(newline='', encoding='utf-8') as f:
+            r = csv.DictReader(f)
+            for row in r:
+                q = (row.get('queue') or '').strip()
+                try:
+                    until = float((row.get('until_ts') or '').strip() or 0)
+                except Exception:
+                    until = 0
+                if q:
+                    orphan[q] = until
+    except Exception:
+        orphan = {}
+
+out = []
 for p in sorted(queue_root.rglob('run_queue.csv')):
     try:
         rows = list(csv.DictReader(p.open(newline='')))
@@ -68,14 +95,18 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     if pending == 0:
         continue
 
+    queue_rel = str(p)
+    if queue_rel in orphan and now < float(orphan.get(queue_rel, 0.0)):
+        continue
+
     mtime = float(p.stat().st_mtime)
     age_min = max(0.0, (now - mtime) / 60.0)
     urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1)
 
     out.append((
         -urgency,
-        -int(p.stat().st_mtime),
-        str(p),
+        -int(mtime),
+        queue_rel,
         planned,
         running,
         stalled,
@@ -139,7 +170,6 @@ choose_parallel() {
 
   load1="$(get_vps_load)"
 
-  # Heavy and noisy queues run more conservatively.
   if (( total >= 100 || pending >= 40 )); then
     p=4
   elif (( total <= 24 )); then
@@ -154,7 +184,6 @@ choose_parallel() {
     p=6
   fi
 
-  # cause-aware tuning
   case "$cause" in
     NETWORK)
       p=4
@@ -167,7 +196,6 @@ choose_parallel() {
       ;;
   esac
 
-  # never exceed 12 in autonomous mode
   if (( p > 12 )); then
     p=12
   fi
@@ -217,7 +245,6 @@ classify_root_cause() {
 
   latest="$(tail -n 120 "$latest_log" 2>/dev/null || true)"
 
-  # Also inspect queue-local error files if present.
   local err_file=""
   if [[ -n "$qdir" ]]; then
     if [[ -f "$ROOT_DIR/$qdir/strategy_metrics/equity_curve/errors" ]]; then
@@ -250,13 +277,150 @@ classify_root_cause() {
     return
   fi
 
-  # pattern-based reason from caller
   if [[ -n "$pattern" ]]; then
     echo "$pattern"
     return
   fi
 
   echo "UNKNOWN"
+}
+
+mark_orphan() {
+  local queue_rel="$1"
+  local reason="$2"
+  local until_ts
+  until_ts="$(( $(date +%s) + ORPHAN_COOLDOWN_SECONDS ))"
+
+  python3 - "$ORPHAN_FILE" "$queue_rel" "$until_ts" "$reason" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+until_ts = float(sys.argv[3])
+reason = sys.argv[4]
+
+rows = []
+if path.exists():
+    try:
+        with path.open(newline='', encoding='utf-8') as f:
+            for r in csv.DictReader(f):
+                if (r.get('queue') or '').strip() == queue:
+                    continue
+                rows.append(r)
+    except Exception:
+        rows = []
+
+rows.append({'queue': queue, 'until_ts': f'{until_ts:.0f}', 'reason': reason})
+path.parent.mkdir(parents=True, exist_ok=True)
+with path.open('w', newline='', encoding='utf-8') as f:
+    w = csv.DictWriter(f, fieldnames=['queue', 'until_ts', 'reason'])
+    w.writeheader()
+    for r in rows:
+        w.writerow(r)
+PY
+  log "orphan_marked queue=$queue_rel until_ts=$until_ts reason=$reason"
+}
+
+clear_orphan() {
+  local queue_rel="$1"
+  python3 - "$ORPHAN_FILE" "$queue_rel" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+
+if not path.exists():
+    raise SystemExit(0)
+
+rows = []
+with path.open(newline='', encoding='utf-8') as f:
+    for r in csv.DictReader(f):
+        if (r.get('queue') or '').strip() != queue:
+            rows.append(r)
+
+if rows:
+    with path.open('w', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=['queue', 'until_ts', 'reason'])
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+else:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+PY
+}
+
+cleanup_orphans() {
+  python3 - "$ORPHAN_FILE" <<'PY'
+import csv
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+now = time.time()
+if not path.exists():
+    raise SystemExit(0)
+
+rows = []
+with path.open(newline='', encoding='utf-8') as f:
+    for r in csv.DictReader(f):
+        try:
+            if now < float((r.get('until_ts') or '0').strip()):
+                rows.append(r)
+        except Exception:
+            continue
+
+if rows:
+    with path.open('w', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=['queue', 'until_ts', 'reason'])
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+else:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+PY
+}
+
+heartbeat_update() {
+  local queue_rel="$1"
+  local pending="$2"
+  local completed="$3"
+  local total="$4"
+  local planned="$5"
+  local running="$6"
+  local stalled="$7"
+  local out
+
+  out="$(python3 "$ROOT_DIR/scripts/optimization/_autonomous_heartbeat.py" \
+    --state "$HEARTBEAT_STATE" \
+    --queue "$queue_rel" \
+    --pending "$pending" \
+    --completed "$completed" \
+    --total "$total" \
+    --planned "$planned" \
+    --running "$running" \
+    --stalled "$stalled" 2>/dev/null || true)"
+
+  if [[ -z "$out" ]]; then
+    return
+  fi
+
+  IFS='|' read -r hb_queue hb_pending hb_completed hb_rate hb_eta hb_stale hb_done <<< "$out"
+  log "heartbeat queue=$hb_queue pending=$hb_pending completed=$hb_completed rate_per_min=$hb_rate eta_min=$hb_eta stale_sec=$hb_stale done=$hb_done"
+
+  if [[ "$hb_done" == "0" ]] && awk -v stale="$hb_stale" -v th="$ORPHAN_STALE_SECONDS" 'BEGIN { exit (stale + 0 >= th) ? 0 : 1 }'; then
+    mark_orphan "$queue_rel" "no_progress_${hb_stale}s"
+  fi
 }
 
 stale_running() {
@@ -430,6 +594,11 @@ start_queue() {
   log "started queue=$queue_rel log=$qlog"
 }
 
+# lightweight per-queue progress cache for stale detection in-shell
+declare -A last_pending_by_queue
+
+cleanup_orphans
+
 adaptive_idle_sleep=30
 prev_queue=""
 prev_planned=0
@@ -446,7 +615,12 @@ if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
 fi
 
 while true; do
-  find_candidate
+  find_candidate 1
+
+  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    cleanup_orphans
+    find_candidate 0
+  fi
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
     log_state "idle now=none completed=all"
@@ -481,10 +655,13 @@ while true; do
 
   if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
     if [[ "$pending" -lt "$prev_pending" ]]; then
+      clear_orphan "$queue_rel"
       log "progress_seen queue=$queue_rel prev=$prev_pending curr=$pending"
       sync_queue_status "$queue_rel"
     fi
   fi
+
+  heartbeat_update "$queue_rel" "$pending" "$completed" "$total" "$planned" "$running" "$stalled"
 
   prev_queue="$queue_rel"
   prev_planned="$planned"
@@ -518,7 +695,7 @@ while true; do
   fi
 
   if is_driver_busy; then
-    if [[ "$prev_queue" == "$queue_rel" ]]; then
+    if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
       if (( pending == prev_pending )); then
         busy_repeat_count=$((busy_repeat_count + 1))
       else
@@ -559,7 +736,6 @@ while true; do
     log "start_failed queue=$queue_rel cause=$cause"
   fi
 
-  # Let startup propagate before next decision.
   sleep 120
 
 done

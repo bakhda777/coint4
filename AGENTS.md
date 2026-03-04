@@ -174,3 +174,5 @@ Top-level:
 
 - 2026-03-04: автономный драйвер WFA обновлён: добавлен `busy`-throttle (повторный skip одинаковой очереди без прогресса -> throttled sync/retry policy), динамический `--parallel` по размеру очереди/ETA/нагрузке, и авто-классификация root-cause (`NETWORK/DATA/MODEL/TIMEOUT/UNKNOWN`) перед стартом очереди с адаптивным `max_retries`.
 - 2026-03-04: в `stale_running` убран внешний путь на VPS (inline fallback), чтобы watchdog зависших `running` работал и при отсутствии `/opt/coint4/coint4/scripts/optimization/_autonomous_stale_running.py`.
+- 2026-03-04: добавил heartbeat/ETA слой (`_autonomous_heartbeat.py`) в автономный драйвер: логируется скорость прогресса и ETA по `completed/pending`, плюс fail-closed маркер (no-progress) -> `orphan` queue.
+- 2026-03-04: добавлен fail-closed `orphan`-механизм: если `pending` без прогресса > `ORPHAN_STALE_SECONDS` (default 600), очередь помечается в `orphan_queues.csv` на `ORPHAN_COOLDOWN_SECONDS` (default 1800) и скипается при выборе приоритетной очереди.
