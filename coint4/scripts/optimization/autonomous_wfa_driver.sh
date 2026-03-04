@@ -1259,6 +1259,7 @@ PY
 
   if [[ -s "$cycle_summary" ]] && fullspan_cycle_cache_get "$queue_rel" "$decision_fingerprint" "$cycle_summary" >/dev/null 2>&1; then
     log "decision_cycle_cached queue=$queue_rel fingerprint=$decision_fingerprint"
+    fullspan_state_metric_inc "fullspan_cycle_cache_hit_count" 1
     parsed="$(python3 - "$cycle_summary" - <<'PY'
 import json
 import sys
