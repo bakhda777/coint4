@@ -205,6 +205,11 @@ def main() -> int:
         help="Top N rows for research (diagnostic) profile output.",
     )
     parser.add_argument(
+        "--run-diagnostic-on-strict-pass",
+        action="store_true",
+        help="Run diagnostic profile even when strict profile already passed (default: skip for fast-lane).",
+    )
+    parser.add_argument(
         "--min-windows",
         type=int,
         default=1,
@@ -348,15 +353,19 @@ def main() -> int:
         strict_cmd.extend(["--contains", str(needle)])
     strict_rc, strict_out = _run(strict_cmd, cwd=app_root, env=env, allow_no_matches=True)
     strict_hard_reason = _extract_strict_reason(strict_out)
+    strict_preview = _parse_rank_output(strict_out)
+    strict_pass_detected = bool(strict_rc == 0 and int(strict_preview.get("pass_count", 0) or 0) > 0)
     print(f"[cycle] strict_profile_rc={strict_rc}")
 
     # 4) Optional diagnostic research profile.
-    # If strict profile has explicit hard-gate hard-fail (or zero-tail), diagnostic is skipped.
+    # If strict profile has explicit hard-gate hard-fail (or strict-pass fast-lane), diagnostic is skipped.
     diag_out = ""
     diag_rc = 0
     diag_skip_reason = ""
     if strict_rc == 1 and strict_hard_reason:
         diag_skip_reason = f"strict_hard_fail: {strict_hard_reason}"
+    elif strict_pass_detected and not args.run_diagnostic_on_strict_pass:
+        diag_skip_reason = "strict_pass_fastlane"
     else:
         print(
             "[cycle] profile=research selection_profile=research_profile "
