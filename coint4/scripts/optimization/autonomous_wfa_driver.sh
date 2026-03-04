@@ -1087,6 +1087,103 @@ except Exception:
 PY
 }
 
+fullspan_state_run_groups_csv() {
+  local queue="$1"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+if not path.exists():
+    print("")
+    raise SystemExit(0)
+
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    queues = data.get("queues", {})
+    entry = queues.get(queue, {}) if isinstance(queues, dict) else {}
+    raw = entry.get("run_groups", []) if isinstance(entry, dict) else []
+    if isinstance(raw, list):
+        print("||".join(str(item) for item in raw if str(item).strip()))
+        raise SystemExit(0)
+except Exception:
+    pass
+print("")
+PY
+}
+
+fullspan_reconcile_confirm_progress() {
+  local queue_rel="$1"
+
+  local state_verdict
+  local strict_run_group_count
+  local strict_pass_count
+  local top_run_group
+  local top_variant
+  local top_score
+  local rejection_reason
+  local strict_gate_status
+  local strict_gate_reason
+  local strict_summary_path
+  local state_confirm_count
+
+  state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
+  if [[ "$state_verdict" != "PROMOTE_PENDING_CONFIRM" && "$state_verdict" != "PROMOTE_DEFER_CONFIRM" ]]; then
+    return 0
+  fi
+
+  strict_run_group_count="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
+  strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+  top_run_group="$(fullspan_state_get "$queue_rel" "top_run_group" "")"
+  top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
+  top_score="$(fullspan_state_get "$queue_rel" "top_score" "")"
+  rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
+  strict_gate_status="$(fullspan_state_get "$queue_rel" "strict_gate_status" "FULLSPAN_PREFILTER_UNKNOWN")"
+  strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
+  strict_summary_path="$(fullspan_state_get "$queue_rel" "strict_summary_path" "")"
+  state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+
+  if [[ "$strict_run_group_count" -lt "$FULLSPAN_CONFIRM_MIN_GROUPS" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$top_run_group" && -z "$top_variant" ]]; then
+    return 0
+  fi
+
+  local live_confirm_count
+  live_confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+
+  local run_groups_csv
+  run_groups_csv="$(fullspan_state_run_groups_csv "$queue_rel")"
+
+  if (( live_confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
+    if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
+      fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
+        "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+        "" "$live_confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
+      fullspan_state_metric_set "promotion_eligible_count" "$(( $(fullspan_state_metric_get promotion_eligible_count 0) + 1 ))"
+      if (( state_confirm_count < FULLSPAN_CONFIRM_MIN_REPLIES )); then
+        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "auto_confirm_count=$live_confirm_count" "vps_confirm_replays_complete"
+      fi
+    fi
+    return 0
+  fi
+
+  if (( live_confirm_count != state_confirm_count )); then
+    fullspan_state_set "$queue_rel" "$state_verdict" \
+      "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+      "$rejection_reason" "$live_confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
+    if (( live_confirm_count > state_confirm_count )); then
+      log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "confirm_count_update=$live_confirm_count" "waiting_for_vps_confirm_replay"
+    fi
+  fi
+
+  return 0
+}
+
 run_fullspan_cycle() {
   local queue_rel="$1"
   local queue_path="$2"
@@ -1613,6 +1710,16 @@ while true; do
   pending=$((planned + running + stalled + failed))
 
   promotion_verdict="ANALYZE"
+  state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
+  state_rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
+  state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+  state_strict_gate_status="$(fullspan_state_get "$queue_rel" "strict_gate_status" "FULLSPAN_PREFILTER_UNKNOWN")"
+  state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
+  state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
+  state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+
+  fullspan_reconcile_confirm_progress "$queue_rel"
+
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
   state_rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
   state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
