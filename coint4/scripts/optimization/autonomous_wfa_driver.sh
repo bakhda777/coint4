@@ -33,6 +33,8 @@ FULLSPAN_CYCLE_CACHE_FILE="$STATE_DIR/fullspan_cycle_cache.json"
 FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
 FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
 FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
+FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-60}"
+FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
 LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
@@ -63,7 +65,7 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" <<'PY'
 import csv
 import json
 import re
@@ -187,6 +189,11 @@ try:
 except Exception:
     LOW_YIELD_HOMOGENEOUS_MIN = 2
 
+try:
+    FULLSPAN_CONFIRM_MIN_GROUPS = int(sys.argv[9])
+except Exception:
+    FULLSPAN_CONFIRM_MIN_GROUPS = 2
+
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
@@ -302,6 +309,12 @@ def emit_scores():
             state_confirm_count = int(float(state_entry.get('confirm_count', 0) or 0))
         except Exception:
             state_confirm_count = 0
+
+        confirm_fastlane_ready = bool(
+            state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM")
+            and state_strict_pass_count > 0
+            and state_strict_run_groups >= FULLSPAN_CONFIRM_MIN_GROUPS
+        )
 
         for base, bundle in by_base.items():
             h = bundle.get('holdout')
@@ -440,10 +453,8 @@ def emit_scores():
 
         if state_verdict == "PROMOTE_ELIGIBLE":
             pre_rank_score += 10.0
-        elif state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"):
-            pre_rank_score += 3.0
-            if state_strict_run_groups >= 2:
-                pre_rank_score += 12.0
+        elif confirm_fastlane_ready:
+            pre_rank_score += 20.0
 
         if fail_configs > 0 and by_state_reason:
             dominant_reason_count = max(by_state_reason.values())
@@ -1970,6 +1981,30 @@ sync_queue_status() {
   log "sync_queue_status queue=$queue_rel done"
 }
 
+fullspan_rollup_sync() {
+  local queue_rel="$1"
+  local reason="$2"
+  local now_epoch
+  local last_epoch=0
+  now_epoch="$(date +%s)"
+
+  if [[ -f "$FULLSPAN_ROLLUP_SYNC_MARKER" ]]; then
+    last_epoch="$(awk 'NR==1 {print $1}' "$FULLSPAN_ROLLUP_SYNC_MARKER" 2>/dev/null || true)"
+    if [[ -z "$last_epoch" ]]; then
+      last_epoch=0
+    fi
+  fi
+
+  if (( now_epoch - last_epoch < FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL )); then
+    return 0
+  fi
+
+  sync_queue_status "$queue_rel"
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status) >>"$LOG_FILE" 2>&1 || true
+  printf '%s %s %s\n' "$now_epoch" "$queue_rel" "${reason:-milestone}" > "$FULLSPAN_ROLLUP_SYNC_MARKER"
+  log "fullspan_rollup_sync queue=$queue_rel reason=${reason:-milestone}"
+}
+
 start_queue() {
   local queue_rel="$1"
   local cause="$2"
@@ -2129,12 +2164,18 @@ while true; do
     promotion_verdict="REJECT"
   fi
 
+  if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
+    if (( state_strict_pass_count > 0 && state_strict_run_groups >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
+      fullspan_rollup_sync "$queue_rel" "confirm_fastlane_watch"
+    fi
+  fi
+
   if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
     if [[ "$pending" -lt "$prev_pending" ]]; then
       clear_orphan "$queue_rel"
       no_progress_streak_by_queue["$queue_rel"]=0
       log "progress_seen queue=$queue_rel prev=$prev_pending curr=$pending"
-      sync_queue_status "$queue_rel"
+      fullspan_rollup_sync "$queue_rel" "progress_milestone"
     fi
   fi
 
