@@ -25,6 +25,7 @@ PROMOTION_SELECTION_PROFILE="promote_profile"
 PROMOTION_SELECTION_MODE="fullspan"
 FULLSPAN_POLICY_NAME="fullspan_v1"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
+DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
 
 
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
@@ -274,6 +275,18 @@ def emit_scores():
         state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip().upper()
         state_strict_status = str(state_entry.get('strict_gate_status', '') or '').strip()
         state_strict_reason = str(state_entry.get('strict_gate_reason', '') or '').strip()
+        try:
+            state_strict_pass_count = int(float(state_entry.get('strict_pass_count', 0) or 0))
+        except Exception:
+            state_strict_pass_count = 0
+        try:
+            state_strict_run_groups = int(float(state_entry.get('strict_run_group_count', 0) or 0))
+        except Exception:
+            state_strict_run_groups = 0
+        try:
+            state_confirm_count = int(float(state_entry.get('confirm_count', 0) or 0))
+        except Exception:
+            state_confirm_count = 0
 
         for base, bundle in by_base.items():
             h = bundle.get('holdout')
@@ -391,10 +404,23 @@ def emit_scores():
 
         pre_rank_score += 20.0 if strict_gate_status == "FULLSPAN_PREFILTER_PASSED" else 0.0
 
+        # distance-to-goal prioritization: prioritize queues closer to strict-pass + confirm completion
+        pre_rank_score += min(max(state_strict_pass_count, 0), 3) * 6.0
+        pre_rank_score += min(max(state_strict_run_groups, 0), 2) * 10.0
+        pre_rank_score += min(max(state_confirm_count, 0), 2) * 12.0
+
         if state_verdict == "PROMOTE_ELIGIBLE":
             pre_rank_score += 10.0
         elif state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"):
             pre_rank_score += 3.0
+            if state_strict_run_groups >= 2:
+                pre_rank_score += 12.0
+
+        if fail_configs > 0 and by_state_reason:
+            dominant_reason_count = max(by_state_reason.values())
+            if dominant_reason_count >= max(2, int(0.7 * max(fail_configs, 1))):
+                # repeated same fail-pattern likely low-yield queue; de-prioritize
+                pre_rank_score -= 6.0
 
         urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
 
@@ -1519,6 +1545,127 @@ PY" || true)
   return 0
 }
 
+quarantine_deterministic_stalled() {
+  local queue_rel="$1"
+  local queue_path="$ROOT_DIR/$queue_rel"
+  python3 - "$queue_path" "$ROOT_DIR" "$DETERMINISTIC_QUARANTINE_FILE" <<'PY'
+import csv
+import json
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+root_dir = Path(sys.argv[2])
+quarantine_file = Path(sys.argv[3])
+
+payload = {"changed": 0, "codes": {}, "queue": str(queue_path)}
+if not queue_path.exists():
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+try:
+    with queue_path.open(newline='', encoding='utf-8') as f:
+        rows = list(csv.DictReader(f))
+except Exception:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+code_counter = Counter()
+new_entries = []
+
+for row in rows:
+    status = str(row.get('status') or '').strip().lower()
+    if status != 'stalled':
+        continue
+
+    results_dir = str(row.get('results_dir') or '').strip()
+    if not results_dir:
+        continue
+
+    run_dir = Path(results_dir)
+    if not run_dir.is_absolute():
+        run_dir = (root_dir / run_dir).resolve()
+
+    run_status = run_dir / 'run_status.json'
+    run_log = run_dir / 'run.log'
+
+    text_parts = []
+    if run_status.exists():
+        try:
+            text_parts.append(run_status.read_text(encoding='utf-8', errors='ignore'))
+        except Exception:
+            pass
+    if run_log.exists():
+        try:
+            text_parts.append(run_log.read_text(encoding='utf-8', errors='ignore'))
+        except Exception:
+            pass
+
+    if not text_parts:
+        continue
+
+    blob = "\n".join(text_parts)
+    code = None
+
+    if ('backtest.max_var_multiplier' in blob and 'Input should be greater than 1' in blob):
+        code = 'MAX_VAR_MULTIPLIER_INVALID'
+    elif ('pydantic_core._pydantic_core.ValidationError' in blob and 'validation error for AppConfig' in blob):
+        code = 'CONFIG_VALIDATION_ERROR'
+    elif ('yaml' in blob.lower() and 'parse' in blob.lower() and 'error' in blob.lower()):
+        code = 'CONFIG_PARSE_ERROR'
+
+    if code is None:
+        continue
+
+    row['status'] = 'skipped'
+    payload['changed'] += 1
+    code_counter[code] += 1
+    new_entries.append({
+        'ts': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'queue': str(queue_path),
+        'results_dir': str(run_dir),
+        'run_id': str(Path(results_dir).name),
+        'code': code,
+    })
+
+if payload['changed'] > 0 and rows:
+    with queue_path.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+    state = {'entries': []}
+    if quarantine_file.exists():
+        try:
+            state = json.loads(quarantine_file.read_text(encoding='utf-8'))
+        except Exception:
+            state = {'entries': []}
+    if not isinstance(state, dict):
+        state = {'entries': []}
+    entries = state.get('entries', [])
+    if not isinstance(entries, list):
+        entries = []
+
+    seen = {(e.get('queue'), e.get('results_dir'), e.get('code')) for e in entries if isinstance(e, dict)}
+    for e in new_entries:
+        key = (e.get('queue'), e.get('results_dir'), e.get('code'))
+        if key in seen:
+            continue
+        entries.append(e)
+        seen.add(key)
+
+    state['entries'] = entries[-20000:]
+    quarantine_file.parent.mkdir(parents=True, exist_ok=True)
+    quarantine_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+
+payload['codes'] = dict(code_counter)
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
 repair_stalled_queue() {
   local queue_rel="$1"
   local planned="$2"
@@ -1537,9 +1684,49 @@ repair_stalled_queue() {
   fi
 
   log "repair_stalled queue=$queue_rel parallel=$parallel stale_sec=$hb_stale_sec cause=$cause"
+
+  local quarantine_payload
+  local quarantine_changed
+  local quarantine_codes
+  quarantine_payload="$(quarantine_deterministic_stalled "$queue_rel")"
+  quarantine_changed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("changed",0)))' "$quarantine_payload" 2>/dev/null || echo 0)"
+  quarantine_codes="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); c=d.get("codes",{}); print(";".join(f"{k}:{v}" for k,v in sorted(c.items())))' "$quarantine_payload" 2>/dev/null || true)"
+  if [[ -n "$quarantine_changed" && "$quarantine_changed" -gt 0 ]]; then
+    log "deterministic_quarantine queue=$queue_rel changed=$quarantine_changed codes=${quarantine_codes:-none}"
+    log_decision_note "$queue_rel" "FULLSPAN_DETERMINISTIC_QUARANTINE" "count=$quarantine_changed codes=${quarantine_codes:-none}" "skip_invalid_config_reruns"
+    fullspan_state_metric_inc "deterministic_quarantine_count" "$quarantine_changed"
+  fi
+
   local rc=0
   local max_retries
   max_retries="$(choose_max_retries "$cause")"
+
+  local stalled_after_quarantine
+  stalled_after_quarantine="$(python3 - "$ROOT_DIR/$queue_rel" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+try:
+    rows = list(csv.DictReader(path.open(newline='', encoding='utf-8')))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+stalled = 0
+for row in rows:
+    if str(row.get('status') or '').strip().lower() == 'stalled':
+        stalled += 1
+print(stalled)
+PY
+)"
+  if [[ "$stalled_after_quarantine" == "0" ]]; then
+    log "repair_stalled_noop queue=$queue_rel reason=deterministic_quarantine_exhausted"
+    return 0
+  fi
 
   if [[ -n "$SERVER_IP" ]]; then
     ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel" --compute-host "$SERVER_IP" --ssh-user "$SERVER_USER" --postprocess true --wait-completion false --max-retries "$max_retries") >>"$LOG_FILE" 2>&1 || rc=$?
