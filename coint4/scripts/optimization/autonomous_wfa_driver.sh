@@ -401,25 +401,22 @@ heartbeat_update() {
   local stalled="$7"
   local out
 
-  out="$(python3 "$ROOT_DIR/scripts/optimization/_autonomous_heartbeat.py" \
-    --state "$HEARTBEAT_STATE" \
-    --queue "$queue_rel" \
-    --pending "$pending" \
-    --completed "$completed" \
-    --total "$total" \
-    --planned "$planned" \
-    --running "$running" \
-    --stalled "$stalled" 2>/dev/null || true)"
+  # Shell-visible heartbeat state for downstream policy decisions.
+  hb_queue=""
+  hb_stale_sec="0"
+
+  out="$(python3 "$ROOT_DIR/scripts/optimization/_autonomous_heartbeat.py"     --state "$HEARTBEAT_STATE"     --queue "$queue_rel"     --pending "$pending"     --completed "$completed"     --total "$total"     --planned "$planned"     --running "$running"     --stalled "$stalled" 2>/dev/null || true)"
 
   if [[ -z "$out" ]]; then
     return
   fi
 
   IFS='|' read -r hb_queue hb_pending hb_completed hb_rate hb_eta hb_stale hb_done <<< "$out"
+  hb_stale_sec="$hb_stale"
   log "heartbeat queue=$hb_queue pending=$hb_pending completed=$hb_completed rate_per_min=$hb_rate eta_min=$hb_eta stale_sec=$hb_stale done=$hb_done"
 
-  if [[ "$hb_done" == "0" ]] && awk -v stale="$hb_stale" -v th="$ORPHAN_STALE_SECONDS" 'BEGIN { exit (stale + 0 >= th) ? 0 : 1 }'; then
-    mark_orphan "$queue_rel" "no_progress_${hb_stale}s"
+  if [[ "$hb_done" == "1" ]]; then
+    clear_orphan "$queue_rel"
   fi
 }
 
@@ -508,6 +505,50 @@ PY" || true)
 
   echo "stale_running_nochange queue=$queue_rel"
   return 0
+}
+
+repair_stalled_queue() {
+  local queue_rel="$1"
+  local planned="$2"
+  local running="$3"
+  local stalled="$4"
+  local total="$5"
+  local cause="$6"
+
+  local parallel
+  parallel="$(choose_parallel "$planned" "$running" "$stalled" "$total" "$cause")"
+  if (( parallel < 2 )); then
+    parallel=2
+  fi
+  if (( parallel > 12 )); then
+    parallel=12
+  fi
+
+  log "repair_stalled queue=$queue_rel parallel=$parallel stale_sec=$hb_stale_sec cause=$cause"
+  local rc=0
+  ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel") >>"$LOG_FILE" 2>&1 || rc=$?
+
+  if [[ "$rc" -eq 0 ]]; then
+    log "repair_stalled_success queue=$queue_rel"
+    clear_orphan "$queue_rel"
+    return 0
+  fi
+
+  log "repair_stalled_failed queue=$queue_rel rc=$rc"
+  return "$rc"
+}
+
+repair_stalled_state_record() {
+  local queue_rel="$1"
+  local cur="${stalled_repair_failures[$queue_rel]:-0}"
+  local new_failures=$((cur + 1))
+  stalled_repair_failures["$queue_rel"]="$new_failures"
+  echo "$new_failures"
+}
+
+repair_stalled_state_reset() {
+  local queue_rel="$1"
+  stalled_repair_failures["$queue_rel"]=0
 }
 
 is_driver_busy() {
@@ -599,6 +640,8 @@ declare -A last_pending_by_queue
 
 cleanup_orphans
 
+declare -A stalled_repair_failures
+
 adaptive_idle_sleep=30
 prev_queue=""
 prev_planned=0
@@ -669,20 +712,48 @@ while true; do
   prev_stalled="$stalled"
   prev_failed="$failed"
   prev_pending="$pending"
-
+  action=""
   reason=""
-  if [[ "$running" -gt 0 && "$planned" -eq 0 && "$stalled" -eq 0 ]]; then
-    reason="stale_running_repair"
-    stale_out=$(stale_running "$queue_rel")
-    log "run_repair queue=$queue_rel out=\"$stale_out\""
-  elif [[ "$running" -gt 0 ]]; then
-    reason="active_running"
-  elif [[ "$stalled" -gt 0 ]]; then
-    reason="stalled_queue"
-  elif [[ "$planned" -gt 0 ]]; then
-    reason="planned_work"
-  else
-    reason="no_pending"
+
+  if [[ -n "$hb_queue" && "$running" -eq 0 && "$stalled" -gt 0 ]]; then
+    if awk -v stale="$hb_stale_sec" -v th="$ORPHAN_STALE_SECONDS" 'BEGIN { exit (stale + 0 >= th) ? 0 : 1 }'; then
+      reason="stalled_queue_no_progress"
+      if repair_stalled_queue "$queue_rel" "$planned" "$running" "$stalled" "$total" "UNKNOWN"; then
+        action="REPAIRED_STALLED"
+        repair_stalled_state_reset "$queue_rel"
+      else
+        fails=$(repair_stalled_state_record "$queue_rel")
+        if (( fails >= 3 )); then
+          mark_orphan "$queue_rel" "stalled_repair_fail_${fails}"
+          action="FAIL_CLOSED"
+          repair_stalled_state_reset "$queue_rel"
+        else
+          action="REPAIR_STALLED_FAIL"
+        fi
+      fi
+      log "stalled_repair_cycle queue=$queue_rel action=$action stale_sec=$hb_stale_sec"
+    fi
+  fi
+
+  if [[ -z "$reason" ]]; then
+    if [[ "$running" -gt 0 && "$planned" -eq 0 && "$stalled" -eq 0 ]]; then
+      reason="stale_running_repair"
+      stale_out=$(stale_running "$queue_rel")
+      action="RUN_REPAIR"
+      log "run_repair queue=$queue_rel out=\"$stale_out\""
+    elif [[ "$running" -gt 0 ]]; then
+      reason="active_running"
+    elif [[ "$stalled" -gt 0 ]]; then
+      reason="stalled_queue"
+    elif [[ "$planned" -gt 0 ]]; then
+      reason="planned_work"
+    else
+      reason="no_pending"
+    fi
+  fi
+
+  if [[ -z "$action" ]]; then
+    action="ANALYZE"
   fi
 
   cause=""
@@ -690,8 +761,16 @@ while true; do
     cause="IDLE"
   elif [[ "$reason" == "stale_running_repair" ]]; then
     cause="REPAIR"
+  elif [[ "$reason" == "stalled_queue_no_progress" ]]; then
+    cause="REPAIR"
   else
     cause="$(classify_root_cause "$queue_rel" "$reason" "$queue_rel")"
+  fi
+
+  if [[ "$action" == "REPAIR_STALLED_FAIL" || "$action" == "REPAIRED_STALLED" || "$action" == "FAIL_CLOSED" ]]; then
+    log "repair_gate queue=$queue_rel action=$action"
+    sleep 10
+    continue
   fi
 
   if is_driver_busy; then
@@ -713,7 +792,7 @@ while true; do
       sleep "$busy_backoff_seconds"
     fi
     log_state "busy current_queue=$queue_rel running_or_stalled=$running,$stalled planned=$planned reason=$reason"
-    log "busy skip start queue_rel=$queue_rel urgency=$urgency reason=$reason pending=$pending repeat=$busy_repeat_count cause=$cause"
+    log "busy skip start queue_rel=$queue_rel urgency=$urgency reason=$reason pending=$pending repeat=$busy_repeat_count cause=$cause action=$action"
     continue
   fi
 
@@ -722,7 +801,7 @@ while true; do
 
   if [[ "$reason" == "no_pending" ]]; then
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
-    log "no_pending queue=$queue_rel"
+    log "no_pending queue=$queue_rel action=WAIT"
     sleep "$adaptive_idle_sleep"
     continue
   fi
@@ -731,7 +810,7 @@ while true; do
     cause="UNKNOWN"
   fi
 
-  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed"
+  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action"
   if ! start_queue "$queue_rel" "$cause" "$planned" "$running" "$stalled" "$total"; then
     log "start_failed queue=$queue_rel cause=$cause"
   fi

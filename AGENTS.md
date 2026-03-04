@@ -179,3 +179,6 @@ Top-level:
 
 - 2026-03-04: переключил автоматический отчёт на 10-минутный цикл: `858931a5-d85d-43e1-9add-a556d931fef6` → `coint4-10m-report` + интервал `600000`, обновил структуру текста чтобы убрать статичные «3-минутные» команды и сделать отчёт по фактам (driver_state, driver.log, orphan/heartbeat-правила). Очереди и автостатусы анализируются как поведенчески полезный дашборд, без ручного запуска.
 - 2026-03-04: добавил `coint4/scripts/dev/autonomous_10m_report.sh` и перевёл 10-минутный изолированный отчётный cron в режим «выполни скрипт и отдавай stdout как итог», чтобы убрать статичный мусор и всегда отдавать живой статус (driver state/heartbeat/orphan/vps процессы/active queues/log tail).
+
+- 07:56: реализовал пункты 1+2: автоперехват stalled при отсутствии прогресса (running=0, stalled>0, stale>=ORPHAN_STALE_SECONDS): вызывается `recover_stalled_queue.sh` с адаптивным `parallel`; на повторных неудачах после 3 попыток queue уходит в `orphan_queues.csv` с `FAIL_CLOSED`; логируется `stalled_repair_cycle`/`repair_gate`/`FAIL_CLOSED` и action-теги в driver logs (`ANALYZE`, `REPAIRED_STALLED`, `REPAIR_STALLED_FAIL`).
+- 07:56: в `autonomous_10m_report.sh` добавлен вывод последнего `last_action` из `driver.log` для отчёта в 10m-срезе, чтобы статус был действия, а не только состояние.

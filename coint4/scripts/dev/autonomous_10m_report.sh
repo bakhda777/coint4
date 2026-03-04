@@ -25,6 +25,15 @@ if [[ -f "$CANDIDATE_FILE" ]]; then
 fi
 
 heartbeat_for_current="none"
+
+last_action='none'
+if [[ -f "$LOG_FILE" ]]; then
+  last_action="$(awk '/action=/{ if (match($0, /action=([^ ]+)/, a)) { print a[1]; } }' "$LOG_FILE" | tail -n 1 || true)"
+fi
+if [[ -z "$last_action" ]]; then
+  last_action='none'
+fi
+
 if [[ -n "$current_queue" && -f "$HEARTBEAT_FILE" ]]; then
   heartbeat_for_current="$(python3 - "$current_queue" "$HEARTBEAT_FILE" <<'PY'
 import json
@@ -112,6 +121,7 @@ printf 'driver_state=%s\n' "${qline:-none}"
 printf 'current=%s\n' "${current_queue:-none}"
 printf 'candidate_top=%s\n' "${candidate_top:-none}"
 printf 'heartbeat=%s\n' "$heartbeat_for_current"
+printf 'last_action=%s\n' "$last_action"
 printf 'orphan_count=%s\n' "$orphans"
 printf 'vps_processes=%s\n' "$vps_processes"
 printf 'active_queues=%s\n' "$active_queues"
