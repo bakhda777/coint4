@@ -34,6 +34,9 @@ FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
 FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
 FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
+LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
+LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
+LOW_YIELD_HOMOGENEOUS_FAIL_MIN="${LOW_YIELD_HOMOGENEOUS_FAIL_MIN:-2}"
 
 mkdir -p "$STATE_DIR"
 
@@ -60,7 +63,7 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" <<'PY'
 import csv
 import json
 import re
@@ -171,6 +174,18 @@ def canonical_state_reason(raw: str) -> str:
     if not raw:
         return ""
     return HARDFAIL_MAP.get(raw, str(raw).strip().upper() or "METRICS_MISSING")
+
+
+LOW_YIELD_HOMOGENEOUS_FRACTION = 0.7
+try:
+    LOW_YIELD_HOMOGENEOUS_FRACTION = float(sys.argv[7])
+except Exception:
+    LOW_YIELD_HOMOGENEOUS_FRACTION = 0.7
+
+try:
+    LOW_YIELD_HOMOGENEOUS_MIN = int(sys.argv[8])
+except Exception:
+    LOW_YIELD_HOMOGENEOUS_MIN = 2
 
 
 queue_root = Path(sys.argv[1])
@@ -366,7 +381,21 @@ def emit_scores():
             gate_status = "HARD_FAIL"
             strict_gate_status = "FULLSPAN_PREFILTER_REJECT"
             if fail_reasons:
-                gate_reason = fail_reasons[0]
+                dominant_reason = fail_reasons[0]
+            else:
+                dominant_reason = ""
+
+            if by_state_reason and fail_configs >= LOW_YIELD_HOMOGENEOUS_MIN:
+                try:
+                    dominant_reason_name, dominant_reason_count = max(by_state_reason.items(), key=lambda item: item[1])
+                    threshold = max(LOW_YIELD_HOMOGENEOUS_MIN, int(fail_configs * LOW_YIELD_HOMOGENEOUS_FRACTION))
+                    if dominant_reason_count >= threshold:
+                        dominant_reason = f"LOW_YIELD_HOMOGENEOUS_{dominant_reason_name}"
+                except Exception:
+                    pass
+
+            if dominant_reason:
+                gate_reason = dominant_reason
             else:
                 # deterministic fallback for full-reject queue
                 gate_reason = "METRICS_MISSING"
@@ -844,6 +873,68 @@ state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding=
 PY
 }
 
+fullspan_state_queue_set() {
+  local queue="$1"
+  shift
+  if (( $# % 2 != 0 )); then
+    return 0
+  fi
+
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = sys.argv[2]
+updates = {}
+for i in range(3, len(sys.argv), 2):
+    key = sys.argv[i - 1]
+    val = sys.argv[i]
+    updates[key] = val
+
+state = {}
+if path.exists():
+    try:
+        state = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+
+queues = state.get('queues', {})
+if not isinstance(queues, dict):
+    queues = {}
+
+entry = queues.get(queue, {})
+if not isinstance(entry, dict):
+    entry = {}
+
+for key, val in updates.items():
+    if isinstance(val, str):
+        sv = val.strip()
+        if sv == "":
+            entry[key] = sv
+            continue
+        try:
+            if any(ch in sv for ch in '.eE'):
+                fv = float(sv)
+                entry[key] = int(fv) if fv.is_integer() else fv
+            else:
+                entry[key] = int(sv)
+            continue
+        except Exception:
+            pass
+    entry[key] = val
+
+queues[queue] = entry
+state['queues'] = queues
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+
 fullspan_state_get() {
   local queue="$1"
   local field="$2"
@@ -1210,6 +1301,94 @@ fullspan_reconcile_confirm_progress() {
   return 0
 }
 
+
+low_yield_hardfail_stop_rule() {
+  local queue_rel="$1"
+  local strict_pass_count="$2"
+  local strict_run_group_count="$3"
+  local strict_rejection_reason="$4"
+  local top_run_group="$5"
+  local top_variant="$6"
+  local top_score="$7"
+  local strict_gate_reason="$8"
+  local run_groups_csv="$9"
+  local strict_summary_path="${10}"
+  local confirm_count="${11}"
+
+  if [[ -z "$queue_rel" ]]; then
+    return 0
+  fi
+
+  local limit="${LOW_YIELD_HARDFAIL_STREAK_LIMIT}"
+  [[ -n "$limit" ]] || limit=3
+  local normalized_reason=""
+  local code=""
+
+  if [[ -n "$strict_rejection_reason" ]]; then
+    normalized_reason="$strict_rejection_reason"
+    code="$normalized_reason"
+  else
+    code="UNKNOWN"
+  fi
+
+  # Fail-closed only on repeated hard-fail signal with no evidence of improvement.
+  if (( strict_pass_count > 0 )); then
+    fullspan_state_queue_set "$queue_rel" \
+      "hard_fail_streak" "0" \
+      "hard_fail_last_reason" "" \
+      "low_yield_fail_closed" "0" \
+      "low_yield_fail_closed_reason" "" \
+      "hard_fail_last_pass_count" "0" \
+      "hard_fail_last_run_group_count" "0"
+    return 0
+  fi
+
+  local prev_streak="$((0))"
+  local prev_reason=""
+  local prev_pass="0"
+  local prev_groups="0"
+  prev_streak="$(fullspan_state_get "$queue_rel" "hard_fail_streak" "0")"
+  prev_reason="$(fullspan_state_get "$queue_rel" "hard_fail_last_reason" "")"
+  prev_pass="$(fullspan_state_get "$queue_rel" "hard_fail_last_pass_count" "0")"
+  prev_groups="$(fullspan_state_get "$queue_rel" "hard_fail_last_run_group_count" "0")"
+
+  local next_streak=1
+  if [[ -n "$prev_reason" && "$prev_reason" == "$code" ]]; then
+    if awk -v a="$strict_pass_count" -v b="$prev_pass" -v c="$strict_run_group_count" -v d="$prev_groups" 'BEGIN { exit ((a<=b && c<=d)?0:1) }'; then
+      next_streak=$((prev_streak + 1))
+    fi
+  fi
+
+  if (( next_streak < 1 )); then
+    next_streak=1
+  fi
+
+  fullspan_state_queue_set "$queue_rel" \
+    "hard_fail_streak" "$next_streak" \
+    "hard_fail_last_reason" "$code" \
+    "hard_fail_last_pass_count" "$strict_pass_count" \
+    "hard_fail_last_run_group_count" "$strict_run_group_count" \
+    "low_yield_fail_closed" "0"
+
+  fullspan_state_metric_inc "low_yield_hardfail_streak_eval" 1
+
+  if (( next_streak >= limit )); then
+    local stop_reason="LOW_YIELD_HARDFAIL_STREAK_${next_streak}::${code}"
+    fullspan_state_set "$queue_rel" "REJECT" \
+      "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+      "${strict_rejection_reason:-LOW_YIELD_HARDFAIL}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
+    fullspan_state_queue_set "$queue_rel" \
+      "low_yield_fail_closed" "1" \
+      "low_yield_fail_closed_reason" "$stop_reason" \
+      "hard_fail_streak" "$next_streak"
+    fullspan_state_metric_inc "low_yield_hardfail_streak_stop" 1
+    log_decision_note "$queue_rel" "LOW_YIELD_HARDFAIL_STOP" "reason=$stop_reason" "skip_and_fail_closed"
+    return 1
+  fi
+
+  return 0
+}
+
 run_fullspan_cycle() {
   local queue_rel="$1"
   local queue_path="$2"
@@ -1315,6 +1494,7 @@ PY
           "insufficient_run_groups" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
       fi
 
+      low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
       fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
       printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
       return 0
@@ -1419,6 +1599,7 @@ PY
       fi
     fi
 
+    low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
     fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
     printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
   else
@@ -1912,6 +2093,8 @@ while true; do
   state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+  low_yield_fail_closed="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed" "0")"
+  low_yield_fail_closed_reason="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed_reason" "")"
 
   fullspan_reconcile_confirm_progress "$queue_rel"
 
@@ -1922,6 +2105,13 @@ while true; do
   state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+
+  if [[ "$low_yield_fail_closed" == "1" ]]; then
+    promotion_verdict="REJECT"
+    promotion_potential="REJECT"
+    gate_status="HARD_FAIL"
+    gate_reason="${low_yield_fail_closed_reason:-LOW_YIELD_HARDFAIL_STREAK}"
+  fi
 
   if [[ "$state_verdict" == "REJECT" || "$state_strict_gate_status" == "FULLSPAN_PREFILTER_REJECT" ]]; then
     promotion_verdict="REJECT"
@@ -1976,7 +2166,7 @@ while true; do
   fi
 
   safe_queue_name="$(basename "$queue")"
-  if [[ "$pending" -eq 0 && "$completed" -gt 0 ]]; then
+  if [[ "$pending" -eq 0 && "$completed" -gt 0 && "$promotion_verdict" != "REJECT" ]]; then
     run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
   fi
 
