@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Lightweight orchestrator: keeps advancing through non-terminal run_queues.
-# It picks the next queue with pending work and starts run_wfa_queue_powered
-# only when no other WFA queue runner is active.
+# It picks the next queue with the highest work urgency and starts
+# run_wfa_queue_powered without manual intervention.
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 QUEUE_ROOT="$ROOT_DIR/artifacts/wfa/aggregate"
@@ -14,6 +14,7 @@ SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
+STALE_RUNNING_SEC="${STALE_RUNNING_SEC:-900}"
 
 mkdir -p "$STATE_DIR"
 
@@ -21,7 +22,11 @@ log() {
   printf '%s | %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$LOG_FILE"
 }
 
-# Keep single driver instance.
+log_state() {
+  echo "$*" > "$STATE_FILE"
+}
+
+# Single driver instance guard.
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "driver_already_running"
@@ -30,15 +35,16 @@ fi
 trap 'flock -u 9; rm -f "$LOCK_FILE"' EXIT
 
 find_candidate() {
-  python3 - <<'PY' "$QUEUE_ROOT" "$CANDIDATE_FILE"
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" <<'PY'
 import csv
-import os
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
+now = time.time()
 out = []
 
 for p in sorted(queue_root.rglob('run_queue.csv')):
@@ -52,6 +58,7 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     running = int(st.get('running', 0))
     stalled = int(st.get('stalled', 0))
     failed = int(st.get('failed', 0)) + int(st.get('error', 0))
+    completed = int(st.get('completed', 0))
     total = len(rows)
 
     if total == 0:
@@ -61,27 +68,31 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     if pending == 0:
         continue
 
-    # Priority: active > stalled > planned.
-    if running > 0:
-        priority = 1
-    elif stalled > 0:
-        priority = 2
-    else:
-        priority = 3
+    mtime = float(p.stat().st_mtime)
+    age_min = max(0.0, (now - mtime) / 60.0)
+    urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1)
 
-    # Prefer older queues at equal priority.
-    mtime = int(p.stat().st_mtime)
-    out.append((priority, mtime, str(p), planned, running, stalled, failed, st.get('completed', 0), total))
+    out.append((
+        -urgency,
+        -int(p.stat().st_mtime),
+        str(p),
+        planned,
+        running,
+        stalled,
+        failed,
+        completed,
+        total,
+        f"{urgency:.3f}",
+    ))
 
-out.sort(key=lambda x: (x[0], x[1]))
+out.sort()
 
 with out_csv.open('w', encoding='utf-8', newline='') as f:
+    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime\n')
     if not out:
-        f.write('queue,planned,running,stalled,failed,completed,total,priority\n')
         sys.exit(0)
-    r = out[0]
-    f.write('queue,planned,running,stalled,failed,completed,total,priority\n')
-    f.write('%s,%d,%d,%d,%d,%s,%d,%d\n' % (r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[0]))
+    _, __, queue, planned, running, stalled, failed, completed, total, urgency = out[0]
+    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)}\n")
 PY
 }
 
@@ -105,54 +116,32 @@ _is_match_running() {
   return 1
 }
 
-
 stale_running() {
   local queue_rel="$1"
-  local queue_abs="$ROOT_DIR/$queue_rel"
+  local changed=0
 
-  if [[ -f "$queue_abs" ]]; then
-    python3 - <<'PY2' "$queue_abs"
-import csv
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-rows = list(csv.DictReader(path.open(newline="")))
-changed = 0
-for row in rows:
-    if (row.get("status") or "").strip().lower() == "running":
-        row["status"] = "stalled"
-        changed += 1
-if changed > 0 and rows:
-    with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
-PY2
+  local stale_sec="${STALE_RUNNING_SEC}"
+  [[ -z "$stale_sec" ]] && stale_sec=900
+  if [[ "$stale_sec" -lt 60 ]]; then
+    stale_sec=60
   fi
 
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY2'
-import csv
-from pathlib import Path
-import os
+  local local_changed=0
+  local_changed=$(python3 "$ROOT_DIR/scripts/optimization/_autonomous_stale_running.py" --queue "$ROOT_DIR/$queue_rel" --stale-sec "$stale_sec")
+  changed=$((changed + local_changed))
 
-queue_path = Path('/opt/coint4/coint4') / '$queue_rel'
-rows = list(csv.DictReader(queue_path.open(newline='')))
-changed = 0
-for row in rows:
-    if (row.get('status') or '').strip().lower() == 'running':
-        row['status'] = 'stalled'
-        changed += 1
-if changed > 0 and rows:
-    with queue_path.open('w', newline='') as f:
-        import csv as _c
-        w = _c.DictWriter(f, fieldnames=rows[0].keys())
-        w.writeheader()
-        w.writerows(rows)
-    print('stale_mark_running changed=%d' % changed)
-else:
-    print('stale_mark_running noop')
-PY2" || true
+  local remote_changed=0
+  remote_changed=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SERVER_USER@$SERVER_IP" "python3 /opt/coint4/coint4/scripts/optimization/_autonomous_stale_running.py --queue /opt/coint4/coint4/$queue_rel --stale-sec '$stale_sec' --root /opt/coint4/coint4" || true)
+  changed=$((changed + remote_changed))
+
+  if [[ "$changed" -gt 0 ]]; then
+    log "stale_running_marked queue=$queue_rel changed=$changed stale_sec=$stale_sec"
+    echo "recovered_running_to_stalled queue=$queue_rel changed=$changed"
+    return 0
+  fi
+
+  echo "stale_running_nochange queue=$queue_rel"
+  return 0
 }
 
 is_driver_busy() {
@@ -166,7 +155,6 @@ is_driver_busy() {
     return 0
   fi
 
-  # Check remote running markers; tolerate ssh failures as no extra workload.
   local remote_count
   remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -f 'watch_wfa_queue.sh|run_wfa_queue.py|python.*walk_forward' | awk -v self=\"\$\$\" '\$1 != self' | wc -l" || true)"
   if [[ -n "$remote_count" && "$remote_count" -gt 0 ]]; then
@@ -174,6 +162,17 @@ is_driver_busy() {
   fi
 
   return 1
+}
+
+sync_queue_status() {
+  local queue_rel="$1"
+  local target="$ROOT_DIR/$queue_rel"
+  if [[ ! -f "$target" ]]; then
+    return 0
+  fi
+
+  (cd "$ROOT_DIR" && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue "$queue_rel") >>"$LOG_FILE" 2>&1 || true
+  log "sync_queue_status queue=$queue_rel done"
 }
 
 start_queue() {
@@ -212,48 +211,105 @@ start_queue() {
     log "failed_to_start queue=$queue_rel rc=$rc"
     return "$rc"
   fi
-  echo "running queue=$queue_rel started_at=$stamp log=$qlog" > "$STATE_FILE"
+  log_state "running queue=$queue_rel started_at=$stamp log=$qlog"
   log "started queue=$queue_rel log=$qlog"
 }
 
-# Ensure queue rows are visible to local runner.
+adaptive_idle_sleep=30
+prev_queue=""
+prev_planned=0
+prev_running=0
+prev_stalled=0
+prev_failed=0
+
 if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
-  echo "No aggregate queues found: $QUEUE_ROOT" | tee "$STATE_FILE"
+  log_state "No aggregate queues found: $QUEUE_ROOT"
   exit 1
 fi
 
 while true; do
   find_candidate
-  IFS=',' read -r queue planned running stalled failed completed total priority < <(tail -n 1 "$CANDIDATE_FILE")
 
-  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
-    echo "idle now=none completed=all" > "$STATE_FILE"
-    log "no_pending_queues"
-    sleep 180
+  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    log_state "idle now=none completed=all"
+    log "candidate_empty"
+    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    fi
+    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+      adaptive_idle_sleep=300
+    fi
+    sleep "$adaptive_idle_sleep"
     continue
   fi
 
-  # Convert absolute path to repo-relative.
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime < <(tail -n 1 "$CANDIDATE_FILE")
+
+  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+    log_state "idle now=none completed=all"
+    log "candidate_parse_empty"
+    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    fi
+    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+      adaptive_idle_sleep=300
+    fi
+    sleep "$adaptive_idle_sleep"
+    continue
+  fi
+
   queue_rel="${queue#$ROOT_DIR/}"
 
+  if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
+    prev_pending=$((prev_planned + prev_running + prev_stalled + prev_failed))
+    curr_pending=$((planned + running + stalled + failed))
+    if [[ "$curr_pending" -lt "$prev_pending" ]]; then
+      log "progress_seen queue=$queue_rel prev=$prev_pending curr=$curr_pending"
+      sync_queue_status "$queue_rel"
+    fi
+  fi
+
+  prev_queue="$queue_rel"
+  prev_planned="$planned"
+  prev_running="$running"
+  prev_stalled="$stalled"
+  prev_failed="$failed"
+
   if is_driver_busy; then
-    echo "busy current_queue=$queue_rel running_or_stalled=$running,$stalled planned=$planned" > "$STATE_FILE"
-    log "busy skip start queue_rel=$queue_rel running=$running stalled=$stalled planned=$planned"
+    adaptive_idle_sleep=30
+    log_state "busy current_queue=$queue_rel running_or_stalled=$running,$stalled planned=$planned"
+    log "busy skip start queue_rel=$queue_rel urgency=$urgency running=$running stalled=$stalled planned=$planned"
     sleep 90
     continue
   fi
 
-  if [[ "$running" -gt 0 ]]; then
-    log "found_stale_running recover queue_rel=$queue_rel running=$running stalled=$stalled planned=$planned"
-    if [[ "$planned" -eq 0 && "$stalled" -eq 0 ]]; then
-      stale_running "$queue_rel"
-    fi
+  adaptive_idle_sleep=30
+
+  reason=""
+  if [[ "$running" -gt 0 && "$planned" -eq 0 && "$stalled" -eq 0 ]]; then
+    reason="stale_running_repair"
+    stale_out=$(stale_running "$queue_rel")
+    log "run_repair queue=$queue_rel out=\"$stale_out\""
+  elif [[ "$running" -gt 0 ]]; then
+    reason="active_running"
+  elif [[ "$stalled" -gt 0 ]]; then
+    reason="stalled_queue"
+  elif [[ "$planned" -gt 0 ]]; then
+    reason="planned_work"
+  else
+    reason="no_pending"
   fi
 
-  log "candidate queue=$queue_rel planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed"
+  if [[ "$reason" == "no_pending" ]]; then
+    log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
+    log "no_pending queue=$queue_rel"
+    sleep "$adaptive_idle_sleep"
+    continue
+  fi
+
+  log "candidate queue=$queue_rel reason=$reason urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed"
   start_queue "$queue_rel" || true
 
-  # Backoff to let startup propagate before next decision.
   sleep 120
 
 done
