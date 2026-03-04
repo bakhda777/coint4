@@ -207,6 +207,10 @@ except Exception:
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
+try:
+    app_root = queue_root.parents[2]
+except Exception:
+    app_root = queue_root
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
 pre_rank_top_k = int(sys.argv[5]) if len(sys.argv) > 5 and str(sys.argv[5]).strip() else 8
@@ -268,10 +272,20 @@ def emit_scores():
         if pending == 0:
             continue
 
-        queue_rel = str(p)
-        if queue_rel in orphan:
+        queue_abs = str(p)
+        try:
+            queue_rel = str(p.relative_to(app_root))
+        except Exception:
+            queue_rel = queue_abs
+
+        orphan_until = None
+        for k in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
+            if k in orphan:
+                orphan_until = orphan.get(k, 0.0)
+                break
+        if orphan_until is not None:
             try:
-                if now < float(orphan.get(queue_rel, 0.0)):
+                if now < float(orphan_until or 0.0):
                     continue
             except Exception:
                 pass
@@ -304,6 +318,8 @@ def emit_scores():
         by_state_reason = defaultdict(int)
 
         state_entry = state_by_queue.get(queue_rel, {})
+        if not state_entry and queue_abs in state_by_queue:
+            state_entry = state_by_queue.get(queue_abs, {})
         state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip().upper()
         state_strict_status = str(state_entry.get('strict_gate_status', '') or '').strip()
         state_strict_reason = str(state_entry.get('strict_gate_reason', '') or '').strip()
@@ -496,6 +512,7 @@ def emit_scores():
             completed,
             total,
             f"{urgency:.3f}",
+            int(mtime),
             promotion_potential,
             gate_status,
             gate_reason,
@@ -512,8 +529,8 @@ def emit_scores():
             raise SystemExit(0)
 
         out = out[:pre_rank_top_k]
-        _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
-        f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)},{potential},{gate_status},{gate_reason},{pre_rank},{strict_gate_status},{strict_gate_reason}\n")
+        _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, mtime_i, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
+        f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{mtime_i},{potential},{gate_status},{gate_reason},{pre_rank},{strict_gate_status},{strict_gate_reason}\n")
 PY
 }
 
@@ -527,6 +544,10 @@ import sys
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
+try:
+    app_root = queue_root.parents[2]
+except Exception:
+    app_root = queue_root
 
 best = None
 for p in sorted(queue_root.rglob('run_queue.csv')):
