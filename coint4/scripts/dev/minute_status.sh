@@ -12,6 +12,12 @@ set -euo pipefail
 #   SERVER_USER        (optional) - default root
 #   SSH_KEY            (optional) - default ~/.ssh/id_ed25519
 #   QUEUE              (optional) - queue path on VPS (relative to /opt/coint4/coint4)
+#   SSH_HOSTS          (optional) - comma-separated SSH host aliases (fallbacks), default IP, coint
+#
+# Design notes:
+# - Do not report SSH outage as a hard VPS error if API/remote can be reached via retries.
+# - Prefer real SSH probe outcome over API state when they differ.
+# - Keep output one-line, deterministic and short for cron delivery.
 
 API_BASE=${SERVSPACE_API_BASE:-"https://api.serverspace.ru/api/v1"}
 SERVER_IP=${SERVER_IP:-"85.198.90.128"}
@@ -19,6 +25,7 @@ SERVER_ID=${SERVER_ID:-""}
 SERVER_USER=${SERVER_USER:-"root"}
 SSH_KEY=${SSH_KEY:-"${HOME}/.ssh/id_ed25519"}
 QUEUE=${QUEUE:-""}
+SSH_HOSTS_RAW=${SSH_HOSTS:-"${SERVER_IP},coint"}
 
 now_utc() { date -u +"%Y-%m-%d %H:%M:%S UTC"; }
 
@@ -54,7 +61,6 @@ resolve_server_id_by_ip() {
   json="$(api_get 'servers')"
   [[ -n "$json" ]] || return 1
 
-  # NOTE: Don't combine a pipe into `python3 -` with a heredoc: the heredoc owns stdin.
   python3 -c 'import json,sys
 ip=sys.argv[1]
 data=json.load(sys.stdin)
@@ -129,28 +135,106 @@ PY
   fi
 fi
 
+# Build SSH probe targets list
+IFS=',' read -r -a SSH_TARGETS <<<"$SSH_HOSTS_RAW"
+
 ssh_ok=0
-host="?"
-up="?"
-load="?"
+ssh_host="?"
+ssh_up="?"
+ssh_load="?"
 queue_line="queue n/a"
+ssh_reason=""
+last_stdout=""
 
 SSH_OPTS=(-i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5)
 
-if ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" 'echo ok' >/dev/null 2>&1; then
-  ssh_ok=1
-  host="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" 'hostname' 2>/dev/null || true)"
-  up="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "uptime -p | sed 's/^up //'" 2>/dev/null || true)"
-  load="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "cut -d' ' -f1-3 /proc/loadavg" 2>/dev/null || true)"
+probe_remote() {
+  local target="$1"
+  local rc=1
 
-  if [[ -n "$QUEUE" ]]; then
-    queue_line="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" \
-      "cd /opt/coint4/coint4 && python3 - <<'PY'\nimport csv,sys\nfrom collections import Counter\npath=sys.argv[1]\ntry:\n  with open(path,newline='') as f:\n    st=[(row.get('status') or '').strip().lower() for row in csv.DictReader(f)]\n  c=Counter(st)\n  total=len(st)\n  planned=c.get('planned',0)\n  running=c.get('running',0)\n  completed=c.get('completed',0)\n  failed=c.get('failed',0)+c.get('error',0)\n  print(f'queue {path}: total={total} planned={planned} running={running} completed={completed} failed={failed}')\nexcept FileNotFoundError:\n  print(f'queue {path}: missing')\nPY" "$QUEUE" 2>/dev/null || true)"
+  # Single-shot command to reduce transient SSH failures and collect everything consistently.
+  if out="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${target}" 'hostname; echo "UP=$(uptime -p 2>/dev/null | sed "s/^up //")"; echo "LOAD=$(cut -d" " -f1-3 /proc/loadavg 2>/dev/null)"' 2>&1)"; then
+    rc=0
+    last_stdout="$out"
+  else
+    rc=$?
+    ssh_reason="${out//$'\n'/ }"
+  fi
+
+  if [[ $rc -eq 0 ]]; then
+    ssh_ok=1
+    ssh_host="$(printf '%s\n' "$out" | sed -n '1p' | tr -d '\r')"
+    ssh_up="$(printf '%s\n' "$out" | sed -n '2p' | sed 's/^UP=//')"
+    ssh_load="$(printf '%s\n' "$out" | sed -n '3p' | sed 's/^LOAD=//')"
+
+    if [[ -n "$QUEUE" ]]; then
+      queue_line="$(ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${target}" "cd /opt/coint4/coint4 && python3 - <<'PY'
+import csv
+from collections import Counter
+path='${QUEUE}'
+try:
+    with open(path,newline='') as f:
+        rows=list(csv.DictReader(f))
+except FileNotFoundError:
+    print('queue ' + path + ': missing')
+    raise SystemExit(0)
+except Exception as e:
+    print('queue ' + path + ': unreadable (' + str(e) + ')')
+    raise SystemExit(0)
+
+statuses=[(r.get('status') or '').strip().lower() for r in rows]
+c=Counter(statuses)
+print('queue %s: total=%d planned=%d running=%d completed=%d failed=%d' % (
+    path,
+    len(rows),
+    c.get('planned', 0),
+    c.get('running', 0),
+    c.get('completed', 0),
+    c.get('failed', 0) + c.get('error', 0),
+))
+PY" 2>/dev/null || true)"
+    fi
+
+    return 0
+  fi
+
+  return 1
+}
+
+probe_ok=0
+for host_try in "${SSH_TARGETS[@]}"; do
+  # trim
+  host_try="${host_try// /}"
+  [[ -z "$host_try" ]] && continue
+
+  for attempt in 1 2 3; do
+    if probe_remote "$host_try"; then
+      probe_ok=1
+      break 2
+    fi
+    sleep 1
+  done
+done
+
+# If SSH is reachable, trust runtime reality for final state.
+if [[ "$ssh_ok" -eq 1 ]]; then
+  if [[ "$power_state" == "off" ]]; then
+    power_state="on"
+    server_state="${server_state:-online}"
+  fi
+else
+  # If API says on but SSH fails, keep as an operational warning rather than a hard stop.
+  if [[ "$power_state" == "on" ]]; then
+    power_state="on"
   fi
 fi
 
-printf '%s | vps=%s/%s (%s) | ssh=%s | host=%s | up=%s | load=%s | %s\n' \
+printf '%s | vps=%s/%s (%s) | ssh=%s | host=%s | up=%s | load=%s | %s' \
   "$(now_utc)" \
   "${power_state}" "${server_state}" "${SERVER_IP}" \
-  "$ssh_ok" "${host:-?}" "${up:-?}" "${load:-?}" \
-  "${queue_line}"
+  "${ssh_ok}" "${ssh_host}" "${ssh_up}" "${ssh_load}" "${queue_line}"
+
+if [[ "$ssh_ok" -eq 0 && -n "$ssh_reason" ]]; then
+  printf ' | ssh_err=%s' "$ssh_reason"
+fi
+printf '\n'
