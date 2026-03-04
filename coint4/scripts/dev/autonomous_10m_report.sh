@@ -12,6 +12,7 @@ LOG_FILE="$STATE_DIR/driver.log"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 HEARTBEAT_FILE="$STATE_DIR/heartbeat_state.json"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
+REPORT_STATE_FILE="$STATE_DIR/10m_human_report_state.json"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 
@@ -187,45 +188,123 @@ else:
 PY
 )"
 
-printf '🧭 10m WFA report\n'
-printf 'time=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-printf 'server=%s user=%s\n' "$SERVER_IP" "$SERVER_USER"
-printf 'driver_state=%s\n' "${qline:-none}"
-printf 'current=%s\n' "${current_queue:-none}"
-printf 'candidate_top=%s\n' "${candidate_top:-none}"
-printf 'heartbeat=%s\n' "$heartbeat_for_current"
-printf 'last_action=%s\n' "$last_action"
-printf 'orphan_count=%s\n' "$orphans"
-printf 'vps_processes=%s\n' "$vps_processes"
-printf 'active_queues=%s\n' "$active_queues"
-printf 'recent_driver_log:\n'
-if [[ -f "$LOG_FILE" ]]; then
-  tail -n 8 "$LOG_FILE"
-else
-  echo 'missing'
-fi
+human_payload="$(python3 - "$ROOT_DIR" "$current_queue" "$REPORT_STATE_FILE" "$state_verdict" "$vps_processes" "$qline" <<'PY'
+import csv
+import json
+import sys
+from pathlib import Path
 
-if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]]; then
-  cycle_count=$(wc -l < "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null || echo 0)
-else
-  cycle_count=0
-fi
-printf "fullspan_cycle_state=%s\n" "$cycle_count"
-printf "last_fullspan_action=%s\n" "$last_fullspan_action"
-printf "fullspan_state_verdict=%s\n" "$state_verdict"
-printf "fullspan_state_passes=%s\n" "$state_pass_count"
-printf "fullspan_state_run_groups=%s\n" "$state_run_group_count"
-printf "fullspan_state_confirm=%s\n" "$state_confirm_count"
-printf "fullspan_state_gate=%s/%s\n" "${state_strict_gate_status:-none}" "${state_strict_gate_reason:-none}"
-printf "fullspan_state_metrics_pass=%s\n" "$fullspan_state_pass_metric"
-printf "fullspan_state_metrics_hard_reject=%s\n" "$fullspan_state_reject_metric"
-printf "fullspan_state_metrics_confirm_pending=%s\n" "$fullspan_state_confirm_pending_metric"
-printf "fullspan_state_metrics_promo_eligible=%s\n" "$fullspan_state_promo_metric"
-printf "fullspan_state_cycles_since_last_strict_pass=%s\n" "$fullspan_state_cycle_since_last_pass"
-if [[ "${fullspan_state_last_strict_pass_epoch}" != "0" ]]; then
-  now_epoch=$(date +%s)
-  avg_hours=$(( (now_epoch - fullspan_state_last_strict_pass_epoch) / 3600 ))
-  printf "fullspan_state_hours_since_last_strict_pass=%s\n" "$avg_hours"
-else
-  printf "fullspan_state_hours_since_last_strict_pass=none\n"
-fi
+root = Path(sys.argv[1])
+queue = (sys.argv[2] or '').strip()
+state_path = Path(sys.argv[3])
+state_verdict = (sys.argv[4] or '').strip()
+try:
+    vps_processes = int(float(sys.argv[5]))
+except Exception:
+    vps_processes = 0
+qline = (sys.argv[6] or '').strip()
+
+def queue_counts(queue_rel: str):
+    if not queue_rel:
+        return {"pending": 0, "completed": 0, "stalled": 0, "total": 0}
+    p = Path(queue_rel)
+    if not p.is_absolute():
+        p = root / p
+    if not p.exists():
+        return {"pending": 0, "completed": 0, "stalled": 0, "total": 0}
+    try:
+        rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
+    except Exception:
+        return {"pending": 0, "completed": 0, "stalled": 0, "total": 0}
+    planned = running = stalled = failed = completed = 0
+    for r in rows:
+        s = (r.get('status') or '').strip().lower()
+        if s == 'planned': planned += 1
+        elif s == 'running': running += 1
+        elif s == 'stalled': stalled += 1
+        elif s in {'failed','error'}: failed += 1
+        elif s == 'completed': completed += 1
+    return {
+        "pending": planned + running + stalled + failed,
+        "completed": completed,
+        "stalled": stalled,
+        "total": len(rows),
+    }
+
+cur = queue_counts(queue)
+prev = {"pending": cur["pending"], "completed": cur["completed"], "stalled": cur["stalled"]}
+if state_path.exists():
+    try:
+        prev_raw = json.loads(state_path.read_text(encoding='utf-8'))
+        if isinstance(prev_raw, dict):
+            prev = {
+                "pending": int(prev_raw.get("pending", cur["pending"]) or 0),
+                "completed": int(prev_raw.get("completed", cur["completed"]) or 0),
+                "stalled": int(prev_raw.get("stalled", cur["stalled"]) or 0),
+            }
+    except Exception:
+        pass
+
+state_path.parent.mkdir(parents=True, exist_ok=True)
+state_path.write_text(json.dumps({
+    "pending": cur["pending"],
+    "completed": cur["completed"],
+    "stalled": cur["stalled"],
+}, ensure_ascii=False, indent=2), encoding='utf-8')
+
+delta_completed = cur["completed"] - prev["completed"]
+delta_stalled = cur["stalled"] - prev["stalled"]
+
+goal = "достигнута" if state_verdict == "PROMOTE_ELIGIBLE" else "не достигнута"
+
+blockers = []
+if cur["pending"] > 0 and vps_processes <= 0:
+    blockers.append("нет активных процессов на VPS при pending>0")
+if state_verdict == "REJECT":
+    blockers.append("текущая очередь в fail-closed/REJECT")
+if cur["stalled"] > 0:
+    blockers.append(f"stalled={cur['stalled']}")
+if not blockers:
+    if cur["pending"] > 0:
+        blockers.append("идёт обработка очереди")
+    else:
+        blockers.append("pending=0, ждём новых кандидатов")
+
+next_action = "продолжаю автономный search по fullspan-контракту"
+if cur["pending"] > 0 and vps_processes <= 0:
+    next_action = "автоперезапуск/repair через watchdog до запуска runner на VPS"
+elif state_verdict == "PROMOTE_ELIGIBLE":
+    next_action = "готовлю confirm/cutover шаг по контракту"
+
+need_user = "да" if (state_verdict == "REJECT" and cur["pending"] <= 0 and "idle" in qline.lower()) else "нет"
+
+print(json.dumps({
+    "goal": goal,
+    "blockers": blockers[:2],
+    "delta_completed": delta_completed,
+    "delta_stalled": delta_stalled,
+    "next_action": next_action,
+    "need_user": need_user,
+    "queue": queue or "none",
+    "pending": cur["pending"],
+    "completed": cur["completed"],
+    "stalled": cur["stalled"],
+}, ensure_ascii=False))
+PY
+)"
+
+goal_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("goal","не достигнута"))' "$human_payload")"
+blocker_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); b=d.get("blockers",[]); print("; ".join(b) if b else "нет")' "$human_payload")"
+delta_completed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("delta_completed",0)))' "$human_payload")"
+delta_stalled="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("delta_stalled",0)))' "$human_payload")"
+next_action_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("next_action","продолжаю автономный цикл"))' "$human_payload")"
+need_user_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("need_user","нет"))' "$human_payload")"
+queue_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("queue","none"))' "$human_payload")"
+
+printf '📌 10m human report\n'
+printf 'Цель: %s\n' "$goal_line"
+printf 'Что мешает: %s\n' "$blocker_line"
+printf 'Прогресс за 10 минут: %+d completed / %+d stalled\n' "$delta_completed" "$delta_stalled"
+printf 'Текущая очередь: %s\n' "$queue_line"
+printf 'Что делаю дальше: %s\n' "$next_action_line"
+printf 'Нужен ли ты: %s\n' "$need_user_line"
