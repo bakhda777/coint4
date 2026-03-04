@@ -483,7 +483,7 @@ _is_match_running() {
 
 get_vps_load() {
   local load1=""
-  load1="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "cat /proc/loadavg 2>/dev/null | awk '{print \\$1}'" || true)"
+  load1="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "cat /proc/loadavg 2>/dev/null | awk '{print \$1}'" || true)"
   if [[ -z "$load1" ]]; then
     echo 0
     return
