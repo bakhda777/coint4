@@ -10,6 +10,7 @@ SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 WATCHDOG_MAX_IDLE_CYCLES="${WATCHDOG_MAX_IDLE_CYCLES:-3}"
 WATCHDOG_PARALLEL="${WATCHDOG_PARALLEL:-4}"
+WATCHDOG_POWEROFF_AFTER_RUN="${WATCHDOG_POWEROFF_AFTER_RUN:-false}"
 
 mkdir -p "$STATE_DIR"
 
@@ -150,7 +151,7 @@ trigger_powered_repair() {
       --watchdog true \
       --wait-completion false \
       --postprocess true \
-      --poweroff true \
+      --poweroff "$WATCHDOG_POWEROFF_AFTER_RUN" \
       >>"$qlog" 2>&1
   ) &
   log "WATCHDOG_TRIGGER_REPAIR queue=$queue_rel log=$qlog"

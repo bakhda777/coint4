@@ -12,6 +12,7 @@ STATE_FILE="$STATE_DIR/driver_state.txt"
 LOG_FILE="$STATE_DIR/driver.log"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
+POWEROFF_AFTER_RUN="${POWEROFF_AFTER_RUN:-false}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
@@ -2514,7 +2515,7 @@ PY
       --watchdog true \
       --wait-completion false \
       --postprocess true \
-      --poweroff true \
+      --poweroff "$POWEROFF_AFTER_RUN" \
       >>"$qlog" 2>&1
   ) &
 
@@ -2565,7 +2566,7 @@ start_queue() {
       --watchdog true \
       --wait-completion false \
       --postprocess true \
-      --poweroff true \
+      --poweroff "$POWEROFF_AFTER_RUN" \
       >>"$qlog" 2>&1
   ) &
   local rc=$?
