@@ -182,3 +182,10 @@ Top-level:
 
 - 07:56: реализовал пункты 1+2: автоперехват stalled при отсутствии прогресса (running=0, stalled>0, stale>=ORPHAN_STALE_SECONDS): вызывается `recover_stalled_queue.sh` с адаптивным `parallel`; на повторных неудачах после 3 попыток queue уходит в `orphan_queues.csv` с `FAIL_CLOSED`; логируется `stalled_repair_cycle`/`repair_gate`/`FAIL_CLOSED` и action-теги в driver logs (`ANALYZE`, `REPAIRED_STALLED`, `REPAIR_STALLED_FAIL`).
 - 07:56: в `autonomous_10m_report.sh` добавлен вывод последнего `last_action` из `driver.log` для отчёта в 10m-срезе, чтобы статус был действия, а не только состояние.
+
+- 2026-03-04: внедрил пакет 1+3+4+5 + 7 в автономный драйвер:
+  - `pre-gate` теперь учитывает `run_index` evidence (`metrics_present/total_trades/total_pairs/worst_dd/total_pnl/worst_step`) и выставляет `gate_status`/`promotion_potential` на уровне очереди до запуска.
+  - `find_candidate` перешёл на `promotion_potential` + `pre_rank_score` вместо простого urgency-only: hard-fail очереди с подтверждённым gate-fail по истории уменьшаются/фильтруются до запуска.
+  - `driver` ведёт контрактные поля в логах: `selection_policy=fullspan_v1`, `selection_mode=fullspan`, `selection_profile=promote_profile`, `promotion_verdict`, `promotion_potential`, `gate_status`, `gate_reason`, `pre_rank_score`.
+  - добавлен `DECISION_NOTES_FILE` (jsonl) и `log_decision_note` для шага после repair/reject (последующая автоматизация/ручной контур-обзор в 10m-отчёте).
+  - это реализует рекомендацию gate-first, более умный селектор очередей и улучшает эффективность направления к `fullspan_v1 strict pass`.

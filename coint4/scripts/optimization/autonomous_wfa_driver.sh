@@ -19,6 +19,13 @@ HEARTBEAT_STATE="$STATE_DIR/heartbeat_state.json"
 STALE_RUNNING_SEC="${STALE_RUNNING_SEC:-900}"
 ORPHAN_STALE_SECONDS="${ORPHAN_STALE_SECONDS:-600}"
 ORPHAN_COOLDOWN_SECONDS="${ORPHAN_COOLDOWN_SECONDS:-1800}"
+RUN_INDEX_PATH="${RUN_INDEX_PATH:-$ROOT_DIR/artifacts/wfa/aggregate/rollup/run_index.csv}"
+PROMOTION_PRE_RANK_TOPK="${PROMOTION_PRE_RANK_TOPK:-8}"
+PROMOTION_SELECTION_PROFILE="promote_profile"
+PROMOTION_SELECTION_MODE="fullspan"
+FULLSPAN_POLICY_NAME="fullspan_v1"
+DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
+
 
 mkdir -p "$STATE_DIR"
 
@@ -45,17 +52,72 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" <<'PY'
 import csv
+import re
 import sys
 import time
-from collections import Counter
+from collections import defaultdict
 from pathlib import Path
+
+
+def to_float(value, default=None):
+    try:
+        return float((value or '').strip())
+    except Exception:
+        return default
+
+
+def is_true(value):
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def hard_gate_pass(row):
+    if not row:
+        return False, "missing_row"
+    if not is_true(row.get("metrics_present", "")):
+        return False, "metrics_missing"
+
+    total_trades = to_float(row.get("total_trades"), 0.0)
+    total_pairs = to_float(row.get("total_pairs_traded"), 0.0)
+    worst_dd = abs(to_float(row.get("max_drawdown_on_equity"), 0.0) or 0.0)
+    worst_robust_pnl = to_float(row.get("total_pnl"), 0.0)
+    worst_step = to_float(row.get("tail_loss_worst_period_pnl", 0), to_float(row.get("tail_loss_worst_pair_pnl", 0), 0.0))
+
+    if total_trades < 200:
+        return False, "trades_gate_fail"
+    if total_pairs < 20:
+        return False, "pairs_gate_fail"
+    if worst_dd > 0.50:
+        return False, "dd_gate_fail"
+    if worst_robust_pnl < 0:
+        return False, "economic_gate_fail"
+    if worst_step < -200:
+        return False, "step_gate_fail"
+    return True, "pass"
+
+
+def canonical_base(run_id):
+    return re.sub(r'^(holdout_|stress_)', '', run_id)
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
+run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
+pre_rank_top_k = int(sys.argv[5]) if len(sys.argv) > 5 and str(sys.argv[5]).strip() else 8
+
 now = time.time()
+
+run_index = {}
+if run_index_path and run_index_path.exists():
+    try:
+        with run_index_path.open(newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                run_index[row.get('run_id', '').strip()] = row
+    except Exception:
+        run_index = {}
 
 orphan = {}
 if orphan_file and orphan_file.exists():
@@ -80,7 +142,10 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     except Exception:
         continue
 
-    st = Counter((r.get('status') or '').strip().lower() for r in rows)
+    st = defaultdict(int)
+    for r in rows:
+        st[(r.get('status') or '').strip().lower()] += 1
+
     planned = int(st.get('planned', 0))
     running = int(st.get('running', 0))
     stalled = int(st.get('stalled', 0))
@@ -96,14 +161,102 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         continue
 
     queue_rel = str(p)
-    if queue_rel in orphan and now < float(orphan.get(queue_rel, 0.0)):
-        continue
+    if queue_rel in orphan:
+        try:
+            if now < float(orphan.get(queue_rel, 0.0)):
+                continue
+        except Exception:
+            pass
 
     mtime = float(p.stat().st_mtime)
     age_min = max(0.0, (now - mtime) / 60.0)
-    urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1)
+
+    by_base = defaultdict(lambda: {'holdout': None, 'stress': None, 'status': None})
+
+    for row in rows:
+        results_dir = (row.get('results_dir') or '').strip()
+        if not results_dir:
+            continue
+        run_id = Path(results_dir).name.strip()
+        base = canonical_base(run_id)
+        if run_id.startswith('holdout_'):
+            by_base[base]['holdout'] = run_index.get(run_id)
+        elif run_id.startswith('stress_'):
+            by_base[base]['stress'] = run_index.get(run_id)
+        else:
+            by_base[base]['holdout'] = run_index.get(run_id)
+        by_base[base]['status'] = (row.get('status') or '').strip().lower()
+
+    pass_configs = 0
+    fail_configs = 0
+    unknown_configs = 0
+    fail_reasons = []
+
+    for base, bundle in by_base.items():
+        h = bundle.get('holdout')
+        s = bundle.get('stress')
+
+        if h is None and s is None:
+            unknown_configs += 1
+            continue
+
+        h_ok = True
+        s_ok = True
+
+        if h is None:
+            h_ok = False
+        else:
+            ok, reason = hard_gate_pass(h)
+            if not ok:
+                fail_reasons.append(reason)
+                h_ok = False
+
+        if s is None:
+            s_ok = False
+        else:
+            ok, reason = hard_gate_pass(s)
+            if not ok:
+                fail_reasons.append(reason)
+                s_ok = False
+
+        if h_ok and s_ok:
+            pass_configs += 1
+        elif (not h_ok) and (not s_ok):
+            fail_configs += 1
+        else:
+            unknown_configs += 1
+
+    total_configs = pass_configs + fail_configs + unknown_configs
+
+    if total_configs == 0:
+        promotion_potential = "UNKNOWN"
+        gate_status = "OPEN"
+        gate_reason = "insufficient_history"
+    elif pass_configs == 0 and fail_configs > 0:
+        promotion_potential = "REJECT"
+        gate_status = "HARD_FAIL"
+        gate_reason = fail_reasons[0] if fail_reasons else "hard_gate_fail"
+    else:
+        promotion_potential = "POSSIBLE"
+        gate_status = "OPEN"
+        gate_reason = "history_probe"
+
+    stale_count = failed
+    pre_rank_score = (
+        pass_configs * 14.0
+        + unknown_configs * 2.0
+        - fail_configs * 4.5
+        - stale_count * 1.2
+        - age_min * 0.3
+    )
+
+    urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
+
+    if gate_status == "HARD_FAIL" and promotion_potential == "REJECT":
+        pre_rank_score -= 10000
 
     out.append((
+        -pre_rank_score,
         -urgency,
         -int(mtime),
         queue_rel,
@@ -114,18 +267,25 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         completed,
         total,
         f"{urgency:.3f}",
+        promotion_potential,
+        gate_status,
+        gate_reason,
+        f"{pre_rank_score:.3f}",
     ))
 
 out.sort()
 
 with out_csv.open('w', encoding='utf-8', newline='') as f:
-    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime\n')
+    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score\n')
     if not out:
-        sys.exit(0)
-    _, __, queue, planned, running, stalled, failed, completed, total, urgency = out[0]
-    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)}\n")
+        raise SystemExit(0)
+
+    out = out[:pre_rank_top_k]
+    _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, potential, gate_status, gate_reason, pre_rank = out[0]
+    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{int(Path(queue).stat().st_mtime)},{potential},{gate_status},{gate_reason},{pre_rank}\n")
 PY
 }
+
 
 _is_match_running() {
   local pattern="$1"
@@ -391,6 +551,34 @@ else:
 PY
 }
 
+log_decision_note() {
+  local queue="$1"
+  local action="$2"
+  local reason="$3"
+  local next_step="$4"
+
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  python3 - "$DECISION_NOTES_FILE" "$queue" "$action" "$reason" "$next_step" "$ts" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, queue, action, reason, next_step, ts = sys.argv[1:7]
+p = Path(path)
+p.parent.mkdir(parents=True, exist_ok=True)
+rec = {
+    "ts": ts,
+    "queue": queue,
+    "action": action,
+    "reason": reason,
+    "next_step": next_step,
+}
+with p.open("a", encoding="utf-8") as f:
+    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+PY
+}
+
 heartbeat_update() {
   local queue_rel="$1"
   local pending="$2"
@@ -631,8 +819,8 @@ start_queue() {
     log "failed_to_start queue=$queue_rel rc=$rc"
     return "$rc"
   fi
-  log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries"
-  log "started queue=$queue_rel log=$qlog"
+  log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status"
+  log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
 }
 
 # lightweight per-queue progress cache for stale detection in-shell
@@ -678,7 +866,7 @@ while true; do
     continue
   fi
 
-  IFS=',' read -r queue planned running stalled failed completed total urgency mtime < <(tail -n 1 "$CANDIDATE_FILE")
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score < <(tail -n 1 "$CANDIDATE_FILE")
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     log_state "idle now=none completed=all"
@@ -696,6 +884,11 @@ while true; do
   queue_rel="${queue#$ROOT_DIR/}"
   pending=$((planned + running + stalled + failed))
 
+  promotion_verdict="ANALYZE"
+  if [[ "$promotion_potential" == "REJECT" && "$gate_status" == "HARD_FAIL" ]]; then
+    promotion_verdict="REJECT"
+  fi
+
   if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
     if [[ "$pending" -lt "$prev_pending" ]]; then
       clear_orphan "$queue_rel"
@@ -705,6 +898,13 @@ while true; do
   fi
 
   heartbeat_update "$queue_rel" "$pending" "$completed" "$total" "$planned" "$running" "$stalled"
+
+  if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
+    log "candidate_gated_reject queue=$queue_rel promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
+    log_decision_note "$queue_rel" "REJECT" "gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
+    sleep "$adaptive_idle_sleep"
+    continue
+  fi
 
   prev_queue="$queue_rel"
   prev_planned="$planned"
@@ -721,12 +921,14 @@ while true; do
       if repair_stalled_queue "$queue_rel" "$planned" "$running" "$stalled" "$total" "UNKNOWN"; then
         action="REPAIRED_STALLED"
         repair_stalled_state_reset "$queue_rel"
+        log_decision_note "$queue_rel" "REPAIRED_STALLED" "repair_stalled_success" "reselect_next_candidate"
       else
         fails=$(repair_stalled_state_record "$queue_rel")
         if (( fails >= 3 )); then
           mark_orphan "$queue_rel" "stalled_repair_fail_${fails}"
           action="FAIL_CLOSED"
           repair_stalled_state_reset "$queue_rel"
+          log_decision_note "$queue_rel" "FAIL_CLOSED" "repair_stalled_failures_exhausted" "orphan_and_select_next"
         else
           action="REPAIR_STALLED_FAIL"
         fi
@@ -801,7 +1003,7 @@ while true; do
 
   if [[ "$reason" == "no_pending" ]]; then
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
-    log "no_pending queue=$queue_rel action=WAIT"
+    log "no_pending queue=$queue_rel action=WAIT selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
     sleep "$adaptive_idle_sleep"
     continue
   fi
@@ -810,7 +1012,7 @@ while true; do
     cause="UNKNOWN"
   fi
 
-  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action"
+  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE selection_profile=$PROMOTION_SELECTION_PROFILE promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason promotion_potential=$promotion_potential pre_rank_score=$pre_rank_score"
   if ! start_queue "$queue_rel" "$cause" "$planned" "$running" "$stalled" "$total"; then
     log "start_failed queue=$queue_rel cause=$cause"
   fi
