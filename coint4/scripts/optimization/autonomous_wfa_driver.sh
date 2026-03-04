@@ -28,6 +28,8 @@ DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 
 
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
+FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
+NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 
 mkdir -p "$STATE_DIR"
 
@@ -54,8 +56,9 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
 import csv
+import json
 import re
 import sys
 import time
@@ -101,14 +104,38 @@ def hard_gate_pass(row):
     return True, "pass"
 
 
+def quantile(values, q):
+    vals = sorted(v for v in values if v is not None and v == v)
+    if not vals:
+        return None
+    if n := len(vals):
+        if n == 1:
+            return vals[0]
+        idx = min(max(int((n - 1) * q), 0), n - 1)
+        return vals[idx]
+    return None
+
+
 def canonical_base(run_id):
     return re.sub(r'^(holdout_|stress_)', '', run_id)
+
+
+def load_state(path: Path):
+    if not path or not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return data.get('queues', {}) if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
 pre_rank_top_k = int(sys.argv[5]) if len(sys.argv) > 5 and str(sys.argv[5]).strip() else 8
+state_path = Path(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else None
+state_by_queue = load_state(state_path)
 
 now = time.time()
 
@@ -193,6 +220,10 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     fail_configs = 0
     unknown_configs = 0
     fail_reasons = []
+    robust_sharpes = []
+    worst_steps = []
+    state_entry = state_by_queue.get(queue_rel, {})
+    state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip()
 
     for base, bundle in by_base.items():
         h = bundle.get('holdout')
@@ -223,6 +254,18 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
 
         if h_ok and s_ok:
             pass_configs += 1
+            h_sh = to_float(h.get('sharpe_ratio_abs'))
+            s_sh = to_float(s.get('sharpe_ratio_abs'))
+            if h_sh is not None and s_sh is not None:
+                robust_sharpes.append(min(h_sh, s_sh))
+
+            h_tail = to_float(h.get('tail_loss_worst_pair_pnl'), None)
+            s_tail = to_float(s.get('tail_loss_worst_pair_pnl'), None)
+            h_tail2 = to_float(h.get('tail_loss_worst_period_pnl'), None)
+            s_tail2 = to_float(s.get('tail_loss_worst_period_pnl'), None)
+            tails = [v for v in (h_tail, s_tail, h_tail2, s_tail2) if v is not None]
+            if tails:
+                worst_steps.append(min(tails))
         elif (not h_ok) and (not s_ok):
             fail_configs += 1
         else:
@@ -243,14 +286,35 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         gate_status = "OPEN"
         gate_reason = "history_probe"
 
+    if state_verdict == "REJECT":
+        promotion_potential = "REJECT"
+        gate_status = "HARD_FAIL"
+        gate_reason = "state_reject"
+
+    fs_score = None
+    if robust_sharpes and worst_steps:
+        try:
+            worst_robust = min(robust_sharpes)
+            q20_step = quantile(worst_steps, 0.20)
+            worst_step = min(worst_steps)
+            if q20_step is None:
+                q20_step = worst_step
+            fs_score = worst_robust - (2.0 * max(0.0, (-q20_step / 1000.0) - 0.03)) - (1.0 * max(0.0, (-worst_step / 1000.0) - 0.10))
+        except Exception:
+            fs_score = None
+
     stale_count = failed
-    pre_rank_score = (
-        pass_configs * 14.0
-        + unknown_configs * 2.0
-        - fail_configs * 4.5
-        - stale_count * 1.2
-        - age_min * 0.3
-    )
+    pre_rank_score = 0.0
+    if fs_score is not None:
+        pre_rank_score += float(fs_score) * 12.0
+    else:
+        pre_rank_score -= 20.0
+
+    pre_rank_score += pass_configs * 8.0
+    pre_rank_score += unknown_configs * 1.0
+    pre_rank_score -= fail_configs * 4.5
+    pre_rank_score -= stale_count * 1.2
+    pre_rank_score -= age_min * 0.3
 
     urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
 
@@ -581,6 +645,81 @@ with p.open("a", encoding="utf-8") as f:
 PY
 }
 
+fullspan_state_set() {
+  local queue="$1"
+  local verdict="$2"
+  local strict_pass_count="${3:-0}"
+  local strict_run_groups="${4:-0}"
+  local top_run_group="${5:-}"
+  local top_variant="${6:-}"
+  local top_score="${7:-}"
+  local rejection_reason="${8:-}"
+  local confirm_count="${9:-0}"
+
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$verdict" "$strict_pass_count" "$strict_run_groups" "$top_run_group" "$top_variant" "$top_score" "$rejection_reason" "$confirm_count" "$ts" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, queue, verdict, strict_pass_count, strict_run_groups, top_run_group, top_variant, top_score, rejection_reason, confirm_count, ts = sys.argv[1:12]
+state = {}
+state_file = Path(path)
+if state_file.exists():
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+queues = state.get("queues", {})
+if not isinstance(queues, dict):
+    queues = {}
+queues[queue] = {
+    "promotion_verdict": verdict,
+    "strict_pass_count": int(float(strict_pass_count)),
+    "strict_run_group_count": int(float(strict_run_groups)),
+    "top_run_group": top_run_group,
+    "top_variant": top_variant,
+    "top_score": top_score,
+    "rejection_reason": rejection_reason,
+    "confirm_count": int(float(confirm_count)),
+    "selection_policy": "fullspan_v1",
+    "selection_mode": "fullspan",
+    "last_update": ts,
+}
+state["queues"] = queues
+state["state_version"] = 1
+state_file.parent.mkdir(parents=True, exist_ok=True)
+state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+fullspan_state_get() {
+  local queue="$1"
+  local field="$2"
+  local default_value="${3:-}"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$field" "$default_value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path, queue, field, default_value = sys.argv[1:5]
+state = Path(path)
+if not state.exists():
+    print(default_value)
+    raise SystemExit(0)
+try:
+    data = json.loads(state.read_text(encoding="utf-8"))
+    val = data.get("queues", {}).get(queue, {}).get(field, default_value)
+except Exception:
+    val = default_value
+print(val)
+PY
+}
+
 run_fullspan_cycle() {
   local queue_rel="$1"
   local queue_path="$2"
@@ -593,29 +732,66 @@ run_fullspan_cycle() {
     return 0
   fi
 
-  if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]] && grep -Fxq "$queue_rel" "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null; then
-    return 0
-  fi
-
   local safe_name
   safe_name="$(printf '%s' "$queue_rel" | tr '/.' '__')"
   local cycle_log="$STATE_DIR/fullspan_cycle_${safe_name}.log"
+  local cycle_summary="$STATE_DIR/fullspan_cycle_${safe_name}.json"
+
+  if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]] && grep -Fxq "$queue_rel" "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null; then
+    if [[ -s "$cycle_summary" ]]; then
+      return 0
+    fi
+  fi
 
   log "decision_cycle_start queue=$queue_rel cycle_log=$cycle_log"
-  
-  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue "$queue_rel" --contains "$queue_name" >> "$cycle_log" 2>&1)
+
+  local strict_pass_count=0
+  local strict_run_group_count=0
+  local top_run_group=""
+  local top_variant=""
+  local top_score=""
+  local strict_rejection_reason=""
+
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue "$queue_rel" --contains "$queue_name" --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
   local rc=$?
 
+  if [[ -f "$cycle_summary" ]]; then
+    local parsed
+    parsed="$(python3 - "$cycle_summary" -c "import json,sys; d=json.load(open(sys.argv[1])); s=d.get('strict', {}); print(int(s.get('pass_count',0) or 0)); print(int(s.get('run_group_count',0) or 0)); print(s.get('top_run_group', '') or ''); print(s.get('top_variant', '') or ''); print(s.get('top_score', '') or ''); print((s.get('rejection_reason_line', '') or '').replace('\n',' ') )" )"
+    readarray -t parsed_lines <<< "$parsed"
+    strict_pass_count="${parsed_lines[0]:-0}"
+    strict_run_group_count="${parsed_lines[1]:-0}"
+    top_run_group="${parsed_lines[2]:-}"
+    top_variant="${parsed_lines[3]:-}"
+    top_score="${parsed_lines[4]:-}"
+    strict_rejection_reason="${parsed_lines[5]:-}"
+  fi
+
   if [[ "$rc" -eq 0 ]]; then
-    log "decision_cycle_ok queue=$queue_rel"
-    log_decision_note "$queue_rel" "FULLSPAN_CYCLE" "strict+research_ranking_done" "await_next_queue"
-    printf '%s
-' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
+    log "decision_cycle_ok queue=$queue_rel strict_pass_count=$strict_pass_count strict_run_group_count=$strict_run_group_count"
+    if [[ "$strict_pass_count" -le 0 ]]; then
+      fullspan_state_set "$queue_rel" "REJECT" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "no_strict_fullspan" "0"
+      log_decision_note "$queue_rel" "FULLSPAN_REJECT" "no_strict_fullspan_pass ${strict_rejection_reason}" "await_fullspan_improvement"
+    elif [[ "$strict_run_group_count" -ge 2 ]]; then
+      local current_confirm_count
+      current_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+      if [[ "$current_confirm_count" -ge 2 ]]; then
+        fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "" "$current_confirm_count"
+        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "strict_pass_and_min_run_groups" "candidate_still_queued_or_candidate_or_waiting"
+      else
+        fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "pending_confirm" "$current_confirm_count"
+        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "strict_pass_run_groups=$strict_run_group_count confirm_count=$current_confirm_count" "need_vps_confirm_replay"
+      fi
+    else
+      fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" "insufficient_run_groups" "0"
+      log_decision_note "$queue_rel" "FULLSPAN_STRICT_PASS" "strict_pass_count=$strict_pass_count run_groups=$strict_run_group_count" "need_additional_run_groups"
+    fi
+    printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
   else
     log "decision_cycle_fail queue=$queue_rel rc=$rc"
   fi
 
-  return "$rc"
+  return 0
 }
 
 heartbeat_update() {
@@ -868,6 +1044,7 @@ declare -A last_pending_by_queue
 cleanup_orphans
 
 declare -A stalled_repair_failures
+declare -A no_progress_streak_by_queue
 
 adaptive_idle_sleep=30
 prev_queue=""
@@ -924,6 +1101,23 @@ while true; do
   pending=$((planned + running + stalled + failed))
 
   promotion_verdict="ANALYZE"
+  state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
+  state_rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
+  state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+  state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
+  state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+
+  if [[ "$state_verdict" == "REJECT" ]]; then
+    promotion_verdict="REJECT"
+    promotion_potential="REJECT"
+    gate_status="HARD_FAIL"
+    gate_reason="${state_rejection_reason:-state_reject}"
+  elif [[ "$state_verdict" == "PROMOTE_ELIGIBLE" ]]; then
+    promotion_verdict="PROMOTE_ELIGIBLE"
+  elif [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
+    promotion_verdict="DEFER_CONFIRM"
+  fi
+
   if [[ "$promotion_potential" == "REJECT" && "$gate_status" == "HARD_FAIL" ]]; then
     promotion_verdict="REJECT"
   fi
@@ -931,12 +1125,38 @@ while true; do
   if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
     if [[ "$pending" -lt "$prev_pending" ]]; then
       clear_orphan "$queue_rel"
+      no_progress_streak_by_queue["$queue_rel"]=0
       log "progress_seen queue=$queue_rel prev=$prev_pending curr=$pending"
       sync_queue_status "$queue_rel"
     fi
   fi
 
   heartbeat_update "$queue_rel" "$pending" "$completed" "$total" "$planned" "$running" "$stalled"
+
+  if (( pending > 0 )); then
+    no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
+    if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
+      if [[ "$pending" -eq "$prev_pending" && "$running" -eq "$prev_running" && "$stalled" -eq "$prev_stalled" && "$planned" -eq "$prev_planned" && "$failed" -eq "$prev_failed" ]]; then
+        no_progress_count=$((no_progress_count + 1))
+      else
+        no_progress_count=0
+      fi
+    else
+      no_progress_count=0
+    fi
+
+    no_progress_streak_by_queue["$queue_rel"]="$no_progress_count"
+    if (( no_progress_count >= NO_PROGRESS_STALE_CYCLES )); then
+      mark_orphan "$queue_rel" "no_progress_streak_${no_progress_count}"
+      fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "no_progress_streak" "$state_confirm_count"
+      log_decision_note "$queue_rel" "FULLSPAN_NO_PROGRESS_FAIL_CLOSED" "no_progress_streak=${no_progress_count}" "retry_orphan_closed"
+      log "no_progress_fail_closed queue=$queue_rel streak=$no_progress_count pending=$pending"
+      sleep 2
+      continue
+    fi
+  else
+    no_progress_streak_by_queue["$queue_rel"]=0
+  fi
 
   safe_queue_name="$(basename "$queue")"
   if [[ "$pending" -eq 0 && "$completed" -gt 0 ]]; then

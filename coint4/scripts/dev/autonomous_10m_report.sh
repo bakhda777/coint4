@@ -6,6 +6,7 @@ QUEUE_ROOT="$ROOT_DIR/artifacts/wfa/aggregate"
 STATE_DIR="$QUEUE_ROOT/.autonomous"
 STATE_FILE="$STATE_DIR/driver_state.txt"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
+FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
 LOG_FILE="$STATE_DIR/driver.log"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
@@ -82,6 +83,36 @@ PY
 )"
 fi
 
+state_verdict="none"
+state_pass_count="0"
+state_run_group_count="0"
+state_confirm_count="0"
+if [[ -n "$current_queue" && -f "$FULLSPAN_DECISION_STATE_FILE" ]]; then
+  state_fields="$(python3 - "$FULLSPAN_DECISION_STATE_FILE" "$current_queue" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = Path(sys.argv[2]).as_posix() if len(sys.argv) > 2 else sys.argv[2]
+if not path.exists():
+    print('none 0 0 0')
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+    state = data.get('queues', {}).get(queue, {})
+except Exception:
+    print('none 0 0 0')
+    raise SystemExit(0)
+if not state:
+    print('none 0 0 0')
+    raise SystemExit(0)
+print(f"{state.get('promotion_verdict', 'none')} {state.get('strict_pass_count', 0)} {state.get('strict_run_group_count', 0)} {state.get('confirm_count', 0)}")
+PY
+)"
+  read -r state_verdict state_pass_count state_run_group_count state_confirm_count <<< "$state_fields"
+fi
+
 orphans="0"
 if [[ -f "$ORPHAN_FILE" ]]; then
   orphans="$(python3 - "$ORPHAN_FILE" <<'PY'
@@ -151,3 +182,7 @@ else
 fi
 printf "fullspan_cycle_state=%s\n" "$cycle_count"
 printf "last_fullspan_action=%s\n" "$last_fullspan_action"
+printf "fullspan_state_verdict=%s\n" "$state_verdict"
+printf "fullspan_state_passes=%s\n" "$state_pass_count"
+printf "fullspan_state_run_groups=%s\n" "$state_run_group_count"
+printf "fullspan_state_confirm=%s\n" "$state_confirm_count"

@@ -1,30 +1,120 @@
 #!/usr/bin/env python3
-"""Canonical fullspan decision cycle: sync -> rollup -> strict rank -> diagnostic rank.
-
-Usage (from coint4/):
-  PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py \
-    --queue artifacts/wfa/aggregate/20260220_top3_fullspan_wfa/run_queue.csv \
-    --contains 20260220_top3_fullspan_wfa
-"""
+"""Canonical fullspan decision cycle: sync -> rollup -> strict rank -> diagnostic rank."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 
-def _run(cmd: List[str], *, cwd: Path, env: dict, allow_no_matches: bool = False) -> int:
-    print(f"[cycle] $ {' '.join(cmd)}")
-    proc = subprocess.run(cmd, cwd=str(cwd), env=env, check=False)
-    if proc.returncode == 0:
-        return 0
-    if allow_no_matches and proc.returncode == 1:
-        return proc.returncode
-    raise SystemExit(proc.returncode)
+def _run(cmd, *, cwd, env, allow_no_matches=False):
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.stdout:
+        print(proc.stdout, end="")
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
+    if proc.returncode != 0 and not (allow_no_matches and proc.returncode == 1):
+        raise SystemExit(proc.returncode)
+    return proc.returncode, proc.stdout
+
+
+def _parse_rank_output(output: str) -> Dict[str, object]:
+    header: List[str] = []
+    rows: List[Dict[str, str]] = []
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line.startswith("|"):
+            continue
+        if re.match(r"^\|\s*rank\s*\|", line, re.IGNORECASE):
+            header = [part.strip() for part in line.strip("|").split("|")]
+            continue
+        if line.startswith("|---") or line.startswith("| -"):
+            continue
+        if header and re.match(r"^\|\s*\d+\s*\|", line):
+            cells = [part.strip() for part in line.strip("|").split("|")]
+            if len(cells) < len(header):
+                cells.extend([""] * (len(header) - len(cells)))
+            row = {k: (cells[i] if i < len(cells) else "") for i, k in enumerate(header)}
+            rows.append(row)
+
+    pass_run_groups = [row.get("run_group", "") for row in rows if row.get("run_group", "")]
+    uniq = []
+    seen = set()
+    for g in pass_run_groups:
+        if g not in seen:
+            uniq.append(g)
+            seen.add(g)
+
+    top = rows[0] if rows else {}
+    top_run_group = top.get("run_group", "")
+    top_variant = top.get("variant_id", "")
+    top_score = top.get("score", "")
+    top_cfg = top.get("sample_config", "")
+
+    return {
+        "pass_count": len(rows),
+        "run_group_count": len(uniq),
+        "run_groups": uniq,
+        "rows": rows,
+        "top_run_group": top_run_group,
+        "top_variant": top_variant,
+        "top_config": top_cfg,
+        "top_score": top_score,
+    }
+
+
+def _build_summary(args, *, strict_rc: int, strict_out: str, diag_rc: int, diag_out: str) -> Dict[str, object]:
+    strict_summary = _parse_rank_output(strict_out)
+    diag_summary = _parse_rank_output(diag_out)
+
+    strict_summary.update(
+        {
+            "exit_code": strict_rc,
+            "status": "pass" if strict_rc == 0 and strict_summary["pass_count"] > 0 else "reject",
+        }
+    )
+    diag_summary.update(
+        {
+            "exit_code": diag_rc,
+            "status": "pass" if diag_rc == 0 and diag_summary["pass_count"] > 0 else "reject",
+        }
+    )
+
+    if strict_summary["pass_count"] == 0 and strict_rc != 0:
+        m = re.search(r"No variants matched fullspan policy v1.*", strict_out)
+        if m:
+            strict_summary["rejection_reason_line"] = m.group(0).strip()
+
+    result = {
+        "version": 1,
+        "queue": args.queue[0],
+        "contains": args.contains,
+        "strict": strict_summary,
+        "diagnostic": diag_summary,
+        "policy": "fullspan_v1",
+        "mode": "fullspan",
+        "selection_profile": "promote_profile",
+        "selection_policy": "fullspan_v1",
+    }
+    return result
+
+
+def _safe_json_dump(path: Path, payload: Dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main() -> int:
@@ -84,6 +174,12 @@ def main() -> int:
     parser.add_argument("--tail-worst-soft-loss-pct", type=float, default=0.10)
     parser.add_argument("--tail-q-penalty", type=float, default=2.0)
     parser.add_argument("--tail-worst-penalty", type=float, default=1.0)
+    parser.add_argument(
+        "--summary-json",
+        default="",
+        help="Optional path to JSON summary output (for autonomous drivers/state machines).",
+    )
+
     args = parser.parse_args()
 
     if args.strict_tail_worst_gate_pct > args.diagnostic_tail_worst_gate_pct:
@@ -153,7 +249,7 @@ def main() -> int:
     ]
     for needle in args.contains:
         strict_cmd.extend(["--contains", str(needle)])
-    strict_rc = _run(strict_cmd, cwd=app_root, env=env, allow_no_matches=True)
+    strict_rc, strict_out = _run(strict_cmd, cwd=app_root, env=env, allow_no_matches=True)
     print(f"[cycle] strict_profile_rc={strict_rc}")
 
     # 4) Diagnostic research profile.
@@ -166,8 +262,16 @@ def main() -> int:
     gate_idx = diag_cmd.index("--tail-worst-gate-pct") + 1
     diag_cmd[gate_idx] = str(args.diagnostic_tail_worst_gate_pct)
     diag_cmd.extend(["--top", str(args.research_top)])
-    diag_rc = _run(diag_cmd, cwd=app_root, env=env, allow_no_matches=True)
+    diag_rc, diag_out = _run(diag_cmd, cwd=app_root, env=env, allow_no_matches=True)
     print(f"[cycle] research_profile_rc={diag_rc}")
+
+    summary = _build_summary(args, strict_rc=strict_rc, strict_out=strict_out, diag_rc=diag_rc, diag_out=diag_out)
+    print(f"[cycle] strict_pass_count={summary['strict'].get('pass_count', 0)}")
+    print(f"[cycle] strict_run_groups={summary['strict'].get('run_group_count', 0)}")
+    print(f"[cycle] strict_top={summary['strict'].get('top_run_group', '')}/{summary['strict'].get('top_variant', '')}")
+
+    if args.summary_json:
+        _safe_json_dump(Path(args.summary_json), summary)
 
     print("[cycle] done")
     return 0
