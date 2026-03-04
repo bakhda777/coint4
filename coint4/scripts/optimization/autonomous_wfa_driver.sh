@@ -36,6 +36,11 @@ FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
 FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-60}"
 FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
+SAME_REASON_REPAIR_CAP="${SAME_REASON_REPAIR_CAP:-3}"
+ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
+ADAPTIVE_HIGH_RATE_THRESHOLD="${ADAPTIVE_HIGH_RATE_THRESHOLD:-0.60}"
+SLA_VPS_IDLE_PENDING_CYCLES="${SLA_VPS_IDLE_PENDING_CYCLES:-3}"
+SLA_CONFIRM_PENDING_SEC="${SLA_CONFIRM_PENDING_SEC:-7200}"
 LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
 LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
 LOW_YIELD_HOMOGENEOUS_FAIL_MIN="${LOW_YIELD_HOMOGENEOUS_FAIL_MIN:-2}"
@@ -569,6 +574,15 @@ choose_parallel() {
       p=6
       ;;
   esac
+
+  # Adaptive parallel by observed progress rate (from heartbeat).
+  local rate
+  rate="${hb_rate_per_min:-0}"
+  if awk -v v="$rate" -v th="$ADAPTIVE_LOW_RATE_THRESHOLD" 'BEGIN { exit (v+0 <= th+0) ? 0 : 1 }'; then
+    p=$((p - 1))
+  elif awk -v v="$rate" -v th="$ADAPTIVE_HIGH_RATE_THRESHOLD" 'BEGIN { exit (v+0 >= th+0) ? 0 : 1 }'; then
+    p=$((p + 1))
+  fi
 
   if (( p > 12 )); then
     p=12
@@ -1635,6 +1649,7 @@ heartbeat_update() {
   # Shell-visible heartbeat state for downstream policy decisions.
   hb_queue=""
   hb_stale_sec="0"
+  hb_rate_per_min="0"
 
   out="$(python3 "$ROOT_DIR/scripts/optimization/_autonomous_heartbeat.py"     --state "$HEARTBEAT_STATE"     --queue "$queue_rel"     --pending "$pending"     --completed "$completed"     --total "$total"     --planned "$planned"     --running "$running"     --stalled "$stalled" 2>/dev/null || true)"
 
@@ -1644,6 +1659,7 @@ heartbeat_update() {
 
   IFS='|' read -r hb_queue hb_pending hb_completed hb_rate hb_eta hb_stale hb_done <<< "$out"
   hb_stale_sec="$hb_stale"
+  hb_rate_per_min="$hb_rate"
   log "heartbeat queue=$hb_queue pending=$hb_pending completed=$hb_completed rate_per_min=$hb_rate eta_min=$hb_eta stale_sec=$hb_stale done=$hb_done"
 
   if [[ "$hb_done" == "1" ]]; then
@@ -1859,6 +1875,90 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
+prefilter_planned_gate_aware() {
+  local queue_rel="$1"
+  local queue_path="$ROOT_DIR/$queue_rel"
+  python3 - "$queue_path" "$ROOT_DIR" <<'PY'
+import csv
+import json
+import sys
+from collections import Counter
+from pathlib import Path
+
+import yaml
+
+queue_path = Path(sys.argv[1])
+root_dir = Path(sys.argv[2])
+
+payload = {"changed": 0, "codes": {}}
+if not queue_path.exists():
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+try:
+    with queue_path.open(newline='', encoding='utf-8') as f:
+        rows = list(csv.DictReader(f))
+except Exception:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+codes = Counter()
+for row in rows:
+    status = str(row.get('status') or '').strip().lower()
+    if status != 'planned':
+        continue
+
+    cfg = str(row.get('config_path') or '').strip()
+    if not cfg:
+        continue
+    cfg_path = Path(cfg)
+    if not cfg_path.is_absolute():
+        cfg_path = (root_dir / cfg_path).resolve()
+
+    if not cfg_path.exists():
+        row['status'] = 'skipped'
+        payload['changed'] += 1
+        codes['CONFIG_MISSING'] += 1
+        continue
+
+    try:
+        data = yaml.safe_load(cfg_path.read_text(encoding='utf-8'))
+    except Exception:
+        row['status'] = 'skipped'
+        payload['changed'] += 1
+        codes['CONFIG_PARSE_ERROR'] += 1
+        continue
+
+    if not isinstance(data, dict):
+        row['status'] = 'skipped'
+        payload['changed'] += 1
+        codes['CONFIG_INVALID'] += 1
+        continue
+
+    bt = data.get('backtest') or {}
+    mvm = bt.get('max_var_multiplier', None)
+    try:
+        mvm_f = float(mvm)
+    except Exception:
+        mvm_f = None
+
+    if mvm_f is not None and mvm_f <= 1.0:
+        row['status'] = 'skipped'
+        payload['changed'] += 1
+        codes['MAX_VAR_MULTIPLIER_INVALID'] += 1
+
+if payload['changed'] > 0 and rows:
+    with queue_path.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+payload['codes'] = dict(codes)
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
 repair_stalled_queue() {
   local queue_rel="$1"
   local planned="$2"
@@ -1877,6 +1977,21 @@ repair_stalled_queue() {
   fi
 
   log "repair_stalled queue=$queue_rel parallel=$parallel stale_sec=$hb_stale_sec cause=$cause"
+
+  local reason_streak
+  reason_streak="$(repair_reason_streak_record "$queue_rel" "${cause:-UNKNOWN}")"
+  if (( reason_streak > SAME_REASON_REPAIR_CAP )); then
+    local state_strict_pass_count state_strict_run_groups state_confirm_count
+    state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+    state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
+    state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+    fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "same_reason_repair_cap:${cause}" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT"
+    fullspan_state_metric_inc "same_reason_repair_cap_hit" 1
+    mark_orphan "$queue_rel" "same_reason_repair_cap_${cause}_${reason_streak}"
+    log_decision_note "$queue_rel" "FULLSPAN_REPAIR_CAP_FAIL_CLOSED" "cause=${cause} streak=${reason_streak}" "skip_repeated_low_yield_repairs"
+    log "repair_stalled_same_reason_cap queue=$queue_rel cause=$cause streak=$reason_streak cap=$SAME_REASON_REPAIR_CAP"
+    return 1
+  fi
 
   local quarantine_payload
   local quarantine_changed
@@ -1945,9 +2060,82 @@ repair_stalled_state_record() {
   echo "$new_failures"
 }
 
+repair_reason_streak_record() {
+  local queue_rel="$1"
+  local reason="$2"
+  local prev_reason="${stalled_repair_last_reason_by_queue[$queue_rel]:-}"
+  local cur="${stalled_repair_same_reason_streak_by_queue[$queue_rel]:-0}"
+
+  if [[ -n "$reason" && "$reason" == "$prev_reason" ]]; then
+    cur=$((cur + 1))
+  else
+    cur=1
+  fi
+
+  stalled_repair_last_reason_by_queue["$queue_rel"]="$reason"
+  stalled_repair_same_reason_streak_by_queue["$queue_rel"]="$cur"
+  echo "$cur"
+}
+
+repair_reason_streak_reset() {
+  local queue_rel="$1"
+  stalled_repair_last_reason_by_queue["$queue_rel"]=""
+  stalled_repair_same_reason_streak_by_queue["$queue_rel"]=0
+}
+
 repair_stalled_state_reset() {
   local queue_rel="$1"
   stalled_repair_failures["$queue_rel"]=0
+  repair_reason_streak_reset "$queue_rel"
+}
+
+remote_runner_count() {
+  local remote_count
+  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -f 'watch_wfa_queue.sh|run_wfa_queue.py|python.*walk_forward' | awk -v self=\"\$\$\" '\$1 != self' | wc -l" || true)"
+  if [[ -z "$remote_count" ]]; then
+    echo 0
+    return
+  fi
+  echo "$remote_count"
+}
+
+sla_watch_queue() {
+  local queue_rel="$1"
+  local pending="$2"
+  local running="$3"
+  local state_verdict="$4"
+
+  if (( pending > 0 && running == 0 )); then
+    local rc
+    rc="$(remote_runner_count)"
+    if [[ -z "$rc" || ! "$rc" =~ ^[0-9]+$ ]]; then
+      rc=0
+    fi
+    if (( rc == 0 )); then
+      local idle_streak="${vps_idle_pending_streak_by_queue[$queue_rel]:-0}"
+      idle_streak=$((idle_streak + 1))
+      vps_idle_pending_streak_by_queue["$queue_rel"]="$idle_streak"
+      if (( idle_streak >= SLA_VPS_IDLE_PENDING_CYCLES )); then
+        fullspan_state_metric_inc "sla_vps_idle_with_pending_trigger" 1
+        log_decision_note "$queue_rel" "SLA_VPS_IDLE_WITH_PENDING" "streak=$idle_streak pending=$pending" "watchdog_or_manual_intervention"
+      fi
+    else
+      vps_idle_pending_streak_by_queue["$queue_rel"]=0
+    fi
+  else
+    vps_idle_pending_streak_by_queue["$queue_rel"]=0
+  fi
+
+  if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
+    local last_decision_epoch now_epoch age_sec
+    last_decision_epoch="$(fullspan_state_metric_get last_decision_epoch 0)"
+    now_epoch="$(date +%s)"
+    age_sec=$((now_epoch - last_decision_epoch))
+    if (( last_decision_epoch > 0 && age_sec >= SLA_CONFIRM_PENDING_SEC )); then
+      fullspan_state_metric_inc "sla_confirm_pending_overdue_trigger" 1
+      log_decision_note "$queue_rel" "SLA_CONFIRM_PENDING_OVERDUE" "age_sec=$age_sec" "prioritize_confirm_replay"
+    fi
+  fi
 }
 
 is_driver_busy() {
@@ -2064,7 +2252,10 @@ declare -A last_pending_by_queue
 cleanup_orphans
 
 declare -A stalled_repair_failures
+declare -A stalled_repair_last_reason_by_queue
+declare -A stalled_repair_same_reason_streak_by_queue
 declare -A no_progress_streak_by_queue
+declare -A vps_idle_pending_streak_by_queue
 
 adaptive_idle_sleep=30
 prev_queue=""
@@ -2119,6 +2310,29 @@ while true; do
 
   queue_rel="${queue#$ROOT_DIR/}"
   pending=$((planned + running + stalled + failed))
+
+  if (( planned > 0 )); then
+    gate_prefilter_payload="$(prefilter_planned_gate_aware "$queue_rel")"
+    gate_prefilter_changed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("changed",0)))' "$gate_prefilter_payload" 2>/dev/null || echo 0)"
+    gate_prefilter_codes="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); c=d.get("codes",{}); print(";".join(f"{k}:{v}" for k,v in sorted(c.items())))' "$gate_prefilter_payload" 2>/dev/null || true)"
+    if [[ -n "$gate_prefilter_changed" && "$gate_prefilter_changed" -gt 0 ]]; then
+      fullspan_state_metric_inc "gate_aware_generation_skip_count" "$gate_prefilter_changed"
+      log_decision_note "$queue_rel" "GATE_AWARE_GENERATION_SKIP" "count=$gate_prefilter_changed codes=${gate_prefilter_codes:-none}" "prefilter_planned_invalid_configs"
+      log "gate_aware_prefilter queue=$queue_rel changed=$gate_prefilter_changed codes=${gate_prefilter_codes:-none}"
+      read -r planned running stalled failed completed total <<< "$(python3 - "$ROOT_DIR/$queue_rel" <<'PY'
+import csv
+import sys
+from collections import Counter
+from pathlib import Path
+p=Path(sys.argv[1])
+rows=list(csv.DictReader(p.open(newline='',encoding='utf-8'))) if p.exists() else []
+c=Counter((r.get('status') or '').strip().lower() for r in rows)
+print(c.get('planned',0), c.get('running',0), c.get('stalled',0), c.get('failed',0)+c.get('error',0), c.get('completed',0), len(rows))
+PY
+)"
+      pending=$((planned + running + stalled + failed))
+    fi
+  fi
 
   promotion_verdict="ANALYZE"
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
@@ -2180,6 +2394,7 @@ while true; do
   fi
 
   heartbeat_update "$queue_rel" "$pending" "$completed" "$total" "$planned" "$running" "$stalled"
+  sla_watch_queue "$queue_rel" "$pending" "$running" "$state_verdict"
 
   if (( pending > 0 )); then
     no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
@@ -2230,7 +2445,7 @@ while true; do
   if [[ -n "$hb_queue" && "$running" -eq 0 && "$stalled" -gt 0 ]]; then
     if awk -v stale="$hb_stale_sec" -v th="$ORPHAN_STALE_SECONDS" 'BEGIN { exit (stale + 0 >= th) ? 0 : 1 }'; then
       reason="stalled_queue_no_progress"
-      if repair_stalled_queue "$queue_rel" "$planned" "$running" "$stalled" "$total" "UNKNOWN"; then
+      if repair_stalled_queue "$queue_rel" "$planned" "$running" "$stalled" "$total" "$reason"; then
         action="REPAIRED_STALLED"
         repair_stalled_state_reset "$queue_rel"
         log_decision_note "$queue_rel" "REPAIRED_STALLED" "repair_stalled_success" "reselect_next_candidate"
