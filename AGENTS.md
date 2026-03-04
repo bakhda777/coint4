@@ -171,3 +171,6 @@ Top-level:
 
 - 2026-03-04: автономный драйвер WFA теперь использует `urgency_score` (stalled*100 + running*20 + age_minutes*0.1), периодический `sync_queue_status` при наблюдаемом снижении pending, `stale-running watchdog` по mtime `results_dir` (STALE_RUNNING_SEC=900, минимум 60), и адаптивный backoff в idle (30→120→300).
 - Запуск очередей по-прежнему идёт только через `autonomous_wfa_driver.sh`/`run_wfa_queue_powered` с `--wait-completion false`, без ручного запуска очередей по умолчанию.
+
+- 2026-03-04: автономный драйвер WFA обновлён: добавлен `busy`-throttle (повторный skip одинаковой очереди без прогресса -> throttled sync/retry policy), динамический `--parallel` по размеру очереди/ETA/нагрузке, и авто-классификация root-cause (`NETWORK/DATA/MODEL/TIMEOUT/UNKNOWN`) перед стартом очереди с адаптивным `max_retries`.
+- 2026-03-04: в `stale_running` убран внешний путь на VPS (inline fallback), чтобы watchdog зависших `running` работал и при отсутствии `/opt/coint4/coint4/scripts/optimization/_autonomous_stale_running.py`.
