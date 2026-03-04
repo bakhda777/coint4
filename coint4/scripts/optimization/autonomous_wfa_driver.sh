@@ -25,6 +25,7 @@ PROMOTION_SELECTION_PROFILE="promote_profile"
 PROMOTION_SELECTION_MODE="fullspan"
 FULLSPAN_POLICY_NAME="fullspan_v1"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
+DECISION_MEMO_DIR="$STATE_DIR/decision_memos"
 DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
 
 
@@ -41,6 +42,9 @@ ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
 ADAPTIVE_HIGH_RATE_THRESHOLD="${ADAPTIVE_HIGH_RATE_THRESHOLD:-0.60}"
 SLA_VPS_IDLE_PENDING_CYCLES="${SLA_VPS_IDLE_PENDING_CYCLES:-3}"
 SLA_CONFIRM_PENDING_SEC="${SLA_CONFIRM_PENDING_SEC:-7200}"
+CONFIRM_FASTLANE_LIMIT="${CONFIRM_FASTLANE_LIMIT:-1}"
+CONFIRM_FASTLANE_PARALLEL="${CONFIRM_FASTLANE_PARALLEL:-2}"
+CONFIRM_FASTLANE_COOLDOWN_SEC="${CONFIRM_FASTLANE_COOLDOWN_SEC:-1800}"
 LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
 LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
 LOW_YIELD_HOMOGENEOUS_FAIL_MIN="${LOW_YIELD_HOMOGENEOUS_FAIL_MIN:-2}"
@@ -314,6 +318,10 @@ def emit_scores():
             state_confirm_count = int(float(state_entry.get('confirm_count', 0) or 0))
         except Exception:
             state_confirm_count = 0
+        try:
+            confirm_pending_since_epoch = int(float(state_entry.get('confirm_pending_since_epoch', 0) or 0))
+        except Exception:
+            confirm_pending_since_epoch = 0
 
         confirm_fastlane_ready = bool(
             state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM")
@@ -460,6 +468,9 @@ def emit_scores():
             pre_rank_score += 10.0
         elif confirm_fastlane_ready:
             pre_rank_score += 20.0
+            if confirm_pending_since_epoch > 0:
+                age_hours = max(0.0, (now - confirm_pending_since_epoch) / 3600.0)
+                pre_rank_score += min(age_hours, 24.0) * 1.5
 
         if fail_configs > 0 and by_state_reason:
             dominant_reason_count = max(by_state_reason.values())
@@ -804,6 +815,73 @@ rec = {
 }
 with p.open("a", encoding="utf-8") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+PY
+}
+
+write_decision_memo() {
+  local queue_rel="$1"
+  local verdict="$2"
+  local strict_pass_count="$3"
+  local strict_run_group_count="$4"
+  local confirm_count="$5"
+  local rejection_reason="$6"
+  local top_variant="$7"
+  local top_run_group="$8"
+  local top_score="$9"
+  local strict_gate_status="${10:-}"
+  local strict_gate_reason="${11:-}"
+
+  python3 - "$DECISION_MEMO_DIR" "$queue_rel" "$verdict" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "$rejection_reason" "$top_variant" "$top_run_group" "$top_score" "$strict_gate_status" "$strict_gate_reason" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$FULLSPAN_CONFIRM_MIN_REPLIES" <<'PY'
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+memo_dir = Path(sys.argv[1])
+queue_rel = sys.argv[2]
+verdict = sys.argv[3]
+strict_pass_count = int(float(sys.argv[4] or 0))
+strict_run_group_count = int(float(sys.argv[5] or 0))
+confirm_count = int(float(sys.argv[6] or 0))
+rejection_reason = sys.argv[7]
+top_variant = sys.argv[8]
+top_run_group = sys.argv[9]
+top_score = sys.argv[10]
+strict_gate_status = sys.argv[11]
+strict_gate_reason = sys.argv[12]
+confirm_min_groups = int(float(sys.argv[13] or 2))
+confirm_min_replies = int(float(sys.argv[14] or 2))
+
+missing = []
+if strict_pass_count <= 0:
+    missing.append("strict_pass_by_fullspan")
+if strict_run_group_count < confirm_min_groups:
+    missing.append(f"min_run_groups:{confirm_min_groups}")
+if confirm_count < confirm_min_replies:
+    missing.append(f"confirm_replays:{confirm_min_replies}")
+if verdict != "PROMOTE_ELIGIBLE":
+    missing.append("promotion_not_eligible")
+
+payload = {
+    "ts": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    "queue": queue_rel,
+    "promotion_verdict": verdict,
+    "strict_pass_count": strict_pass_count,
+    "strict_run_group_count": strict_run_group_count,
+    "confirm_count": confirm_count,
+    "rejection_reason": rejection_reason,
+    "strict_gate_status": strict_gate_status,
+    "strict_gate_reason": strict_gate_reason,
+    "top_variant": top_variant,
+    "top_run_group": top_run_group,
+    "top_score": top_score,
+    "missing_for_promote": missing,
+}
+
+memo_dir.mkdir(parents=True, exist_ok=True)
+safe = re.sub(r"[^a-zA-Z0-9_.-]+", "_", queue_rel)
+(memo_dir / f"{safe}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
 }
 
@@ -1520,6 +1598,7 @@ PY
       fi
 
       low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
+      write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "$strict_rejection_reason" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
       fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
       printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
       return 0
@@ -1625,11 +1704,13 @@ PY
     fi
 
     low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
+    write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "$strict_rejection_reason" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
     fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
     printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
   else
     log "decision_cycle_fail queue=$queue_rel rc=$cycle_rc"
     fullspan_state_metric_set "decision_cycle_fail_count" "$(( $(fullspan_state_metric_get decision_cycle_fail_count 0) + 1 ))"
+    write_decision_memo "$queue_rel" "REJECT" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "decision_cycle_fail_rc_${cycle_rc}" "$top_variant" "$top_run_group" "$top_score" "FULLSPAN_PREFILTER_UNKNOWN" ""
   fi
 
   return 0
@@ -2193,6 +2274,178 @@ fullspan_rollup_sync() {
   log "fullspan_rollup_sync queue=$queue_rel reason=${reason:-milestone}"
 }
 
+fullspan_confirm_fastlane_pending() {
+  local queue_rel="$1"
+  local qpath="$ROOT_DIR/$queue_rel"
+  python3 - "$qpath" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+p = Path(sys.argv[1])
+if not p.exists():
+    print(0)
+    raise SystemExit(0)
+try:
+    rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+pending = 0
+for r in rows:
+    s = str(r.get('status') or '').strip().lower()
+    if s in {'planned', 'running', 'stalled', 'failed', 'error'}:
+        pending += 1
+print(pending)
+PY
+}
+
+trigger_confirm_fastlane() {
+  local source_queue_rel="$1"
+  local queue_name="$2"
+  local top_variant="$3"
+  local strict_pass_count="$4"
+  local strict_run_groups="$5"
+  local confirm_count="$6"
+
+  if [[ -z "$top_variant" ]]; then
+    return 0
+  fi
+  if (( strict_pass_count <= 0 || strict_run_groups < FULLSPAN_CONFIRM_MIN_GROUPS || confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
+    return 0
+  fi
+
+  local now_epoch last_trigger
+  now_epoch="$(date +%s)"
+  last_trigger="$(fullspan_state_get "$source_queue_rel" "confirm_fastlane_last_trigger_epoch" "0")"
+  if [[ -z "$last_trigger" ]]; then
+    last_trigger=0
+  fi
+  if (( now_epoch - last_trigger < CONFIRM_FASTLANE_COOLDOWN_SEC )); then
+    return 0
+  fi
+
+  local existing_confirm_queue
+  existing_confirm_queue="$(fullspan_state_get "$source_queue_rel" "confirm_fastlane_queue_rel" "")"
+  if [[ -n "$existing_confirm_queue" ]]; then
+    local existing_pending
+    existing_pending="$(fullspan_confirm_fastlane_pending "$existing_confirm_queue")"
+    if (( existing_pending > 0 )); then
+      return 0
+    fi
+  fi
+
+  local safe_name
+  safe_name="$(printf '%s' "$queue_name" | tr '/.' '__')"
+  local shortlist_rel="artifacts/wfa/aggregate/.autonomous/confirm_fastlane_shortlist_${safe_name}.csv"
+  local confirm_queue_dir_rel="artifacts/wfa/aggregate/confirm_fastlane_${safe_name}"
+  local confirm_queue_rel="${confirm_queue_dir_rel}/run_queue.csv"
+  local stress_dir_rel="configs/confirm_fastlane/${safe_name}/stress"
+  local cycle_name="confirm_fastlane_${safe_name}"
+
+  python3 - "$ROOT_DIR/$source_queue_rel" "$ROOT_DIR/$shortlist_rel" "$top_variant" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+out = Path(sys.argv[2])
+needle = (sys.argv[3] or '').strip().lower()
+
+rows = []
+if src.exists():
+    try:
+        rows = list(csv.DictReader(src.open(newline='', encoding='utf-8')))
+    except Exception:
+        rows = []
+
+picked = []
+seen = set()
+for r in rows:
+    cfg = str(r.get('config_path') or '').strip()
+    if not cfg or cfg in seen:
+        continue
+    if cfg.endswith('_stress.yaml'):
+        continue
+    blob = " ".join([cfg, str(r.get('results_dir') or ''), str(r.get('status') or '')]).lower()
+    if needle and needle not in blob:
+        continue
+    seen.add(cfg)
+    picked.append({'config_path': cfg, 'results_dir': str(r.get('results_dir') or ''), 'status': 'planned'})
+
+if not picked:
+    for r in rows:
+        cfg = str(r.get('config_path') or '').strip()
+        if not cfg or cfg in seen:
+            continue
+        if cfg.endswith('_stress.yaml'):
+            continue
+        seen.add(cfg)
+        picked.append({'config_path': cfg, 'results_dir': str(r.get('results_dir') or ''), 'status': 'planned'})
+        break
+
+out.parent.mkdir(parents=True, exist_ok=True)
+with out.open('w', newline='', encoding='utf-8') as f:
+    w = csv.DictWriter(f, fieldnames=['config_path', 'results_dir', 'status'])
+    w.writeheader()
+    for row in picked[:1]:
+        w.writerow(row)
+print(len(picked[:1]))
+PY
+
+  local shortlist_count
+  shortlist_count="$(python3 - "$ROOT_DIR/$shortlist_rel" <<'PY'
+import csv
+import sys
+from pathlib import Path
+p=Path(sys.argv[1])
+if not p.exists():
+    print(0)
+    raise SystemExit(0)
+rows=list(csv.DictReader(p.open(newline='',encoding='utf-8')))
+print(len(rows))
+PY
+)"
+  if (( shortlist_count <= 0 )); then
+    return 0
+  fi
+
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/build_confirm_queue.py \
+      --shortlist-queue "$shortlist_rel" \
+      --cycle "$cycle_name" \
+      --queue-dir "$confirm_queue_dir_rel" \
+      --stress-config-dir "$stress_dir_rel" \
+      --limit "$CONFIRM_FASTLANE_LIMIT") >>"$LOG_FILE" 2>&1 || return 0
+
+  fullspan_state_queue_set "$source_queue_rel" \
+    "confirm_fastlane_queue_rel" "$confirm_queue_rel" \
+    "confirm_fastlane_last_trigger_epoch" "$now_epoch" \
+    "confirm_pending_since_epoch" "${now_epoch}"
+
+  local qlog="$STATE_DIR/confirm_fastlane_${safe_name}_$(date -u +%Y%m%d_%H%M%S).log"
+  (
+    cd "$ROOT_DIR"
+    AUTONOMOUS_MODE=1 \
+    ALLOW_HEAVY_RUN=1 \
+    ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py \
+      --queue "$confirm_queue_rel" \
+      --compute-host "$SERVER_IP" \
+      --ssh-user "$SERVER_USER" \
+      --parallel "$CONFIRM_FASTLANE_PARALLEL" \
+      --statuses planned \
+      --max-retries 2 \
+      --watchdog true \
+      --wait-completion false \
+      --postprocess true \
+      --poweroff true \
+      >>"$qlog" 2>&1
+  ) &
+
+  fullspan_state_metric_inc "confirm_fastlane_trigger_count" 1
+  log_decision_note "$source_queue_rel" "CONFIRM_FASTLANE_TRIGGER" "confirm_queue=$confirm_queue_rel variant=$top_variant" "await_confirm_replay"
+  log "confirm_fastlane_trigger source=$source_queue_rel confirm_queue=$confirm_queue_rel variant=$top_variant"
+}
+
 start_queue() {
   local queue_rel="$1"
   local cause="$2"
@@ -2342,6 +2595,7 @@ PY
   state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+  state_top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
   low_yield_fail_closed="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed" "0")"
   low_yield_fail_closed_reason="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed_reason" "")"
 
@@ -2354,6 +2608,18 @@ PY
   state_strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+  state_top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
+
+  if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
+    pending_since_epoch="$(fullspan_state_get "$queue_rel" "confirm_pending_since_epoch" "0")"
+    if [[ -z "$pending_since_epoch" || "$pending_since_epoch" == "0" ]]; then
+      fullspan_state_queue_set "$queue_rel" "confirm_pending_since_epoch" "$(date +%s)"
+    fi
+  else
+    fullspan_state_queue_set "$queue_rel" "confirm_pending_since_epoch" "0"
+  fi
+
+  trigger_confirm_fastlane "$queue_rel" "$(basename "$(dirname "$queue_rel")")" "$state_top_variant" "$state_strict_pass_count" "$state_strict_run_groups" "$state_confirm_count"
 
   if [[ "$low_yield_fail_closed" == "1" ]]; then
     promotion_verdict="REJECT"
