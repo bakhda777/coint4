@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 QUEUE_ROOT="$ROOT_DIR/artifacts/wfa/aggregate"
 STATE_DIR="$QUEUE_ROOT/.autonomous"
 STATE_FILE="$STATE_DIR/driver_state.txt"
+DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
+FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
 LOG_FILE="$STATE_DIR/driver.log"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 HEARTBEAT_FILE="$STATE_DIR/heartbeat_state.json"
@@ -32,6 +34,16 @@ if [[ -f "$LOG_FILE" ]]; then
 fi
 if [[ -z "$last_action" ]]; then
   last_action='none'
+fi
+
+last_fullspan_action="none"
+if [[ -f "$DECISION_NOTES_FILE" ]]; then
+  last_fullspan_action="$(python3 - "$DECISION_NOTES_FILE" -c "import json,sys; from pathlib import Path; p=Path(sys.argv[1]); out="none";
+for line in reversed(p.read_text(encoding=\'utf-8\').splitlines()):
+    rec=json.loads(line)
+    if rec.get(\'action\')==\'FULLSPAN_CYCLE\':
+        out=f\"{rec.get(\'queue\', \'\')} {rec.get(\'next_step\', \'\')}\"; break
+print(out)" )"
 fi
 
 if [[ -n "$current_queue" && -f "$HEARTBEAT_FILE" ]]; then
@@ -131,3 +143,11 @@ if [[ -f "$LOG_FILE" ]]; then
 else
   echo 'missing'
 fi
+
+if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]]; then
+  cycle_count=$(wc -l < "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null || echo 0)
+else
+  cycle_count=0
+fi
+printf "fullspan_cycle_state=%s\n" "$cycle_count"
+printf "last_fullspan_action=%s\n" "$last_fullspan_action"

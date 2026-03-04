@@ -27,6 +27,8 @@ FULLSPAN_POLICY_NAME="fullspan_v1"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 
 
+FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
+
 mkdir -p "$STATE_DIR"
 
 log() {
@@ -579,6 +581,43 @@ with p.open("a", encoding="utf-8") as f:
 PY
 }
 
+run_fullspan_cycle() {
+  local queue_rel="$1"
+  local queue_path="$2"
+  local queue_name="$3"
+  if [[ -z "$queue_rel" || -z "$queue_path" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$queue_path" ]]; then
+    return 0
+  fi
+
+  if [[ -f "$FULLSPAN_CYCLE_STATE_FILE" ]] && grep -Fxq "$queue_rel" "$FULLSPAN_CYCLE_STATE_FILE" 2>/dev/null; then
+    return 0
+  fi
+
+  local safe_name
+  safe_name="$(printf '%s' "$queue_rel" | tr '/.' '__')"
+  local cycle_log="$STATE_DIR/fullspan_cycle_${safe_name}.log"
+
+  log "decision_cycle_start queue=$queue_rel cycle_log=$cycle_log"
+  
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue "$queue_rel" --contains "$queue_name" >> "$cycle_log" 2>&1)
+  local rc=$?
+
+  if [[ "$rc" -eq 0 ]]; then
+    log "decision_cycle_ok queue=$queue_rel"
+    log_decision_note "$queue_rel" "FULLSPAN_CYCLE" "strict+research_ranking_done" "await_next_queue"
+    printf '%s
+' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
+  else
+    log "decision_cycle_fail queue=$queue_rel rc=$rc"
+  fi
+
+  return "$rc"
+}
+
 heartbeat_update() {
   local queue_rel="$1"
   local pending="$2"
@@ -899,6 +938,11 @@ while true; do
 
   heartbeat_update "$queue_rel" "$pending" "$completed" "$total" "$planned" "$running" "$stalled"
 
+  safe_queue_name="$(basename "$queue")"
+  if [[ "$pending" -eq 0 && "$completed" -gt 0 ]]; then
+    run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+  fi
+
   if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
     log "candidate_gated_reject queue=$queue_rel promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
     log_decision_note "$queue_rel" "REJECT" "gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
@@ -1002,6 +1046,10 @@ while true; do
   adaptive_idle_sleep=30
 
   if [[ "$reason" == "no_pending" ]]; then
+    if [[ "$completed" -gt 0 ]]; then
+      safe_queue_name="$(basename "$queue")"
+      run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+    fi
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
     log "no_pending queue=$queue_rel action=WAIT selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
     sleep "$adaptive_idle_sleep"
