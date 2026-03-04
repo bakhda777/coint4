@@ -1,0 +1,9 @@
+[Unit]
+Description=Autonomous WFA Watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+ExecStart=/bin/bash __ROOT_DIR__/scripts/optimization/autonomous_wfa_watchdog.sh

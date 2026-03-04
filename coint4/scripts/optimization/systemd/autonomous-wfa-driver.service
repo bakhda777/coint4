@@ -1,0 +1,15 @@
+[Unit]
+Description=Autonomous WFA Driver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT_DIR__
+ExecStart=/bin/bash __ROOT_DIR__/scripts/optimization/autonomous_wfa_driver.sh
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
