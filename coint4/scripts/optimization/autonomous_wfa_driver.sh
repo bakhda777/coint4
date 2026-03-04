@@ -516,6 +516,50 @@ def emit_scores():
 PY
 }
 
+fallback_pending_candidate() {
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" <<'PY'
+import csv
+from collections import Counter
+from pathlib import Path
+import time
+import sys
+
+queue_root = Path(sys.argv[1])
+out_csv = Path(sys.argv[2])
+
+best = None
+for p in sorted(queue_root.rglob('run_queue.csv')):
+    try:
+        rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
+    except Exception:
+        continue
+    c = Counter((r.get('status') or '').strip().lower() for r in rows)
+    planned = int(c.get('planned', 0))
+    running = int(c.get('running', 0))
+    stalled = int(c.get('stalled', 0))
+    failed = int(c.get('failed', 0)) + int(c.get('error', 0))
+    completed = int(c.get('completed', 0))
+    total = len(rows)
+    pending = planned + running + stalled + failed
+    if pending <= 0 or total <= 0:
+        continue
+    age_min = max(0.0, (time.time() - p.stat().st_mtime) / 60.0)
+    urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + 1.0
+    row = (pending, stalled, running, -int(p.stat().st_mtime), str(p), planned, running, stalled, failed, completed, total, urgency)
+    if best is None or row > best:
+        best = row
+
+if best is None:
+    raise SystemExit(1)
+
+_, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency = best
+out_csv.parent.mkdir(parents=True, exist_ok=True)
+with out_csv.open('w', encoding='utf-8', newline='') as f:
+    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason\n')
+    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{int(Path(queue).stat().st_mtime)},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,\n")
+PY
+}
+
 
 _is_match_running() {
   local pattern="$1"
@@ -2118,6 +2162,7 @@ PY
   fi
 
   if [[ -n "$SERVER_IP" ]]; then
+    ensure_vps_ready "repair_stalled:$queue_rel" || true
     ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel" --compute-host "$SERVER_IP" --ssh-user "$SERVER_USER" --postprocess true --wait-completion false --max-retries "$max_retries") >>"$LOG_FILE" 2>&1 || rc=$?
   else
     ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel") >>"$LOG_FILE" 2>&1 || rc=$?
@@ -2272,6 +2317,38 @@ fullspan_rollup_sync() {
   (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status) >>"$LOG_FILE" 2>&1 || true
   printf '%s %s %s\n' "$now_epoch" "$queue_rel" "${reason:-milestone}" > "$FULLSPAN_ROLLUP_SYNC_MARKER"
   log "fullspan_rollup_sync queue=$queue_rel reason=${reason:-milestone}"
+}
+
+ensure_vps_ready() {
+  local reason="${1:-auto}"
+  local now_epoch
+  now_epoch="$(date +%s)"
+  local last_recover
+  last_recover="$(fullspan_state_metric_get vps_recover_last_epoch 0)"
+  if [[ -z "$last_recover" ]]; then
+    last_recover=0
+  fi
+
+  if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SERVER_USER@$SERVER_IP" 'echo ok' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if (( now_epoch - last_recover < 300 )); then
+    return 1
+  fi
+
+  fullspan_state_metric_set "vps_recover_last_epoch" "$now_epoch"
+  log "vps_recover_attempt reason=$reason"
+  if timeout 180 env SKIP_POWER=0 STOP_AFTER=0 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo ping >>"$LOG_FILE" 2>&1; then
+    fullspan_state_metric_inc "vps_recover_success_count" 1
+    log "vps_recover_success reason=$reason"
+    return 0
+  fi
+
+  fullspan_state_metric_inc "vps_recover_fail_count" 1
+  log_decision_note "global" "VPS_RECOVER_FAIL" "reason=$reason" "await_next_watchdog_cycle"
+  log "vps_recover_fail reason=$reason"
+  return 1
 }
 
 fullspan_confirm_fastlane_pending() {
@@ -2473,6 +2550,7 @@ start_queue() {
   local qlog="$STATE_DIR/run_${stamp}_$(basename "$(dirname "$queue_rel")").log"
 
   log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries"
+  ensure_vps_ready "start_queue:$queue_rel" || true
   (
     cd "$ROOT_DIR"
     AUTONOMOUS_MODE=1 \
@@ -2534,19 +2612,30 @@ while true; do
   fi
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
-    log_state "idle now=none completed=all"
-    log "candidate_empty"
-    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    if fallback_pending_candidate; then
+      log "candidate_fallback_selected reason=no_candidate_file"
+    else
+      log_state "idle now=none completed=all"
+      log "candidate_empty"
+      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+      fi
+      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+        adaptive_idle_sleep=300
+      fi
+      sleep "$adaptive_idle_sleep"
+      continue
     fi
-    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-      adaptive_idle_sleep=300
-    fi
-    sleep "$adaptive_idle_sleep"
-    continue
   fi
 
   IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
+
+  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+    if fallback_pending_candidate; then
+      log "candidate_parse_fallback reason=parse_empty"
+      IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
+    fi
+  fi
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     log_state "idle now=none completed=all"
