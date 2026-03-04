@@ -1538,7 +1538,14 @@ repair_stalled_queue() {
 
   log "repair_stalled queue=$queue_rel parallel=$parallel stale_sec=$hb_stale_sec cause=$cause"
   local rc=0
-  ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel") >>"$LOG_FILE" 2>&1 || rc=$?
+  local max_retries
+  max_retries="$(choose_max_retries "$cause")"
+
+  if [[ -n "$SERVER_IP" ]]; then
+    ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel" --compute-host "$SERVER_IP" --ssh-user "$SERVER_USER" --postprocess true --wait-completion false --max-retries "$max_retries") >>"$LOG_FILE" 2>&1 || rc=$?
+  else
+    ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel") >>"$LOG_FILE" 2>&1 || rc=$?
+  fi
 
   if [[ "$rc" -eq 0 ]]; then
     log "repair_stalled_success queue=$queue_rel"

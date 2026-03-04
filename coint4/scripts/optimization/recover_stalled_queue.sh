@@ -2,19 +2,24 @@
 set -euo pipefail
 
 usage() {
-  cat <<'EOF'
-Usage: recover_stalled_queue.sh --queue <path> [--parallel N]
+  cat <<'USAGE'
+Usage: recover_stalled_queue.sh --queue <path> [--parallel N] [--compute-host HOST] [--ssh-user USER] [--postprocess true|false] [--wait-completion true|false] [--max-retries N]
 
 Recover only stalled entries in a run_queue with fast triage.
 It:
   1) prints queue summary + top error signatures,
-  2) reruns only stalled items,
+  2) reruns only stalled items (locally or via VPS runner),
   3) prints final summary.
-EOF
+USAGE
 }
 
 QUEUE=""
 PARALLEL=4
+COMPUTE_HOST=""
+SSH_USER=""
+POSTPROCESS="true"
+WAIT_COMPLETION="false"
+MAX_RETRIES=2
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --queue)
@@ -23,6 +28,26 @@ while [[ $# -gt 0 ]]; do
       ;;
     --parallel)
       PARALLEL="$2"
+      shift 2
+      ;;
+    --compute-host)
+      COMPUTE_HOST="$2"
+      shift 2
+      ;;
+    --ssh-user)
+      SSH_USER="$2"
+      shift 2
+      ;;
+    --postprocess)
+      POSTPROCESS="$2"
+      shift 2
+      ;;
+    --wait-completion)
+      WAIT_COMPLETION="$2"
+      shift 2
+      ;;
+    --max-retries)
+      MAX_RETRIES="$2"
       shift 2
       ;;
     --help|-h)
@@ -100,11 +125,30 @@ if sig_counter:
         print(f'{v}\t{k}')
 PY
 
-echo "==> rerun stalled only (parallel=$PARALLEL)"
-ALLOW_HEAVY_RUN=1 "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \
-  --queue "$QUEUE" \
-  --statuses stalled \
-  --parallel "$PARALLEL"
+if [[ -n "$COMPUTE_HOST" ]]; then
+  echo "==> rerun stalled only via powered runner (parallel=$PARALLEL compute_host=$COMPUTE_HOST postprocess=$POSTPROCESS wait_completion=$WAIT_COMPLETION max_retries=$MAX_RETRIES)"
+  SSH_USER_OPT=""
+  if [[ -n "$SSH_USER" ]]; then
+    SSH_USER_OPT="--ssh-user $SSH_USER"
+  fi
+  ALLOW_HEAVY_RUN=1 "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue_powered.py" \
+    --queue "$QUEUE" \
+    --compute-host "$COMPUTE_HOST" \
+    ${SSH_USER_OPT:+$SSH_USER_OPT} \
+    --parallel "$PARALLEL" \
+    --statuses stalled \
+    --max-retries "$MAX_RETRIES" \
+    --watchdog true \
+    --wait-completion "$WAIT_COMPLETION" \
+    --postprocess "$POSTPROCESS" \
+    --poweroff false
+else
+  echo "==> rerun stalled only (parallel=$PARALLEL)"
+  ALLOW_HEAVY_RUN=1 "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \
+    --queue "$QUEUE" \
+    --statuses stalled \
+    --parallel "$PARALLEL"
+fi
 
 python3 - <<'PY' "$QUEUE"
 import csv
