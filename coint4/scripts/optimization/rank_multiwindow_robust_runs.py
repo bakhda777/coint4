@@ -304,8 +304,8 @@ def main() -> int:
     parser.add_argument(
         "--max-dd-pct",
         type=float,
-        default=0.40,
-        help="Gate: max window drawdown on equity (abs) must be <= this (default: 0.40 = 40%%).",
+        default=0.20,
+        help="Gate: max window drawdown on equity (abs) must be <= this (default: 0.20 = 20%%).",
     )
     parser.add_argument(
         "--min-pnl",
