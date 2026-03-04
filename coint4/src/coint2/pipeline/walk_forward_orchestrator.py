@@ -2340,8 +2340,20 @@ def run_walk_forward(cfg: AppConfig, use_memory_map: bool = True) -> dict[str, f
         
         if not portfolio.equity_curve.empty:
             equity_series = portfolio.equity_curve.dropna()
-        else:
-            equity_series = pd.Series([cfg.portfolio.initial_capital])
+            # Some edge cases (e.g., all-zero PnL windows) can end up with an empty
+            # non-NaN equity curve while still having valid daily aggregation.
+            # Fallback to a synthetic equity curve from daily pnl so we still
+            # persist artifacts and let ranking gates decide later.
+            if equity_series.empty and not pnl_series.empty:
+                equity_series = (pnl_series.fillna(0).sort_index().cumsum() + cfg.portfolio.initial_capital)
+        if ("equity_series" not in locals()) or equity_series.empty:
+            if not aggregated_pnl.empty:
+                # Last-resort deterministic fallback for robustness.
+                if pnl_series.empty:
+                    pnl_series = pd.Series([0.0])
+                equity_series = (pnl_series.fillna(0).sort_index().cumsum() + cfg.portfolio.initial_capital)
+            else:
+                equity_series = pd.Series([cfg.portfolio.initial_capital])
 
         # Calculate metrics
         logger.info(f"  ⇢ Расчет базовых метрик производительности...")

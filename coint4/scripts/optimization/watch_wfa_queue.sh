@@ -16,6 +16,7 @@ Options:
   --on-done-log <path>     Log file for on-done output (optional).
   --codex-bin <path>       Codex binary (default: env CODEX_BIN or "codex").
   --no-reset-running       Do not reset stale 'running' statuses on startup.
+  --stalled-only           Process only 'stalled' items (instead of planned+stalled).
   --help                   Show this help.
 EOF
 }
@@ -41,6 +42,7 @@ ON_DONE_PROMPT_FILE=""
 ON_DONE_LOG=""
 CODEX_BIN="${CODEX_BIN:-codex}"
 RESET_RUNNING=1
+RUN_STATUSES="planned,stalled"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       RESET_RUNNING=0
       shift 1
       ;;
+    --stalled-only)
+      RUN_STATUSES="stalled"
+      shift 1
+      ;;
     --help|-h)
       usage
       exit 0
@@ -119,9 +125,21 @@ if [[ ! -f "$QUEUE_PATH" ]]; then
 fi
 
 HEAVY_ALLOW_ENV="${HEAVY_ALLOW_ENV:-ALLOW_HEAVY_RUN}"
-HEAVY_HOST_ALLOWLIST="${HEAVY_HOSTNAME_ALLOWLIST:-85.198.90.128,coint}"
+HEAVY_HOST_ALLOWLIST="${HEAVY_HOST_ALLOWLIST:-${HEAVY_HOSTNAME_ALLOWLIST:-85.198.90.128,coint}}"
 HEAVY_MIN_RAM_GB="${HEAVY_MIN_RAM_GB:-28}"
 HEAVY_MIN_CPU="${HEAVY_MIN_CPU:-8}"
+
+python3 - <<'PY'
+from pathlib import Path
+from collections import Counter
+import csv
+import sys
+
+q=Path(sys.argv[1])
+rows=list(csv.DictReader(q.open(newline='')))
+st=Counter((r.get('status') or '').strip().lower() for r in rows)
+print(f"QUEUE_SUMMARY total={len(rows)} planned={st.get('planned',0)} running={st.get('running',0)} completed={st.get('completed',0)} stalled={st.get('stalled',0)} failed={st.get('failed',0)+st.get('error',0)}")
+PY "$QUEUE_PATH"
 
 PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" -m coint2.ops.heavy_guardrails \
   --entrypoint "scripts/optimization/watch_wfa_queue.sh" \
@@ -134,6 +152,16 @@ QUEUE_DIR="$(cd "$(dirname "$QUEUE_PATH")" && pwd)"
 RUN_LOG="$QUEUE_DIR/run_queue.log"
 WATCH_LOG="$QUEUE_DIR/run_queue.watch.log"
 PID_FILE="$QUEUE_DIR/run_queue.pid"
+LOCK_FILE="$QUEUE_DIR/.run_queue.lock"
+
+# Ensure only one watcher/runner for this queue runs at once.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "run_wfa_queue уже выполняется для этой очереди; остановка чтобы избежать конкуренции."
+  echo "LOCK_FILE=$LOCK_FILE"
+  exit 1
+fi
+trap 'flock -u 9; rm -f "$LOCK_FILE"' EXIT
 
 timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -157,24 +185,19 @@ resolve_results_dir_path() {
 }
 
 list_running_results_dirs() {
-  python3 - <<'PY' "$QUEUE_PATH"
-import csv
-import sys
+  python3 -c 'import csv,sys
 from pathlib import Path
-
 queue_path = Path(sys.argv[1])
 if not queue_path.exists():
     sys.exit(0)
-
 with queue_path.open(newline="") as handle:
     reader = csv.DictReader(handle)
     for row in reader:
         if row.get("status") == "running":
             results_dir = row.get("results_dir") or ""
-            results_dir = results_dir.strip()
             if results_dir:
-                print(results_dir)
-PY
+                print(results_dir)'
+  "$QUEUE_PATH"
 }
 
 select_freshest_pid() {
@@ -196,17 +219,12 @@ select_freshest_pid() {
 }
 
 check_max_steps() {
-  python3 - <<'PY' "$QUEUE_PATH" "$ROOT_DIR"
-import csv
-import re
-import sys
+  python3 -c 'import csv, re, sys
 from pathlib import Path
-
 queue_path = Path(sys.argv[1])
 root_dir = Path(sys.argv[2])
 bad = []
 missing = []
-
 with queue_path.open(newline="") as handle:
     reader = csv.DictReader(handle)
     for row in reader:
@@ -222,10 +240,9 @@ with queue_path.open(newline="") as handle:
         raw_value = None
         with path.open() as cfg:
             for line in cfg:
-                match = re.match(r"\s*max_steps:\s*(.*)$", line)
+                match = re.match(r"\\s*max_steps:\\s*(.*)$", line)
                 if match:
                     found = True
-                    # Strip inline comments and surrounding whitespace
                     raw_value = match.group(1).split("#", 1)[0].strip()
                     if raw_value == "" or raw_value.lower() in {"null", "none", "~"}:
                         max_steps = None
@@ -235,8 +252,6 @@ with queue_path.open(newline="") as handle:
                         except ValueError:
                             max_steps = None
                     break
-        # NOTE: default for walk_forward.max_steps is null/None (unbounded),
-        # so missing or null is unsafe for queue runs.
         if not found:
             bad.append((config_path, "missing"))
             continue
@@ -249,24 +264,18 @@ with queue_path.open(newline="") as handle:
 if missing:
     print("WARN: configs missing:", ", ".join(missing))
 if bad:
-    print(
-        "ERROR: unsafe walk_forward.max_steps (must be an explicit integer <= 5 for queue runs):",
-        ", ".join(f"{p}={v}" for p, v in bad),
-    )
+    print("ERROR: unsafe walk_forward.max_steps (must be an explicit integer <= 5 for queue runs):", ", ".join(f"{p}={v}" for p, v in bad))
     sys.exit(2)
-PY
+' "$QUEUE_PATH" "$ROOT_DIR"
 }
 
 reset_running_statuses() {
-  python3 - <<'PY' "$QUEUE_PATH"
-import csv
+  python3 -c 'import csv
 import sys
 from pathlib import Path
-
 queue_path = Path(sys.argv[1])
 rows = []
 changed = 0
-
 with queue_path.open(newline="") as handle:
     reader = csv.DictReader(handle)
     fieldnames = reader.fieldnames
@@ -275,14 +284,13 @@ with queue_path.open(newline="") as handle:
             row["status"] = "stalled"
             changed += 1
         rows.append(row)
-
 if changed:
     with queue_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"Reset {changed} running -> stalled in {queue_path}")
-PY
+    print(f"Reset {changed} running -> stalled in {queue_path}")'
+  "$QUEUE_PATH"
 }
 
 if [[ "$RESET_RUNNING" == "1" ]]; then
@@ -293,11 +301,11 @@ fi
 
 check_max_steps
 
-log_watch "START queue=$QUEUE_PATH parallel=$PARALLEL heartbeat=${HEARTBEAT}s idle_minutes=${IDLE_MINUTES} cpu_threshold=${CPU_THRESHOLD}"
+log_watch "START queue=$QUEUE_PATH parallel=$PARALLEL heartbeat=${HEARTBEAT}s idle_minutes=${IDLE_MINUTES} cpu_threshold=${CPU_THRESHOLD} statuses=${RUN_STATUSES}"
 
 PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \
   --queue "$QUEUE_PATH" \
-  --statuses planned,stalled \
+  --statuses "$RUN_STATUSES" \
   --parallel "$PARALLEL" \
   >"$RUN_LOG" 2>&1 &
 
@@ -465,3 +473,23 @@ if [[ -n "$ON_DONE_CMD" ]]; then
     log_watch "ON_DONE_CMD failed"
   fi
 fi
+
+# Keep last 10 run status updates in queue log for easier triage.
+python3 - <<'PY' "$QUEUE_PATH" "$WATCH_LOG"
+import csv
+import pathlib
+from collections import Counter
+
+queue_path = pathlib.Path(sys.argv[1])
+watch_log = pathlib.Path(sys.argv[2])
+
+rows = []
+if queue_path.exists():
+    with queue_path.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+st = Counter((r.get("status") or "").strip().lower() for r in rows)
+summary = f"QUEUE_SUMMARY total={len(rows)} planned={st.get('planned',0)} running={st.get('running',0)} completed={st.get('completed',0)} stalled={st.get('stalled',0)} failed={st.get('failed',0)+st.get('error',0)}"
+if watch_log.exists():
+    with watch_log.open("a") as fh:
+        fh.write(summary + "\n")
+PY
