@@ -25,6 +25,7 @@ SERVER_ID=${SERVER_ID:-""}
 SERVER_USER=${SERVER_USER:-"root"}
 SSH_KEY=${SSH_KEY:-"${HOME}/.ssh/id_ed25519"}
 QUEUE=${QUEUE:-""}
+DRIVER_STATE_FILE="${DRIVER_STATE_FILE:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/artifacts/wfa/aggregate/.autonomous/driver_state.txt"}"
 SSH_HOSTS_RAW=${SSH_HOSTS:-"${SERVER_IP},coint"}
 
 now_utc() { date -u +"%Y-%m-%d %H:%M:%S UTC"; }
@@ -229,11 +230,18 @@ else
   fi
 fi
 
+driver_state=""
+if [[ -f "$DRIVER_STATE_FILE" ]]; then
+  driver_state="$(tr -d '\r\n' < "$DRIVER_STATE_FILE")"
+fi
+
 printf '%s | vps=%s/%s (%s) | ssh=%s | host=%s | up=%s | load=%s | %s' \
   "$(now_utc)" \
   "${power_state}" "${server_state}" "${SERVER_IP}" \
   "${ssh_ok}" "${ssh_host}" "${ssh_up}" "${ssh_load}" "${queue_line}"
-
+if [[ -n "$driver_state" ]]; then
+  printf ' | driver=%s' "$driver_state"
+fi
 if [[ "$ssh_ok" -eq 0 && -n "$ssh_reason" ]]; then
   printf ' | ssh_err=%s' "$ssh_reason"
 fi
