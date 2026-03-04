@@ -12,7 +12,7 @@ STATE_FILE="$STATE_DIR/driver_state.txt"
 LOG_FILE="$STATE_DIR/driver.log"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
-POWEROFF_AFTER_RUN="${POWEROFF_AFTER_RUN:-false}"
+POWEROFF_AFTER_RUN="${POWEROFF_AFTER_RUN:-true}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
@@ -2320,6 +2320,10 @@ fullspan_rollup_sync() {
   log "fullspan_rollup_sync queue=$queue_rel reason=${reason:-milestone}"
 }
 
+vps_is_reachable() {
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" 'echo ok' >/dev/null 2>&1
+}
+
 ensure_vps_ready() {
   local reason="${1:-auto}"
   local now_epoch
@@ -2330,7 +2334,7 @@ ensure_vps_ready() {
     last_recover=0
   fi
 
-  if ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SERVER_USER@$SERVER_IP" 'echo ok' >/dev/null 2>&1; then
+  if vps_is_reachable; then
     return 0
   fi
 
@@ -2753,6 +2757,13 @@ PY
   sla_watch_queue "$queue_rel" "$pending" "$running" "$state_verdict"
 
   if (( pending > 0 )); then
+    if (( running == 0 )) && ! vps_is_reachable; then
+      no_progress_streak_by_queue["$queue_rel"]=0
+      log "no_progress_pause queue=$queue_rel reason=vps_unreachable pending=$pending"
+      sleep 5
+      continue
+    fi
+
     no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
     if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
       if [[ "$pending" -eq "$prev_pending" && "$running" -eq "$prev_running" && "$stalled" -eq "$prev_stalled" && "$planned" -eq "$prev_planned" && "$failed" -eq "$prev_failed" ]]; then
