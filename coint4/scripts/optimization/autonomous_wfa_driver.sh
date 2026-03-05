@@ -2247,6 +2247,19 @@ remote_runner_count() {
   echo "$remote_count"
 }
 
+remote_queue_running() {
+  local queue_rel="$1"
+  local cnt
+  cnt="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -af \"run_wfa_queue.py --queue ${queue_rel}\" | wc -l" 2>/dev/null || echo 0)"
+  if [[ -z "$cnt" || ! "$cnt" =~ ^[0-9]+$ ]]; then
+    cnt=0
+  fi
+  if (( cnt > 0 )); then
+    return 0
+  fi
+  return 1
+}
+
 sla_watch_queue() {
   local queue_rel="$1"
   local pending="$2"
@@ -2791,6 +2804,15 @@ PY
       no_progress_streak_by_queue["$queue_rel"]=0
       log "no_progress_pause queue=$queue_rel reason=vps_unreachable pending=$pending"
       sleep 5
+      continue
+    fi
+
+    if (( running == 0 && stalled == 0 && planned > 0 )) && remote_queue_running "$queue_rel"; then
+      no_progress_streak_by_queue["$queue_rel"]=0
+      log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
+      sync_queue_status "$queue_rel"
+      fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
+      sleep 3
       continue
     fi
 
