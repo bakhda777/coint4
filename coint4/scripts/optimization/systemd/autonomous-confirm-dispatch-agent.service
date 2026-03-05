@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous WFA Confirm Dispatch Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+ExecStart=__ROOT_DIR__/scripts/optimization/confirm_dispatch_agent.sh
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
