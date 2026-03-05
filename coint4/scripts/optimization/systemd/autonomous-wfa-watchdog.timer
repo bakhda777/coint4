@@ -2,8 +2,9 @@
 Description=Run Autonomous WFA Watchdog every 3 minutes
 
 [Timer]
+OnActiveSec=2min
 OnBootSec=2min
-OnUnitActiveSec=3min
+OnUnitInactiveSec=3min
 AccuracySec=15s
 Persistent=true
 Unit=autonomous-wfa-watchdog.service

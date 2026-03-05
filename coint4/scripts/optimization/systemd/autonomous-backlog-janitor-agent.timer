@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Autonomous Backlog Janitor every 2 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20s
+Unit=autonomous-backlog-janitor-agent.service
+
+[Install]
+WantedBy=timers.target

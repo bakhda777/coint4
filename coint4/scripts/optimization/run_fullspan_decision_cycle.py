@@ -9,6 +9,7 @@ hard-gate failures to save compute.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 import re
@@ -16,6 +17,14 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List
+
+from fullspan_contract import (
+    CONTRACT_NAME,
+    DIAGNOSTIC_RANKING_KEY,
+    FullspanThresholds,
+    PRIMARY_RANKING_KEY,
+    evaluate_variant_contract,
+)
 
 
 def _run(cmd, *, cwd, env, allow_no_matches=False):
@@ -90,6 +99,140 @@ def _extract_strict_reason(text: str) -> str:
     return ""
 
 
+def _to_float(value: object, default: float | None = None) -> float | None:
+    try:
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return default
+        return float(text)
+    except Exception:
+        return default
+
+
+def _replace_arg_value(cmd: List[str], flag: str, value: str) -> None:
+    for idx in range(len(cmd) - 1):
+        if cmd[idx] == flag:
+            cmd[idx + 1] = value
+            return
+    cmd.extend([flag, value])
+
+
+def _strict_contract_summary(
+    args: argparse.Namespace,
+    *,
+    strict_preview: Dict[str, object],
+    run_index_path: Path,
+    strict_rc: int,
+    strict_hard_reason: str,
+) -> Dict[str, object]:
+    rows = list(strict_preview.get("rows", []) or [])
+    thresholds = FullspanThresholds(
+        min_trades=float(args.min_trades),
+        min_pairs=float(args.min_pairs),
+        max_dd_pct=float(args.max_dd_pct),
+        min_pnl=float(args.min_pnl),
+        initial_capital=float(args.initial_capital),
+        max_worst_step_loss_pct=float(args.strict_tail_worst_gate_pct),
+    )
+
+    accepted: list[dict[str, object]] = []
+    rejects: Counter[str] = Counter()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        run_group = str(row.get("run_group") or "").strip()
+        variant_id = str(row.get("variant_id") or "").strip()
+        if not run_group or not variant_id:
+            continue
+        contract = evaluate_variant_contract(
+            run_index_path=run_index_path,
+            run_group=run_group,
+            variant_id=variant_id,
+            thresholds=thresholds,
+            min_windows=int(args.min_windows),
+            tail_quantile=float(args.tail_quantile),
+            tail_q_soft_loss_pct=float(args.tail_q_soft_loss_pct),
+            tail_worst_soft_loss_pct=float(args.tail_worst_soft_loss_pct),
+            tail_q_penalty=float(args.tail_q_penalty),
+            tail_worst_penalty=float(args.tail_worst_penalty),
+        )
+        if not contract.passed or contract.score_fullspan_v1 is None:
+            rejects.update([str(contract.reason or "UNKNOWN")])
+            continue
+
+        accepted.append(
+            {
+                "score_mode": "fullspan_v1_contract",
+                "score": f"{float(contract.score_fullspan_v1):.6f}",
+                PRIMARY_RANKING_KEY: float(contract.score_fullspan_v1),
+                "avg_robust_sharpe": float(contract.avg_robust_sharpe or 0.0),
+                "worst_robust_sharpe": float(contract.worst_robust_sharpe or 0.0),
+                "worst_dd_pct": float(contract.worst_dd_pct or 0.0),
+                "worst_robust_pnl": float(contract.worst_robust_pnl or 0.0),
+                "worst_step_pnl": float(contract.worst_step_pnl or 0.0),
+                "q_step_pnl": float(contract.q_step_pnl or contract.worst_step_pnl or 0.0),
+                "min_total_trades": float(contract.min_total_trades or 0.0),
+                "min_total_pairs_traded": float(contract.min_total_pairs_traded or 0.0),
+                "windows": int(contract.windows_passed),
+                "run_group": contract.run_group,
+                "variant_id": contract.variant_id,
+                "sample_config": contract.sample_config or str(row.get("sample_config") or ""),
+                "contract_pass": True,
+                "contract_reason": "PASS",
+            }
+        )
+
+    accepted.sort(
+        key=lambda rec: (
+            -float(_to_float(rec.get(PRIMARY_RANKING_KEY), -10**9) or -10**9),
+            str(rec.get("run_group") or ""),
+            str(rec.get("variant_id") or ""),
+        ),
+    )
+
+    top = accepted[0] if accepted else {}
+    groups: list[str] = []
+    seen = set()
+    for item in accepted:
+        group = str(item.get("run_group") or "").strip()
+        if group and group not in seen:
+            seen.add(group)
+            groups.append(group)
+
+    if accepted:
+        rejection_reason_line = ""
+        status = "pass"
+        exit_code = 0
+    else:
+        if rejects:
+            reason_parts = [f"{name}:{count}" for name, count in sorted(rejects.items(), key=lambda x: (-x[1], x[0]))]
+            rejection_reason_line = "strict_contract_fail(" + ",".join(reason_parts) + ")"
+        else:
+            rejection_reason_line = strict_hard_reason
+            if not rejection_reason_line and strict_rc == 1:
+                rejection_reason_line = "strict_no_match"
+        status = "reject"
+        exit_code = 1
+
+    return {
+        "pass_count": len(accepted),
+        "run_group_count": len(groups),
+        "run_groups": groups,
+        "rows": accepted,
+        "top_run_group": str(top.get("run_group") or ""),
+        "top_variant": str(top.get("variant_id") or ""),
+        "top_config": str(top.get("sample_config") or ""),
+        "top_score": str(top.get("score") or ""),
+        "rejection_reason_line": rejection_reason_line,
+        "exit_code": exit_code,
+        "status": status,
+        "ranking_primary_key": PRIMARY_RANKING_KEY,
+        "diagnostic_key": DIAGNOSTIC_RANKING_KEY,
+        "contract_name": CONTRACT_NAME,
+        "contract_reject_reasons": dict(rejects),
+    }
+
+
 def _empty_profile_summary(*, pass_count: int = 0, run_groups: List[str] | None = None, reason: str = "") -> Dict[str, object]:
     return {
         "pass_count": int(pass_count),
@@ -114,15 +257,22 @@ def _build_summary(
     diag_rc: int,
     diag_out: str,
     diag_skipped_reason: str,
+    strict_summary_override: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
-    strict_summary = _parse_rank_output(strict_out)
-    strict_summary.update(
-        {
-            "exit_code": strict_rc,
-            "status": "pass" if strict_rc == 0 and strict_summary["pass_count"] > 0 else "reject",
-            "rejection_reason_line": _extract_strict_reason(strict_out) if strict_summary["pass_count"] == 0 else "",
-        }
-    )
+    if strict_summary_override is None:
+        strict_summary = _parse_rank_output(strict_out)
+        strict_summary.update(
+            {
+                "exit_code": strict_rc,
+                "status": "pass" if strict_rc == 0 and strict_summary["pass_count"] > 0 else "reject",
+                "rejection_reason_line": _extract_strict_reason(strict_out) if strict_summary["pass_count"] == 0 else "",
+            }
+        )
+    else:
+        strict_summary = dict(strict_summary_override)
+    strict_summary.setdefault("ranking_primary_key", PRIMARY_RANKING_KEY)
+    strict_summary.setdefault("diagnostic_key", DIAGNOSTIC_RANKING_KEY)
+    strict_summary.setdefault("contract_name", CONTRACT_NAME)
 
     if diag_skipped_reason:
         diagnostic_summary = _empty_profile_summary(reason=diag_skipped_reason)
@@ -149,6 +299,9 @@ def _build_summary(
         "strict_profile": "promote_profile",
         "diagnostic_profile": "research_profile",
         "diagnostic_skipped": bool(diag_skipped_reason),
+        "winner_contract": CONTRACT_NAME,
+        "primary_ranking_key": PRIMARY_RANKING_KEY,
+        "diagnostic_ranking_key": DIAGNOSTIC_RANKING_KEY,
     }
     return result
 
@@ -203,6 +356,12 @@ def main() -> int:
         type=int,
         default=10,
         help="Top N rows for research (diagnostic) profile output.",
+    )
+    parser.add_argument(
+        "--strict-top",
+        type=int,
+        default=200,
+        help="Top N strict candidates passed to fullspan contract validation.",
     )
     parser.add_argument(
         "--run-diagnostic-on-strict-pass",
@@ -285,6 +444,9 @@ def main() -> int:
         )
 
     app_root = Path(__file__).resolve().parents[2]
+    run_index_path = Path(args.run_index)
+    if not run_index_path.is_absolute():
+        run_index_path = app_root / run_index_path
     env = os.environ.copy()
     src = str(app_root / "src")
     existing = str(env.get("PYTHONPATH") or "").strip()
@@ -318,10 +480,6 @@ def main() -> int:
         "--run-index",
         str(args.run_index),
         "--fullspan-policy-v1",
-        "--selection-mode",
-        "fullspan",
-        "--selection-profile",
-        "promote_profile",
         "--min-windows",
         str(args.min_windows),
         "--min-trades",
@@ -348,14 +506,30 @@ def main() -> int:
         str(args.strict_tail_worst_gate_pct),
         "--min-coverage-ratio",
         str(args.min_coverage_ratio),
+        "--top",
+        str(args.strict_top),
     ]
     for needle in args.contains:
         strict_cmd.extend(["--contains", str(needle)])
     strict_rc, strict_out = _run(strict_cmd, cwd=app_root, env=env, allow_no_matches=True)
     strict_hard_reason = _extract_strict_reason(strict_out)
     strict_preview = _parse_rank_output(strict_out)
-    strict_pass_detected = bool(strict_rc == 0 and int(strict_preview.get("pass_count", 0) or 0) > 0)
+    strict_contract = _strict_contract_summary(
+        args,
+        strict_preview=strict_preview,
+        run_index_path=run_index_path,
+        strict_rc=strict_rc,
+        strict_hard_reason=strict_hard_reason,
+    )
+    strict_pass_detected = bool(int(strict_contract.get("pass_count", 0) or 0) > 0)
     print(f"[cycle] strict_profile_rc={strict_rc}")
+    print(
+        "[cycle] strict_contract pass_count={pass_count} run_groups={run_groups} primary_key={primary_key}".format(
+            pass_count=strict_contract.get("pass_count", 0),
+            run_groups=strict_contract.get("run_group_count", 0),
+            primary_key=PRIMARY_RANKING_KEY,
+        )
+    )
 
     # 4) Optional diagnostic research profile.
     # If strict profile has explicit hard-gate hard-fail (or strict-pass fast-lane), diagnostic is skipped.
@@ -364,6 +538,8 @@ def main() -> int:
     diag_skip_reason = ""
     if strict_rc == 1 and strict_hard_reason:
         diag_skip_reason = f"strict_hard_fail: {strict_hard_reason}"
+    elif not strict_pass_detected:
+        diag_skip_reason = f"strict_contract_fail: {strict_contract.get('rejection_reason_line', 'no_pass')}"
     elif strict_pass_detected and not args.run_diagnostic_on_strict_pass:
         diag_skip_reason = "strict_pass_fastlane"
     else:
@@ -373,12 +549,8 @@ def main() -> int:
             f"top={args.research_top}"
         )
         diag_cmd = strict_cmd.copy()
-        gate_idx = diag_cmd.index("--tail-worst-gate-pct") + 1
-        diag_cmd[gate_idx] = str(args.diagnostic_tail_worst_gate_pct)
-        # diagnostic should stay conservative diagnostics-only; keep strict top-K
-        # as in default reporting flow while allowing weaker diagnostics gate.
-        diag_cmd.extend(["--top", str(args.research_top)])
-        diag_cmd[diag_cmd.index("--selection-profile") + 1] = "research_profile"
+        _replace_arg_value(diag_cmd, "--tail-worst-gate-pct", str(args.diagnostic_tail_worst_gate_pct))
+        _replace_arg_value(diag_cmd, "--top", str(args.research_top))
         diag_rc, diag_out = _run(diag_cmd, cwd=app_root, env=env, allow_no_matches=True)
         print(f"[cycle] research_profile_rc={diag_rc}")
 
@@ -390,6 +562,7 @@ def main() -> int:
         diag_rc=diag_rc,
         diag_out=diag_out,
         diag_skipped_reason=diag_skip_reason,
+        strict_summary_override=strict_contract,
     )
     print(f"[cycle] strict_pass_count={summary['strict'].get('pass_count', 0)}")
     print(f"[cycle] strict_run_groups={summary['strict'].get('run_group_count', 0)}")

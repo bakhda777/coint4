@@ -23,11 +23,70 @@ is_driver_running() {
 }
 
 is_local_runner_busy() {
-  pgrep -f "run_wfa_queue_powered.py --queue|watch_wfa_queue.sh --queue|scripts/optimization/run_wfa_queue.py --queue" >/dev/null 2>&1
+  python3 - <<'PY'
+import os
+import sys
+
+patterns = (
+    "run_wfa_queue_powered.py --queue",
+    "watch_wfa_queue.sh --queue",
+    "scripts/optimization/run_wfa_queue.py --queue",
+)
+self_pids = {str(os.getpid()), str(os.getppid())}
+
+for pid in os.listdir("/proc"):
+    if not pid.isdigit() or pid in self_pids:
+        continue
+    try:
+        cmd = (
+            open(f"/proc/{pid}/cmdline", "rb")
+            .read()
+            .replace(b"\x00", b" ")
+            .decode("utf-8", "ignore")
+            .strip()
+        )
+    except Exception:
+        continue
+    if not cmd:
+        continue
+    if "pgrep -f" in cmd or "python3 - <<" in cmd:
+        continue
+    if any(p in cmd for p in patterns):
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
 }
 
 remote_runner_count() {
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SERVER_USER@$SERVER_IP" "pgrep -f 'watch_wfa_queue.sh|run_wfa_queue.py|python.*walk_forward|postprocess_queue.py' | wc -l" 2>/dev/null || echo "0"
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
+import os
+
+patterns = (
+    'watch_wfa_queue.sh',
+    'run_wfa_queue.py',
+    'run_wfa_fullcpu.sh',
+    'walk_forward',
+    'postprocess_queue.py',
+)
+
+count = 0
+for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+        continue
+    try:
+        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
+    except Exception:
+        continue
+    if not cmd:
+        continue
+    if 'python3 - <<' in cmd or 'pgrep -f' in cmd:
+        continue
+    if any(p in cmd for p in patterns):
+        count += 1
+
+print(count)
+PY" 2>/dev/null || echo "0"
 }
 
 queue_snapshot() {

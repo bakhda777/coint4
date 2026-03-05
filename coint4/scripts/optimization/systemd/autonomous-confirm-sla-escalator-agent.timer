@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Confirm SLA Escalator every 2 minutes
+
+[Timer]
+OnBootSec=130s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-confirm-sla-escalator-agent.service
+
+[Install]
+WantedBy=timers.target

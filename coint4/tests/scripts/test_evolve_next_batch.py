@@ -194,11 +194,15 @@ def test_evolve_next_batch_writes_queue_and_decision(tmp_path: Path) -> None:
         rows = list(csv.DictReader(handle))
     assert rows
     assert all(str(row.get("status") or "").strip() == "planned" for row in rows)
+    assert all(str(row.get("lineage_uid") or "").strip().startswith("lnuid_") for row in rows)
+    assert all('"lineage_uid"' in str(row.get("metadata_json") or "") for row in rows)
 
     decisions = sorted(decision_dir.glob("*.json"))
     assert decisions
     payload = json.loads(decisions[-1].read_text(encoding="utf-8"))
     assert payload["run_group"] == "rgwrite_next"
     assert payload["llm_policy"]["used"] is False
+    assert payload["lineage"]["uid_field"] == "lineage_uid"
+    assert payload["lineage"]["unique_uids"] >= 1
     assert payload["operators"][0]["kind"] in {"crossover_uniform_v1", "coordinate_sweep_v1"}
     assert state_path.exists()

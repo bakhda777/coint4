@@ -1,0 +1,3 @@
+base_config: configs/evolution/20260226_evo_smoke_i134_20260301_141409/20260226_evo_smoke_i134_20260301_141409_v008_evo_c4ac83af46e4_oos20240501_20250630.yaml
+portfolio:
+  risk_per_position_pct: 0.012999999999999998

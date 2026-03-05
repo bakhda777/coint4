@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Confirm Diversity Guard every 2 minutes
+
+[Timer]
+OnBootSec=110s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-confirm-diversity-guard-agent.service
+
+[Install]
+WantedBy=timers.target

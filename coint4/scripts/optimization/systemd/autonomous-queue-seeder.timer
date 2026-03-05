@@ -1,9 +1,9 @@
 [Unit]
-Description=Run Autonomous WFA Queue Seeder every 5 minutes
+Description=Run Autonomous WFA Queue Seeder every 2 minutes
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=5min
+OnUnitActiveSec=2min
 AccuracySec=15s
 Persistent=true
 Unit=autonomous-queue-seeder.service

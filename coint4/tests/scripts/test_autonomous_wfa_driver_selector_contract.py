@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -34,7 +36,7 @@ def _write_queue(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow(row)
 
 
-def test_find_candidate_prefers_executable_pending_over_higher_urgency(tmp_path: Path) -> None:
+def test_find_candidate_prefers_planned_over_stalled_only_even_with_higher_urgency(tmp_path: Path) -> None:
     app_root = tmp_path
     (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
     (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
@@ -44,10 +46,13 @@ def test_find_candidate_prefers_executable_pending_over_higher_urgency(tmp_path:
 
     queue_root = app_root / "artifacts" / "wfa" / "aggregate"
     queue_exec = queue_root / "exec_group" / "run_queue.csv"
-    queue_nonexec = queue_root / "nonexec_group" / "run_queue.csv"
+    queue_stalled = queue_root / "stalled_group" / "run_queue.csv"
     config_exec = app_root / "configs" / "executable.yaml"
     config_exec.parent.mkdir(parents=True, exist_ok=True)
     config_exec.write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    for idx in range(1, 6):
+        cfg = app_root / "configs" / f"stalled_{idx}.yaml"
+        cfg.write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
 
     _write_queue(
         queue_exec,
@@ -60,23 +65,14 @@ def test_find_candidate_prefers_executable_pending_over_higher_urgency(tmp_path:
         ],
     )
     _write_queue(
-        queue_nonexec,
+        queue_stalled,
         [
             {
-                "config_path": "configs/missing_01.yaml",
-                "results_dir": "artifacts/wfa/runs/nonexec_group/run_01",
+                "config_path": f"configs/stalled_{idx}.yaml",
+                "results_dir": f"artifacts/wfa/runs/stalled_group/run_{idx:02d}",
                 "status": "stalled",
-            },
-            {
-                "config_path": "configs/missing_02.yaml",
-                "results_dir": "artifacts/wfa/runs/nonexec_group/run_02",
-                "status": "stalled",
-            },
-            {
-                "config_path": "configs/missing_03.yaml",
-                "results_dir": "artifacts/wfa/runs/nonexec_group/run_03",
-                "status": "stalled",
-            },
+            }
+            for idx in range(1, 6)
         ],
     )
 
@@ -94,6 +90,7 @@ def test_find_candidate_prefers_executable_pending_over_higher_urgency(tmp_path:
             "0.70",
             "2",
             "2",
+            "0.20",
         ],
         cwd=app_root,
     )
@@ -104,7 +101,154 @@ def test_find_candidate_prefers_executable_pending_over_higher_urgency(tmp_path:
     selected_queue = rows[0]["queue"]
 
     assert selected_queue == str(queue_exec.relative_to(app_root))
-    assert selected_queue != str(queue_nonexec.relative_to(app_root))
+    assert selected_queue != str(queue_stalled.relative_to(app_root))
+    assert rows[0]["effective_planned_count"] == "1"
+    assert 0.0 <= float(rows[0]["stalled_share"]) <= 1.0
+    float(rows[0]["queue_yield_score"])
+
+
+def test_find_candidate_penalizes_high_stalled_share_queue(tmp_path: Path) -> None:
+    app_root = tmp_path
+    (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
+    (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
+        FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_high = queue_root / "high_stalled_share" / "run_queue.csv"
+    queue_lower = queue_root / "lower_stalled_share" / "run_queue.csv"
+    for idx in range(1, 12):
+        cfg = app_root / "configs" / f"share_{idx}.yaml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    _write_queue(
+        queue_high,
+        [
+            {
+                "config_path": f"configs/share_{idx}.yaml",
+                "results_dir": f"artifacts/wfa/runs/high_stalled_share/run_{idx:02d}",
+                "status": "stalled" if idx <= 5 else "failed",
+            }
+            for idx in range(1, 11)
+        ],
+    )
+    _write_queue(
+        queue_lower,
+        [
+            {
+                "config_path": f"configs/share_{idx}.yaml",
+                "results_dir": f"artifacts/wfa/runs/lower_stalled_share/run_{idx:02d}",
+                "status": "stalled" if idx <= 4 else ("running" if idx <= 9 else "failed"),
+            }
+            for idx in range(1, 11)
+        ],
+    )
+
+    out_csv = app_root / "candidate.csv"
+    code = _extract_embedded_python("find_candidate") + "\nemit_scores()\n"
+    _run_embedded_python(
+        code,
+        [
+            str(queue_root),
+            str(out_csv),
+            "",
+            "",
+            "8",
+            "",
+            "0.70",
+            "2",
+            "2",
+            "0.20",
+        ],
+        cwd=app_root,
+    )
+
+    with out_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert rows, "candidate output must contain one selected queue"
+    selected_queue = rows[0]["queue"]
+    assert selected_queue == str(queue_lower.relative_to(app_root))
+    assert float(rows[0]["stalled_share"]) <= 0.5
+    assert float(rows[0]["queue_yield_score"]) >= float(rows[0]["pre_rank_score"]) - 1000.0
+
+
+def test_fallback_pending_candidate_handles_relative_root_skip_forms_and_mtime(tmp_path: Path) -> None:
+    app_root = tmp_path
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_old = queue_root / "old_group" / "run_queue.csv"
+    queue_new = queue_root / "new_group" / "run_queue.csv"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "old.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    (app_root / "configs" / "new.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    _write_queue(
+        queue_old,
+        [
+            {
+                "config_path": "configs/old.yaml",
+                "results_dir": "artifacts/wfa/runs/old_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    _write_queue(
+        queue_new,
+        [
+            {
+                "config_path": "configs/new.yaml",
+                "results_dir": "artifacts/wfa/runs/new_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+
+    now = time.time()
+    os.utime(queue_old, (now - 3600, now - 3600))
+    os.utime(queue_new, (now - 30, now - 30))
+
+    out_csv = app_root / "candidate.csv"
+    code = _extract_embedded_python("fallback_pending_candidate")
+    rel_queue_root = str(queue_root.relative_to(app_root))
+
+    def _select(queue_root_arg: str, skip_queue: str) -> dict[str, str]:
+        _run_embedded_python(
+            code,
+            [
+                queue_root_arg,
+                str(out_csv),
+                "",
+                skip_queue,
+                "",
+            ],
+            cwd=app_root,
+        )
+        with out_csv.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        assert rows, "fallback candidate output must contain one selected queue"
+        return rows[0]
+
+    first = _select(rel_queue_root, "")
+    first_queue = first["queue"]
+    assert first_queue
+    assert not Path(first_queue).is_absolute()
+    assert int(first["mtime"]) == int((app_root / first_queue).stat().st_mtime)
+
+    second = _select(rel_queue_root, first_queue)
+    second_queue = second["queue"]
+    assert second_queue != first_queue
+    assert int(second["mtime"]) == int((app_root / second_queue).stat().st_mtime)
+
+    second_abs = str((app_root / second_queue).resolve())
+    third = _select(str(queue_root), second_abs)
+    third_queue = third["queue"]
+    assert third_queue == first_queue
+
+    fourth = _select(str(queue_root), "/" + third_queue.lstrip("/"))
+    assert fourth["queue"] == second_queue
 
 
 def test_log_decision_note_writes_contract_fields_and_keeps_compat(tmp_path: Path) -> None:

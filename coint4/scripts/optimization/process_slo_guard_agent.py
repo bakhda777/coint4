@@ -1,0 +1,558 @@
+#!/usr/bin/env python3
+"""Process SLO/WIP guard for strict fullspan autonomous loop.
+
+Writes machine-readable state consumed by the 10-minute human report:
+- artifacts/wfa/aggregate/.autonomous/process_slo_state.json
+- artifacts/wfa/aggregate/.autonomous/process_slo_events.jsonl
+
+Fail-closed semantics:
+- alerts are observational only; promotion authority stays with gatekeeper/auditor.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import fcntl
+import json
+import os
+import time
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+PENDING_STATUSES = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
+CONFIRM_PENDING_VERDICTS = {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def now_epoch() -> int:
+    return int(time.time())
+
+
+def load_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def dump_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def append_log(path: Path, message: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{utc_now_iso()} | {message}\n")
+
+
+def parse_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return default
+
+
+def parse_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value or 0.0)
+    except Exception:
+        return default
+
+
+def parse_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def resolve_under_root(path_text: str, root: Path) -> Path:
+    path = Path(str(path_text or "").strip())
+    if path.is_absolute():
+        return path
+    return root / path
+
+
+def detect_local_runner_count() -> int:
+    patterns = (
+        "run_wfa_queue_powered.py --queue",
+        "watch_wfa_queue.sh --queue",
+        "scripts/optimization/run_wfa_queue.py --queue",
+    )
+    count = 0
+    current = str(os.getpid())
+    parent = str(os.getppid())
+
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or pid in {current, parent}:
+            continue
+        try:
+            cmd = (
+                Path(f"/proc/{pid}/cmdline")
+                .read_bytes()
+                .replace(b"\x00", b" ")
+                .decode("utf-8", "ignore")
+                .strip()
+            )
+        except Exception:
+            continue
+        if not cmd:
+            continue
+        if "python3 - <<" in cmd or "pgrep -f" in cmd:
+            continue
+        if any(pattern in cmd for pattern in patterns):
+            count += 1
+    return count
+
+
+def read_remote_runner_snapshot(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {"reachable": False, "runner_count": -1}
+
+    remote = data.get("remote", {})
+    if not isinstance(remote, dict):
+        remote = {}
+
+    return {
+        "reachable": parse_bool(remote.get("reachable"), False),
+        "runner_count": parse_int(remote.get("runner_count"), -1),
+    }
+
+
+def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
+    totals = Counter()
+    per_queue: dict[str, dict[str, int]] = {}
+
+    for queue_path in sorted(aggregate_root.glob("*/run_queue.csv")):
+        queue_rel = str(queue_path)
+        try:
+            queue_rel = str(queue_path.relative_to(app_root)).replace("\\", "/")
+        except Exception:
+            queue_rel = queue_path.as_posix()
+
+        row_count = 0
+        completed = 0
+        pending = 0
+        running = 0
+        stalled = 0
+        failed = 0
+        executable_rows = 0
+        executable_pending = 0
+
+        try:
+            rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
+        except Exception:
+            continue
+
+        for row in rows:
+            row_count += 1
+            status = str(row.get("status") or "").strip().lower()
+            config_path = str(row.get("config_path") or "").strip()
+
+            cfg_exists = False
+            if config_path:
+                cfg_exists = resolve_under_root(config_path, app_root).exists()
+            if cfg_exists or status == "running":
+                executable_rows += 1
+
+            if status == "completed":
+                completed += 1
+            if status in PENDING_STATUSES:
+                pending += 1
+                if (cfg_exists or status == "running"):
+                    executable_pending += 1
+            if status == "running":
+                running += 1
+            elif status == "stalled":
+                stalled += 1
+            elif status in {"failed", "error"}:
+                failed += 1
+
+        per_queue[queue_rel] = {
+            "total": row_count,
+            "completed": completed,
+            "pending": pending,
+            "running": running,
+            "stalled": stalled,
+            "failed": failed,
+            "executable_rows": executable_rows,
+            "executable_pending": executable_pending,
+        }
+
+        totals["total"] += row_count
+        totals["completed"] += completed
+        totals["pending"] += pending
+        totals["running"] += running
+        totals["stalled"] += stalled
+        totals["failed"] += failed
+        totals["executable_rows"] += executable_rows
+        totals["executable_pending"] += executable_pending
+
+    return {
+        "totals": dict(totals),
+        "per_queue": per_queue,
+    }
+
+
+def should_emit(*, state: dict[str, Any], key: str, cooldown_sec: int, now: int) -> bool:
+    last_emit = state.setdefault("last_emit", {})
+    if not isinstance(last_emit, dict):
+        last_emit = {}
+        state["last_emit"] = last_emit
+    prev = parse_int(last_emit.get(key), 0)
+    if now - prev < max(0, int(cooldown_sec)):
+        return False
+    last_emit[key] = now
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Process SLO/WIP guard for autonomous fullspan loop.")
+    parser.add_argument("--root", default="", help="App root (`coint4/`).")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    root = Path(args.root).resolve() if str(args.root or "").strip() else Path(__file__).resolve().parents[2]
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+
+    lock_path = state_dir / "process_slo_guard.lock"
+    state_path = state_dir / "process_slo_state.json"
+    events_path = state_dir / "process_slo_events.jsonl"
+    log_path = state_dir / "process_slo_guard.log"
+    fullspan_state_path = state_dir / "fullspan_decision_state.json"
+    capacity_state_path = state_dir / "capacity_controller_state.json"
+
+    now = now_epoch()
+    ts = utc_now_iso()
+
+    wip_search_max = parse_int(os.environ.get("PROCESS_WIP_SEARCH_MAX", "600"), 600)
+    wip_confirm_max = parse_int(os.environ.get("PROCESS_WIP_CONFIRM_MAX", "6"), 6)
+    sla_strict_pass_sec = parse_int(os.environ.get("PROCESS_SLA_STRICT_PASS_SEC", "21600"), 21600)
+    sla_confirm_pending_sec = parse_int(
+        os.environ.get("PROCESS_SLA_CONFIRM_PENDING_SEC", os.environ.get("SLA_CONFIRM_PENDING_SEC", "7200")),
+        7200,
+    )
+    sla_no_runner_pending_sec = parse_int(os.environ.get("PROCESS_SLA_NO_RUNNER_PENDING_SEC", "900"), 900)
+    stalled_ratio_warn = parse_float(os.environ.get("PROCESS_STALLED_RATIO_WARN", "0.60"), 0.60)
+    event_cooldown_sec = parse_int(os.environ.get("PROCESS_SLO_EVENT_COOLDOWN_SEC", "1800"), 1800)
+    min_groups = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_GROUPS", "2"), 2)
+    min_replies = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_REPLIES", "2"), 2)
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+
+    with lock_path.open("w", encoding="utf-8") as lock_handle:
+        try:
+            fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return 0
+
+        prev_state = load_json(state_path, {})
+        if not isinstance(prev_state, dict):
+            prev_state = {}
+
+        process_start_epoch = parse_int(prev_state.get("process_start_epoch"), 0)
+        if process_start_epoch <= 0:
+            process_start_epoch = now
+
+        qstats = queue_stats(aggregate_root=aggregate_root, app_root=root)
+        totals = qstats.get("totals", {}) if isinstance(qstats, dict) else {}
+
+        total_rows = parse_int(totals.get("total"), 0)
+        completed_rows = parse_int(totals.get("completed"), 0)
+        pending_rows = parse_int(totals.get("pending"), 0)
+        running_rows = parse_int(totals.get("running"), 0)
+        stalled_rows = parse_int(totals.get("stalled"), 0)
+        failed_rows = parse_int(totals.get("failed"), 0)
+        executable_rows = parse_int(totals.get("executable_rows"), 0)
+        executable_pending_rows = parse_int(totals.get("executable_pending"), 0)
+
+        fullspan_state = load_json(fullspan_state_path, {})
+        queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
+        if not isinstance(queues, dict):
+            queues = {}
+
+        strict_pass_count = 0
+        confirm_ready_count = 0
+        promote_eligible_count = 0
+        confirm_pending_count = 0
+        overdue_confirm_queues: list[str] = []
+        verdict_counts = Counter()
+
+        for queue_rel, entry in queues.items():
+            if not isinstance(entry, dict):
+                continue
+            verdict = str(entry.get("promotion_verdict") or "ANALYZE").strip().upper() or "ANALYZE"
+            verdict_counts[verdict] += 1
+
+            strict_pass = parse_int(entry.get("strict_pass_count"), 0)
+            strict_groups = parse_int(entry.get("strict_run_group_count"), 0)
+            confirm_count = parse_int(entry.get("confirm_count"), 0)
+            confirm_lineage_count = parse_int(entry.get("confirm_verified_lineage_count"), 0)
+            contract_hard_pass = bool(entry.get("contract_hard_pass"))
+
+            if strict_pass > 0:
+                strict_pass_count += 1
+
+            if verdict in CONFIRM_PENDING_VERDICTS:
+                confirm_pending_count += 1
+                pending_since = parse_int(entry.get("confirm_pending_since_epoch"), 0)
+                if pending_since > 0 and (now - pending_since) >= sla_confirm_pending_sec:
+                    overdue_confirm_queues.append(str(queue_rel))
+
+            if verdict == "PROMOTE_ELIGIBLE":
+                promote_eligible_count += 1
+
+            if (
+                strict_pass > 0
+                and strict_groups >= min_groups
+                and confirm_count >= min_replies
+                and confirm_lineage_count >= min_replies
+                and contract_hard_pass
+            ):
+                confirm_ready_count += 1
+
+        prev_epoch = parse_int(prev_state.get("ts_epoch"), now)
+        prev_completed_rows = parse_int(prev_state.get("kpi", {}).get("completed_rows"), completed_rows)
+        elapsed_sec = max(1, now - prev_epoch)
+        completed_delta = max(0, completed_rows - prev_completed_rows)
+        throughput_completed_per_hour = float(completed_delta) * 3600.0 / float(elapsed_sec)
+
+        strict_pass_rate = (float(strict_pass_count) / float(completed_rows)) if completed_rows > 0 else 0.0
+        confirm_conversion_rate = (
+            float(confirm_ready_count) / float(strict_pass_count) if strict_pass_count > 0 else 0.0
+        )
+        promote_conversion_rate = (
+            float(promote_eligible_count) / float(confirm_ready_count) if confirm_ready_count > 0 else 0.0
+        )
+
+        first_strict_pass_epoch = parse_int(prev_state.get("first_strict_pass_epoch"), 0)
+        if first_strict_pass_epoch <= 0 and strict_pass_count > 0:
+            first_strict_pass_epoch = now
+
+        first_promote_epoch = parse_int(prev_state.get("first_promote_epoch"), 0)
+        if first_promote_epoch <= 0 and promote_eligible_count > 0:
+            first_promote_epoch = now
+
+        lead_time_to_promote_min = None
+        if first_strict_pass_epoch > 0 and first_promote_epoch > 0 and first_promote_epoch >= first_strict_pass_epoch:
+            lead_time_to_promote_min = round((first_promote_epoch - first_strict_pass_epoch) / 60.0, 2)
+
+        local_runner_count = detect_local_runner_count()
+        remote_snapshot = read_remote_runner_snapshot(capacity_state_path)
+        remote_runner_count = parse_int(remote_snapshot.get("runner_count"), -1)
+        remote_reachable = bool(remote_snapshot.get("reachable"))
+        idle_with_executable_pending = bool(
+            executable_pending_rows > 0
+            and local_runner_count <= 0
+            and remote_reachable
+            and remote_runner_count == 0
+        )
+
+        no_runner_since_epoch = parse_int(prev_state.get("no_runner_since_epoch"), 0)
+        if pending_rows > 0 and local_runner_count <= 0:
+            if no_runner_since_epoch <= 0:
+                no_runner_since_epoch = now
+        else:
+            no_runner_since_epoch = 0
+
+        no_runner_pending_age_sec = (now - no_runner_since_epoch) if no_runner_since_epoch > 0 else 0
+        stalled_ratio = (float(stalled_rows) / float(pending_rows)) if pending_rows > 0 else 0.0
+
+        alerts: list[dict[str, Any]] = []
+
+        if pending_rows > wip_search_max:
+            alerts.append(
+                {
+                    "code": "WIP_SEARCH_OVERFLOW",
+                    "severity": "warning",
+                    "message": f"pending={pending_rows} > wip_search_max={wip_search_max}",
+                }
+            )
+        if confirm_pending_count > wip_confirm_max:
+            alerts.append(
+                {
+                    "code": "WIP_CONFIRM_OVERFLOW",
+                    "severity": "warning",
+                    "message": f"confirm_pending={confirm_pending_count} > wip_confirm_max={wip_confirm_max}",
+                }
+            )
+        if strict_pass_count <= 0 and (now - process_start_epoch) >= sla_strict_pass_sec:
+            alerts.append(
+                {
+                    "code": "SLA_STRICT_PASS_BREACH",
+                    "severity": "critical",
+                    "message": (
+                        f"time_to_first_strict_pass={now - process_start_epoch}s >= "
+                        f"{sla_strict_pass_sec}s"
+                    ),
+                }
+            )
+        if overdue_confirm_queues:
+            alerts.append(
+                {
+                    "code": "SLA_CONFIRM_PENDING_BREACH",
+                    "severity": "warning",
+                    "message": (
+                        f"overdue_confirm_queues={len(overdue_confirm_queues)} "
+                        f"(sla={sla_confirm_pending_sec}s)"
+                    ),
+                    "queues": overdue_confirm_queues[:20],
+                }
+            )
+        if no_runner_pending_age_sec >= sla_no_runner_pending_sec:
+            alerts.append(
+                {
+                    "code": "SLA_NO_RUNNER_PENDING",
+                    "severity": "warning",
+                    "message": (
+                        f"pending={pending_rows} without local_runner for "
+                        f"{no_runner_pending_age_sec}s >= {sla_no_runner_pending_sec}s"
+                    ),
+                }
+            )
+        if pending_rows > 0 and stalled_ratio >= stalled_ratio_warn:
+            alerts.append(
+                {
+                    "code": "STALLED_RATIO_HIGH",
+                    "severity": "warning",
+                    "message": (
+                        f"stalled_ratio={stalled_ratio:.3f} >= warn={stalled_ratio_warn:.3f} "
+                        f"(stalled={stalled_rows}, pending={pending_rows})"
+                    ),
+                }
+            )
+
+        event_state = dict(prev_state)
+        emitted = 0
+        for alert in alerts:
+            code = str(alert.get("code") or "UNKNOWN")
+            key = f"process_alert:{code}"
+            if should_emit(state=event_state, key=key, cooldown_sec=event_cooldown_sec, now=now):
+                append_jsonl(
+                    events_path,
+                    {
+                        "ts": ts,
+                        "event": code,
+                        "severity": alert.get("severity", "warning"),
+                        "payload": alert,
+                    },
+                )
+                emitted += 1
+
+        summary = {
+            "ts": ts,
+            "ts_epoch": now,
+            "process_start_epoch": process_start_epoch,
+            "first_strict_pass_epoch": first_strict_pass_epoch,
+            "first_promote_epoch": first_promote_epoch,
+            "funnel": {
+                "generated": total_rows,
+                "executable": executable_rows,
+                "completed": completed_rows,
+                "strict_pass": strict_pass_count,
+                "confirm_ready": confirm_ready_count,
+                "promote_eligible": promote_eligible_count,
+            },
+            "queue": {
+                "pending": pending_rows,
+                "executable_pending": executable_pending_rows,
+                "running": running_rows,
+                "stalled": stalled_rows,
+                "failed": failed_rows,
+                "local_runner_count": local_runner_count,
+                "remote_runner_count": remote_runner_count,
+                "remote_reachable": remote_reachable,
+                "idle_with_executable_pending": idle_with_executable_pending,
+            },
+            "kpi": {
+                "completed_rows": completed_rows,
+                "completed_delta": completed_delta,
+                "throughput_completed_per_hour": round(throughput_completed_per_hour, 3),
+                "strict_pass_rate": round(strict_pass_rate, 6),
+                "confirm_conversion_rate": round(confirm_conversion_rate, 6),
+                "promote_conversion_rate": round(promote_conversion_rate, 6),
+                "lead_time_to_promote_min": lead_time_to_promote_min,
+                "executable_pending_rows": executable_pending_rows,
+                "local_runner_count": local_runner_count,
+                "remote_runner_count": remote_runner_count,
+                "idle_with_executable_pending": idle_with_executable_pending,
+            },
+            "wip": {
+                "search_max": wip_search_max,
+                "confirm_max": wip_confirm_max,
+                "search_pending": pending_rows,
+                "confirm_pending": confirm_pending_count,
+                "stalled_ratio": round(stalled_ratio, 6),
+                "stalled_ratio_warn": stalled_ratio_warn,
+            },
+            "sla": {
+                "strict_pass_sec": sla_strict_pass_sec,
+                "confirm_pending_sec": sla_confirm_pending_sec,
+                "no_runner_pending_sec": sla_no_runner_pending_sec,
+                "no_runner_pending_age_sec": no_runner_pending_age_sec,
+            },
+            "verdicts": dict(verdict_counts),
+            "alerts": alerts,
+            "alerts_count": len(alerts),
+            "events_emitted": emitted,
+            "overdue_confirm_queues": overdue_confirm_queues,
+            "last_emit": event_state.get("last_emit", {}),
+        }
+
+        if not args.dry_run:
+            dump_json(state_path, summary)
+
+        append_log(
+            log_path,
+            (
+                "funnel generated={generated} executable={executable} completed={completed} "
+                "strict_pass={strict_pass} confirm_ready={confirm_ready} promote={promote_eligible} "
+                "pending={pending} stalled={stalled} local_runner={local_runner} remote_runner={remote_runner} "
+                "idle_with_executable_pending={idle_with_executable_pending} "
+                "alerts={alerts} emitted={emitted}"
+            ).format(
+                generated=summary["funnel"]["generated"],
+                executable=summary["funnel"]["executable"],
+                completed=summary["funnel"]["completed"],
+                strict_pass=summary["funnel"]["strict_pass"],
+                confirm_ready=summary["funnel"]["confirm_ready"],
+                promote_eligible=summary["funnel"]["promote_eligible"],
+                pending=summary["queue"]["pending"],
+                stalled=summary["queue"]["stalled"],
+                local_runner=summary["queue"]["local_runner_count"],
+                remote_runner=summary["queue"]["remote_runner_count"],
+                idle_with_executable_pending=int(bool(summary["queue"]["idle_with_executable_pending"])),
+                alerts=summary["alerts_count"],
+                emitted=summary["events_emitted"],
+            ),
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

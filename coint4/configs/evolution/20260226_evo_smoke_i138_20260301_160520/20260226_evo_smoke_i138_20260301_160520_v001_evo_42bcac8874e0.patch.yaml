@@ -1,0 +1,3 @@
+backtest:
+  pair_stop_loss_usd: 8.0
+base_config: configs/evolution/20260226_evo_smoke_i135_20260301_143729/20260226_evo_smoke_i135_20260301_143729_v005_evo_6014a40f68ca_oos20240501_20250630.yaml

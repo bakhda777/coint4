@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Promotion Ledger Compactor daily
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1d
+AccuracySec=30min
+Persistent=true
+Unit=autonomous-promotion-ledger-compactor.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+backtest:
+  zscore_entry_threshold: 1.15
+base_config: configs/evolution/20260226_evo_smoke_i158_20260302_050516/20260226_evo_smoke_i158_20260302_050516_v017_evo_c265d49512f9_oos20240501_20250630.yaml
+pair_selection:
+  max_pairs: 26
+portfolio:
+  risk_per_position_pct: 0.010999999999999996

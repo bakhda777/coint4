@@ -153,10 +153,52 @@ def log_note(action: str, queue: str, reason: str, next_step: str) -> None:
     with notes_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-def derive_candidate_uid(top_run_group: str, top_variant: str, top_score: str, existing: str = "") -> str:
+def extract_lineage_uid(*values) -> str:
+    queue = list(values)
+    seen = set()
+    while queue:
+        current = queue.pop(0)
+        ident = id(current)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        if isinstance(current, dict):
+            for key in ("lineage_uid", "candidate_uid"):
+                value = str(current.get(key) or "").strip().lower()
+                if value:
+                    return value
+            raw_meta = current.get("metadata_json")
+            if isinstance(raw_meta, str):
+                text = raw_meta.strip()
+                if text.startswith("{") or text.startswith("["):
+                    try:
+                        queue.append(json.loads(text))
+                    except Exception:
+                        pass
+            for value in current.values():
+                if isinstance(value, (dict, list)):
+                    queue.append(value)
+        elif isinstance(current, list):
+            queue.extend(current)
+    return ""
+
+def derive_candidate_uid(
+    top_run_group: str,
+    top_variant: str,
+    top_score: str,
+    existing: str = "",
+    lineage_uid: str = "",
+    top_metadata: str = "",
+) -> str:
     current = str(existing or "").strip()
     if current:
         return current
+    explicit_lineage = str(lineage_uid or "").strip().lower()
+    if explicit_lineage:
+        return explicit_lineage
+    metadata_lineage = extract_lineage_uid(top_metadata)
+    if metadata_lineage:
+        return metadata_lineage
     evo_re = re.compile(r"\b(evo_[0-9a-f]{8,64})\b", re.IGNORECASE)
     for token in (top_variant, top_run_group):
         text = str(token or "").strip()
@@ -174,6 +216,7 @@ def register_lineage(
     queue_rel: str,
     source_queue_rel: str,
     candidate_uid: str,
+    lineage_uid: str,
     top_run_group: str,
     top_variant: str,
     dispatch_id: str,
@@ -192,6 +235,8 @@ def register_lineage(
         str(source_queue_rel),
         "--candidate-uid",
         str(candidate_uid),
+        "--lineage-uid",
+        str(lineage_uid or ""),
         "--top-run-group",
         str(top_run_group or ""),
         "--top-variant",
@@ -389,7 +434,15 @@ def shortlist_from_queue(queue_rel: str, top_variant: str, shortlist_path: Path,
         if top and top not in blob:
             continue
         seen.add(cfg)
-        picked.append({"config_path": cfg, "results_dir": str(r.get("results_dir") or ""), "status": "planned"})
+        picked.append(
+            {
+                "config_path": cfg,
+                "results_dir": str(r.get("results_dir") or ""),
+                "status": "planned",
+                "lineage_uid": extract_lineage_uid(r),
+                "metadata_json": str(r.get("metadata_json") or ""),
+            }
+        )
 
     if not picked:
         for r in rows:
@@ -399,15 +452,37 @@ def shortlist_from_queue(queue_rel: str, top_variant: str, shortlist_path: Path,
             if is_stress_shortlist_row(r):
                 continue
             seen.add(cfg)
-            picked.append({"config_path": cfg, "results_dir": str(r.get("results_dir") or ""), "status": "planned"})
+            picked.append(
+                {
+                    "config_path": cfg,
+                    "results_dir": str(r.get("results_dir") or ""),
+                    "status": "planned",
+                    "lineage_uid": extract_lineage_uid(r),
+                    "metadata_json": str(r.get("metadata_json") or ""),
+                }
+            )
             break
 
+    fieldnames = ["config_path", "results_dir", "status", "lineage_uid", "metadata_json"]
     with shortlist_path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["config_path", "results_dir", "status"])
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         for row in picked[:1]:
             w.writerow(row)
     return len(picked[:1])
+
+
+def shortlist_identity(shortlist_path: Path) -> tuple[str, str]:
+    if not shortlist_path.exists():
+        return "", ""
+    try:
+        rows = list(csv.DictReader(shortlist_path.open(newline="", encoding="utf-8")))
+    except Exception:
+        return "", ""
+    if not rows:
+        return "", ""
+    row = rows[0] if isinstance(rows[0], dict) else {}
+    return extract_lineage_uid(row), str(row.get("metadata_json") or "")
 
 
 def build_and_dispatch(
@@ -445,6 +520,17 @@ def build_and_dispatch(
             "no_configs_matching_top_variant_or_shortlist",
             "wait_for_next_scan",
         )
+        return False
+    shortlist_lineage_uid, shortlist_metadata = shortlist_identity(shortlist_path)
+    candidate_uid = derive_candidate_uid(
+        top_run_group=top_run_group,
+        top_variant=top_variant,
+        top_score=top_score,
+        existing=candidate_uid,
+        lineage_uid=shortlist_lineage_uid,
+        top_metadata=shortlist_metadata,
+    )
+    if not candidate_uid:
         return False
 
     limit_value, parallel_value, runtime_meta = choose_confirm_params(entry_state, confirm_count)
@@ -529,6 +615,7 @@ def build_and_dispatch(
             "confirm_fastlane_last_trigger_epoch": now_epoch,
             "confirm_pending_since_epoch": now_epoch,
             "candidate_uid": candidate_uid,
+            "lineage_uid": shortlist_lineage_uid or candidate_uid,
             "confirm_fastlane_last_dispatch_id": dispatch_id,
         },
     )
@@ -537,6 +624,7 @@ def build_and_dispatch(
         queue_rel=str(confirm_queue_rel),
         source_queue_rel=entry_queue,
         candidate_uid=candidate_uid,
+        lineage_uid=shortlist_lineage_uid or candidate_uid,
         top_run_group=top_run_group,
         top_variant=top_variant,
         dispatch_id=dispatch_id,
@@ -609,6 +697,8 @@ for queue, entry in raw_queues.items():
         top_variant=top_variant,
         top_score=top_score,
         existing=str(entry.get("candidate_uid", "")).strip(),
+        lineage_uid=str(entry.get("lineage_uid", "")).strip(),
+        top_metadata=str(entry.get("top_metadata", "")).strip(),
     )
 
     if not top_variant:

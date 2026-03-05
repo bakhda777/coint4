@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous Backlog Janitor Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+ExecStart=/usr/bin/env python3 __ROOT_DIR__/scripts/optimization/backlog_janitor_agent.py
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

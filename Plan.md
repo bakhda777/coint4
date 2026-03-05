@@ -1,151 +1,113 @@
-# Plan: Финализация фиксов review P1/P2 и подготовка к интеграции
+# Plan: strict fullspan winner closure
 
-Обновлено: 2026-03-05 (America/New_York)
+Обновлено: 2026-03-05 16:29 America/New_York (snapshot: 2026-03-05T16:29:49Z)
 
-## Summary
-Цель: довести пакет исправлений по review (P1/P2) до состояния «готово к интеграции» без смешивания с нерелевантными изменениями в грязном рабочем дереве.
+## Winner definition (без двусмысленности)
+Winner достигается только при одновременном выполнении:
+- `strict_pass >= 1` по контракту `fullspan_v1`.
+- `confirm_count >= 2` в независимых `run_group`.
+- Confirm replay без деградации strict-критериев.
+- До этого всегда `FAIL_CLOSED` (без promote).
 
-Текущий статус:
-- Логика P1/P2 в коде реализована.
-- Регрессионные тесты по целевому набору проходят.
-- Осталось аккуратно зафиксировать scope и документацию.
+## Что подтверждённо исправлено в этом раунде
+- Очередь `autonomous_seed_20260305_175223` доведена до terminal-state: `completed=10/10` (было `planned=10`).
+- Funnel сдвинулся: `completed 12604 -> 12614`, `pending 360 -> 350`.
+- После `REMOTE_SYNC_FAILED` на `autonomous_seed_20260305_154313` новый запуск `autonomous_seed_20260305_194423` прошёл этап sync (`scp_ok`) и дошёл до `remote run start`.
+- Контур вернулся в reachable-state: `remote_reachable=true`, `local_runner_count=2`.
+- Каноничный VPS probe по `.autonomous` выполнен: `STRICT_PASS_COUNT=0`, `PROMOTE_ELIGIBLE_COUNT=0`, `FAIL_CLOSED_POLICY_DEFAULT_PRESENT=1`.
+- Anti-idle ёмкость усилена: `search_parallel_min/max` подняты до `8/24`, автосидинг переведён на `threshold=48`, `num_variants=24`.
 
-## Execution Status (2026-03-05)
-- [x] P1 реализован: квота цикла confirm-fastlane учитывается только после успешного dispatch.
-- [x] P2 реализован: stress naming совместим с shortlist/filter (`{variant_tag}_stress.yaml` + stress-исключения в shortlist).
-- [x] Регрессионные тесты по P1/P2 добавлены и проходят.
-- [x] Документация синхронизирована: `Plan.md` + `docs/optimization_state.md` отражают статус `READY_FOR_INTEGRATION`.
-- [x] Обязательный pre-merge VPS smoke выполнен через `scripts/remote/run_server_job.sh`, сервер авто-остановлен после прогона.
-- [ ] Интеграционный коммит не делался в рамках этого шага (рабочее дерево содержит много нерелевантных изменений).
+## Что всё ещё блокирует winner
+- `strict_pass=0`, `confirm_ready=0`, `promote_eligible=0`.
+- Высокий stalled-pressure: `308/360` (`stalled_ratio=0.856`).
+- Fullspan решения остаются fail-closed: `ANALYZE=4`, `REJECT=2`; у очередей BL11 `r19/r20` `rejection_reason=no_progress_streak`.
+- Для обработанных очередей сохраняется `contract_reason=METRICS_MISSING` (нет нового strict-evidence).
+- `remote_runner_count=0` (дистанционный worker сейчас не считается активным), поэтому риск повторного no-progress остаётся.
+- На VPS пока не материализованы `fullspan_decision_state.json` / `decision_notes.jsonl` / `driver.log`, поэтому event/log `FAIL_CLOSED_COUNT` там остаётся `0`.
 
-Выполненная валидация:
-- `cd coint4 && PYTHONPATH=src ./.venv/bin/pytest -q tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py tests/scripts/test_anti_idle_capacity_controller.py tests/scripts/test_strict_fullspan_regression_guard.py tests/scripts/test_fullspan_lineage.py`
-  - результат: `24 passed`.
-- `cd coint4 && ./.venv/bin/ruff check scripts/optimization/evolve_next_batch.py tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py`
-  - результат: `All checks passed!`.
+## Exact next action
+Дождаться завершения `run_20260305_194629_autonomous_seed_20260305_194423.log` и немедленно выполнить mini-cycle (`sync_queue_status -> build_run_index -> run_fullspan_decision_cycle.py`) для `autonomous_seed_20260305_194423`; если снова `METRICS_MISSING`, зафиксировать root-cause и автоматом перейти к следующему seed без ручного bypass.
 
-## VPS Smoke Evidence (2026-03-05)
-- Команда:
-- `cd /home/claudeuser/coint4/coint4 && SKIP_POWER=1 STOP_AFTER=1 STOP_VIA_SSH=1 UPDATE_CODE=0 SYNC_UP=1 SYNC_UP_MODE=tracked SYNC_BACK=0 SERVER_IP=85.198.90.128 bash scripts/remote/run_server_job.sh bash -lc 'cd /opt/coint4/coint4 && REPO_ROOT=/opt/coint4/coint4 python3 /tmp/vps_smoke_confirm.py'`
-- Ключевой лог:
-- `SMOKE_CONFIRM_CONTRACT_PASS`
-- `{"quota":{"confirm_fastlane_trigger_empty_shortlist":1,"confirm_fastlane_trigger_attempt":2,"confirm_fastlane_trigger_count":1,"confirm_fastlane_cycle_dispatch_count":1},"stress_filter":{"shortlist_rows":1,"fallback_rows":1,"kept_config_path":"configs/target.yaml"}}`
-- `[server] stopping via SSH (shutdown -h now)`
-- Пост-условие инфраструктуры:
-- Первичная авто-остановка была запрошена helper-скриптом; после проверки доступности VPS выполнен явный `shutdown -h now`, повторная проверка дала `ssh timeout`.
-- Вывод:
-- P1 подтверждён поведенчески: неуспешная первая попытка не съедает квоту цикла (`dispatch_count=1` при `attempt=2`).
-- P2 подтверждён поведенчески: stress-строки вычищаются из shortlist/fallback, остаётся только holdout `configs/target.yaml`.
+## Parallel implementation batch (merged)
+Выполнено параллельно через 3 под-агента и слито в основной workspace.
 
-## Execution Update (2026-03-05, parallel workers)
-Статус: IMPLEMENTED.
+### Subtask A: Gate surrogate + director overlay
+- Изменены файлы:
+  - `coint4/scripts/optimization/gate_surrogate_agent.py` (новый)
+  - `coint4/scripts/optimization/search_director_agent.py`
+- Что сделано:
+  - Добавлен расчёт `decision={allow|refine|reject}`, `risk_score`, `reason`, `evidence` по очередям.
+  - `search_director_agent.py` теперь читает `gate_surrogate_state.json` и публикует:
+    - `hard_fail_risk_policy`
+    - `lineage_priority`
+    - `repair_mode`
+  - При отсутствии валидного surrogate-state действует neutral fail-closed overlay.
 
-### Worker A — Confirm-dispatch quota (P1)
-- Список изменённых файлов:
-- `coint4/scripts/optimization/confirm_dispatch_agent.sh` (правка уже присутствует в текущем дереве)
-- `coint4/tests/scripts/test_confirm_dispatch_agent.py` (регрессия активна)
-- Команды, которые запускал:
-- `cd /home/claudeuser/coint4/coint4 && PYTHONPATH=src ./.venv/bin/pytest -q tests/scripts/test_confirm_dispatch_agent.py`
-- Результат (успех/ошибка + кусок лога):
-- Успех.
-- `collected 1 item` -> `test_confirm_dispatch_agent.py . [100%]` -> `1 passed in 13.47s`
-- Что осталось/риски:
-- Интеграционная проверка confirm-потока под реальными квотами на VPS остаётся опциональной до merge.
+### Subtask B: Seeder policy integration
+- Изменён файл:
+  - `coint4/scripts/optimization/autonomous_queue_seeder.py`
+- Что сделано:
+  - Подключено чтение `gate_surrogate_state.json`.
+  - `reject` -> исключение reject-lineage из `contains` (с fallback fail-closed).
+  - `refine` -> принудительный repair-mode + консервативные knobs/caps.
+  - Добавлены/прокинуты planner-аргументы:
+    - `--gate-surrogate-state-path`
+    - `--repair-mode/--no-repair-mode`
+    - `--repair-max-neighbors`
+    - `--exclude-knob` (repeatable)
 
-### Worker B — Stress naming compatibility (P2)
-- Список изменённых файлов:
-- `coint4/scripts/optimization/evolve_next_batch.py` (правка уже присутствует в текущем дереве)
-- `coint4/tests/scripts/test_evolve_next_batch_stress_naming.py` (регрессия активна)
-- Команды, которые запускал:
-- `cd /home/claudeuser/coint4/coint4 && PYTHONPATH=src ./.venv/bin/pytest -q tests/scripts/test_evolve_next_batch_stress_naming.py`
-- `cd /home/claudeuser/coint4/coint4 && ./.venv/bin/ruff check scripts/optimization/evolve_next_batch.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_confirm_dispatch_agent.py`
-- Результат (успех/ошибка + кусок лога):
-- Успех.
-- `test_evolve_next_batch_stress_naming.py . [100%]` -> `1 passed in 13.17s`; `All checks passed!`
-- Что осталось/риски:
-- Риск только регресса при будущих изменениях нейминга/парсинга, текущий тест это покрывает.
+### Subtask C: Planner repair + driver pre-dispatch gate
+- Изменены файлы:
+  - `coint4/scripts/optimization/evolve_next_batch.py`
+  - `coint4/scripts/optimization/autonomous_wfa_driver.sh`
+- Что сделано:
+  - В planner добавлен `validation_neighbor` repair:
+    - чтение deterministic quarantine (`CONFIG_VALIDATION_ERROR`),
+    - поиск соседей в `coordinate_sweep_v1`,
+    - фильтрация по changed_keys/dedupe/`exclude_knob`,
+    - валидация через `AppConfig`, fallback на исходный вариант.
+  - В драйвер добавлен pre-dispatch surrogate gate:
+    - `SURROGATE_REJECT` -> skip + orphan + decision-note,
+    - `SURROGATE_REFINE` -> skip heavy dispatch + auto-seed,
+    - `SURROGATE_ALLOW` -> обычный dispatch.
 
-### Worker C — Driver/Docs contract alignment
-- Список изменённых файлов:
-- `coint4/scripts/optimization/autonomous_wfa_driver.sh` (контракт `_stress.yaml` подтверждён)
-- `docs/optimization_state.md` (P1/P2: статус DONE и критерии приёмки)
-- `Plan.md` (этот execution update)
-- Команды, которые запускал:
-- `cd /home/claudeuser/coint4 && rg -n "_stress.yaml|confirm_fastlane_cycle_dispatch_count|DONE" coint4/scripts/optimization/autonomous_wfa_driver.sh coint4/scripts/optimization/confirm_dispatch_agent.sh coint4/scripts/optimization/evolve_next_batch.py docs/optimization_state.md Plan.md`
-- Результат (успех/ошибка + кусок лога):
-- Успех.
-- Найдены ожидаемые маркеры в коде и доках: `_stress.yaml`, `confirm_fastlane_cycle_dispatch_count`, `Status: DONE`.
-- Что осталось/риски:
-- Большой pre-existing dirty worktree: перед коммитом нужен строгий selective add по scope P1/P2.
+### Merge verification
+- Команды:
+  - `bash -n coint4/scripts/optimization/autonomous_wfa_driver.sh`
+  - `./coint4/.venv/bin/python -m py_compile coint4/scripts/optimization/{gate_surrogate_agent.py,search_director_agent.py,autonomous_queue_seeder.py,evolve_next_batch.py}`
+  - `./coint4/.venv/bin/ruff check coint4/scripts/optimization/{gate_surrogate_agent.py,search_director_agent.py,autonomous_queue_seeder.py,evolve_next_batch.py}`
+  - `./coint4/.venv/bin/pytest -q coint4/tests/scripts/test_autonomous_wfa_driver_runtime_policy.py coint4/tests/scripts/test_anti_idle_capacity_controller.py`
+  - `./coint4/.venv/bin/pytest -q coint4/tests/scripts/test_autonomous_wfa_driver_selector_contract.py coint4/tests/scripts/test_strict_fullspan_regression_guard.py`
+- Результат:
+  - syntax/lint: OK
+  - tests: `27 passed`
 
-## Execution Update (2026-03-05, parallel subtasks round 2)
-Статус: IMPLEMENTED.
+### Residual risks
+- Пороговые эвристики surrogate (`reject/refine`) требуют калибровки по мере накопления новых run_index паттернов.
+- `lineage_priority` зависит от naming-конвенции `evo_<hash>`.
+- End-to-end прогон на живой очереди с активным `gate_surrogate_state.json` после merge ещё должен подтверждаться наблюдением в driver logs (`SURROGATE_*` события).
 
-### Worker A — VPS smoke (mandatory pre-merge)
-- Список изменённых файлов:
-- Нет (read-only smoke через remote helper).
-- Команды, которые запускал:
-- `cd /home/claudeuser/coint4/coint4 && STOP_AFTER=1 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 bash scripts/remote/run_server_job.sh bash -lc '...python3 smoke...'`
-- Результат (успех/ошибка + кусок лога):
-- Попытка 1: ошибка regex в smoke-check (`re.error: missing ), unterminated subpattern`), сервер остановлен через SSH.
-- Попытка 2: ошибка экранирования токена в assertion (`driver stress filter token missing`), сервер остановлен через API.
-- Попытка 3: успех.
-- Лог: `[server] SSH ready` -> `RUN_HOST=coint` -> `VPS_SMOKE_OK P1/P2 contract markers verified` -> `[server] stopping ... (API)`.
-- Что осталось/риски:
-- Это smoke на контрактных маркерах кода; полноценный end-to-end replay confirm-очереди остаётся отдельным усилением перед merge/cutover.
-
-### Worker B — Selective integration scope audit
-- Список изменённых файлов:
-- Нет (read-only аудит).
-- Команды, которые запускал:
-- `git status --short <targeted files>`
-- `rg -n "confirm_fastlane_cycle_dispatch_count|if dispatched|_stress.yaml|startswith\\('stress_'\\)|run_id.startswith\\('stress_'\\)" ...`
-- Результат (успех/ошибка + кусок лога):
-- Успех: scope релевантен P1/P2 + docs/tests.
-- Кусок лога: `TARGET_SCOPE_STATUS: M ...confirm_dispatch_agent.sh ...evolve_next_batch.py ...autonomous_wfa_driver.sh ... docs/optimization_state.md ?? Plan.md ?? tests/...`
-- Что осталось/риски:
-- Перед коммитом нужен строгий selective add только по целевому scope.
-
-### Worker C — Local validation gate
-- Список изменённых файлов:
-- Нет (валидация).
-- Команды, которые запускал:
-- `PYTHONPATH=src ./.venv/bin/pytest -q tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py tests/scripts/test_anti_idle_capacity_controller.py tests/scripts/test_strict_fullspan_regression_guard.py tests/scripts/test_fullspan_lineage.py`
-- `./.venv/bin/ruff check scripts/optimization/evolve_next_batch.py tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py`
-- Результат (успех/ошибка + кусок лога):
-- Успех: `24 passed in 8.68s`, `All checks passed!`.
-- Что осталось/риски:
-- Локальный gate зелёный, но интеграционный commit-пакет всё ещё не сформирован.
-
-Готовые команды для безопасной упаковки selective commit scope (без commit):
-- `git add Plan.md docs/optimization_state.md coint4/scripts/optimization/confirm_dispatch_agent.sh coint4/scripts/optimization/evolve_next_batch.py coint4/scripts/optimization/autonomous_wfa_driver.sh coint4/tests/scripts/test_confirm_dispatch_agent.py coint4/tests/scripts/test_evolve_next_batch_stress_naming.py coint4/tests/scripts/test_autonomous_wfa_driver_selector_contract.py`
-- `git diff --cached -- coint4/scripts/optimization/confirm_dispatch_agent.sh coint4/scripts/optimization/evolve_next_batch.py coint4/scripts/optimization/autonomous_wfa_driver.sh coint4/tests/scripts/test_confirm_dispatch_agent.py coint4/tests/scripts/test_evolve_next_batch_stress_naming.py coint4/tests/scripts/test_autonomous_wfa_driver_selector_contract.py docs/optimization_state.md Plan.md`
-
-## Implementation Changes
-1. Изолировать scope fixed-пакета:
-- `coint4/scripts/optimization/confirm_dispatch_agent.sh` (P1 quota after successful dispatch).
-- `coint4/scripts/optimization/evolve_next_batch.py` (P2 stress naming compatibility).
-- `coint4/scripts/optimization/autonomous_wfa_driver.sh` (stress shortlist filter parity).
-- Регрессионные тесты: `coint4/tests/scripts/test_confirm_dispatch_agent.py`, `coint4/tests/scripts/test_evolve_next_batch_stress_naming.py`, `coint4/tests/scripts/test_autonomous_wfa_driver_selector_contract.py`.
-
-2. Зафиксировать консистентность docs:
-- `Plan.md` отражает только текущую цель интеграции P1/P2.
-- `docs/optimization_state.md` содержит краткую запись о фактическом статусе P1/P2 (DONE + что валидация пройдена).
-
-3. Подготовить интеграционный набор (без посторонних изменений):
-- В коммиты включать только релевантные файлы fixed-пакета и docs.
-- Не затрагивать прочие historical/unrelated изменения в репозитории.
-
-## Test Plan
-Обязательный минимум перед интеграцией:
-- `cd coint4 && PYTHONPATH=src ./.venv/bin/pytest -q tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py tests/scripts/test_anti_idle_capacity_controller.py tests/scripts/test_strict_fullspan_regression_guard.py tests/scripts/test_fullspan_lineage.py`
-- `cd coint4 && ./.venv/bin/ruff check scripts/optimization/evolve_next_batch.py tests/scripts/test_confirm_dispatch_agent.py tests/scripts/test_evolve_next_batch_stress_naming.py tests/scripts/test_autonomous_wfa_driver_selector_contract.py`
-
-Критерии приёмки:
-- Все проверки зелёные.
-- Нерелевантные файлы не включены в интеграционный пакет.
-- P1/P2 формулировки в документации соответствуют фактической реализации.
-
-## Assumptions
-- Репозиторий изначально в грязном состоянии; это не блокер при selective integration.
-- Обязательный VPS smoke перед merge выполнен; финальный блокер только аккуратная упаковка selective commit без нерелевантных файлов.
+## Execution Update (2026-03-05, calibration + explicit lineage + runtime proof)
+- Реализован `surrogate_calibrator_agent.py`: пишет `surrogate_calibration_state.json`, соблюдает `min_sample_size=100`, hysteresis `0.05` и apply-interval guard `86400s`.
+- `gate_surrogate_agent.py` теперь:
+  - читает calibration-state fail-safe;
+  - применяет только валидные `applied_*` thresholds;
+  - строит lineage priority по explicit `lineage_uid`, а legacy `evo_*` держит как fallback evidence.
+- Добавлены systemd units:
+  - `autonomous-gate-surrogate-agent.service/.timer`
+  - `autonomous-surrogate-calibrator-agent.service/.timer`
+- `install_autonomous_wfa_supervisor.sh` обновлён: новые таймеры устанавливаются, включаются и рестартуются вместе с остальным supervisor-контуром.
+- Explicit lineage протянут в generation/consumers:
+  - `evolve_next_batch.py` пишет `lineage_uid` и `metadata_json` в `run_queue.csv`;
+  - `fullspan_lineage.py` предпочитает explicit lineage/metadata;
+  - `deterministic_error_blacklist_agent.py` теперь блокирует explicit lineage, сохраняя alias `blocked_evo_uids` для совместимости;
+  - `confirm_dispatch_agent.sh` сохраняет/читает `lineage_uid` из shortlist и регистрирует его в lineage registry.
+- Runtime proof усилен:
+  - `probe_autonomous_markers.py` теперь видит freshness gate/directive, `SURROGATE_REJECT/REFINE/ALLOW`, runtime counters и различает `evidence_present/no_eligible_case/broken_branch/stale_or_inconclusive`;
+  - `autonomous_10m_report.sh` выводит surrogate gate/evidence/branch.
+- Driver дополнен `surrogate_allow_count` + `SURROGATE_ALLOW` decision-note при allow-path с reason.
+- Supervisor переустановлен и рестартован с новыми timers; текущий probe после рестарта показывает:
+  - `GATE_SURROGATE_MODE=active`
+  - `DIRECTIVE_GATE_SURROGATE_MODE=active`
+  - `SURROGATE_BRANCH_STATUS=stale_or_inconclusive`
+  - то есть state/directive живы, но свежего runtime-hit по `reject/refine` ещё не произошло в наблюдаемом окне.

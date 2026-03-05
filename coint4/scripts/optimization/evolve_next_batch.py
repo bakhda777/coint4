@@ -51,7 +51,6 @@ from coint2.ops.genome import (
     load_effective_yaml_config,
 )
 from coint2.ops.mutation_ops import apply_operator_v1
-from coint2.ops.run_queue import RunQueueEntry, write_run_queue
 
 # Strict fullspan contract requires paired holdout+stress generation by default.
 STRESS_OVERRIDES: dict[str, Any] = {
@@ -189,6 +188,75 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def _derive_lineage_uid(
+    *,
+    controller_group: str,
+    run_group: str,
+    generation: int,
+    variant_index: int,
+    candidate_id: str,
+    operator_id: str,
+    parents: Sequence[str],
+) -> str:
+    seed = [
+        str(controller_group or "").strip().lower(),
+        str(run_group or "").strip().lower(),
+        str(int(generation)),
+        str(int(variant_index)),
+        str(candidate_id or "").strip().lower(),
+        str(operator_id or "").strip().lower(),
+        "|".join(str(parent or "").strip().lower() for parent in list(parents or [])),
+    ]
+    digest = hashlib.sha1("|".join(seed).encode("utf-8")).hexdigest()[:20]
+    return f"lnuid_{digest}"
+
+
+def _write_run_queue_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    import csv
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base_fields = ["config_path", "results_dir", "status"]
+    ordered_extras = ["lineage_uid", "metadata_json"]
+    extras_seen: list[str] = []
+    extras_set: set[str] = set()
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        for key in row.keys():
+            name = str(key or "").strip()
+            if not name or name in base_fields or name in extras_set:
+                continue
+            extras_set.add(name)
+            extras_seen.append(name)
+
+    fieldnames = list(base_fields)
+    for key in ordered_extras:
+        if key in extras_set:
+            fieldnames.append(key)
+    for key in extras_seen:
+        if key not in ordered_extras:
+            fieldnames.append(key)
+
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            payload: dict[str, str] = {}
+            for key in fieldnames:
+                value = row.get(key) if isinstance(row, Mapping) else ""
+                if key == "metadata_json":
+                    if isinstance(value, str):
+                        payload[key] = value
+                    elif value is None:
+                        payload[key] = ""
+                    else:
+                        payload[key] = json.dumps(value, ensure_ascii=False, sort_keys=True)
+                else:
+                    payload[key] = str(value or "").strip()
+            writer.writerow(payload)
+
+
 def _load_knob_space(path: str | None) -> list[KnobSpec]:
     if not path:
         return knob_specs_from_dicts(DEFAULT_KNOB_SPACE)
@@ -285,6 +353,98 @@ def _candidate_id(
 def _changed_keys(parent: Mapping[str, Any], child: Mapping[str, Any]) -> tuple[str, ...]:
     changed = [key for key in sorted(child.keys()) if parent.get(key) != child.get(key)]
     return tuple(changed)
+
+
+def _genome_fingerprint(genome: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        canonicalize_object(dict(genome)),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _normalize_path_for_lookup(path_raw: Any, *, root: Path) -> str:
+    token = str(path_raw or "").strip()
+    if not token:
+        return ""
+    path = Path(token)
+    if not path.is_absolute():
+        path = root / path
+    try:
+        return path.resolve().as_posix()
+    except Exception:  # noqa: BLE001
+        return path.as_posix()
+
+
+def _load_validation_error_genome_counts(
+    *,
+    app_root: Path,
+    knob_space: Sequence[KnobSpec],
+) -> dict[str, int]:
+    quarantine_path = app_root / "artifacts" / "wfa" / "aggregate" / ".autonomous" / "deterministic_quarantine.json"
+    if not quarantine_path.exists():
+        return {}
+
+    try:
+        payload = json.loads(quarantine_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        return {}
+
+    queue_row_cache: dict[str, dict[str, Path]] = {}
+    config_fingerprint_cache: dict[str, str] = {}
+    counts: dict[str, int] = {}
+
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("code") or "").strip() != "CONFIG_VALIDATION_ERROR":
+            continue
+
+        queue_key = _normalize_path_for_lookup(entry.get("queue"), root=app_root)
+        results_key = _normalize_path_for_lookup(entry.get("results_dir"), root=app_root)
+        if not queue_key or not results_key:
+            continue
+
+        queue_mapping = queue_row_cache.get(queue_key)
+        if queue_mapping is None:
+            queue_mapping = {}
+            queue_path = Path(queue_key)
+            for row in _read_csv_rows(queue_path):
+                row_results = _normalize_path_for_lookup(row.get("results_dir"), root=app_root)
+                cfg_raw = str(row.get("config_path") or "").strip()
+                if not row_results or not cfg_raw:
+                    continue
+                try:
+                    queue_mapping[row_results] = _resolve_under_root(cfg_raw, root=app_root)
+                except Exception:  # noqa: BLE001
+                    continue
+            queue_row_cache[queue_key] = queue_mapping
+
+        cfg_path = queue_mapping.get(results_key)
+        if cfg_path is None:
+            continue
+        cfg_key = cfg_path.as_posix()
+        fp = config_fingerprint_cache.get(cfg_key)
+        if fp is None:
+            if not cfg_path.exists():
+                continue
+            try:
+                cfg = load_effective_yaml_config(cfg_path)
+                genome = genome_from_config(cfg, knob_space=knob_space)
+                fp = _genome_fingerprint(genome)
+            except Exception:  # noqa: BLE001
+                continue
+            config_fingerprint_cache[cfg_key] = fp
+
+        counts[fp] = int(counts.get(fp, 0)) + 1
+    return counts
 
 
 def _matches_all(text: str, needles: Sequence[str]) -> bool:
@@ -442,6 +602,7 @@ def _build_candidate(
     seen_pool: Sequence[tuple[str, Genome]],
     knob_space: Sequence[KnobSpec],
     patch_ir: dict[str, Any] | None = None,
+    notes: str = "targeted mutation proposal",
 ) -> CandidateProposal:
     nearest_id, nearest_distance = _nearest_distance(child, seen_pool=seen_pool, knob_space=knob_space)
     candidate_id = _candidate_id(
@@ -459,7 +620,7 @@ def _build_candidate(
         changed_keys=changed,
         nearest_id=nearest_id,
         nearest_distance=nearest_distance,
-        notes="targeted mutation proposal",
+        notes=notes,
         patch_ir=patch_ir,
     )
 
@@ -574,6 +735,208 @@ def _generate_proposals(
     if not proposals:
         raise SystemExit("unable to generate non-duplicate candidates (check knob-space or dedupe threshold)")
     return proposals
+
+
+def _candidate_passes_app_config_validation(
+    *,
+    parent_cfg: Mapping[str, Any],
+    candidate: CandidateProposal,
+) -> bool:
+    # Keep import local to avoid startup overhead in default (repair=off) mode.
+    from coint2.utils.config import AppConfig
+
+    payload = copy.deepcopy(dict(parent_cfg))
+    changed = {key: candidate.genome.get(key) for key in candidate.changed_keys if key in candidate.genome}
+    _apply_genome_overrides(payload, changed)
+    try:
+        AppConfig(**payload)
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+def _build_validation_neighbor_proposals(
+    *,
+    proposal: CandidateProposal,
+    risk_count: int,
+    repair_max_neighbors: int,
+    exclude_knobs: set[str],
+    parent_genome: Genome,
+    parent_id: str,
+    parent_cfg: Mapping[str, Any],
+    knob_space: Sequence[KnobSpec],
+    generation: int,
+    rng: np.random.Generator,
+    seen_pool: list[tuple[str, Genome]],
+    dedupe_distance: float,
+    max_changed_keys: int,
+    blocked_ids: set[str],
+) -> list[CandidateProposal]:
+    out: list[CandidateProposal] = []
+    if repair_max_neighbors <= 0:
+        return out
+
+    ordered_keys = list(proposal.changed_keys)
+    ordered_keys.extend(spec.key for spec in knob_space if spec.key not in ordered_keys)
+    ordered_keys = [key for key in ordered_keys if key not in exclude_knobs]
+    if not ordered_keys:
+        return out
+
+    local_fingerprints: set[str] = {_genome_fingerprint(proposal.genome)}
+    key_order = {key: idx for idx, key in enumerate(ordered_keys)}
+    neighbor_pool: list[tuple[float, int, str, Genome]] = []
+    for key in ordered_keys:
+        try:
+            children = apply_operator_v1(
+                "coordinate_sweep_v1",
+                parents=[proposal.genome],
+                knob_space=knob_space,
+                rng=rng,
+                budget=3,
+                params={"keys": [key], "max_keys": 1},
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        for child in children:
+            fp = _genome_fingerprint(child)
+            if fp in local_fingerprints:
+                continue
+            local_fingerprints.add(fp)
+            dist = genome_distance_weighted_l1_v1(
+                proposal.genome,
+                child,
+                knob_space=knob_space,
+                normalization="range",
+            )
+            neighbor_pool.append((float(dist), int(key_order.get(key, 9999)), key, child))
+
+    if not neighbor_pool:
+        return out
+    neighbor_pool.sort(key=lambda item: (item[0], item[1], item[2]))
+
+    for _distance, _key_idx, key, child in neighbor_pool:
+        if len(out) >= int(repair_max_neighbors):
+            break
+        candidate = _build_candidate(
+            child=child,
+            parent_genome=parent_genome,
+            parent_id=parent_id,
+            parents=list(proposal.parents) if proposal.parents else [parent_id],
+            operator_id="op_validation_neighbor",
+            generation=generation,
+            seen_pool=seen_pool,
+            knob_space=knob_space,
+            notes=(
+                f"validation-neighbor repair for {proposal.candidate_id}: "
+                f"risk_count={int(risk_count)} key={key}"
+            ),
+        )
+        if len(candidate.changed_keys) > int(max_changed_keys):
+            continue
+        if candidate.nearest_id and candidate.nearest_distance <= float(dedupe_distance):
+            continue
+        if candidate.candidate_id in blocked_ids:
+            continue
+        if not _candidate_passes_app_config_validation(parent_cfg=parent_cfg, candidate=candidate):
+            continue
+        blocked_ids.add(candidate.candidate_id)
+        seen_pool.append((candidate.candidate_id, candidate.genome))
+        out.append(candidate)
+    return out
+
+
+def _apply_validation_neighbor_repair(
+    *,
+    proposals: Sequence[CandidateProposal],
+    app_root: Path,
+    repair_max_neighbors: int,
+    exclude_knobs: set[str],
+    parent_cfg: Mapping[str, Any],
+    parent_genome: Genome,
+    parent_id: str,
+    knob_space: Sequence[KnobSpec],
+    generation: int,
+    rng: np.random.Generator,
+    seen_pool: Sequence[tuple[str, Genome]],
+    dedupe_distance: float,
+    max_changed_keys: int,
+) -> tuple[list[CandidateProposal], dict[str, int]]:
+    summary: dict[str, int] = {
+        "risk_matched": 0,
+        "replaced": 0,
+        "neighbors_added": 0,
+        "fallback_kept": 0,
+    }
+    baseline = list(proposals)
+    if not baseline:
+        return baseline, summary
+
+    risk_counts_by_genome = _load_validation_error_genome_counts(app_root=app_root, knob_space=knob_space)
+    if not risk_counts_by_genome:
+        return baseline, summary
+
+    min_risk_count = 2
+    risky: list[tuple[CandidateProposal, int]] = []
+    safe: list[CandidateProposal] = []
+    for proposal in baseline:
+        risk_count = int(risk_counts_by_genome.get(_genome_fingerprint(proposal.genome), 0))
+        if risk_count >= min_risk_count:
+            risky.append((proposal, risk_count))
+        else:
+            safe.append(proposal)
+
+    if not risky:
+        return baseline, summary
+    summary["risk_matched"] = len(risky)
+
+    target_size = len(baseline)
+    blocked_ids: set[str] = {item.candidate_id for item in safe}
+    risky_ids = {item.candidate_id for item, _risk_count in risky}
+    local_seen_pool: list[tuple[str, Genome]] = [item for item in seen_pool if item[0] not in risky_ids]
+    repaired: list[CandidateProposal] = list(safe)
+
+    for proposal, risk_count in risky:
+        if len(repaired) >= target_size:
+            break
+        neighbors = _build_validation_neighbor_proposals(
+            proposal=proposal,
+            risk_count=risk_count,
+            repair_max_neighbors=repair_max_neighbors,
+            exclude_knobs=exclude_knobs,
+            parent_genome=parent_genome,
+            parent_id=parent_id,
+            parent_cfg=parent_cfg,
+            knob_space=knob_space,
+            generation=generation,
+            rng=rng,
+            seen_pool=local_seen_pool,
+            dedupe_distance=dedupe_distance,
+            max_changed_keys=max_changed_keys,
+            blocked_ids=blocked_ids,
+        )
+        if neighbors:
+            remaining = max(0, target_size - len(repaired))
+            if remaining > 0:
+                repaired.extend(neighbors[:remaining])
+            summary["replaced"] += 1
+            summary["neighbors_added"] += len(neighbors[:remaining])
+        else:
+            if proposal.candidate_id not in blocked_ids:
+                repaired.append(proposal)
+                blocked_ids.add(proposal.candidate_id)
+                summary["fallback_kept"] += 1
+
+    if len(repaired) < target_size:
+        for proposal, _risk_count in risky:
+            if len(repaired) >= target_size:
+                break
+            if proposal.candidate_id in blocked_ids:
+                continue
+            repaired.append(proposal)
+            blocked_ids.add(proposal.candidate_id)
+            summary["fallback_kept"] += 1
+
+    return repaired[:target_size], summary
 
 
 def math_is_finite(value: Any) -> bool:
@@ -1948,10 +2311,18 @@ def _top_up_with_genome_proposals(
     ]
 
     topup: list[CandidateProposal] = []
-    for plan in fallback_plans:
+    relax_schedule = [
+        (float(dedupe_distance), int(max_changed_keys)),
+        (max(0.0, float(dedupe_distance) * 0.50), max(int(max_changed_keys), 4)),
+        (max(0.0, float(dedupe_distance) * 0.25), max(int(max_changed_keys), 6)),
+        (0.0, max(int(max_changed_keys), 8)),
+    ]
+    for idx, plan in enumerate(fallback_plans):
         remaining = missing - len(topup)
         if remaining <= 0:
             break
+        relax_idx = min(idx, len(relax_schedule) - 1)
+        dedupe_current, max_keys_current = relax_schedule[relax_idx]
         try:
             batch = _generate_proposals(
                 num_variants=remaining,
@@ -1963,13 +2334,71 @@ def _top_up_with_genome_proposals(
                 generation=generation,
                 rng=rng,
                 seen_pool=seen_pool,
-                dedupe_distance=dedupe_distance,
-                max_changed_keys=max_changed_keys,
+                dedupe_distance=float(dedupe_current),
+                max_changed_keys=int(max_keys_current),
                 blocked_candidate_ids=blocked_ids,
             )
         except SystemExit:
             continue
         topup.extend(batch)
+
+    # Final safety valve: if strict dedupe/similarity still leaves a tiny batch,
+    # force-fill with one-step mutations from parent/accepted genomes.
+    remaining_after_topup = missing - len(topup)
+    if remaining_after_topup > 0 and knob_space:
+        mutation_bases: list[Genome] = [dict(parent_genome)]
+        mutation_bases.extend(dict(item.genome) for item in existing_proposals)
+        mutation_bases.extend(dict(item.genome) for item in topup)
+        key_pool = [spec.key for spec in knob_space]
+        genome_hashes: set[str] = {
+            json.dumps(canonicalize_object(item.genome), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            for item in list(existing_proposals) + list(topup)
+        }
+        max_attempts = max(512, remaining_after_topup * 256)
+        attempts = 0
+        while len(topup) < missing and attempts < max_attempts:
+            attempts += 1
+            base = mutation_bases[int(rng.integers(0, len(mutation_bases)))]
+            key = key_pool[int(rng.integers(0, len(key_pool)))]
+            try:
+                children = apply_operator_v1(
+                    "mutate_step_v1",
+                    parents=[base],
+                    knob_space=knob_space,
+                    rng=rng,
+                    budget=1,
+                    params={"key": key},
+                )
+            except Exception:
+                continue
+            if not children:
+                continue
+
+            child = children[0]
+            encoded = json.dumps(canonicalize_object(child), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+            if encoded in genome_hashes:
+                continue
+
+            candidate = _build_candidate(
+                child=child,
+                parent_genome=parent_genome,
+                parent_id=parent_id,
+                parents=[parent_id],
+                operator_id=f"op_topup_force_mutate_{attempts}",
+                generation=generation,
+                seen_pool=seen_pool,
+                knob_space=knob_space,
+            )
+            if len(candidate.changed_keys) > max(int(max_changed_keys), 8):
+                continue
+            if candidate.candidate_id in blocked_ids:
+                continue
+
+            blocked_ids.add(candidate.candidate_id)
+            genome_hashes.add(encoded)
+            topup.append(candidate)
+            seen_pool.append((candidate.candidate_id, candidate.genome))
+            mutation_bases.append(dict(candidate.genome))
 
     return topup
 
@@ -2022,6 +2451,10 @@ def _render_search_space_md(
     max_changed_keys: int,
     llm_policy: LlmPolicyPlan,
     policy_scale: str,
+    repair_mode: str,
+    repair_max_neighbors: int,
+    exclude_knobs: Sequence[str],
+    repair_summary: Mapping[str, int],
 ) -> str:
     lines = [
         f"# Evolution search space: `{run_group}`",
@@ -2039,6 +2472,13 @@ def _render_search_space_md(
         f"- llm_source: `{llm_policy.source}`",
         f"- llm_reason: `{llm_policy.reason}`",
         f"- policy_scale: `{policy_scale}`",
+        f"- repair_mode: `{repair_mode}`",
+        f"- repair_max_neighbors: `{int(repair_max_neighbors)}`",
+        f"- repair_exclude_knobs: `{','.join(str(key) for key in exclude_knobs) or '-'}`",
+        f"- repair_risk_matched: `{int(repair_summary.get('risk_matched', 0))}`",
+        f"- repair_replaced: `{int(repair_summary.get('replaced', 0))}`",
+        f"- repair_neighbors_added: `{int(repair_summary.get('neighbors_added', 0))}`",
+        f"- repair_fallback_kept: `{int(repair_summary.get('fallback_kept', 0))}`",
         f"- dedupe_distance: `{dedupe_distance}`",
         f"- max_changed_keys: `{max_changed_keys}`",
         f"- min_windows: `{thresholds.min_windows}`",
@@ -2121,6 +2561,24 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--knob-space", help="Optional JSON/YAML list of KnobSpec-like dicts.")
     parser.add_argument("--dedupe-distance", type=float, default=0.06, help="Reject candidates closer than this weighted L1 distance.")
     parser.add_argument("--max-changed-keys", type=int, default=3, help="Complexity budget per candidate.")
+    parser.add_argument(
+        "--repair-mode",
+        choices=["off", "validation_neighbor"],
+        default="off",
+        help="Post-generation repair mode for high-risk validation-error candidates.",
+    )
+    parser.add_argument(
+        "--repair-max-neighbors",
+        type=int,
+        default=2,
+        help="Max validation-neighbor replacements generated per risky candidate.",
+    )
+    parser.add_argument(
+        "--exclude-knob",
+        action="append",
+        default=[],
+        help="Knob key excluded from validation-neighbor repair mutations (repeatable).",
+    )
     parser.add_argument("--configs-dir", default="configs/evolution", help="Base directory for generated configs.")
     parser.add_argument("--queue-dir", default="artifacts/wfa/aggregate", help="Base directory for run_queue/search_space.")
     parser.add_argument("--runs-dir", default="artifacts/wfa/runs", help="Base runs directory for queue results_dir paths.")
@@ -2182,6 +2640,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("--ast-max-redundancy-similarity must be in [0,1]")
     if int(args.patch_max_attempts) < 1:
         raise SystemExit("--patch-max-attempts must be >= 1")
+    if int(args.repair_max_neighbors) < 1:
+        raise SystemExit("--repair-max-neighbors must be >= 1")
 
     app_root = _resolve_app_root()
     repo_root = app_root.parent
@@ -2197,6 +2657,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     windows = _parse_windows(raw_values=args.window, base_cfg=base_cfg)
     knob_space = _load_knob_space(args.knob_space)
+    exclude_knobs = {str(key).strip() for key in list(args.exclude_knob or []) if str(key).strip()}
+    known_knobs = {spec.key for spec in knob_space}
+    unknown_exclude = sorted(exclude_knobs - known_knobs)
+    if unknown_exclude:
+        raise SystemExit(f"--exclude-knob contains unknown keys: {unknown_exclude}")
     contains = [str(token).strip() for token in list(args.contains or []) if str(token).strip()]
     if not contains:
         contains = [str(args.controller_group).strip()]
@@ -2396,6 +2861,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_changed_keys=int(args.max_changed_keys),
         )
 
+    repair_summary: dict[str, int] = {
+        "risk_matched": 0,
+        "replaced": 0,
+        "neighbors_added": 0,
+        "fallback_kept": 0,
+    }
+    if str(args.repair_mode) == "validation_neighbor":
+        proposals, repair_summary = _apply_validation_neighbor_repair(
+            proposals=proposals,
+            app_root=app_root,
+            repair_max_neighbors=int(args.repair_max_neighbors),
+            exclude_knobs=exclude_knobs,
+            parent_cfg=parent_cfg,
+            parent_genome=parent_genome,
+            parent_id=parent_id,
+            knob_space=knob_space,
+            generation=generation,
+            rng=rng,
+            seen_pool=seen_pool,
+            dedupe_distance=float(args.dedupe_distance),
+            max_changed_keys=int(args.max_changed_keys),
+        )
+
     queue_base = _resolve_under_root(str(args.queue_dir), root=app_root) / run_group
     queue_path = queue_base / "run_queue.csv"
     search_space_path = queue_base / "search_space.md"
@@ -2404,11 +2892,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     configs_base = _resolve_under_root(str(args.configs_dir), root=app_root) / run_group
     runs_base = _resolve_under_root(str(args.runs_dir), root=app_root) / run_group
 
-    queue_entries: list[RunQueueEntry] = []
+    queue_rows: list[dict[str, Any]] = []
     decision_proposals: list[dict[str, Any]] = []
     created_files: list[str] = []
 
     for idx, proposal in enumerate(proposals, start=1):
+        lineage_uid = _derive_lineage_uid(
+            controller_group=controller_group,
+            run_group=run_group,
+            generation=generation,
+            variant_index=idx,
+            candidate_id=proposal.candidate_id,
+            operator_id=proposal.operator_id,
+            parents=proposal.parents,
+        )
         patch_payload: dict[str, Any] | None = None
         patch_rel: str | None = None
         if str(args.ir_mode) == "patch_ast" and isinstance(proposal.patch_ir, dict):
@@ -2444,12 +2941,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 holdout_cfg_path.write_text(yaml.safe_dump(holdout_cfg_payload, sort_keys=True), encoding="utf-8")
                 created_files.append(_relative_to_root(holdout_cfg_path, root=app_root))
 
-            queue_entries.append(
-                RunQueueEntry(
-                    config_path=_relative_to_root(holdout_cfg_path, root=app_root),
-                    results_dir=_relative_to_root(runs_base / holdout_run_id, root=app_root),
-                    status="planned",
-                )
+            queue_rows.append(
+                {
+                    "config_path": _relative_to_root(holdout_cfg_path, root=app_root),
+                    "results_dir": _relative_to_root(runs_base / holdout_run_id, root=app_root),
+                    "status": "planned",
+                    "lineage_uid": lineage_uid,
+                    "metadata_json": {
+                        "lineage_uid": lineage_uid,
+                        "variant_index": int(idx),
+                        "candidate_id": proposal.candidate_id,
+                        "operator_id": proposal.operator_id,
+                        "parents": list(proposal.parents),
+                        "window_start": window_start,
+                        "window_end": window_end,
+                        "profile": "holdout",
+                        "ir_mode": str(args.ir_mode),
+                    },
+                }
             )
 
             if bool(args.include_stress):
@@ -2466,12 +2975,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     stress_cfg_path.write_text(yaml.safe_dump(stress_cfg_payload, sort_keys=True), encoding="utf-8")
                     created_files.append(_relative_to_root(stress_cfg_path, root=app_root))
 
-                queue_entries.append(
-                    RunQueueEntry(
-                        config_path=_relative_to_root(stress_cfg_path, root=app_root),
-                        results_dir=_relative_to_root(runs_base / stress_run_id, root=app_root),
-                        status="planned",
-                    )
+                queue_rows.append(
+                    {
+                        "config_path": _relative_to_root(stress_cfg_path, root=app_root),
+                        "results_dir": _relative_to_root(runs_base / stress_run_id, root=app_root),
+                        "status": "planned",
+                        "lineage_uid": lineage_uid,
+                        "metadata_json": {
+                            "lineage_uid": lineage_uid,
+                            "variant_index": int(idx),
+                            "candidate_id": proposal.candidate_id,
+                            "operator_id": proposal.operator_id,
+                            "parents": list(proposal.parents),
+                            "window_start": window_start,
+                            "window_end": window_end,
+                            "profile": "stress",
+                            "ir_mode": str(args.ir_mode),
+                        },
+                    }
                 )
 
         similarity_payload = None
@@ -2481,6 +3002,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         decision_proposals.append(
             {
                 "candidate_id": proposal.candidate_id,
+                "lineage_uid": lineage_uid,
                 "operator_id": proposal.operator_id,
                 "parents": list(proposal.parents),
                 "genome": proposal.genome,
@@ -2488,6 +3010,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "config_path": f"{_relative_to_root(configs_base, root=app_root)}/{run_group}_v{idx:03d}_{proposal.candidate_id}_oos{windows[0][0].replace('-', '')}_{windows[0][1].replace('-', '')}.yaml",
                     "results_dir": _relative_to_root(runs_base / f"holdout_{run_group}_v{idx:03d}_{proposal.candidate_id}_oos{windows[0][0].replace('-', '')}_{windows[0][1].replace('-', '')}", root=app_root),
                     "status": "planned",
+                    "lineage_uid": lineage_uid,
                 },
                 "paired_holdout_stress": bool(args.include_stress),
                 "ir_mode": str(args.ir_mode),
@@ -2498,7 +3021,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         )
 
-    if not queue_entries:
+    if not queue_rows:
         raise SystemExit("no queue entries were generated")
 
     search_space_md = _render_search_space_md(
@@ -2516,6 +3039,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_changed_keys=int(args.max_changed_keys),
         llm_policy=llm_policy,
         policy_scale=str(args.policy_scale),
+        repair_mode=str(args.repair_mode),
+        repair_max_neighbors=int(args.repair_max_neighbors),
+        exclude_knobs=sorted(exclude_knobs),
+        repair_summary=repair_summary,
     )
 
     decision_payload = {
@@ -2579,6 +3106,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             "payload": llm_policy.payload,
         },
         "policy_scale": str(args.policy_scale),
+        "repair": {
+            "mode": str(args.repair_mode),
+            "max_neighbors": int(args.repair_max_neighbors),
+            "exclude_knobs": sorted(exclude_knobs),
+            "summary": dict(repair_summary),
+        },
+        "lineage": {
+            "uid_field": "lineage_uid",
+            "metadata_field": "metadata_json",
+            "version": "v1",
+            "rows": len(queue_rows),
+            "unique_uids": len({str(row.get("lineage_uid") or "") for row in queue_rows if str(row.get("lineage_uid") or "")}),
+        },
         "proposals": decision_proposals,
         "outputs": {
             "state_path": _relative_to_root(state_path, root=app_root),
@@ -2604,6 +3144,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "llm_used": llm_policy.used,
             "llm_source": llm_policy.source,
             "queue_path": _relative_to_root(queue_path, root=app_root),
+            "repair_mode": str(args.repair_mode),
+            "repair_summary": dict(repair_summary),
             "created_at": _utc_now_iso(),
         }
     )
@@ -2627,9 +3169,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"[dry-run] failure_mode={failure.failure_mode}")
         print(f"[dry-run] triggers={' | '.join(failure.triggers)}")
         print(f"[dry-run] policy_scale={args.policy_scale}")
+        print(f"[dry-run] repair_mode={args.repair_mode} max_neighbors={int(args.repair_max_neighbors)} exclude={sorted(exclude_knobs)}")
+        print(f"[dry-run] repair_summary={json.dumps(repair_summary, ensure_ascii=False)}")
         print(f"[dry-run] operator={operator_plan.operator_kind} params={json.dumps(operator_plan.params, ensure_ascii=False)}")
         print(f"[dry-run] llm_used={llm_policy.used} source={llm_policy.source} reason={llm_policy.reason}")
-        print(f"[dry-run] generated_variants={len(proposals)} windows={len(windows)} queue_rows={len(queue_entries)}")
+        print(f"[dry-run] generated_variants={len(proposals)} windows={len(windows)} queue_rows={len(queue_rows)}")
         print(f"[dry-run] queue={_relative_to_root(queue_path, root=app_root)}")
         print(f"[dry-run] search_space={_relative_to_root(search_space_path, root=app_root)}")
         print(f"[dry-run] decision={_relative_to_root(decision_path, root=app_root)}")
@@ -2638,12 +3182,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     queue_path.parent.mkdir(parents=True, exist_ok=True)
     decision_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    write_run_queue(queue_path, queue_entries)
+    _write_run_queue_rows(queue_path, queue_rows)
     search_space_path.write_text(search_space_md, encoding="utf-8")
     _dump_json(decision_path, decision_payload)
     _dump_json(state_path, state_payload_out)
 
-    print(f"Wrote queue:       {queue_path} ({len(queue_entries)} rows)")
+    print(f"Wrote queue:       {queue_path} ({len(queue_rows)} rows)")
     print(f"Wrote search:      {search_space_path}")
     print(f"Wrote decision:    {decision_path}")
     print(f"Wrote state:       {state_path}")

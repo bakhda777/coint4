@@ -71,6 +71,7 @@ Top-level:
 ## Документация результатов
 - Состояние: `docs/optimization_state.md` (1 файл, “что сейчас и что дальше”)
 - Журналы: `docs/optimization_runs_YYYYMMDD.md` (дневник прогонов)
+- Guardrails OpenClaw: `docs/openclaw_guardrails.md` (runtime-preflight, частые ошибки и фиксы)
 - Правило: после каждого блока прогонов обновлять `docs/optimization_state.md` и дописывать дневник.
 
 ## Статусы очередей (важно для rollup)

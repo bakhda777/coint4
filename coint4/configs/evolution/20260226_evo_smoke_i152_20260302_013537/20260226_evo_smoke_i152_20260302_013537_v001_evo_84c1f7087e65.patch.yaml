@@ -1,0 +1,5 @@
+base_config: configs/evolution/20260226_evo_smoke_i151_20260302_003110/20260226_evo_smoke_i151_20260302_003110_v002_evo_9a8138954115_oos20240501_20250630.yaml
+pair_selection:
+  max_pairs: 20
+portfolio:
+  risk_per_position_pct: 0.010999999999999996

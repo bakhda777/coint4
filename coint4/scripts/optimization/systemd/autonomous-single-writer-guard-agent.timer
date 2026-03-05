@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Single Writer Guard every 5 minutes
+
+[Timer]
+OnBootSec=140s
+OnUnitActiveSec=5min
+AccuracySec=20s
+Persistent=true
+Unit=autonomous-single-writer-guard-agent.service
+
+[Install]
+WantedBy=timers.target

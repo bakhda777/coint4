@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Autonomous Process SLO Guard every 2 minutes
+
+[Timer]
+OnBootSec=95s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-process-slo-guard-agent.service
+
+[Install]
+WantedBy=timers.target

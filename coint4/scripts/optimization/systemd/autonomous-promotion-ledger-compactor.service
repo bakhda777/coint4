@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous Promotion Ledger Compactor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/env python3 __ROOT_DIR__/scripts/optimization/promotion_ledger_compactor.py
+
+[Install]
+WantedBy=default.target

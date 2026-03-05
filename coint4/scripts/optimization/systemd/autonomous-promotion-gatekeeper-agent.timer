@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Autonomous Promotion Gatekeeper Agent every 1 minute
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=autonomous-promotion-gatekeeper-agent.service
+
+[Install]
+WantedBy=timers.target
+

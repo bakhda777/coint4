@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Autonomous Gate Surrogate Agent every 2 minutes
+
+[Timer]
+OnBootSec=55s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-gate-surrogate-agent.service
+
+[Install]
+WantedBy=timers.target

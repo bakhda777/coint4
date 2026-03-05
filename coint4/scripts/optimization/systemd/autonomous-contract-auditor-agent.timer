@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Contract Auditor every 3 minutes
+
+[Timer]
+OnBootSec=100s
+OnUnitActiveSec=3min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-contract-auditor-agent.service
+
+[Install]
+WantedBy=timers.target

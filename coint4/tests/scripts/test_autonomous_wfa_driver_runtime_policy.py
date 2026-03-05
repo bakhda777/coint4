@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+import re
+import subprocess
+import textwrap
+from pathlib import Path
+
+
+SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "optimization" / "autonomous_wfa_driver.sh"
+
+
+def _source() -> str:
+    return SCRIPT_PATH.read_text(encoding="utf-8")
+
+
+def _extract_reselect_after_reconcile_block(source: str) -> str:
+    pattern = (
+        r'if \(\( pending <= 0 \)\); then\s*\n'
+        r'\s*: > "\$CANDIDATE_FILE"'
+        r'(?P<body>.*?log "candidate_reselect_after_reconcile queue=\$queue_rel pending=\$pending"\n\s*fi)'
+    )
+    match = re.search(pattern, source, flags=re.DOTALL)
+    assert match is not None, "pending<=0 reconcile reselect block not found"
+    return 'if (( pending <= 0 )); then\n    : > "$CANDIDATE_FILE"' + match.group("body")
+
+
+def _run_reselect_block(tmp_path: Path, block: str, *, fallback_success: bool) -> subprocess.CompletedProcess[str]:
+    candidate_file = tmp_path / "candidate.csv"
+    header = (
+        "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,"
+        "gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,"
+        "effective_planned_count,stalled_share,queue_yield_score,recent_yield"
+    )
+    if fallback_success:
+        fallback_impl = (
+            '  cat > "$CANDIDATE_FILE" <<\'CSV\'\n'
+            f"{header}\n"
+            "artifacts/wfa/aggregate/demo/run_queue.csv,1,0,0,0,0,1,1.000,123,"
+            "POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,,1,0.000000,4.000,0.000\n"
+            "CSV\n"
+            "  return 0\n"
+        )
+    else:
+        fallback_impl = "  return 1\n"
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+CANDIDATE_FILE="{candidate_file}"
+ORPHAN_FILE="{tmp_path / 'orphan.csv'}"
+FULLSPAN_DECISION_STATE_FILE="{tmp_path / 'fullspan_state.json'}"
+LAST_REJECTED_QUEUE=""
+ROOT_DIR="{tmp_path}"
+adaptive_idle_sleep=0
+pending=0
+planned=0
+running=0
+stalled=0
+failed=0
+completed=0
+total=0
+queue=""
+queue_rel=""
+recent_yield=0
+cleanup_orphans() {{ :; }}
+find_candidate() {{
+  cat > "$CANDIDATE_FILE" <<'CSV'
+{header}
+CSV
+}}
+fallback_calls=0
+fallback_pending_candidate() {{
+  fallback_calls=$((fallback_calls + 1))
+{fallback_impl}}}
+log() {{ echo "LOG:$*"; }}
+log_state() {{ echo "STATE:$*"; }}
+maybe_trigger_auto_seed() {{ echo "SEED:$1"; return 0; }}
+batch_session_maybe_stop() {{ echo "STOP:$1"; }}
+fullspan_state_metric_set() {{ :; }}
+iter=0
+while true; do
+  iter=$((iter + 1))
+  if (( iter > 1 )); then
+    echo "LOOP_EXIT"
+    break
+  fi
+{textwrap.indent(block, "  ")}
+  echo "BLOCK_DONE"
+  break
+done
+echo "FALLBACK_CALLS:$fallback_calls"
+"""
+    return subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+
+
+def _assert_contains_all(source: str, snippets: list[str]) -> None:
+    missing = [snippet for snippet in snippets if snippet not in source]
+    assert not missing, f"missing required snippets: {missing}"
+
+
+def _assert_contains_any(source: str, snippets: list[str], *, label: str) -> None:
+    assert any(snippet in source for snippet in snippets), f"missing {label}: expected one of {snippets}"
+
+
+def test_candidate_reselect_after_reconcile_header_only_parse_falls_back_to_idle(tmp_path: Path) -> None:
+    block = _extract_reselect_after_reconcile_block(_source())
+    proc = _run_reselect_block(tmp_path, block, fallback_success=False)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "LOG:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "STATE:idle now=none completed=all" in proc.stdout
+    assert "STOP:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "FALLBACK_CALLS:1" in proc.stdout
+
+
+def test_candidate_reselect_after_reconcile_header_only_parse_can_recover_via_fallback(tmp_path: Path) -> None:
+    block = _extract_reselect_after_reconcile_block(_source())
+    proc = _run_reselect_block(tmp_path, block, fallback_success=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "LOG:candidate_parse_fallback reason=parse_empty_after_reconcile" in proc.stdout
+    assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/demo/run_queue.csv pending=1" in proc.stdout
+    assert "BLOCK_DONE" in proc.stdout
+    assert "LOG:candidate_parse_empty_after_reconcile" not in proc.stdout
+    assert "FALLBACK_CALLS:1" in proc.stdout
+
+
+def test_queue_hygiene_noop_skip_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'FORCE_SYNC_BEFORE_START',
+            'sync_queue_status "$queue_rel"',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'no_op_queue_skips',
+            'queue_hygiene_noop_skip',
+            'candidate_noop_skip',
+        ],
+        label='queue hygiene no-op skip metric/hook',
+    )
+
+
+def test_low_backlog_seed_trigger_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'MIN_PLANNED_BACKLOG',
+            'AUTO_SEED_COOLDOWN_SEC',
+            'AUTO_SEED_PENDING_THRESHOLD',
+            'AUTO_SEED_NUM_VARIANTS',
+            'AUTO_SEED_NUM_VARIANTS_FLOOR',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'autonomous_queue_seeder.py',
+            'scripts/optimization/autonomous_queue_seeder.py',
+        ],
+        label='auto-seed invocation',
+    )
+    _assert_contains_any(
+        src,
+        [
+            'seed_trigger_reason',
+            'auto_seed_trigger',
+        ],
+        label='seed trigger reason metric/hook',
+    )
+
+
+def test_no_progress_breaker_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'NO_PROGRESS_BREAKER_WINDOW_SEC',
+            'NO_PROGRESS_BREAKER_STREAK',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'no_progress_breaker',
+            'phase_switch',
+            'NO_PROGRESS_BREAKER',
+        ],
+        label='no-progress breaker hook',
+    )
+
+
+def test_runtime_metric_fields_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'recent_yield',
+            'queue_yield_score',
+            'effective_planned_count',
+            'stalled_share',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'no_op_queue_skips',
+            'seed_trigger_reason',
+        ],
+        label='runtime policy metrics',
+    )

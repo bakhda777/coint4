@@ -1,0 +1,5 @@
+backtest:
+  zscore_entry_threshold: 1.15
+base_config: configs/evolution/20260226_evo_smoke_i152_20260302_013537/20260226_evo_smoke_i152_20260302_013537_v005_evo_68727fa6abee_oos20240501_20250630.yaml
+pair_selection:
+  max_pairs: 22

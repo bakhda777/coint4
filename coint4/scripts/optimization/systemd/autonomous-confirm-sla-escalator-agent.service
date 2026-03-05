@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous Confirm SLA Escalator Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/env python3 __ROOT_DIR__/scripts/optimization/confirm_sla_escalator_agent.py
+
+[Install]
+WantedBy=default.target

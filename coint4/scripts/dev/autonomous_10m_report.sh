@@ -13,6 +13,8 @@ CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 HEARTBEAT_FILE="$STATE_DIR/heartbeat_state.json"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
 REPORT_STATE_FILE="$STATE_DIR/10m_human_report_state.json"
+PROCESS_SLO_STATE_FILE="$STATE_DIR/process_slo_state.json"
+CAPACITY_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 
@@ -163,11 +165,13 @@ fi
 
 vps_processes="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" 'ps aux | egrep -c "watch_wfa_queue|run_wfa_queue|run_wfa_fullcpu|python.*walk_forward" || true' 2>/dev/null || echo 0)"
 
-active_queues="$(python3 - <<'PY'
+active_queues="$(python3 - "$QUEUE_ROOT" <<'PY'
 import csv
 from collections import Counter
 from pathlib import Path
-root = Path('/home/claudeuser/coint4/coint4/artifacts/wfa/aggregate')
+import sys
+
+root = Path(sys.argv[1])
 out = []
 for p in sorted(root.rglob('run_queue.csv')):
     try:
@@ -356,11 +360,210 @@ print(' | '.join(out))
 PY
 )"
 
+process_funnel_line="нет данных process_slo_guard"
+process_kpi_line="нет данных process_slo_guard"
+process_runtime_line="нет данных process_slo_guard"
+process_alerts_line="нет"
+if [[ -f "$PROCESS_SLO_STATE_FILE" ]]; then
+  process_payload="$(python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print('нет данных process_slo_guard')
+    print('нет данных process_slo_guard')
+    print('нет данных process_slo_guard')
+    print('нет')
+    raise SystemExit(0)
+
+funnel = data.get('funnel', {}) if isinstance(data, dict) else {}
+kpi = data.get('kpi', {}) if isinstance(data, dict) else {}
+alerts = data.get('alerts', []) if isinstance(data, dict) else []
+queue = data.get('queue', {}) if isinstance(data, dict) else {}
+
+def to_int(v):
+    try:
+        return int(float(v or 0))
+    except Exception:
+        return 0
+
+def to_float(v):
+    try:
+        return float(v or 0.0)
+    except Exception:
+        return 0.0
+
+lead = kpi.get('lead_time_to_promote_min')
+lead_text = '-' if lead is None else f"{to_float(lead):.2f}m"
+
+print(
+    "generated={g} -> executable={e} -> completed={c} -> strict_pass={sp} -> confirm_ready={cr} -> promote={p}".format(
+        g=to_int(funnel.get('generated')),
+        e=to_int(funnel.get('executable')),
+        c=to_int(funnel.get('completed')),
+        sp=to_int(funnel.get('strict_pass')),
+        cr=to_int(funnel.get('confirm_ready')),
+        p=to_int(funnel.get('promote_eligible')),
+    )
+)
+print(
+    "throughput={t:.2f}/h strict_pass_rate={spr:.4f} confirm_conv={ccr:.4f} promote_conv={pcr:.4f} lead_to_promote={lead}".format(
+        t=to_float(kpi.get('throughput_completed_per_hour')),
+        spr=to_float(kpi.get('strict_pass_rate')),
+        ccr=to_float(kpi.get('confirm_conversion_rate')),
+        pcr=to_float(kpi.get('promote_conversion_rate')),
+        lead=lead_text,
+    )
+)
+local_runners = to_int(queue.get('local_runner_count'))
+executable_pending = to_int(queue.get('executable_pending'))
+pending = to_int(queue.get('pending'))
+idle_flag = 1 if pending > 0 and executable_pending > 0 and local_runners <= 0 else 0
+print(
+    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle}".format(
+        p=pending,
+        ep=executable_pending,
+        lr=local_runners,
+        idle=idle_flag,
+    )
+)
+if not isinstance(alerts, list) or not alerts:
+    print('нет')
+else:
+    head = []
+    for item in alerts[:3]:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get('code') or 'UNKNOWN')
+        msg = str(item.get('message') or '').strip()
+        head.append(f"{code}: {msg}" if msg else code)
+    print(' | '.join(head) if head else 'нет')
+PY
+)"
+  process_funnel_line="$(printf '%s\n' "$process_payload" | sed -n '1p')"
+  process_kpi_line="$(printf '%s\n' "$process_payload" | sed -n '2p')"
+  process_runtime_line="$(printf '%s\n' "$process_payload" | sed -n '3p')"
+  process_alerts_line="$(printf '%s\n' "$process_payload" | sed -n '4p')"
+fi
+
+capacity_line="нет данных capacity_controller"
+if [[ -f "$CAPACITY_STATE_FILE" ]]; then
+  capacity_line="$(python3 - "$CAPACITY_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print('нет данных capacity_controller')
+    raise SystemExit(0)
+
+policy = data.get('policy', {}) if isinstance(data, dict) else {}
+remote = data.get('remote', {}) if isinstance(data, dict) else {}
+print(
+    "search[min,max]=[{smin},{smax}] confirm[min,max]=[{cmin},{cmax}] dispatches={d} lane_active={la} remote_load1={load} remote_runners={rr}".format(
+        smin=int(float(policy.get('search_parallel_min', 0) or 0)),
+        smax=int(float(policy.get('search_parallel_max', 0) or 0)),
+        cmin=int(float(policy.get('confirm_parallel_min', 0) or 0)),
+        cmax=int(float(policy.get('confirm_parallel_max', 0) or 0)),
+        d=int(float(policy.get('confirm_dispatches_per_cycle', 0) or 0)),
+        la=int(float(policy.get('confirm_lane_max_active', 0) or 0)),
+        load=remote.get('load1', 'n/a'),
+        rr=remote.get('runner_count', 'n/a'),
+    )
+)
+PY
+)"
+fi
+
+surrogate_gate_line="нет данных surrogate runtime"
+surrogate_evidence_line="нет данных surrogate runtime"
+surrogate_branch_line="нет данных surrogate runtime"
+probe_json="$(python3 "$ROOT_DIR/scripts/optimization/probe_autonomous_markers.py" --root "$ROOT_DIR" --ensure-process-slo never --format json 2>/dev/null || true)"
+if [[ -n "$probe_json" ]]; then
+  surrogate_payload="$(python3 - "$probe_json" <<'PY'
+import json
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    print("нет данных surrogate runtime")
+    print("нет данных surrogate runtime")
+    print("нет данных surrogate runtime")
+    raise SystemExit(0)
+
+markers = data.get("markers", {}) if isinstance(data, dict) else {}
+sur = markers.get("surrogate_runtime", {}) if isinstance(markers, dict) else {}
+gate = sur.get("gate_surrogate", {}) if isinstance(sur, dict) else {}
+directive = sur.get("directive_overlay", {}) if isinstance(sur, dict) else {}
+combined = (sur.get("evidence", {}) or {}).get("combined", {}) if isinstance(sur, dict) else {}
+branch = sur.get("branch_health", {}) if isinstance(sur, dict) else {}
+
+def to_int(v):
+    try:
+        return int(float(v or 0))
+    except Exception:
+        return 0
+
+gate_counts = gate.get("decision_counts", {}) if isinstance(gate.get("decision_counts"), dict) else {}
+gate_fresh = gate.get("freshness", {}) if isinstance(gate.get("freshness"), dict) else {}
+directive_fresh = directive.get("freshness", {}) if isinstance(directive.get("freshness"), dict) else {}
+
+print(
+    "mode={mode} fresh={fresh} age={age}s allow/refine/reject={allow}/{refine}/{reject} directive_mode={dmode} directive_fresh={dfresh}".format(
+        mode=str(gate.get("mode") or "-"),
+        fresh=int(bool(gate_fresh.get("fresh"))),
+        age=to_int(gate_fresh.get("age_sec")),
+        allow=to_int(gate_counts.get("allow")),
+        refine=to_int(gate_counts.get("refine")),
+        reject=to_int(gate_counts.get("reject")),
+        dmode=str(directive.get("gate_surrogate_mode") or directive.get("mode") or "-"),
+        dfresh=int(bool(directive_fresh.get("fresh"))),
+    )
+)
+print(
+    "evidence reject/refine/allow={r}/{f}/{a}".format(
+        r=to_int((combined.get("SURROGATE_REJECT") or {}).get("count") if isinstance(combined.get("SURROGATE_REJECT"), dict) else 0),
+        f=to_int((combined.get("SURROGATE_REFINE") or {}).get("count") if isinstance(combined.get("SURROGATE_REFINE"), dict) else 0),
+        a=to_int((combined.get("SURROGATE_ALLOW") or {}).get("count") if isinstance(combined.get("SURROGATE_ALLOW"), dict) else 0),
+    )
+)
+print(
+    "branch status={status} broken={broken} eligible_refine_reject={eligible} observed={observed} reason={reason}".format(
+        status=str(branch.get("status") or "-"),
+        broken=int(bool(branch.get("broken_branch"))),
+        eligible=to_int(branch.get("eligible_refine_reject_count")),
+        observed=to_int(branch.get("observed_refine_reject_evidence")),
+        reason=str(branch.get("reason") or "-"),
+    )
+)
+PY
+)"
+  surrogate_gate_line="$(printf '%s\n' "$surrogate_payload" | sed -n '1p')"
+  surrogate_evidence_line="$(printf '%s\n' "$surrogate_payload" | sed -n '2p')"
+  surrogate_branch_line="$(printf '%s\n' "$surrogate_payload" | sed -n '3p')"
+fi
+
 printf '📌 10m human report\n'
 printf 'Цель: %s\n' "$goal_line"
 printf 'Что мешает: %s\n' "$blocker_line"
 printf 'Прогресс за 10 минут: %+d completed / %+d stalled\n' "$delta_completed" "$delta_stalled"
 printf 'Текущая очередь: %s\n' "$queue_line"
 printf 'Лидеры сейчас: %s\n' "$leaders_line"
+printf 'Процесс (воронка): %s\n' "$process_funnel_line"
+printf 'Процесс (KPI): %s\n' "$process_kpi_line"
+printf 'Процесс (runtime): %s\n' "$process_runtime_line"
+printf 'Процесс (alerts): %s\n' "$process_alerts_line"
+printf 'Capacity policy: %s\n' "$capacity_line"
+printf 'Surrogate gate: %s\n' "$surrogate_gate_line"
+printf 'Surrogate evidence: %s\n' "$surrogate_evidence_line"
+printf 'Surrogate branch: %s\n' "$surrogate_branch_line"
 printf 'Что делаю дальше: %s\n' "$next_action_line"
 printf 'Нужен ли ты: %s\n' "$need_user_line"

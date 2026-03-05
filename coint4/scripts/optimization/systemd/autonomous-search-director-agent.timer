@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Autonomous Search Director Agent every 2 minutes
+
+[Timer]
+OnBootSec=70s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=autonomous-search-director-agent.service
+
+[Install]
+WantedBy=timers.target
+

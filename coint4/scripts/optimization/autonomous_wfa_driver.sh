@@ -34,6 +34,7 @@ RANKING_PRIMARY_KEY="${RANKING_PRIMARY_KEY:-score_fullspan_v1}"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 DECISION_MEMO_DIR="$STATE_DIR/decision_memos"
 DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
+GATE_SURROGATE_STATE_FILE="$STATE_DIR/gate_surrogate_state.json"
 
 
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
@@ -73,11 +74,22 @@ EARLY_STOP_DOMINANT_MIN="${EARLY_STOP_DOMINANT_MIN:-6}"
 CONFIRM_FASTLANE_LIMIT="${CONFIRM_FASTLANE_LIMIT:-1}"
 CONFIRM_FASTLANE_PARALLEL="${CONFIRM_FASTLANE_PARALLEL:-2}"
 CONFIRM_FASTLANE_COOLDOWN_SEC="${CONFIRM_FASTLANE_COOLDOWN_SEC:-1800}"
-SEARCH_PARALLEL_ABS_MAX="${SEARCH_PARALLEL_ABS_MAX:-24}"
+SEARCH_PARALLEL_ABS_MAX="${SEARCH_PARALLEL_ABS_MAX:-48}"
 LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
 LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
 LOW_YIELD_HOMOGENEOUS_FAIL_MIN="${LOW_YIELD_HOMOGENEOUS_FAIL_MIN:-2}"
+SELECTOR_STALLED_BUDGET_RATIO="${SELECTOR_STALLED_BUDGET_RATIO:-0.20}"
+MIN_PLANNED_BACKLOG="${MIN_PLANNED_BACKLOG:-12}"
+AUTO_SEED_COOLDOWN_SEC="${AUTO_SEED_COOLDOWN_SEC:-900}"
+AUTO_SEED_PENDING_THRESHOLD="${AUTO_SEED_PENDING_THRESHOLD:-96}"
+AUTO_SEED_NUM_VARIANTS="${AUTO_SEED_NUM_VARIANTS:-64}"
+AUTO_SEED_NUM_VARIANTS_FLOOR="${AUTO_SEED_NUM_VARIANTS_FLOOR:-24}"
+NO_PROGRESS_BREAKER_WINDOW_SEC="${NO_PROGRESS_BREAKER_WINDOW_SEC:-900}"
+NO_PROGRESS_BREAKER_STREAK="${NO_PROGRESS_BREAKER_STREAK:-2}"
+FORCE_SYNC_BEFORE_START="${FORCE_SYNC_BEFORE_START:-1}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
+DRIVER_MAX_LOCAL_SEARCH_RUNNERS="${DRIVER_MAX_LOCAL_SEARCH_RUNNERS:-3}"
+DRIVER_MAX_REMOTE_RUNNERS="${DRIVER_MAX_REMOTE_RUNNERS:-64}"
 
 mkdir -p "$STATE_DIR"
 
@@ -323,7 +335,7 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$SELECTOR_STALLED_BUDGET_RATIO" <<'PY'
 import csv
 import json
 import re
@@ -439,6 +451,12 @@ try:
 except Exception:
     FULLSPAN_CONFIRM_MIN_GROUPS = 2
 
+try:
+    SELECTOR_STALLED_BUDGET_RATIO = float(sys.argv[10])
+except Exception:
+    SELECTOR_STALLED_BUDGET_RATIO = 0.20
+SELECTOR_STALLED_BUDGET_RATIO = max(0.0, min(1.0, SELECTOR_STALLED_BUDGET_RATIO))
+
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
@@ -494,7 +512,7 @@ if orphan_file and orphan_file.exists():
 
 
 def emit_scores():
-    out = []
+    entries = []
 
     for p in sorted(queue_root.rglob('run_queue.csv')):
         try:
@@ -521,6 +539,7 @@ def emit_scores():
             continue
 
         executable_pending = 0
+        executable_planned = 0
         for row in rows:
             status = str(row.get('status') or '').strip().lower()
             if status == 'running':
@@ -528,6 +547,8 @@ def emit_scores():
                 continue
             if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
                 executable_pending += 1
+                if status == 'planned':
+                    executable_planned += 1
 
         queue_abs = str(p)
         try:
@@ -551,7 +572,6 @@ def emit_scores():
         age_min = max(0.0, (now - mtime) / 60.0)
 
         by_base = defaultdict(lambda: {'holdout': None, 'stress': None, 'status': None})
-
         for row in rows:
             results_dir = (row.get('results_dir') or '').strip()
             if not results_dir:
@@ -598,12 +618,12 @@ def emit_scores():
             confirm_pending_since_epoch = 0
 
         confirm_fastlane_ready = bool(
-            state_verdict in ("PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM")
+            state_verdict in ('PROMOTE_PENDING_CONFIRM', 'PROMOTE_DEFER_CONFIRM')
             and state_strict_pass_count > 0
             and state_strict_run_groups >= FULLSPAN_CONFIRM_MIN_GROUPS
         )
 
-        for base, bundle in by_base.items():
+        for _, bundle in by_base.items():
             h = bundle.get('holdout')
             s = bundle.get('stress')
 
@@ -613,12 +633,12 @@ def emit_scores():
 
             h_ok = True
             s_ok = True
-            h_reason = ""
-            s_reason = ""
+            h_reason = ''
+            s_reason = ''
 
             if h is None:
                 h_ok = False
-                h_reason = "metrics_missing"
+                h_reason = 'metrics_missing'
             else:
                 ok, reason = hard_gate_pass(h)
                 if not ok:
@@ -627,7 +647,7 @@ def emit_scores():
 
             if s is None:
                 s_ok = False
-                s_reason = "metrics_missing"
+                s_reason = 'metrics_missing'
             else:
                 ok, reason = hard_gate_pass(s)
                 if not ok:
@@ -636,12 +656,10 @@ def emit_scores():
 
             if h_ok and s_ok:
                 pass_configs += 1
-
                 h_sh = to_float(h.get('sharpe_ratio_abs'))
                 s_sh = to_float(s.get('sharpe_ratio_abs'))
                 if h_sh is not None and s_sh is not None:
                     robust_sharpes.append(min(h_sh, s_sh))
-
                 h_tail = row_worst_step_pnl(h)
                 s_tail = row_worst_step_pnl(s)
                 tails = [v for v in (h_tail, s_tail) if v is not None]
@@ -661,61 +679,47 @@ def emit_scores():
 
         total_configs = pass_configs + fail_configs + unknown_configs
 
-        strict_gate_status = "FULLSPAN_PREFILTER_PASSED"
-        strict_gate_reason = ""
-
-        if state_verdict == "REJECT" or state_strict_status == "FULLSPAN_PREFILTER_REJECT":
-            promotion_potential = "REJECT"
-            gate_status = "HARD_FAIL"
-            strict_gate_status = "FULLSPAN_PREFILTER_REJECT"
-            gate_reason = canonical_state_reason(state_strict_reason or "METRICS_MISSING")
+        strict_gate_status = 'FULLSPAN_PREFILTER_PASSED'
+        strict_gate_reason = ''
+        if state_verdict == 'REJECT' or state_strict_status == 'FULLSPAN_PREFILTER_REJECT':
+            promotion_potential = 'REJECT'
+            gate_status = 'HARD_FAIL'
+            strict_gate_status = 'FULLSPAN_PREFILTER_REJECT'
+            gate_reason = canonical_state_reason(state_strict_reason or 'METRICS_MISSING')
         elif total_configs == 0:
-            promotion_potential = "UNKNOWN"
-            gate_status = "OPEN"
-            strict_gate_status = "FULLSPAN_PREFILTER_UNKNOWN"
-            gate_reason = "insufficient_history"
+            promotion_potential = 'UNKNOWN'
+            gate_status = 'OPEN'
+            strict_gate_status = 'FULLSPAN_PREFILTER_UNKNOWN'
+            gate_reason = 'insufficient_history'
         elif pass_configs == 0 and fail_configs > 0:
-            promotion_potential = "REJECT"
-            gate_status = "HARD_FAIL"
-            strict_gate_status = "FULLSPAN_PREFILTER_REJECT"
-            if fail_reasons:
-                dominant_reason = fail_reasons[0]
-            else:
-                dominant_reason = ""
-
+            promotion_potential = 'REJECT'
+            gate_status = 'HARD_FAIL'
+            strict_gate_status = 'FULLSPAN_PREFILTER_REJECT'
+            dominant_reason = fail_reasons[0] if fail_reasons else ''
             if by_state_reason and fail_configs >= LOW_YIELD_HOMOGENEOUS_MIN:
                 try:
                     dominant_reason_name, dominant_reason_count = max(by_state_reason.items(), key=lambda item: item[1])
                     threshold = max(LOW_YIELD_HOMOGENEOUS_MIN, int(fail_configs * LOW_YIELD_HOMOGENEOUS_FRACTION))
                     if dominant_reason_count >= threshold:
-                        dominant_reason = f"LOW_YIELD_HOMOGENEOUS_{dominant_reason_name}"
+                        dominant_reason = f'LOW_YIELD_HOMOGENEOUS_{dominant_reason_name}'
                 except Exception:
                     pass
-
-            if dominant_reason:
-                gate_reason = dominant_reason
-            else:
-                # deterministic fallback for full-reject queue
-                gate_reason = "METRICS_MISSING"
+            gate_reason = dominant_reason or 'METRICS_MISSING'
         else:
-            promotion_potential = "POSSIBLE"
-            gate_status = "OPEN"
+            promotion_potential = 'POSSIBLE'
+            gate_status = 'OPEN'
             if fail_configs > 0:
-                strict_gate_status = "FULLSPAN_PREFILTER_DEGRADED"
-            gate_reason = "history_probe"
+                strict_gate_status = 'FULLSPAN_PREFILTER_DEGRADED'
+            gate_reason = 'history_probe'
 
-        if strict_gate_status in ("FULLSPAN_PREFILTER_REJECT", "HARD_FAIL") and gate_status == "HARD_FAIL":
+        if strict_gate_status in ('FULLSPAN_PREFILTER_REJECT', 'HARD_FAIL') and gate_status == 'HARD_FAIL':
             strict_gate_reason = gate_reason
-
-        if strict_gate_status in ("FULLSPAN_PREFILTER_REJECT", "HARD_FAIL") and strict_gate_reason:
+        if strict_gate_status in ('FULLSPAN_PREFILTER_REJECT', 'HARD_FAIL') and strict_gate_reason:
             strict_gate_reason = canonical_state_reason(strict_gate_reason)
-
-        if gate_status == "OPEN" and strict_gate_status == "FULLSPAN_PREFILTER_PASSED":
-            # keep fullspan strict signal as state marker
-            strict_gate_reason = ""
+        if gate_status == 'OPEN' and strict_gate_status == 'FULLSPAN_PREFILTER_PASSED':
+            strict_gate_reason = ''
 
         fs_score = score_fullspan_v1_like(robust_sharpes, worst_steps)
-
         stale_count = failed
         pre_rank_score = 0.0
         if fs_score is not None:
@@ -728,15 +732,12 @@ def emit_scores():
         pre_rank_score -= fail_configs * 4.5
         pre_rank_score -= stale_count * 1.2
         pre_rank_score -= age_min * 0.3
-
-        pre_rank_score += 20.0 if strict_gate_status == "FULLSPAN_PREFILTER_PASSED" else 0.0
-
-        # distance-to-goal prioritization: prioritize queues closer to strict-pass + confirm completion
+        pre_rank_score += 20.0 if strict_gate_status == 'FULLSPAN_PREFILTER_PASSED' else 0.0
         pre_rank_score += min(max(state_strict_pass_count, 0), 3) * 6.0
         pre_rank_score += min(max(state_strict_run_groups, 0), 2) * 10.0
         pre_rank_score += min(max(state_confirm_count, 0), 2) * 12.0
 
-        if state_verdict == "PROMOTE_ELIGIBLE":
+        if state_verdict == 'PROMOTE_ELIGIBLE':
             pre_rank_score += 10.0
         elif confirm_fastlane_ready:
             pre_rank_score += 20.0
@@ -747,50 +748,118 @@ def emit_scores():
         if fail_configs > 0 and by_state_reason:
             dominant_reason_count = max(by_state_reason.values())
             if dominant_reason_count >= max(2, int(0.7 * max(fail_configs, 1))):
-                # repeated same fail-pattern likely low-yield queue; de-prioritize
                 pre_rank_score -= 6.0
 
         urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
-
-        if gate_status == "HARD_FAIL" and promotion_potential == "REJECT":
+        if gate_status == 'HARD_FAIL' and promotion_potential == 'REJECT':
             pre_rank_score -= 10000
 
-        executable_rank = 1 if executable_pending > 0 else 0
-        potential_rank = {"POSSIBLE": 2, "UNKNOWN": 1, "REJECT": 0}.get(promotion_potential, 1)
+        effective_planned_count = int(executable_planned if executable_planned > 0 else planned)
+        stalled_share = float(stalled) / float(max(1, pending))
+        queue_yield_score = float(pass_configs) / float(max(1, total_configs))
+        completed_with_metrics = 0
+        if pass_configs > 0:
+            completed_with_metrics = pass_configs
+        else:
+            for bundle in by_base.values():
+                for key in ('holdout', 'stress'):
+                    row = bundle.get(key)
+                    if row is not None and is_true(row.get('metrics_present')):
+                        completed_with_metrics += 1
+        started_window = max(1, planned + running + stalled + failed + completed)
+        recent_yield = float(completed_with_metrics) / float(started_window)
+        pre_rank_score += recent_yield * 25.0
+        if fail_configs > 0 and pass_configs == 0:
+            queue_yield_score -= min(1.0, float(fail_configs) / float(max(1, total_configs)))
 
-        out.append((
-            -executable_rank,
-            -potential_rank,
-            -pre_rank_score,
-            -urgency,
-            -int(mtime),
-            queue_rel,
-            planned,
-            running,
-            stalled,
-            failed,
-            completed,
-            total,
-            f"{urgency:.3f}",
-            int(mtime),
-            promotion_potential,
-            gate_status,
-            gate_reason,
-            f"{pre_rank_score:.3f}",
-            strict_gate_status,
-            strict_gate_reason,
-        ))
+        if effective_planned_count <= 0 and stalled > 0:
+            over_budget = max(0.0, stalled_share - SELECTOR_STALLED_BUDGET_RATIO)
+            if over_budget > 0.0:
+                pre_rank_score -= (40.0 + over_budget * 220.0)
+                queue_yield_score -= min(0.8, over_budget)
 
-    out.sort()
+        entries.append({
+            'queue_rel': queue_rel,
+            'planned': planned,
+            'running': running,
+            'stalled': stalled,
+            'failed': failed,
+            'completed': completed,
+            'total': total,
+            'urgency': urgency,
+            'mtime': int(mtime),
+            'promotion_potential': promotion_potential,
+            'gate_status': gate_status,
+            'gate_reason': gate_reason,
+            'pre_rank_score': pre_rank_score,
+            'strict_gate_status': strict_gate_status,
+            'strict_gate_reason': strict_gate_reason,
+            'effective_planned_count': effective_planned_count,
+            'stalled_share': stalled_share,
+            'queue_yield_score': queue_yield_score,
+            'recent_yield': recent_yield,
+            'executable_pending': executable_pending,
+        })
 
     with out_csv.open('w', encoding='utf-8', newline='') as f:
-        f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason\n')
-        if not out:
+        f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n')
+        if not entries:
             raise SystemExit(0)
 
-        out = out[:pre_rank_top_k]
-        _, __, ___, ____, _____, queue, planned, running, stalled, failed, completed, total, urgency, mtime_i, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
-        f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{mtime_i},{potential},{gate_status},{gate_reason},{pre_rank},{strict_gate_status},{strict_gate_reason}\n")
+        has_effective_planned = any(int(item.get('effective_planned_count', 0)) > 0 for item in entries)
+        pool = entries
+        if has_effective_planned:
+            planned_only = [item for item in entries if int(item.get('effective_planned_count', 0)) > 0]
+            if planned_only:
+                pool = planned_only
+
+        ranked = []
+        for item in pool:
+            executable_rank = 1 if int(item.get('executable_pending', 0)) > 0 else 0
+            planned_rank = 1 if int(item.get('effective_planned_count', 0)) > 0 else 0
+            potential_rank = {'POSSIBLE': 2, 'UNKNOWN': 1, 'REJECT': 0}.get(str(item.get('promotion_potential', 'UNKNOWN')), 1)
+            ranked.append((
+                -planned_rank,
+                -executable_rank,
+                -potential_rank,
+                -float(item.get('queue_yield_score', 0.0)),
+                -float(item.get('pre_rank_score', 0.0)),
+                -float(item.get('urgency', 0.0)),
+                -int(item.get('mtime', 0)),
+                str(item.get('queue_rel') or ''),
+                item,
+            ))
+
+        ranked.sort()
+        ranked = ranked[:max(1, pre_rank_top_k)]
+        winner = ranked[0][-1]
+
+        f.write(
+            '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f}\n'.format(
+                queue=winner['queue_rel'],
+                planned=int(winner['planned']),
+                running=int(winner['running']),
+                stalled=int(winner['stalled']),
+                failed=int(winner['failed']),
+                completed=int(winner['completed']),
+                total=int(winner['total']),
+                urgency=float(winner['urgency']),
+                mtime=int(winner['mtime']),
+                potential=str(winner['promotion_potential']),
+                gate_status=str(winner['gate_status']),
+                gate_reason=str(winner['gate_reason']),
+                pre_rank=float(winner['pre_rank_score']),
+                strict_status=str(winner['strict_gate_status']),
+                strict_reason=str(winner['strict_gate_reason']),
+                effective_planned=int(winner['effective_planned_count']),
+                stalled_share=float(winner['stalled_share']),
+                yield_score=float(winner['queue_yield_score']),
+                recent_yield=float(winner.get('recent_yield', 0.0)),
+            )
+        )
+
+
+emit_scores()
 PY
 }
 
@@ -903,7 +972,8 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
             executable_pending += 1
 
-    age_min = max(0.0, (time.time() - p.stat().st_mtime) / 60.0)
+    mtime = int(p.stat().st_mtime)
+    age_min = max(0.0, (time.time() - mtime) / 60.0)
     urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + 1.0
 
     # Prefer queues with planned work to avoid spinning on already fail-closed stalled tails.
@@ -915,7 +985,7 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         pending,
         stalled,
         running,
-        -int(p.stat().st_mtime),
+        -mtime,
         queue_rel,
         planned,
         running,
@@ -924,6 +994,7 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         completed,
         total,
         urgency,
+        mtime,
     )
     if best is None or row > best:
         best = row
@@ -931,16 +1002,27 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
 if best is None:
     raise SystemExit(1)
 
-_, _, _, _, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency = best
+_, _, _, _, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency, mtime = best
 out_csv.parent.mkdir(parents=True, exist_ok=True)
 with out_csv.open('w', encoding='utf-8', newline='') as f:
-    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason\n')
-    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{int(Path(queue).stat().st_mtime)},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,\n")
+    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n')
+    stalled_share = float(stalled) / float(max((planned + running + stalled + failed), 1))
+    queue_yield_score = float(planned) * 4.0 - (stalled_share * 20.0)
+    recent_yield = float(completed) / float(max((planned + running + stalled + failed + completed), 1))
+    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,,{int(planned)},{stalled_share:.6f},{queue_yield_score:.3f},{recent_yield:.3f}\n")
 PY
 }
 
 
 _is_match_running() {
+  local pattern="$1"
+  local cnt
+  cnt="$(_count_match_running "$pattern")"
+  [[ "$cnt" =~ ^[0-9]+$ ]] || cnt=0
+  (( cnt > 0 ))
+}
+
+_count_match_running() {
   local pattern="$1"
   local found
   found="$(python3 - "$pattern" "$$" "${BASHPID:-$$}" <<'PY'
@@ -949,6 +1031,7 @@ import sys
 
 pattern = sys.argv[1]
 self_pids = {sys.argv[2], sys.argv[3], str(os.getpid()), str(os.getppid())}
+count = 0
 
 for pid in os.listdir("/proc"):
     if not pid.isdigit() or pid in self_pids:
@@ -968,13 +1051,15 @@ for pid in os.listdir("/proc"):
     if "pgrep -f" in cmd or "python3 - <<" in cmd:
         continue
     if pattern in cmd:
-        print("1")
-        raise SystemExit(0)
+        count += 1
 
-print("0")
+print(count)
 PY
 )"
-  [[ "$found" == "1" ]]
+  if [[ -z "$found" || ! "$found" =~ ^[0-9]+$ ]]; then
+    found=0
+  fi
+  echo "$found"
 }
 
 get_vps_load() {
@@ -1049,22 +1134,24 @@ choose_parallel() {
 
   load1="$(get_vps_load)"
 
-  if (( pending >= 160 || total >= 220 )); then
-    p=18
+  if (( pending >= 320 || total >= 400 )); then
+    p=40
+  elif (( pending >= 160 || total >= 220 )); then
+    p=32
   elif (( pending >= 80 || total >= 140 )); then
-    p=14
+    p=24
   elif (( pending >= 40 || total >= 80 )); then
-    p=10
+    p=20
   elif (( total <= 24 )); then
-    if awk -v v="$load1" 'BEGIN { exit (v >= 12.0) ? 0 : 1 }'; then
-      p=8
+    if awk -v v="$load1" 'BEGIN { exit (v >= 14.0) ? 0 : 1 }'; then
+      p=12
     else
-      p=14
+      p=24
     fi
   elif (( total <= 60 )); then
-    p=10
+    p=18
   else
-    p=8
+    p=14
   fi
 
   case "$cause" in
@@ -1092,17 +1179,19 @@ choose_parallel() {
 
   # Load-aware boost in search mode to avoid underutilizing free VPS headroom.
   if [[ "$cause" == "UNKNOWN" || "$cause" == "DATA" ]]; then
-    if awk -v v="$load1" 'BEGIN { exit (v+0 <= 1.5) ? 0 : 1 }'; then
+    if awk -v v="$load1" 'BEGIN { exit (v+0 <= 2.0) ? 0 : 1 }'; then
+      p=$((p + 8))
+    elif awk -v v="$load1" 'BEGIN { exit (v+0 <= 4.0) ? 0 : 1 }'; then
       p=$((p + 4))
-    elif awk -v v="$load1" 'BEGIN { exit (v+0 <= 3.0) ? 0 : 1 }'; then
+    elif awk -v v="$load1" 'BEGIN { exit (v+0 <= 6.0) ? 0 : 1 }'; then
       p=$((p + 2))
-    elif awk -v v="$load1" 'BEGIN { exit (v+0 >= 9.0) ? 0 : 1 }'; then
-      p=$((p - 2))
+    elif awk -v v="$load1" 'BEGIN { exit (v+0 >= 12.0) ? 0 : 1 }'; then
+      p=$((p - 4))
     fi
   fi
 
   if [[ ! "$SEARCH_PARALLEL_ABS_MAX" =~ ^[0-9]+$ ]]; then
-    SEARCH_PARALLEL_ABS_MAX=24
+    SEARCH_PARALLEL_ABS_MAX=48
   fi
   if (( SEARCH_PARALLEL_ABS_MAX < 2 )); then
     SEARCH_PARALLEL_ABS_MAX=2
@@ -1373,6 +1462,145 @@ rec = {
 with p.open("a", encoding="utf-8") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 PY
+}
+
+surrogate_gate_decision() {
+  local queue_rel="$1"
+  local queue_abs="$ROOT_DIR/$queue_rel"
+  python3 - "$GATE_SURROGATE_STATE_FILE" "$queue_rel" "$queue_abs" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+queue_abs = str(sys.argv[3] or "").strip()
+queue_rooted = "/" + queue_rel.lstrip("/") if queue_rel else ""
+
+keys = {queue_rel, queue_abs, queue_rooted}
+keys.discard("")
+
+decision = "allow"
+reason = ""
+
+if not state_path.exists():
+    print(f"{decision}\t{reason}")
+    raise SystemExit(0)
+
+try:
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+except Exception:
+    print(f"{decision}\tinvalid_surrogate_state_json")
+    raise SystemExit(0)
+
+if not isinstance(data, dict):
+    print(f"{decision}\tinvalid_surrogate_state_payload")
+    raise SystemExit(0)
+
+def parse_entry(entry):
+    if isinstance(entry, str):
+        return str(entry).strip().lower(), ""
+    if isinstance(entry, dict):
+        d = str(entry.get("decision") or entry.get("status") or "").strip().lower()
+        r = str(entry.get("reason") or entry.get("note") or entry.get("message") or "").strip()
+        return d, r
+    return "", ""
+
+selected = None
+for bucket_name in ("queues", "queue_decisions", "by_queue"):
+    bucket = data.get(bucket_name)
+    if isinstance(bucket, dict):
+        for key in keys:
+            if key in bucket:
+                selected = bucket[key]
+                break
+    if selected is not None:
+        break
+    if isinstance(bucket, list):
+        for item in bucket:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("queue") or item.get("queue_rel") or item.get("queue_path") or "").strip()
+            if q in keys:
+                selected = item
+                break
+    if selected is not None:
+        break
+
+if selected is None:
+    selected = data
+
+parsed_decision, parsed_reason = parse_entry(selected)
+if parsed_decision in {"allow", "reject", "refine"}:
+    decision = parsed_decision
+if parsed_reason:
+    reason = parsed_reason
+print(f"{decision}\t{reason}")
+PY
+}
+
+surrogate_gate_state_needs_refresh() {
+  local queue_rel="$1"
+  python3 - "$GATE_SURROGATE_STATE_FILE" "$queue_rel" <<'PY'
+import json
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+fresh_sec = 90
+
+if not state_path.exists():
+    print("1")
+    raise SystemExit(0)
+
+try:
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+except Exception:
+    print("1")
+    raise SystemExit(0)
+
+if not isinstance(data, dict):
+    print("1")
+    raise SystemExit(0)
+
+ts = str(data.get("ts") or "").strip()
+age_sec = fresh_sec + 1
+if ts:
+    try:
+        parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        age_sec = max(0, int(time.time() - int(parsed.timestamp())))
+    except Exception:
+        age_sec = fresh_sec + 1
+
+queues = data.get("queues")
+has_queue = isinstance(queues, dict) and queue_rel in queues
+print("1" if age_sec > fresh_sec or not has_queue else "0")
+PY
+}
+
+refresh_gate_surrogate_state() {
+  local queue_rel="$1"
+  local refresh_needed="1"
+  refresh_needed="$(surrogate_gate_state_needs_refresh "$queue_rel" 2>/dev/null || printf '1')"
+  if [[ "$refresh_needed" != "1" ]]; then
+    return 0
+  fi
+  local py_bin="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
+  if [[ -z "$py_bin" ]]; then
+    log "surrogate_gate_refresh queue=$queue_rel status=skip reason=no_python"
+    return 1
+  fi
+  if "$py_bin" "$ROOT_DIR/scripts/optimization/gate_surrogate_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1; then
+    "$py_bin" "$ROOT_DIR/scripts/optimization/search_director_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
+    log "surrogate_gate_refresh queue=$queue_rel status=ok"
+    return 0
+  fi
+  log "surrogate_gate_refresh queue=$queue_rel status=failed"
+  return 1
 }
 
 write_decision_memo() {
@@ -3087,10 +3315,6 @@ sla_watch_queue() {
 
 is_driver_busy() {
   busy_reason=""
-  if _is_match_running "run_wfa_queue_powered.py --queue"; then
-    busy_reason="local_run_wfa_queue_powered"
-    return 0
-  fi
   if _is_match_running "watch_wfa_queue.sh --queue"; then
     busy_reason="local_watch_wfa_queue"
     return 0
@@ -3100,10 +3324,31 @@ is_driver_busy() {
     return 0
   fi
 
+  local local_powered_count
+  local max_local
+  local_powered_count="$(_count_match_running "run_wfa_queue_powered.py --queue")"
+  [[ "$local_powered_count" =~ ^[0-9]+$ ]] || local_powered_count=0
+  max_local="$DRIVER_MAX_LOCAL_SEARCH_RUNNERS"
+  [[ "$max_local" =~ ^[0-9]+$ ]] || max_local=3
+  if (( max_local < 1 )); then
+    max_local=1
+  fi
+  if (( local_powered_count >= max_local )); then
+    busy_reason="local_powered_capacity:${local_powered_count}/${max_local}"
+    return 0
+  fi
+
   local remote_count
+  local max_remote
   remote_count="$(remote_runner_count)"
-  if [[ -n "$remote_count" && "$remote_count" -gt 0 ]]; then
-    busy_reason="remote_runner_count:$remote_count"
+  [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+  max_remote="$DRIVER_MAX_REMOTE_RUNNERS"
+  [[ "$max_remote" =~ ^[0-9]+$ ]] || max_remote=64
+  if (( max_remote < 1 )); then
+    max_remote=1
+  fi
+  if (( remote_count >= max_remote )); then
+    busy_reason="remote_runner_capacity:${remote_count}/${max_remote}"
     return 0
   fi
 
@@ -3119,6 +3364,214 @@ sync_queue_status() {
 
   (cd "$ROOT_DIR" && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue "$queue_rel") >>"$LOG_FILE" 2>&1 || true
   log "sync_queue_status queue=$queue_rel done"
+}
+
+queue_hygiene_snapshot() {
+  local queue_rel="$1"
+  python3 - "$ROOT_DIR/$queue_rel" "$ROOT_DIR" "$RUN_INDEX_PATH" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+root = Path(sys.argv[2])
+run_index_path = Path(sys.argv[3])
+
+if not queue_path.exists():
+    print("0 0 0 0 0 0 0 0")
+    raise SystemExit(0)
+
+try:
+    rows = list(csv.DictReader(queue_path.open(newline='', encoding='utf-8')))
+except Exception:
+    print("0 0 0 0 0 0 0 0")
+    raise SystemExit(0)
+
+run_index = {}
+if run_index_path.exists():
+    try:
+        with run_index_path.open(newline='', encoding='utf-8') as handle:
+            for row in csv.DictReader(handle):
+                run_index[str(row.get('run_id') or '').strip()] = row
+    except Exception:
+        run_index = {}
+
+def is_true(v):
+    return str(v or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+def cfg_exists(path_raw):
+    s = str(path_raw or '').strip()
+    if not s:
+        return False
+    p = Path(s)
+    if not p.is_absolute():
+        p = root / p
+    return p.exists()
+
+pending = 0
+executable_pending = 0
+completed_with_metrics = 0
+planned = running = stalled = failed = completed = 0
+
+for row in rows:
+    status = str(row.get('status') or '').strip().lower()
+    cfg = str(row.get('config_path') or '').strip()
+    if status == 'planned':
+        planned += 1
+    elif status == 'running':
+        running += 1
+    elif status == 'stalled':
+        stalled += 1
+    elif status in {'failed', 'error'}:
+        failed += 1
+    elif status == 'completed':
+        completed += 1
+
+    if status in {'planned', 'running', 'stalled', 'failed', 'error'}:
+        pending += 1
+        if status == 'running' or cfg_exists(cfg):
+            executable_pending += 1
+
+    if status == 'completed':
+        run_id = Path(str(row.get('results_dir') or '')).name.strip()
+        idx_row = run_index.get(run_id, {})
+        if is_true((idx_row or {}).get('metrics_present')):
+            completed_with_metrics += 1
+            continue
+        run_dir = Path(str(row.get('results_dir') or '').strip())
+        if run_dir and not run_dir.is_absolute():
+            run_dir = root / run_dir
+        if run_dir.exists() and (run_dir / 'strategy_metrics.csv').exists():
+            completed_with_metrics += 1
+
+print(
+    pending,
+    executable_pending,
+    completed_with_metrics,
+    planned,
+    running,
+    stalled,
+    failed,
+    completed,
+)
+PY
+}
+
+global_backlog_snapshot() {
+  python3 - "$QUEUE_ROOT" "$ROOT_DIR" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+queue_root = Path(sys.argv[1])
+root = Path(sys.argv[2])
+
+def cfg_exists(path_raw):
+    s = str(path_raw or '').strip()
+    if not s:
+        return False
+    p = Path(s)
+    if not p.is_absolute():
+        p = root / p
+    return p.exists()
+
+planned_exec = 0
+pending_exec = 0
+no_op_queues = 0
+
+for q in sorted(queue_root.rglob('run_queue.csv')):
+    q_str = str(q)
+    if '/rollup/' in q_str or '/.autonomous/' in q_str:
+        continue
+    try:
+        rows = list(csv.DictReader(q.open(newline='', encoding='utf-8')))
+    except Exception:
+        continue
+    queue_pending = 0
+    queue_exec = 0
+    for row in rows:
+        st = str(row.get('status') or '').strip().lower()
+        if st in {'planned', 'running', 'stalled', 'failed', 'error'}:
+            queue_pending += 1
+            if st == 'running' or cfg_exists(row.get('config_path')):
+                queue_exec += 1
+                pending_exec += 1
+            if st == 'planned' and cfg_exists(row.get('config_path')):
+                planned_exec += 1
+    if queue_pending > 0 and queue_exec == 0:
+        no_op_queues += 1
+
+print(planned_exec, pending_exec, no_op_queues)
+PY
+}
+
+global_completed_metrics_count() {
+  python3 - "$RUN_INDEX_PATH" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+count = 0
+try:
+    with path.open(newline='', encoding='utf-8') as handle:
+        for row in csv.DictReader(handle):
+            status = str(row.get('status') or '').strip().lower()
+            metrics = str(row.get('metrics_present') or '').strip().lower()
+            if status == 'completed' and metrics in {'1', 'true', 'yes', 'y', 'on'}:
+                count += 1
+except Exception:
+    count = 0
+print(count)
+PY
+}
+
+maybe_trigger_auto_seed() {
+  local reason="${1:-low_backlog}"
+  local now_epoch last_seed planned_exec pending_exec no_op_queues
+  now_epoch="$(date +%s)"
+  last_seed="$(fullspan_state_metric_get last_seed_trigger_epoch 0)"
+  [[ "$last_seed" =~ ^[0-9]+$ ]] || last_seed=0
+
+  read -r planned_exec pending_exec no_op_queues <<< "$(global_backlog_snapshot)"
+  planned_exec="${planned_exec:-0}"
+  pending_exec="${pending_exec:-0}"
+  no_op_queues="${no_op_queues:-0}"
+  fullspan_state_metric_set "global_planned_exec" "$planned_exec"
+  fullspan_state_metric_set "global_pending_exec" "$pending_exec"
+  fullspan_state_metric_set "global_no_op_queue_count" "$no_op_queues"
+
+  if (( planned_exec >= AUTO_SEED_PENDING_THRESHOLD )); then
+    return 0
+  fi
+  if (( now_epoch - last_seed < AUTO_SEED_COOLDOWN_SEC )); then
+    return 0
+  fi
+
+  local rc=0
+  (
+    cd "$ROOT_DIR"
+    PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_queue_seeder.py \
+      --pending-threshold "$AUTO_SEED_PENDING_THRESHOLD" \
+      --num-variants "$AUTO_SEED_NUM_VARIANTS" \
+      --num-variants-floor "$AUTO_SEED_NUM_VARIANTS_FLOOR" \
+      --aggregate-dir artifacts/wfa/aggregate \
+      --run-index artifacts/wfa/aggregate/rollup/run_index.csv
+  ) >>"$LOG_FILE" 2>&1 || rc=$?
+
+  if (( rc == 0 )); then
+    fullspan_state_metric_set "last_seed_trigger_epoch" "$now_epoch"
+    fullspan_state_metric_set "seed_trigger_reason" "$reason"
+    fullspan_state_metric_inc "seed_trigger_count" 1
+    log "auto_seed_trigger reason=$reason planned_exec=$planned_exec pending_exec=$pending_exec no_op_queues=$no_op_queues threshold=$AUTO_SEED_PENDING_THRESHOLD num_variants=$AUTO_SEED_NUM_VARIANTS"
+    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason planned_exec=$planned_exec pending_exec=$pending_exec threshold=$AUTO_SEED_PENDING_THRESHOLD num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
+  else
+    fullspan_state_metric_inc "seed_trigger_fail_count" 1
+    log "auto_seed_failed reason=$reason rc=$rc planned_exec=$planned_exec"
+  fi
 }
 
 fullspan_rollup_sync() {
@@ -3706,10 +4159,36 @@ start_queue() {
   running="${4:-0}"
   stalled="${5:-0}"
   total="${6:-0}"
+  local failed=0
+  local completed=0
+  local pending=0
+  local executable_pending=0
+  local completed_with_metrics=0
 
   local parallel
   local max_retries
   local queue_poweroff
+
+  if is_truthy "$FORCE_SYNC_BEFORE_START"; then
+    sync_queue_status "$queue_rel"
+  fi
+
+  read -r pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+  total=$((planned + running + stalled + failed + completed))
+
+	  if (( pending <= 0 )); then
+    log "queue_hygiene_empty_skip queue=$queue_rel pending=$pending completed_metrics=$completed_with_metrics"
+    return 2
+  fi
+
+  if (( pending > 0 && executable_pending == 0 && completed_with_metrics > 0 )); then
+    fullspan_state_metric_inc "no_op_queue_skips" 1
+    fullspan_state_metric_set "last_no_op_queue_skip_epoch" "$(date +%s)"
+    fullspan_state_metric_set "seed_trigger_reason" "queue_hygiene_noop"
+    log "queue_hygiene_noop_skip queue=$queue_rel pending=$pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics"
+    log_decision_note "$queue_rel" "QUEUE_HYGIENE_NOOP_SKIP" "pending=$pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics" "skip_and_reselect"
+    return 2
+  fi
 
   parallel="$(choose_parallel "$planned" "$running" "$stalled" "$total" "$cause")"
   max_retries="$(choose_max_retries "$cause")"
@@ -3749,7 +4228,7 @@ start_queue() {
     log "failed_to_start queue=$queue_rel rc=$rc"
     return "$rc"
   fi
-  log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status"
+  log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
   log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
 }
 
@@ -3777,6 +4256,24 @@ prev_failed=0
 prev_pending=0
 busy_repeat_count=0
 busy_backoff_seconds=90
+no_progress_breaker_streak_count="$(fullspan_state_metric_get no_progress_breaker_streak 0)"
+[[ "$no_progress_breaker_streak_count" =~ ^[0-9]+$ ]] || no_progress_breaker_streak_count=0
+no_progress_breaker_last_progress_epoch="$(fullspan_state_metric_get last_completed_with_metrics_progress_epoch 0)"
+[[ "$no_progress_breaker_last_progress_epoch" =~ ^[0-9]+$ ]] || no_progress_breaker_last_progress_epoch=0
+global_completed_metrics_last="$(fullspan_state_metric_get last_completed_with_metrics_count 0)"
+[[ "$global_completed_metrics_last" =~ ^[0-9]+$ ]] || global_completed_metrics_last=0
+initial_completed_metrics="$(global_completed_metrics_count)"
+[[ "$initial_completed_metrics" =~ ^[0-9]+$ ]] || initial_completed_metrics=0
+if (( initial_completed_metrics > global_completed_metrics_last )); then
+  global_completed_metrics_last="$initial_completed_metrics"
+fi
+if (( no_progress_breaker_last_progress_epoch <= 0 )); then
+  no_progress_breaker_last_progress_epoch="$(date +%s)"
+fi
+fullspan_state_metric_set "last_completed_with_metrics_count" "$global_completed_metrics_last"
+fullspan_state_metric_set "last_completed_with_metrics_progress_epoch" "$no_progress_breaker_last_progress_epoch"
+fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+fullspan_state_metric_set "completed_with_metrics_global" "$global_completed_metrics_last"
 
 if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
   log_state "No aggregate queues found: $QUEUE_ROOT"
@@ -3784,6 +4281,42 @@ if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
 fi
 
 while true; do
+  maybe_trigger_auto_seed "low_planned_backlog" || true
+
+  current_epoch="$(date +%s)"
+  global_completed_metrics_now="$(global_completed_metrics_count)"
+  [[ "$global_completed_metrics_now" =~ ^[0-9]+$ ]] || global_completed_metrics_now=0
+  fullspan_state_metric_set "completed_with_metrics_global" "$global_completed_metrics_now"
+  phase_switch_required=0
+
+  if (( global_completed_metrics_now > global_completed_metrics_last )); then
+    delta_completed_metrics=$((global_completed_metrics_now - global_completed_metrics_last))
+    global_completed_metrics_last="$global_completed_metrics_now"
+    no_progress_breaker_streak_count=0
+    no_progress_breaker_last_progress_epoch="$current_epoch"
+    fullspan_state_metric_set "last_completed_with_metrics_count" "$global_completed_metrics_last"
+    fullspan_state_metric_set "last_completed_with_metrics_progress_epoch" "$no_progress_breaker_last_progress_epoch"
+    fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+    fullspan_state_metric_set "completed_with_metrics_stagnant_sec" "0"
+    log "global_progress completed_with_metrics=$global_completed_metrics_now delta=$delta_completed_metrics"
+  else
+    stagnant_sec=$((current_epoch - no_progress_breaker_last_progress_epoch))
+    if (( stagnant_sec < 0 )); then
+      stagnant_sec=0
+    fi
+    fullspan_state_metric_set "completed_with_metrics_stagnant_sec" "$stagnant_sec"
+    if (( stagnant_sec >= NO_PROGRESS_BREAKER_WINDOW_SEC )); then
+      no_progress_breaker_streak_count=$((no_progress_breaker_streak_count + 1))
+      no_progress_breaker_last_progress_epoch="$current_epoch"
+      fullspan_state_metric_set "last_completed_with_metrics_progress_epoch" "$no_progress_breaker_last_progress_epoch"
+      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+      log "no_progress_breaker_window stagnant_sec=$stagnant_sec streak=$no_progress_breaker_streak_count window_sec=$NO_PROGRESS_BREAKER_WINDOW_SEC completed_with_metrics=$global_completed_metrics_now"
+      if (( no_progress_breaker_streak_count >= NO_PROGRESS_BREAKER_STREAK )); then
+        phase_switch_required=1
+      fi
+    fi
+  fi
+
   find_candidate 1
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
@@ -3794,12 +4327,13 @@ while true; do
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
     if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_fallback_selected reason=no_candidate_file"
-    else
-      log_state "idle now=none completed=all"
-      log "candidate_empty"
-      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-      fi
+	    else
+	      log_state "idle now=none completed=all"
+	      log "candidate_empty"
+	      maybe_trigger_auto_seed "candidate_empty" || true
+	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	      fi
       if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
         adaptive_idle_sleep=300
       fi
@@ -3809,31 +4343,34 @@ while true; do
     fi
   fi
 
-  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_parse_fallback reason=parse_empty"
-      IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
+      IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
     fi
   fi
 
-  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
-    log_state "idle now=none completed=all"
-    log "candidate_parse_empty"
-    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-    fi
+	  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+	    log_state "idle now=none completed=all"
+	    log "candidate_parse_empty"
+	    maybe_trigger_auto_seed "candidate_parse_empty" || true
+	    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	    fi
     if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
       adaptive_idle_sleep=300
     fi
     batch_session_maybe_stop "candidate_parse_empty"
     sleep "$adaptive_idle_sleep"
     continue
-  fi
+	  fi
 
-  queue_rel="${queue#$ROOT_DIR/}"
-  pending=$((planned + running + stalled + failed))
+	  queue_rel="${queue#$ROOT_DIR/}"
+	  recent_yield="${recent_yield:-0}"
+	  fullspan_state_metric_set "recent_yield" "$recent_yield"
+	  pending=$((planned + running + stalled + failed))
 
   queue_abs="$ROOT_DIR/$queue_rel"
   if [[ -f "$queue_abs" ]]; then
@@ -3881,12 +4418,13 @@ PY
     if [[ ! -s "$CANDIDATE_FILE" ]]; then
       fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE" || true
     fi
-    if [[ ! -s "$CANDIDATE_FILE" ]]; then
-      log_state "idle now=none completed=all"
-      log "candidate_empty_after_reconcile"
-      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-      fi
+	    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+	      log_state "idle now=none completed=all"
+	      log "candidate_empty_after_reconcile"
+	      maybe_trigger_auto_seed "candidate_empty_after_reconcile" || true
+	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	      fi
       if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
         adaptive_idle_sleep=300
       fi
@@ -3894,13 +4432,50 @@ PY
       sleep "$adaptive_idle_sleep"
       continue
     fi
-    IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
-    queue_rel="${queue#$ROOT_DIR/}"
-    pending=$((planned + running + stalled + failed))
-    log "candidate_reselect_after_reconcile queue=$queue_rel pending=$pending"
-  fi
+	    IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+	    if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+	      if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
+	        log "candidate_parse_fallback reason=parse_empty_after_reconcile"
+	        IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+	      fi
+	    fi
+	    if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+	      log_state "idle now=none completed=all"
+	      log "candidate_parse_empty_after_reconcile"
+	      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
+	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	      fi
+	      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+	        adaptive_idle_sleep=300
+	      fi
+	      batch_session_maybe_stop "candidate_parse_empty_after_reconcile"
+	      sleep "$adaptive_idle_sleep"
+	      continue
+	    fi
+	    queue_rel="${queue#$ROOT_DIR/}"
+	    recent_yield="${recent_yield:-0}"
+	    fullspan_state_metric_set "recent_yield" "$recent_yield"
+	    pending=$((planned + running + stalled + failed))
+	    log "candidate_reselect_after_reconcile queue=$queue_rel pending=$pending"
+	  fi
 
-  if (( planned > 0 )); then
+	  if (( phase_switch_required == 1 && pending > 0 && running == 0 )); then
+	    no_progress_breaker_streak_count=0
+	    fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+	    fullspan_state_metric_inc "no_progress_breaker_trigger_count" 1
+	    fullspan_state_metric_set "seed_trigger_reason" "no_progress_breaker"
+	    LAST_REJECTED_QUEUE="$queue_rel"
+	    mark_orphan "$queue_rel" "no_progress_breaker_phase_switch"
+	    log_decision_note "$queue_rel" "NO_PROGRESS_PHASE_SWITCH" "pending=$pending planned=$planned stalled=$stalled failed=$failed recent_yield=${recent_yield:-0}" "orphan_and_reselect"
+	    log "no_progress_phase_switch queue=$queue_rel pending=$pending planned=$planned stalled=$stalled failed=$failed recent_yield=${recent_yield:-0}"
+	    maybe_trigger_auto_seed "no_progress_breaker" || true
+	    : > "$CANDIDATE_FILE"
+	    sleep 2
+	    continue
+	  fi
+
+	  if (( planned > 0 )); then
     gate_prefilter_payload="$(prefilter_planned_gate_aware "$queue_rel")"
     gate_prefilter_changed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("changed",0)))' "$gate_prefilter_payload" 2>/dev/null || echo 0)"
     gate_prefilter_codes="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); c=d.get("codes",{}); print(";".join(f"{k}:{v}" for k,v in sorted(c.items())))' "$gate_prefilter_payload" 2>/dev/null || true)"
@@ -4081,7 +4656,7 @@ PY
       vps_unreachable_streak_by_queue["$queue_rel"]=0
     fi
 
-    if (( running == 0 && stalled == 0 && planned > 0 )) && remote_queue_running "$queue_rel"; then
+    if remote_queue_running "$queue_rel"; then
       no_progress_streak_by_queue["$queue_rel"]=0
       log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
       sync_queue_status "$queue_rel"
@@ -4245,13 +4820,71 @@ PY
     continue
   fi
 
+  refresh_gate_surrogate_state "$queue_rel" || true
+
+  surrogate_decision="allow"
+  surrogate_reason=""
+  IFS=$'\t' read -r surrogate_decision surrogate_reason < <(surrogate_gate_decision "$queue_rel")
+  surrogate_decision="$(printf '%s' "${surrogate_decision:-allow}" | tr '[:upper:]' '[:lower:]')"
+  if [[ -z "$surrogate_decision" ]]; then
+    surrogate_decision="allow"
+  fi
+
+  if [[ "$surrogate_decision" == "reject" ]]; then
+    LAST_REJECTED_QUEUE="$queue_rel"
+    mark_orphan "$queue_rel" "surrogate_reject"
+    fullspan_state_queue_set "$queue_rel" \
+      "promotion_verdict" "REJECT" \
+      "rejection_reason" "surrogate_reject" \
+      "strict_gate_status" "FULLSPAN_PREFILTER_REJECT" \
+      "strict_gate_reason" "${surrogate_reason:-surrogate_reject}"
+    fullspan_state_metric_inc "surrogate_reject_count" 1
+    log "surrogate_gate queue=$queue_rel action=SURROGATE_REJECT reason=${surrogate_reason:-surrogate_reject}"
+    log_decision_note "$queue_rel" "SURROGATE_REJECT" "reason=${surrogate_reason:-surrogate_reject}" "skip_and_fail_closed"
+    : > "$CANDIDATE_FILE"
+    batch_session_maybe_stop "surrogate_reject"
+    sleep 2
+    continue
+  fi
+
+  if [[ "$surrogate_decision" == "refine" ]]; then
+    mark_orphan "$queue_rel" "surrogate_refine"
+    fullspan_state_metric_inc "surrogate_refine_count" 1
+    fullspan_state_metric_set "seed_trigger_reason" "surrogate_refine"
+    log "surrogate_gate queue=$queue_rel action=SURROGATE_REFINE reason=${surrogate_reason:-surrogate_refine}"
+    log_decision_note "$queue_rel" "SURROGATE_REFINE" "reason=${surrogate_reason:-surrogate_refine}" "skip_heavy_dispatch_and_seed"
+    maybe_trigger_auto_seed "surrogate_refine" || true
+    : > "$CANDIDATE_FILE"
+    sleep 2
+    continue
+  fi
+
+  if [[ "$surrogate_decision" == "allow" && -n "$surrogate_reason" ]]; then
+    fullspan_state_metric_inc "surrogate_allow_count" 1
+    log "surrogate_gate queue=$queue_rel action=SURROGATE_ALLOW reason=$surrogate_reason"
+    log_decision_note "$queue_rel" "SURROGATE_ALLOW" "reason=$surrogate_reason" "continue_dispatch"
+  fi
+
   if [[ -z "$cause" ]]; then
     cause="UNKNOWN"
   fi
 
-  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE selection_profile=$PROMOTION_SELECTION_PROFILE promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason promotion_potential=$promotion_potential pre_rank_score=$pre_rank_score"
-  if ! start_queue "$queue_rel" "$cause" "$planned" "$running" "$stalled" "$total"; then
-    log "start_failed queue=$queue_rel cause=$cause"
+  log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE selection_profile=$PROMOTION_SELECTION_PROFILE promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason promotion_potential=$promotion_potential pre_rank_score=$pre_rank_score effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
+  if start_queue "$queue_rel" "$cause" "$planned" "$running" "$stalled" "$total"; then
+    start_rc=0
+  else
+    start_rc=$?
+  fi
+  if (( start_rc == 2 )); then
+    fullspan_state_metric_set "seed_trigger_reason" "queue_hygiene_skip"
+    log "start_skipped queue=$queue_rel cause=$cause reason=queue_hygiene_skip"
+    maybe_trigger_auto_seed "queue_hygiene_skip" || true
+    : > "$CANDIDATE_FILE"
+    sleep 2
+    continue
+  fi
+  if (( start_rc != 0 )); then
+    log "start_failed queue=$queue_rel cause=$cause rc=$start_rc"
     batch_session_maybe_stop "start_failed"
   fi
 
