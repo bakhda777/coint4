@@ -17,6 +17,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -52,9 +53,13 @@ from coint2.ops.genome import (
 from coint2.ops.mutation_ops import apply_operator_v1
 from coint2.ops.run_queue import RunQueueEntry, write_run_queue
 
-# NOTE: "stress" runs (paired holdout+stress) are intentionally disabled for now.
-# The closed-loop optimizer runs holdout-only to reduce compute and focus on
-# faster hypothesis iteration. Re-introduce stress as a separate phase later.
+# Strict fullspan contract requires paired holdout+stress generation by default.
+STRESS_OVERRIDES: dict[str, Any] = {
+    "backtest.commission_pct": 0.0006,
+    "backtest.commission_rate_per_leg": 0.0006,
+    "backtest.slippage_pct": 0.001,
+    "backtest.slippage_stress_multiplier": 2.0,
+}
 
 DEFAULT_KNOB_SPACE: list[dict[str, Any]] = [
     {"key": "portfolio.risk_per_position_pct", "type": "float", "min": 0.003, "max": 0.03, "step": 0.001, "round_to": 4, "weight": 2.0, "norm": "range"},
@@ -133,6 +138,17 @@ def _utc_now_iso() -> str:
 
 def _resolve_app_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = str(os.getenv(name, "")).strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _ensure_local_optimization_scripts_on_path() -> None:
@@ -514,6 +530,45 @@ def _generate_proposals(
             proposals.append(candidate)
             seen_pool.append((candidate.candidate_id, candidate.genome))
             if len(proposals) >= num_variants:
+                break
+
+    if not proposals:
+        # Emergency escape hatch: never leave the autonomous cycle without at least
+        # one candidate when the standard operator plan collapses into duplicates.
+        fallback_budget = max(1, min(int(max_changed_keys), 8))
+        for fallback_kind in ("random_restart_v1", "mutate_step_v1", "coordinate_sweep_v1"):
+            try:
+                fallback_children = apply_operator_v1(
+                    fallback_kind,
+                    parents=[parent_genome],
+                    knob_space=knob_space,
+                    rng=rng,
+                    budget=fallback_budget,
+                    params={},
+                )
+            except Exception:
+                continue
+            for child in fallback_children:
+                fallback_candidate = _build_candidate(
+                    child=child,
+                    parent_genome=parent_genome,
+                    parent_id=parent_id,
+                    parents=[parent_id],
+                    operator_id=f"op_emergency_{fallback_kind}",
+                    generation=generation,
+                    seen_pool=seen_pool,
+                    knob_space=knob_space,
+                )
+                if len(fallback_candidate.changed_keys) <= 0:
+                    continue
+                if fallback_candidate.candidate_id in blocked_ids or fallback_candidate.candidate_id in local_seen:
+                    continue
+                local_seen.add(fallback_candidate.candidate_id)
+                blocked_ids.add(fallback_candidate.candidate_id)
+                proposals.append(fallback_candidate)
+                seen_pool.append((fallback_candidate.candidate_id, fallback_candidate.genome))
+                break
+            if proposals:
                 break
 
     if not proposals:
@@ -2025,6 +2080,7 @@ def _render_search_space_md(
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    include_stress_default = _env_bool("EVOLVE_NEXT_BATCH_INCLUDE_STRESS", True)
     parser = argparse.ArgumentParser(description="Targeted mutation planner for next evolution batch.")
     parser.add_argument("--base-config", required=True, help="Seed/base YAML config (relative to coint4/ unless absolute).")
     parser.add_argument("--run-group", required=True, help="Output run group for generated queue/configs.")
@@ -2041,6 +2097,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="run_index filter token (repeatable). Defaults to --controller-group when omitted.",
     )
     parser.add_argument("--window", action="append", default=[], help="OOS window format: YYYY-MM-DD,YYYY-MM-DD (repeatable).")
+    parser.add_argument(
+        "--include-stress",
+        dest="include_stress",
+        action="store_true",
+        help="Generate paired stress configs for each holdout variant/window.",
+    )
+    parser.add_argument(
+        "--no-include-stress",
+        dest="include_stress",
+        action="store_false",
+        help="Disable stress pair generation (debug only; breaks strict fullspan pairing).",
+    )
+    parser.set_defaults(include_stress=include_stress_default)
     parser.add_argument("--num-variants", type=int, default=12, help="How many candidate variants to generate.")
     parser.add_argument("--seed", type=int, default=20260226, help="Deterministic RNG seed.")
     parser.add_argument(
@@ -2383,6 +2452,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
 
+            if bool(args.include_stress):
+                stress_cfg_payload = copy.deepcopy(holdout_cfg_payload)
+                for dotted_key, value in STRESS_OVERRIDES.items():
+                    _set_nested(stress_cfg_payload, dotted_key, value)
+
+                stress_cfg_rel = f"{_relative_to_root(configs_base, root=app_root)}/{variant_tag}_stress.yaml"
+                stress_cfg_path = app_root / stress_cfg_rel
+                stress_run_id = f"stress_{variant_tag}"
+
+                if not args.dry_run:
+                    stress_cfg_path.parent.mkdir(parents=True, exist_ok=True)
+                    stress_cfg_path.write_text(yaml.safe_dump(stress_cfg_payload, sort_keys=True), encoding="utf-8")
+                    created_files.append(_relative_to_root(stress_cfg_path, root=app_root))
+
+                queue_entries.append(
+                    RunQueueEntry(
+                        config_path=_relative_to_root(stress_cfg_path, root=app_root),
+                        results_dir=_relative_to_root(runs_base / stress_run_id, root=app_root),
+                        status="planned",
+                    )
+                )
+
         similarity_payload = None
         if proposal.nearest_id and math_is_finite(proposal.nearest_distance):
             similarity_payload = {"nearest_id": proposal.nearest_id, "distance": float(proposal.nearest_distance)}
@@ -2398,6 +2489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "results_dir": _relative_to_root(runs_base / f"holdout_{run_group}_v{idx:03d}_{proposal.candidate_id}_oos{windows[0][0].replace('-', '')}_{windows[0][1].replace('-', '')}", root=app_root),
                     "status": "planned",
                 },
+                "paired_holdout_stress": bool(args.include_stress),
                 "ir_mode": str(args.ir_mode),
                 "patch_path": patch_rel,
                 "patch_ir": proposal.patch_ir,
@@ -2448,7 +2540,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "llm_verify_semantic": bool(args.llm_verify_semantic),
         },
         "reward": {
-            "profile": "short_oos_v1",
+            "profile": "strict_fullspan_holdout_stress_v1",
             "hard_gates": {
                 "require_metrics": True,
                 "min_windows": thresholds.min_windows,
@@ -2458,7 +2550,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "min_pnl": 0.0,
             },
             "dd_penalty": {"target_pct": thresholds.max_dd_pct, "k": 1.0},
-            "fullspan_policy_v1": None,
+            "fullspan_policy_v1": {
+                "paired_holdout_stress": bool(args.include_stress),
+                "stress_overrides": STRESS_OVERRIDES if bool(args.include_stress) else {},
+            },
         },
         "similarity": {
             "metric": "genome_weighted_l1_v1",

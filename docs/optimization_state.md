@@ -1,6 +1,25 @@
 # Optimization state
 
-Last updated: 2026-02-24
+Last updated: 2026-03-05
+
+## Review bugfix cycle P1/P2 (docs tracking, 2026-03-05)
+
+- P1 (critical, confirm-dispatch quota accounting):
+  - Что исправляется: `confirm_fastlane_cycle_dispatch_count` увеличивается только после успешного dispatch.
+  - Критерии приёмки: неуспешная первая попытка не съедает квоту, следующая eligible очередь dispatch-ится в том же цикле при `confirm_dispatches_per_cycle=1`.
+  - Статус: DONE.
+- P2 (high, stress naming/filter compatibility):
+  - Что исправляется: совместимость stress-конфигов и shortlist-фильтра в confirm-fastlane.
+  - Критерии приёмки:
+    - stress-конфиги из `evolve_next_batch.py` именуются как `{variant_tag}_stress.yaml`;
+    - shortlist исключает stress по `_stress.yaml`, `stress_` prefix и stress run-id/results_dir;
+    - stress-кандидаты не попадают в holdout shortlist.
+  - Статус: DONE.
+- Валидация (2026-03-05): целевой регрессионный набор `pytest` + `ruff` по P1/P2 пройден, статус пакета — `READY_FOR_INTEGRATION`.
+- Pre-merge smoke на VPS (2026-03-05): выполнен через `scripts/remote/run_server_job.sh` на `85.198.90.128`, подтверждено поведение P1/P2:
+  - quota smoke: `confirm_fastlane_trigger_attempt=2`, `confirm_fastlane_trigger_count=1`, `confirm_fastlane_cycle_dispatch_count=1`, `confirm_fastlane_trigger_empty_shortlist=1` (первая неуспешная попытка не съедает квоту);
+  - stress-filter smoke: `shortlist_rows=1`, `fallback_rows=1`, `kept_config_path=configs/target.yaml` (stress-кандидаты отфильтрованы);
+  - после smoke выполнена остановка VPS и проверка недоступности (`ssh timeout`).
 
 ## Rollup snapshot (source of truth)
 
@@ -765,3 +784,16 @@ Notes:
 
 Что дальше:
 - Передать цикл аналитику для сравнения `bl6` против completed-пула и подготовки `bl7` (или стоп-вердикта по PRD guardrail).
+
+---
+
+## Обновление процесса (2026-03-05)
+
+Внедрён процессный контракт и автоматический SLO/WIP-контур:
+
+- Документ: `docs/optimization_process_contract.md`.
+- Агент: `scripts/optimization/process_slo_guard_agent.py`.
+- Таймер: `autonomous-process-slo-guard-agent.timer`.
+- 10m отчёт теперь показывает процессную воронку, KPI и process-alerts.
+
+Это дополняет технические guardrails и даёт управляемость скорости через измеримые этапы `generated -> executable -> completed -> strict_pass -> confirm_ready -> promote_eligible`.

@@ -13,6 +13,11 @@ LOG_FILE="$STATE_DIR/driver.log"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 POWEROFF_AFTER_RUN="${POWEROFF_AFTER_RUN:-true}"
+VPS_BATCH_SESSION_ENABLE="${VPS_BATCH_SESSION_ENABLE:-1}"
+VPS_BATCH_SESSION_MAX_SECONDS="${VPS_BATCH_SESSION_MAX_SECONDS:-3600}"
+VPS_BATCH_SESSION_MAX_JOBS="${VPS_BATCH_SESSION_MAX_JOBS:-6}"
+VPS_BATCH_SESSION_IDLE_GRACE_SEC="${VPS_BATCH_SESSION_IDLE_GRACE_SEC:-180}"
+VPS_BATCH_SESSION_STOP_COOLDOWN_SEC="${VPS_BATCH_SESSION_STOP_COOLDOWN_SEC:-180}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
@@ -25,6 +30,7 @@ PROMOTION_PRE_RANK_TOPK="${PROMOTION_PRE_RANK_TOPK:-8}"
 PROMOTION_SELECTION_PROFILE="promote_profile"
 PROMOTION_SELECTION_MODE="fullspan"
 FULLSPAN_POLICY_NAME="fullspan_v1"
+RANKING_PRIMARY_KEY="${RANKING_PRIMARY_KEY:-score_fullspan_v1}"
 DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 DECISION_MEMO_DIR="$STATE_DIR/decision_memos"
 DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
@@ -33,24 +39,53 @@ DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
 FULLSPAN_CYCLE_CACHE_FILE="$STATE_DIR/fullspan_cycle_cache.json"
 FULLSPAN_DECISION_STATE_FILE="$STATE_DIR/fullspan_decision_state.json"
+VPS_RECOVERY_STATE_FILE="$STATE_DIR/vps_recovery_state.json"
+CONFIRM_LINEAGE_REGISTRY_FILE="$STATE_DIR/confirm_lineage_registry.json"
 FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
 FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
-FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-60}"
+FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-300}"
 FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
+CAPACITY_CONTROLLER_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
+CONFIRM_SLA_ESCALATION_STATE_FILE="$STATE_DIR/confirm_sla_escalation_state.json"
+BATCH_SESSION_STATE_FILE="$STATE_DIR/batch_session_state.json"
+DRIVER_CONFIRM_FASTLANE_ENABLE="${DRIVER_CONFIRM_FASTLANE_ENABLE:-0}"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 SAME_REASON_REPAIR_CAP="${SAME_REASON_REPAIR_CAP:-3}"
 ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
 ADAPTIVE_HIGH_RATE_THRESHOLD="${ADAPTIVE_HIGH_RATE_THRESHOLD:-0.60}"
 SLA_VPS_IDLE_PENDING_CYCLES="${SLA_VPS_IDLE_PENDING_CYCLES:-3}"
 SLA_CONFIRM_PENDING_SEC="${SLA_CONFIRM_PENDING_SEC:-7200}"
+VPS_RECOVER_TIMEOUT_SEC="${VPS_RECOVER_TIMEOUT_SEC:-420}"
+VPS_RECOVER_BASE_COOLDOWN_SEC="${VPS_RECOVER_BASE_COOLDOWN_SEC:-300}"
+VPS_RECOVER_MAX_COOLDOWN_SEC="${VPS_RECOVER_MAX_COOLDOWN_SEC:-3600}"
+VPS_RECOVER_FAIL_HARD_NOTE_STREAK="${VPS_RECOVER_FAIL_HARD_NOTE_STREAK:-4}"
+VPS_RECOVER_ACTIVE_SSH_DOWN_FASTPATH="${VPS_RECOVER_ACTIVE_SSH_DOWN_FASTPATH:-1}"
+VPS_FORCE_CYCLE_STREAK="${VPS_FORCE_CYCLE_STREAK:-3}"
+VPS_FORCE_CYCLE_COOLDOWN_SEC="${VPS_FORCE_CYCLE_COOLDOWN_SEC:-1800}"
+VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC="${VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC:-20}"
+VPS_FORCE_CYCLE_BOOT_WAIT_SEC="${VPS_FORCE_CYCLE_BOOT_WAIT_SEC:-360}"
+VPS_UNREACHABLE_ORPHAN_STREAK="${VPS_UNREACHABLE_ORPHAN_STREAK:-3}"
+VPS_UNREACHABLE_SLEEP_CAP_SEC="${VPS_UNREACHABLE_SLEEP_CAP_SEC:-300}"
+EARLY_STOP_MIN_COMPLETED="${EARLY_STOP_MIN_COMPLETED:-8}"
+EARLY_STOP_FAIL_FRACTION="${EARLY_STOP_FAIL_FRACTION:-0.75}"
+EARLY_STOP_DOMINANT_FRACTION="${EARLY_STOP_DOMINANT_FRACTION:-0.70}"
+EARLY_STOP_DOMINANT_MIN="${EARLY_STOP_DOMINANT_MIN:-6}"
 CONFIRM_FASTLANE_LIMIT="${CONFIRM_FASTLANE_LIMIT:-1}"
 CONFIRM_FASTLANE_PARALLEL="${CONFIRM_FASTLANE_PARALLEL:-2}"
 CONFIRM_FASTLANE_COOLDOWN_SEC="${CONFIRM_FASTLANE_COOLDOWN_SEC:-1800}"
+SEARCH_PARALLEL_ABS_MAX="${SEARCH_PARALLEL_ABS_MAX:-24}"
 LOW_YIELD_HARDFAIL_STREAK_LIMIT="${LOW_YIELD_HARDFAIL_STREAK_LIMIT:-3}"
 LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION="${LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION:-0.70}"
 LOW_YIELD_HOMOGENEOUS_FAIL_MIN="${LOW_YIELD_HOMOGENEOUS_FAIL_MIN:-2}"
+LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
 
 mkdir -p "$STATE_DIR"
+
+vps_runtime_fail_streak=0
+vps_runtime_unreachable_since=0
+vps_runtime_last_recover_epoch=0
+vps_runtime_next_retry_epoch=0
+vps_runtime_last_force_cycle_epoch=0
 
 log() {
   printf '%s | %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$LOG_FILE"
@@ -66,7 +101,220 @@ if ! flock -n 9; then
   log "driver_already_running"
   exit 0
 fi
-trap 'flock -u 9; rm -f "$LOCK_FILE"' EXIT
+trap 'batch_session_save_state; flock -u 9; rm -f "$LOCK_FILE"' EXIT
+
+batch_session_active=0
+batch_session_start_epoch=0
+batch_session_runs_started=0
+batch_session_last_dispatch_epoch=0
+batch_session_last_stop_epoch=0
+
+is_truthy() {
+  local raw
+  raw="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  [[ "$raw" == "1" || "$raw" == "true" || "$raw" == "yes" || "$raw" == "y" || "$raw" == "on" ]]
+}
+
+batch_session_enabled() {
+  is_truthy "$VPS_BATCH_SESSION_ENABLE"
+}
+
+batch_session_save_state() {
+  python3 - "$BATCH_SESSION_STATE_FILE" "$batch_session_active" "$batch_session_start_epoch" "$batch_session_runs_started" "$batch_session_last_dispatch_epoch" "$batch_session_last_stop_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+
+def to_int(value):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+payload = {
+    "active": bool(to_int(sys.argv[2])),
+    "start_epoch": to_int(sys.argv[3]),
+    "runs_started": to_int(sys.argv[4]),
+    "last_dispatch_epoch": to_int(sys.argv[5]),
+    "last_stop_epoch": to_int(sys.argv[6]),
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+batch_session_load_state() {
+  if [[ ! -f "$BATCH_SESSION_STATE_FILE" ]]; then
+    return 0
+  fi
+  local loaded
+  loaded="$(python3 - "$BATCH_SESSION_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("0,0,0,0,0")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0,0,0,0,0")
+    raise SystemExit(0)
+
+def to_int(value):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+print(
+    "{},{},{},{},{}".format(
+        1 if bool(data.get("active")) else 0,
+        to_int(data.get("start_epoch")),
+        to_int(data.get("runs_started")),
+        to_int(data.get("last_dispatch_epoch")),
+        to_int(data.get("last_stop_epoch")),
+    )
+)
+PY
+)"
+  IFS=',' read -r batch_session_active batch_session_start_epoch batch_session_runs_started batch_session_last_dispatch_epoch batch_session_last_stop_epoch <<< "$loaded"
+}
+
+batch_session_note_dispatch() {
+  if ! batch_session_enabled; then
+    return 0
+  fi
+  local now_epoch
+  now_epoch="$(date +%s)"
+  if (( batch_session_active == 0 )); then
+    batch_session_active=1
+    batch_session_start_epoch="$now_epoch"
+    batch_session_runs_started=0
+    log "batch_session_start ts=$now_epoch"
+  fi
+  batch_session_runs_started=$((batch_session_runs_started + 1))
+  batch_session_last_dispatch_epoch="$now_epoch"
+  batch_session_save_state
+}
+
+batch_session_queue_poweroff() {
+  if batch_session_enabled; then
+    echo "false"
+  else
+    echo "$POWEROFF_AFTER_RUN"
+  fi
+}
+
+global_pending_count() {
+  python3 - "$QUEUE_ROOT" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+pending = 0
+for queue in root.rglob("run_queue.csv"):
+    if "/rollup/" in str(queue) or "/.autonomous/" in str(queue):
+        continue
+    try:
+        with queue.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+    except Exception:
+        continue
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "running", "stalled", "failed", "error"}:
+            pending += 1
+print(pending)
+PY
+}
+
+batch_session_stop() {
+  local reason="${1:-idle}"
+  local now_epoch
+  now_epoch="$(date +%s)"
+
+  if (( batch_session_active == 0 )); then
+    return 0
+  fi
+  if (( now_epoch - batch_session_last_stop_epoch < VPS_BATCH_SESSION_STOP_COOLDOWN_SEC )); then
+    return 0
+  fi
+  if ! vps_is_reachable; then
+    batch_session_active=0
+    batch_session_start_epoch=0
+    batch_session_runs_started=0
+    batch_session_last_dispatch_epoch=0
+    batch_session_last_stop_epoch="$now_epoch"
+    batch_session_save_state
+    return 0
+  fi
+
+  log "batch_session_stop_attempt reason=$reason"
+  if timeout 180 env SKIP_POWER=1 STOP_AFTER=1 STOP_VIA_SSH=1 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo batch_session_stop >>"$LOG_FILE" 2>&1; then
+    batch_session_last_stop_epoch="$now_epoch"
+    log "batch_session_stop_success reason=$reason runs_started=$batch_session_runs_started"
+  else
+    batch_session_last_stop_epoch="$now_epoch"
+    log "batch_session_stop_fail reason=$reason"
+  fi
+
+  batch_session_active=0
+  batch_session_start_epoch=0
+  batch_session_runs_started=0
+  batch_session_last_dispatch_epoch=0
+  batch_session_save_state
+}
+
+batch_session_maybe_stop() {
+  local reason="${1:-idle}"
+  if ! batch_session_enabled; then
+    return 0
+  fi
+  if (( batch_session_active == 0 )); then
+    return 0
+  fi
+
+  local now_epoch
+  now_epoch="$(date +%s)"
+  local remote_count
+  remote_count="$(remote_runner_count)"
+  if [[ -z "$remote_count" || ! "$remote_count" =~ ^[0-9]+$ ]]; then
+    remote_count=0
+  fi
+  if (( remote_count > 0 )); then
+    return 0
+  fi
+
+  local pending_total
+  pending_total="$(global_pending_count)"
+  if [[ -z "$pending_total" || ! "$pending_total" =~ ^[0-9]+$ ]]; then
+    pending_total=0
+  fi
+
+  local age_sec=$((now_epoch - batch_session_start_epoch))
+  local idle_sec=$((now_epoch - batch_session_last_dispatch_epoch))
+
+  if (( pending_total == 0 )); then
+    batch_session_stop "all_queues_done:${reason}"
+    return 0
+  fi
+
+  if (( batch_session_runs_started >= VPS_BATCH_SESSION_MAX_JOBS && idle_sec >= VPS_BATCH_SESSION_IDLE_GRACE_SEC )); then
+    batch_session_stop "max_jobs:${reason}"
+    return 0
+  fi
+
+  if (( age_sec >= VPS_BATCH_SESSION_MAX_SECONDS && idle_sec >= VPS_BATCH_SESSION_IDLE_GRACE_SEC )); then
+    batch_session_stop "max_session_age:${reason}"
+    return 0
+  fi
+}
 
 find_candidate() {
   local skip_orphans="${1:-1}"
@@ -93,6 +341,12 @@ HARDFAIL_MAP = {
     "dd_gate_fail": "DD_FAIL",
     "economic_gate_fail": "ECONOMIC_FAIL",
     "step_gate_fail": "STEP_FAIL",
+    "METRICS_MISSING": "METRICS_MISSING",
+    "TRADES_FAIL": "TRADES_FAIL",
+    "PAIRS_FAIL": "PAIRS_FAIL",
+    "DD_FAIL": "DD_FAIL",
+    "ECONOMIC_FAIL": "ECONOMIC_FAIL",
+    "STEP_FAIL": "STEP_FAIL",
 }
 
 
@@ -109,60 +363,41 @@ def is_true(value):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def config_exists(path_raw):
+    path_s = str(path_raw or '').strip()
+    if not path_s:
+        return False
+    cfg = Path(path_s)
+    if not cfg.is_absolute():
+        cfg = app_root / cfg
+    return cfg.exists()
+
+
 def hard_gate_pass(row):
     if not row:
         return False, "metrics_missing"
-    if not is_true(row.get("metrics_present", "")):
-        return False, "metrics_missing"
-
-    total_trades = to_float(row.get("total_trades"), 0.0)
-    total_pairs = to_float(row.get("total_pairs_traded"), 0.0)
-    worst_dd = abs(to_float(row.get("max_drawdown_on_equity"), 0.0) or 0.0)
-    worst_robust_pnl = to_float(row.get("total_pnl"), 0.0)
-    worst_step = to_float(
-        row.get("tail_loss_worst_period_pnl"),
-        to_float(row.get("tail_loss_worst_pair_pnl", 0), 0.0),
-    )
-
-    if total_trades < 200:
-        return False, "trades_gate_fail"
-    if total_pairs < 20:
-        return False, "pairs_gate_fail"
-    if worst_dd > 0.20:
-        return False, "dd_gate_fail"
-    if worst_robust_pnl < 0:
-        return False, "economic_gate_fail"
-    if worst_step < (-0.20 * INITIAL_CAPITAL):
-        return False, "step_gate_fail"
-    return True, "pass"
-
-
-def quantile(values, q):
-    vals = sorted(v for v in values if v is not None and v == v)
-    if not vals:
-        return None
-    if not vals:
-        return None
-    n = len(vals)
-    if n == 1:
-        return vals[0]
-    idx = min(max(int((n - 1) * q), 0), n - 1)
-    return vals[idx]
+    result = evaluate_row_hard_gates(row, CONTRACT_THRESHOLDS)
+    if not result.passed:
+        return False, str(result.reason or "METRICS_MISSING")
+    return True, "PASS"
 
 
 def score_fullspan_v1_like(sharpes, tails):
     if not sharpes or not tails:
         return None
     try:
-        worst_robust = min(sharpes)
-        q20 = quantile(tails, 0.20)
-        worst_step = min(tails)
-        if q20 is None:
-            q20 = worst_step
-        return (
-            float(worst_robust)
-            - (2.0 * max(0.0, (-q20 / INITIAL_CAPITAL) - 0.03))
-            - (1.0 * max(0.0, (-worst_step / INITIAL_CAPITAL) - 0.10))
+        worst_robust = min(float(v) for v in sharpes)
+        worst_step = min(float(v) for v in tails)
+        q20 = sorted(float(v) for v in tails)[max(0, int((len(tails) - 1) * 0.20))] if tails else worst_step
+        return score_fullspan_v1(
+            worst_robust_sharpe=float(worst_robust),
+            q_step_pnl=float(q20),
+            worst_step_pnl=float(worst_step),
+            initial_capital=float(INITIAL_CAPITAL),
+            tail_q_soft_loss_pct=0.03,
+            tail_worst_soft_loss_pct=0.10,
+            tail_q_penalty=2.0,
+            tail_worst_penalty=1.0,
         )
     except Exception:
         return None
@@ -211,6 +446,19 @@ try:
     app_root = queue_root.parents[2]
 except Exception:
     app_root = queue_root
+opt_dir = app_root / "scripts" / "optimization"
+if str(opt_dir) not in sys.path:
+    sys.path.insert(0, str(opt_dir))
+from fullspan_contract import FullspanThresholds, evaluate_row_hard_gates, row_worst_step_pnl, score_fullspan_v1
+
+CONTRACT_THRESHOLDS = FullspanThresholds(
+    min_trades=200.0,
+    min_pairs=20.0,
+    max_dd_pct=0.20,
+    min_pnl=0.0,
+    initial_capital=INITIAL_CAPITAL,
+    max_worst_step_loss_pct=0.20,
+)
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
 pre_rank_top_k = int(sys.argv[5]) if len(sys.argv) > 5 and str(sys.argv[5]).strip() else 8
@@ -271,6 +519,15 @@ def emit_scores():
         pending = planned + running + stalled + failed
         if pending == 0:
             continue
+
+        executable_pending = 0
+        for row in rows:
+            status = str(row.get('status') or '').strip().lower()
+            if status == 'running':
+                executable_pending += 1
+                continue
+            if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
+                executable_pending += 1
 
         queue_abs = str(p)
         try:
@@ -385,11 +642,9 @@ def emit_scores():
                 if h_sh is not None and s_sh is not None:
                     robust_sharpes.append(min(h_sh, s_sh))
 
-                h_tail = to_float(h.get('tail_loss_worst_pair_pnl'), None)
-                s_tail = to_float(s.get('tail_loss_worst_pair_pnl'), None)
-                h_tail2 = to_float(h.get('tail_loss_worst_period_pnl'), None)
-                s_tail2 = to_float(s.get('tail_loss_worst_period_pnl'), None)
-                tails = [v for v in (h_tail, s_tail, h_tail2, s_tail2) if v is not None]
+                h_tail = row_worst_step_pnl(h)
+                s_tail = row_worst_step_pnl(s)
+                tails = [v for v in (h_tail, s_tail) if v is not None]
                 if tails:
                     worst_steps.append(min(tails))
             elif (not h_ok) and (not s_ok):
@@ -500,7 +755,12 @@ def emit_scores():
         if gate_status == "HARD_FAIL" and promotion_potential == "REJECT":
             pre_rank_score -= 10000
 
+        executable_rank = 1 if executable_pending > 0 else 0
+        potential_rank = {"POSSIBLE": 2, "UNKNOWN": 1, "REJECT": 0}.get(promotion_potential, 1)
+
         out.append((
+            -executable_rank,
+            -potential_rank,
             -pre_rank_score,
             -urgency,
             -int(mtime),
@@ -529,28 +789,96 @@ def emit_scores():
             raise SystemExit(0)
 
         out = out[:pre_rank_top_k]
-        _, __, ___, queue, planned, running, stalled, failed, completed, total, urgency, mtime_i, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
+        _, __, ___, ____, _____, queue, planned, running, stalled, failed, completed, total, urgency, mtime_i, potential, gate_status, gate_reason, pre_rank, strict_gate_status, strict_gate_reason = out[0]
         f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency},{mtime_i},{potential},{gate_status},{gate_reason},{pre_rank},{strict_gate_status},{strict_gate_reason}\n")
 PY
 }
 
 fallback_pending_candidate() {
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" <<'PY'
+  local orphan_path="${1:-}"
+  local skip_queue="${2:-}"
+  local state_path="${3:-}"
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$skip_queue" "$state_path" <<'PY'
 import csv
 from collections import Counter
+import json
 from pathlib import Path
 import time
 import sys
 
 queue_root = Path(sys.argv[1])
 out_csv = Path(sys.argv[2])
+orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
+skip_queue = str(sys.argv[4] if len(sys.argv) > 4 else "").strip()
+state_path = Path(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else None
 try:
     app_root = queue_root.parents[2]
 except Exception:
     app_root = queue_root
 
+
+def config_exists(path_raw):
+    path_s = str(path_raw or '').strip()
+    if not path_s:
+        return False
+    cfg = Path(path_s)
+    if not cfg.is_absolute():
+        cfg = app_root / cfg
+    return cfg.exists()
+
+now = time.time()
+orphan = {}
+if orphan_file and orphan_file.exists():
+    try:
+        with orphan_file.open(newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                q = str(row.get('queue') or '').strip()
+                if not q:
+                    continue
+                try:
+                    until = float((row.get('until_ts') or '').strip() or 0)
+                except Exception:
+                    until = 0
+                orphan[q] = until
+    except Exception:
+        orphan = {}
+
+state_reject = set()
+if state_path and state_path.exists():
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        queues = state.get('queues', {}) if isinstance(state, dict) else {}
+        if isinstance(queues, dict):
+            for qrel, entry in queues.items():
+                if not isinstance(entry, dict):
+                    continue
+                verdict = str(entry.get('promotion_verdict') or '').strip().upper()
+                if verdict == 'REJECT':
+                    state_reject.add(str(qrel).strip())
+    except Exception:
+        state_reject = set()
+
 best = None
 for p in sorted(queue_root.rglob('run_queue.csv')):
+    if '/rollup/' in str(p) or '/.autonomous/' in str(p):
+        continue
+    try:
+        queue_rel = str(p.relative_to(app_root))
+    except Exception:
+        queue_rel = str(p)
+    queue_abs = str(p)
+    if skip_queue and skip_queue in {queue_rel, queue_abs, '/' + queue_rel.lstrip('/')}:
+        continue
+    if queue_rel in state_reject or queue_abs in state_reject:
+        continue
+    orphan_until = None
+    for key in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
+        if key in orphan:
+            orphan_until = orphan.get(key, 0.0)
+            break
+    if orphan_until is not None and now < float(orphan_until or 0.0):
+        continue
+
     try:
         rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
     except Exception:
@@ -565,16 +893,45 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     pending = planned + running + stalled + failed
     if pending <= 0 or total <= 0:
         continue
+
+    executable_pending = 0
+    for row in rows:
+        status = str(row.get('status') or '').strip().lower()
+        if status == 'running':
+            executable_pending += 1
+            continue
+        if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
+            executable_pending += 1
+
     age_min = max(0.0, (time.time() - p.stat().st_mtime) / 60.0)
     urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + 1.0
-    row = (pending, stalled, running, -int(p.stat().st_mtime), str(p), planned, running, stalled, failed, completed, total, urgency)
+
+    # Prefer queues with planned work to avoid spinning on already fail-closed stalled tails.
+    planned_priority = 1 if planned > 0 else 0
+    row = (
+        1 if executable_pending > 0 else 0,
+        executable_pending,
+        planned_priority,
+        pending,
+        stalled,
+        running,
+        -int(p.stat().st_mtime),
+        queue_rel,
+        planned,
+        running,
+        stalled,
+        failed,
+        completed,
+        total,
+        urgency,
+    )
     if best is None or row > best:
         best = row
 
 if best is None:
     raise SystemExit(1)
 
-_, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency = best
+_, _, _, _, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency = best
 out_csv.parent.mkdir(parents=True, exist_ok=True)
 with out_csv.open('w', encoding='utf-8', newline='') as f:
     f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason\n')
@@ -585,22 +942,39 @@ PY
 
 _is_match_running() {
   local pattern="$1"
-  local pids
-  pids="$(pgrep -f -- "$pattern" || true)"
-  if [[ -z "$pids" ]]; then
-    return 1
-  fi
+  local found
+  found="$(python3 - "$pattern" "$$" "${BASHPID:-$$}" <<'PY'
+import os
+import sys
 
-  while IFS= read -r pid; do
-    if [[ -z "$pid" ]]; then
-      continue
-    fi
-    if [[ "$pid" != "$$" ]]; then
-      return 0
-    fi
-  done <<< "$pids"
+pattern = sys.argv[1]
+self_pids = {sys.argv[2], sys.argv[3], str(os.getpid()), str(os.getppid())}
 
-  return 1
+for pid in os.listdir("/proc"):
+    if not pid.isdigit() or pid in self_pids:
+        continue
+    try:
+        cmd = (
+            open(f"/proc/{pid}/cmdline", "rb")
+            .read()
+            .replace(b"\x00", b" ")
+            .decode("utf-8", "ignore")
+            .strip()
+        )
+    except Exception:
+        continue
+    if not cmd:
+        continue
+    if "pgrep -f" in cmd or "python3 - <<" in cmd:
+        continue
+    if pattern in cmd:
+        print("1")
+        raise SystemExit(0)
+
+print("0")
+PY
+)"
+  [[ "$found" == "1" ]]
 }
 
 get_vps_load() {
@@ -611,6 +985,55 @@ get_vps_load() {
     return
   fi
   echo "$load1"
+}
+
+capacity_search_parallel_bounds() {
+  python3 - "$CAPACITY_CONTROLLER_STATE_FILE" "$CONFIRM_SLA_ESCALATION_STATE_FILE" <<'PY'
+import json
+import time
+import sys
+from pathlib import Path
+
+
+def load_json(path: Path):
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def to_int(value, default):
+    try:
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+capacity = load_json(Path(sys.argv[1]))
+sla_state = load_json(Path(sys.argv[2]))
+policy = capacity.get("policy", {}) if isinstance(capacity.get("policy"), dict) else {}
+
+search_min = to_int(policy.get("search_parallel_min", 2), 2)
+search_max = to_int(policy.get("search_parallel_max", 16), 16)
+
+if isinstance(sla_state, dict) and bool(sla_state.get("active")):
+    until_epoch = to_int(sla_state.get("until_epoch", 0), 0)
+    now_epoch = int(time.time())
+    if until_epoch <= 0 or now_epoch <= until_epoch:
+        sla_policy = sla_state.get("policy", {}) if isinstance(sla_state.get("policy"), dict) else {}
+        if "search_parallel_max" in sla_policy:
+            search_max = min(search_max, to_int(sla_policy.get("search_parallel_max"), search_max))
+        if "search_parallel_min" in sla_policy:
+            search_min = max(search_min, to_int(sla_policy.get("search_parallel_min"), search_min))
+
+if search_max < search_min:
+    search_max = search_min
+
+print(f"{search_min},{search_max}")
+PY
 }
 
 choose_parallel() {
@@ -626,18 +1049,22 @@ choose_parallel() {
 
   load1="$(get_vps_load)"
 
-  if (( total >= 100 || pending >= 40 )); then
-    p=4
+  if (( pending >= 160 || total >= 220 )); then
+    p=18
+  elif (( pending >= 80 || total >= 140 )); then
+    p=14
+  elif (( pending >= 40 || total >= 80 )); then
+    p=10
   elif (( total <= 24 )); then
     if awk -v v="$load1" 'BEGIN { exit (v >= 12.0) ? 0 : 1 }'; then
       p=8
     else
-      p=12
+      p=14
     fi
   elif (( total <= 60 )); then
-    p=8
+    p=10
   else
-    p=6
+    p=8
   fi
 
   case "$cause" in
@@ -655,17 +1082,54 @@ choose_parallel() {
   # Adaptive parallel by observed progress rate (from heartbeat).
   local rate
   rate="${hb_rate_per_min:-0}"
-  if awk -v v="$rate" -v th="$ADAPTIVE_LOW_RATE_THRESHOLD" 'BEGIN { exit (v+0 <= th+0) ? 0 : 1 }'; then
-    p=$((p - 1))
-  elif awk -v v="$rate" -v th="$ADAPTIVE_HIGH_RATE_THRESHOLD" 'BEGIN { exit (v+0 >= th+0) ? 0 : 1 }'; then
-    p=$((p + 1))
+  if (( running > 0 || stalled > 0 )); then
+    if awk -v v="$rate" -v th="$ADAPTIVE_LOW_RATE_THRESHOLD" 'BEGIN { exit (v+0 <= th+0) ? 0 : 1 }'; then
+      p=$((p - 1))
+    elif awk -v v="$rate" -v th="$ADAPTIVE_HIGH_RATE_THRESHOLD" 'BEGIN { exit (v+0 >= th+0) ? 0 : 1 }'; then
+      p=$((p + 1))
+    fi
   fi
 
-  if (( p > 12 )); then
-    p=12
+  # Load-aware boost in search mode to avoid underutilizing free VPS headroom.
+  if [[ "$cause" == "UNKNOWN" || "$cause" == "DATA" ]]; then
+    if awk -v v="$load1" 'BEGIN { exit (v+0 <= 1.5) ? 0 : 1 }'; then
+      p=$((p + 4))
+    elif awk -v v="$load1" 'BEGIN { exit (v+0 <= 3.0) ? 0 : 1 }'; then
+      p=$((p + 2))
+    elif awk -v v="$load1" 'BEGIN { exit (v+0 >= 9.0) ? 0 : 1 }'; then
+      p=$((p - 2))
+    fi
+  fi
+
+  if [[ ! "$SEARCH_PARALLEL_ABS_MAX" =~ ^[0-9]+$ ]]; then
+    SEARCH_PARALLEL_ABS_MAX=24
+  fi
+  if (( SEARCH_PARALLEL_ABS_MAX < 2 )); then
+    SEARCH_PARALLEL_ABS_MAX=2
+  fi
+  if (( p > SEARCH_PARALLEL_ABS_MAX )); then
+    p=$SEARCH_PARALLEL_ABS_MAX
   fi
   if (( p < 2 )); then
     p=2
+  fi
+
+  local cap_min cap_max
+  IFS=',' read -r cap_min cap_max < <(capacity_search_parallel_bounds)
+  if [[ ! "$cap_min" =~ ^[0-9]+$ ]]; then
+    cap_min=2
+  fi
+  if [[ ! "$cap_max" =~ ^[0-9]+$ ]]; then
+    cap_max=12
+  fi
+  if (( cap_max < cap_min )); then
+    cap_max=$cap_min
+  fi
+  if (( p < cap_min )); then
+    p=$cap_min
+  fi
+  if (( p > cap_max )); then
+    p=$cap_max
   fi
 
   echo "$p"
@@ -861,15 +1325,34 @@ log_decision_note() {
   local action="$2"
   local reason="$3"
   local next_step="$4"
+  local selection_policy="${FULLSPAN_POLICY_NAME:-}"
+  local selection_mode="${PROMOTION_SELECTION_MODE:-}"
+  local selection_profile="${PROMOTION_SELECTION_PROFILE:-}"
+  local note_promotion_verdict="${promotion_verdict:-}"
+  local note_gate_status="${gate_status:-}"
+  local note_gate_reason="${gate_reason:-}"
+  local note_pre_rank_score="${pre_rank_score:-}"
+  local ranking_primary_key="${RANKING_PRIMARY_KEY:-score_fullspan_v1}"
 
   local ts
   ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  python3 - "$DECISION_NOTES_FILE" "$queue" "$action" "$reason" "$next_step" "$ts" <<'PY'
+  python3 - "$DECISION_NOTES_FILE" "$queue" "$action" "$reason" "$next_step" "$ts" "$selection_policy" "$selection_mode" "$selection_profile" "$note_promotion_verdict" "$note_gate_status" "$note_gate_reason" "$note_pre_rank_score" "$ranking_primary_key" <<'PY'
 import json
+import hashlib
+import re
 import sys
 from pathlib import Path
 
-path, queue, action, reason, next_step, ts = sys.argv[1:7]
+args = sys.argv[1:]
+path, queue, action, reason, next_step, ts = args[:6]
+selection_policy = args[6] if len(args) > 6 else ""
+selection_mode = args[7] if len(args) > 7 else ""
+selection_profile = args[8] if len(args) > 8 else ""
+promotion_verdict = args[9] if len(args) > 9 else ""
+gate_status = args[10] if len(args) > 10 else ""
+gate_reason = args[11] if len(args) > 11 else ""
+pre_rank_score = args[12] if len(args) > 12 else ""
+ranking_primary_key = args[13] if len(args) > 13 else ""
 p = Path(path)
 p.parent.mkdir(parents=True, exist_ok=True)
 rec = {
@@ -878,6 +1361,14 @@ rec = {
     "action": action,
     "reason": reason,
     "next_step": next_step,
+    "selection_policy": selection_policy,
+    "selection_mode": selection_mode,
+    "selection_profile": selection_profile,
+    "promotion_verdict": promotion_verdict,
+    "gate_status": gate_status,
+    "gate_reason": gate_reason,
+    "pre_rank_score": pre_rank_score,
+    "ranking_primary_key": ranking_primary_key,
 }
 with p.open("a", encoding="utf-8") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -971,6 +1462,8 @@ fullspan_state_set() {
 
   python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue" "$verdict" "$strict_pass_count" "$strict_run_groups" "$top_run_group" "$top_variant" "$top_score" "$rejection_reason" "$confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path" "$ts" <<'PY'
 import json
+import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -990,6 +1483,22 @@ run_groups_csv = sys.argv[13]
 strict_summary_path = sys.argv[14]
 ts = sys.argv[15]
 
+evo_re = re.compile(r"\b(evo_[0-9a-f]{8,64})\b", re.IGNORECASE)
+
+def derive_candidate_uid(top_run_group: str, top_variant: str, top_score: str) -> str:
+    for token in (top_variant, top_run_group):
+        m = evo_re.search(str(token or ""))
+        if m:
+            return m.group(1).lower()
+    parts = [
+        str(top_run_group or "").strip().lower(),
+        str(top_variant or "").strip().lower(),
+        str(top_score or "").strip(),
+    ]
+    if not any(parts):
+        return ""
+    return "cand_" + hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
 state = {}
 if state_file.exists():
     try:
@@ -1002,6 +1511,10 @@ if not isinstance(state, dict):
 queues = state.get('queues', {})
 if not isinstance(queues, dict):
     queues = {}
+
+prev_entry = queues.get(queue, {})
+if not isinstance(prev_entry, dict):
+    prev_entry = {}
 
 run_groups = [item for item in (run_groups_csv.split('||') if run_groups_csv else []) if item]
 
@@ -1033,6 +1546,9 @@ queues[queue] = {
     "strict_gate_reason": strict_gate_reason,
     "run_groups": run_groups,
     "strict_summary_path": strict_summary_path,
+    "candidate_uid": str(prev_entry.get("candidate_uid") or derive_candidate_uid(top_run_group, top_variant, top_score)),
+    "cutover_permission": "FAIL_CLOSED",
+    "cutover_ready": False,
     "last_update": ts,
 }
 state['queues'] = queues
@@ -1058,8 +1574,10 @@ path = Path(sys.argv[1])
 queue = sys.argv[2]
 updates = {}
 for i in range(3, len(sys.argv), 2):
-    key = sys.argv[i - 1]
-    val = sys.argv[i]
+    if i + 1 >= len(sys.argv):
+        break
+    key = sys.argv[i]
+    val = sys.argv[i + 1]
     updates[key] = val
 
 state = {}
@@ -1226,6 +1744,101 @@ path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8
 PY
 }
 
+vps_runtime_load() {
+  local loaded
+  if [[ -f "$VPS_RECOVERY_STATE_FILE" ]]; then
+    loaded="$(python3 - "$VPS_RECOVERY_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    obj = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    obj = {}
+
+def to_int(value):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+print(
+    "{},{},{},{},{}".format(
+        to_int(obj.get("fail_streak")),
+        to_int(obj.get("unreachable_since_epoch")),
+        to_int(obj.get("last_recover_epoch")),
+        to_int(obj.get("next_retry_epoch")),
+        to_int(obj.get("last_force_cycle_epoch")),
+    )
+)
+PY
+)"
+    IFS=',' read -r vps_runtime_fail_streak vps_runtime_unreachable_since vps_runtime_last_recover_epoch vps_runtime_next_retry_epoch vps_runtime_last_force_cycle_epoch <<< "$loaded"
+  else
+    vps_runtime_fail_streak="$(fullspan_state_metric_get vps_recover_consecutive_fail 0)"
+    vps_runtime_unreachable_since="$(fullspan_state_metric_get vps_unreachable_since_epoch 0)"
+    vps_runtime_last_recover_epoch="$(fullspan_state_metric_get vps_recover_last_epoch 0)"
+    vps_runtime_next_retry_epoch="$(fullspan_state_metric_get vps_recover_next_attempt_epoch 0)"
+    vps_runtime_last_force_cycle_epoch="$(fullspan_state_metric_get vps_force_cycle_last_epoch 0)"
+  fi
+
+  [[ "$vps_runtime_fail_streak" =~ ^[0-9]+$ ]] || vps_runtime_fail_streak=0
+  [[ "$vps_runtime_unreachable_since" =~ ^[0-9]+$ ]] || vps_runtime_unreachable_since=0
+  [[ "$vps_runtime_last_recover_epoch" =~ ^[0-9]+$ ]] || vps_runtime_last_recover_epoch=0
+  [[ "$vps_runtime_next_retry_epoch" =~ ^[0-9]+$ ]] || vps_runtime_next_retry_epoch=0
+  [[ "$vps_runtime_last_force_cycle_epoch" =~ ^[0-9]+$ ]] || vps_runtime_last_force_cycle_epoch=0
+}
+
+vps_runtime_save() {
+  python3 - "$VPS_RECOVERY_STATE_FILE" "$vps_runtime_fail_streak" "$vps_runtime_unreachable_since" "$vps_runtime_last_recover_epoch" "$vps_runtime_next_retry_epoch" "$vps_runtime_last_force_cycle_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+
+def to_int(value):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+payload = {
+    "version": 1,
+    "fail_streak": to_int(sys.argv[2]),
+    "unreachable_since_epoch": to_int(sys.argv[3]),
+    "last_recover_epoch": to_int(sys.argv[4]),
+    "next_retry_epoch": to_int(sys.argv[5]),
+    "last_force_cycle_epoch": to_int(sys.argv[6]),
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+vps_runtime_sync_metrics() {
+  fullspan_state_metric_set "vps_recover_consecutive_fail" "$vps_runtime_fail_streak"
+  fullspan_state_metric_set "vps_unreachable_since_epoch" "$vps_runtime_unreachable_since"
+  fullspan_state_metric_set "vps_recover_last_epoch" "$vps_runtime_last_recover_epoch"
+  fullspan_state_metric_set "vps_recover_next_attempt_epoch" "$vps_runtime_next_retry_epoch"
+  fullspan_state_metric_set "vps_force_cycle_last_epoch" "$vps_runtime_last_force_cycle_epoch"
+}
+
+vps_runtime_commit() {
+  vps_runtime_save
+  vps_runtime_sync_metrics
+}
+
+vps_runtime_next_retry_get() {
+  if [[ "$vps_runtime_next_retry_epoch" =~ ^[0-9]+$ ]]; then
+    echo "$vps_runtime_next_retry_epoch"
+    return 0
+  fi
+  fullspan_state_metric_get vps_recover_next_attempt_epoch 0
+}
+
 fullspan_cycle_cache_get() {
   local queue="$1"
   local fingerprint="$2"
@@ -1311,66 +1924,35 @@ PY
 }
 
 
+derive_candidate_uid() {
+  local top_run_group="${1:-}"
+  local top_variant="${2:-}"
+  local top_score="${3:-}"
+  if [[ ! -f "$ROOT_DIR/scripts/optimization/fullspan_lineage.py" ]]; then
+    echo ""
+    return 0
+  fi
+  ./.venv/bin/python scripts/optimization/fullspan_lineage.py derive \
+    --top-run-group "$top_run_group" \
+    --top-variant "$top_variant" \
+    --top-score "$top_score" 2>/dev/null || true
+}
+
 fullspan_confirm_count_for_queue() {
-  local top_run_group="$1"
-  local top_variant="$2"
-
-  if [[ -z "$top_run_group" && -z "$top_variant" ]]; then
+  local candidate_uid="$1"
+  if [[ -z "$candidate_uid" ]]; then
     echo 0
     return 0
   fi
-
-  if [[ ! -f "$RUN_INDEX_PATH" ]]; then
+  if [[ ! -f "$ROOT_DIR/scripts/optimization/fullspan_lineage.py" ]]; then
     echo 0
     return 0
   fi
-
-  python3 - "$RUN_INDEX_PATH" "$top_run_group" "$top_variant" <<'PY'
-import csv
-import sys
-from pathlib import Path
-
-run_index_path = Path(sys.argv[1])
-top_run_group = (sys.argv[2] or "").strip()
-top_variant = (sys.argv[3] or "").strip()
-
-if not run_index_path.exists():
-    print(0)
-    raise SystemExit(0)
-
-run_groups = set()
-try:
-    with run_index_path.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            status = (row.get("status") or "").strip().lower()
-            if status != "completed":
-                continue
-
-            run_group = (row.get("run_group") or "").strip()
-            run_id = (row.get("run_id") or "").strip()
-            config_path = (row.get("config_path") or "").strip().lower()
-            results_dir = (row.get("results_dir") or "").strip().lower()
-
-            variant_match = bool(top_variant) and (
-                top_variant.lower() in run_id.lower() or top_variant.lower() in config_path
-            )
-            group_match = bool(top_run_group) and (
-                top_run_group in run_group or top_run_group in run_id
-            )
-            if not (variant_match or group_match):
-                continue
-
-            run_dir_hint = "confirm" in (run_group + "/" + run_id + "/" + results_dir).lower()
-            if not run_dir_hint:
-                continue
-
-            if run_group:
-                run_groups.add(run_group)
-
-    print(len(run_groups))
-except Exception:
-    print(0)
-PY
+  ./.venv/bin/python scripts/optimization/fullspan_lineage.py count \
+    --registry "$CONFIRM_LINEAGE_REGISTRY_FILE" \
+    --run-index "$RUN_INDEX_PATH" \
+    --candidate-uid "$candidate_uid" \
+    --value count 2>/dev/null || echo 0
 }
 
 fullspan_state_run_groups_csv() {
@@ -1414,9 +1996,10 @@ fullspan_reconcile_confirm_progress() {
   local strict_gate_reason
   local strict_summary_path
   local state_confirm_count
+  local candidate_uid
 
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
-  if [[ "$state_verdict" != "PROMOTE_PENDING_CONFIRM" && "$state_verdict" != "PROMOTE_DEFER_CONFIRM" ]]; then
+  if [[ "$state_verdict" != "PROMOTE_PENDING_CONFIRM" && "$state_verdict" != "PROMOTE_DEFER_CONFIRM" && "$state_verdict" != "PROMOTE_ELIGIBLE" ]]; then
     return 0
   fi
 
@@ -1430,38 +2013,41 @@ fullspan_reconcile_confirm_progress() {
   strict_gate_reason="$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
   strict_summary_path="$(fullspan_state_get "$queue_rel" "strict_summary_path" "")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+  candidate_uid="$(fullspan_state_get "$queue_rel" "candidate_uid" "")"
 
   if [[ "$strict_run_group_count" -lt "$FULLSPAN_CONFIRM_MIN_GROUPS" ]]; then
     return 0
   fi
 
-  if [[ -z "$top_run_group" && -z "$top_variant" ]]; then
+  if [[ -z "$candidate_uid" ]]; then
+    candidate_uid="$(derive_candidate_uid "$top_run_group" "$top_variant" "$top_score")"
+  fi
+
+  if [[ -z "$candidate_uid" ]]; then
     return 0
   fi
 
   local live_confirm_count
-  live_confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+  live_confirm_count="$(fullspan_confirm_count_for_queue "$candidate_uid")"
 
   local run_groups_csv
   run_groups_csv="$(fullspan_state_run_groups_csv "$queue_rel")"
 
-  if (( live_confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
-    if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
-      fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
-        "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-        "" "$live_confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
-      fullspan_state_metric_set "promotion_eligible_count" "$(( $(fullspan_state_metric_get promotion_eligible_count 0) + 1 ))"
-      if (( state_confirm_count < FULLSPAN_CONFIRM_MIN_REPLIES )); then
-        log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "auto_confirm_count=$live_confirm_count" "vps_confirm_replays_complete"
+  if (( live_confirm_count != state_confirm_count )); then
+    local next_verdict="$state_verdict"
+    local next_reason="$rejection_reason"
+    if (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
+      next_verdict="PROMOTE_PENDING_CONFIRM"
+      if (( live_confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
+        next_reason="confirm_ready_pending_gatekeeper"
+      else
+        next_reason="pending_confirm"
       fi
     fi
-    return 0
-  fi
-
-  if (( live_confirm_count != state_confirm_count )); then
-    fullspan_state_set "$queue_rel" "$state_verdict" \
+    fullspan_state_set "$queue_rel" "$next_verdict" \
       "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-      "$rejection_reason" "$live_confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
+      "$next_reason" "$live_confirm_count" "$strict_gate_status" "$strict_gate_reason" "$run_groups_csv" "$strict_summary_path"
+    fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
     if (( live_confirm_count > state_confirm_count )); then
       log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "confirm_count_update=$live_confirm_count" "waiting_for_vps_confirm_replay"
     fi
@@ -1638,29 +2224,37 @@ PY
       strict_rejection_reason="${parsed_lines[6]:-}"
 
       local confirm_count
+      local candidate_uid
       confirm_count="0"
+      candidate_uid=""
+      if [[ -n "$top_run_group" || -n "$top_variant" ]]; then
+        candidate_uid="$(derive_candidate_uid "$top_run_group" "$top_variant" "$top_score")"
+      fi
       if [[ "$strict_pass_count" -gt 0 ]]; then
-        confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+        confirm_count="$(fullspan_confirm_count_for_queue "$candidate_uid")"
       fi
 
       if [[ "$strict_pass_count" -le 0 ]]; then
         fullspan_state_set "$queue_rel" "REJECT" \
           "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
           "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+        [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       elif (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
         if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
-          fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
+          fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
             "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-            "" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+            "confirm_ready_pending_gatekeeper" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
         else
           fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
             "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
             "pending_confirm" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
         fi
+        [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       else
         fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" \
           "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
           "insufficient_run_groups" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+        [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fi
 
       low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
@@ -1718,9 +2312,14 @@ PY
   fi
 
   local confirm_count
+  local candidate_uid
   confirm_count="0"
+  candidate_uid=""
+  if [[ -n "$top_run_group" || -n "$top_variant" ]]; then
+    candidate_uid="$(derive_candidate_uid "$top_run_group" "$top_variant" "$top_score")"
+  fi
   if [[ "$strict_pass_count" -gt 0 ]]; then
-    confirm_count="$(fullspan_confirm_count_for_queue "$top_run_group" "$top_variant")"
+    confirm_count="$(fullspan_confirm_count_for_queue "$candidate_uid")"
   fi
 
   if (( cycle_rc == 0 )); then
@@ -1728,6 +2327,7 @@ PY
       fullspan_state_set "$queue_rel" "REJECT" \
         "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
         "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+      [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fullspan_state_metric_inc "strict_fullspan_reject_count" 1
       fullspan_state_metric_set "cycles_since_last_strict_pass" "$cycle_count"
       fullspan_state_metric_set "last_decision_epoch" "$now_epoch"
@@ -1748,11 +2348,10 @@ PY
 
       if (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
         if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
-          fullspan_state_set "$queue_rel" "PROMOTE_ELIGIBLE" \
+          fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
             "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-            "" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
-          fullspan_state_metric_set "promotion_eligible_count" "$(( $(fullspan_state_metric_get promotion_eligible_count 0) + 1 ))"
-          log_decision_note "$queue_rel" "FULLSPAN_STRICT_PROMOTE_ELIGIBLE" "strict_pass_and_min_run_groups+confirm" "candidate_still_queued_or_candidate_or_waiting"
+            "confirm_ready_pending_gatekeeper" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
+          log_decision_note "$queue_rel" "FULLSPAN_STRICT_CONFIRM_READY" "strict_pass_and_min_run_groups+confirm" "await_gatekeeper_eligibility"
         else
           fullspan_state_set "$queue_rel" "PROMOTE_PENDING_CONFIRM" \
             "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
@@ -1760,12 +2359,14 @@ PY
           fullspan_state_metric_set "confirm_pending_count" "$(( $(fullspan_state_metric_get confirm_pending_count 0) + 1 ))"
           log_decision_note "$queue_rel" "FULLSPAN_STRICT_PENDING_CONFIRM" "strict_pass_run_groups=$strict_run_group_count confirm_count=$confirm_count" "need_vps_confirm_replay"
         fi
+        [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       else
         fullspan_state_set "$queue_rel" "PROMOTE_DEFER_CONFIRM" \
           "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
           "insufficient_run_groups" "$confirm_count" "FULLSPAN_PREFILTER_PASSED" "" "$strict_run_groups" "$cycle_summary"
         fullspan_state_metric_set "confirm_pending_count" "$(( $(fullspan_state_metric_get confirm_pending_count 0) + 1 ))"
         log_decision_note "$queue_rel" "FULLSPAN_STRICT_PASS" "strict_pass_count=$strict_pass_count run_groups=$strict_run_group_count" "need_additional_run_groups"
+        [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fi
     fi
 
@@ -2106,6 +2707,162 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
+early_stop_low_yield_queue() {
+  local queue_rel="$1"
+  local queue_path="$ROOT_DIR/$queue_rel"
+  python3 - "$queue_path" "$RUN_INDEX_PATH" "$EARLY_STOP_MIN_COMPLETED" "$EARLY_STOP_FAIL_FRACTION" "$EARLY_STOP_DOMINANT_FRACTION" "$EARLY_STOP_DOMINANT_MIN" <<'PY'
+import csv
+import json
+import re
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+run_index_path = Path(sys.argv[2])
+min_completed = int(float(sys.argv[3] or 8))
+fail_fraction_gate = float(sys.argv[4] or 0.75)
+dominant_fraction_gate = float(sys.argv[5] or 0.70)
+dominant_min = int(float(sys.argv[6] or 6))
+
+INITIAL_CAPITAL = 1000.0
+
+payload = {
+    "trigger": False,
+    "reason": "",
+    "changed": 0,
+    "completed": 0,
+    "evaluated": 0,
+    "fail_fraction": 0.0,
+    "dominant_fraction": 0.0,
+}
+
+if not queue_path.exists() or not run_index_path.exists():
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+try:
+    rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
+except Exception:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+run_index = {}
+try:
+    with run_index_path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            run_index[str(row.get("run_id") or "").strip()] = row
+except Exception:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+completed_rows = [r for r in rows if str(r.get("status") or "").strip().lower() == "completed"]
+payload["completed"] = len(completed_rows)
+if len(completed_rows) < max(1, min_completed):
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+def to_float(value, default=None):
+    try:
+        return float((value or "").strip())
+    except Exception:
+        return default
+
+def is_true(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+def hard_gate_reason(row):
+    if not row:
+        return "METRICS_MISSING"
+    if not is_true(row.get("metrics_present")):
+        return "METRICS_MISSING"
+    if to_float(row.get("total_trades"), 0.0) < 200:
+        return "TRADES_FAIL"
+    if to_float(row.get("total_pairs_traded"), 0.0) < 20:
+        return "PAIRS_FAIL"
+    dd = abs(to_float(row.get("max_drawdown_on_equity"), 0.0) or 0.0)
+    if dd > 0.20:
+        return "DD_FAIL"
+    if to_float(row.get("total_pnl"), 0.0) < 0:
+        return "ECONOMIC_FAIL"
+    worst_step = to_float(row.get("tail_loss_worst_period_pnl"), None)
+    if worst_step is None:
+        worst_step = to_float(row.get("tail_loss_worst_pair_pnl"), 0.0)
+    if (worst_step or 0.0) < (-0.20 * INITIAL_CAPITAL):
+        return "STEP_FAIL"
+    return ""
+
+by_base = defaultdict(lambda: {"holdout": None, "stress": None})
+for row in completed_rows:
+    results_dir = str(row.get("results_dir") or "").strip()
+    if not results_dir:
+        continue
+    run_id = Path(results_dir).name.strip()
+    base = re.sub(r"^(holdout_|stress_)", "", run_id)
+    if run_id.startswith("holdout_"):
+        by_base[base]["holdout"] = run_index.get(run_id)
+    elif run_id.startswith("stress_"):
+        by_base[base]["stress"] = run_index.get(run_id)
+    else:
+        by_base[base]["holdout"] = run_index.get(run_id)
+
+fail_counter = Counter()
+pass_count = 0
+eval_count = 0
+
+for bundle in by_base.values():
+    h = bundle.get("holdout")
+    s = bundle.get("stress")
+    if h is None and s is None:
+        continue
+    eval_count += 1
+    h_reason = hard_gate_reason(h) if h is not None else "METRICS_MISSING"
+    s_reason = hard_gate_reason(s) if s is not None else "METRICS_MISSING"
+    if not h_reason and not s_reason:
+        pass_count += 1
+    else:
+        fail_counter[h_reason or s_reason] += 1
+
+payload["evaluated"] = eval_count
+if eval_count < max(1, min_completed):
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+fail_count = int(sum(fail_counter.values()))
+fail_fraction = float(fail_count / eval_count) if eval_count > 0 else 0.0
+payload["fail_fraction"] = fail_fraction
+if fail_count <= 0 or fail_fraction < fail_fraction_gate:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+dominant_reason, dominant_count = fail_counter.most_common(1)[0]
+dominant_fraction = float(dominant_count / fail_count) if fail_count > 0 else 0.0
+payload["dominant_fraction"] = dominant_fraction
+if dominant_count < dominant_min or dominant_fraction < dominant_fraction_gate:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+changed = 0
+for row in rows:
+    status = str(row.get("status") or "").strip().lower()
+    if status in {"planned", "stalled", "failed", "error"}:
+        row["status"] = "skipped"
+        changed += 1
+
+if changed > 0 and rows:
+    with queue_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+payload["trigger"] = bool(changed > 0)
+payload["changed"] = changed
+payload["reason"] = f"EARLY_STOP_LOW_YIELD_{dominant_reason}"
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
 repair_stalled_queue() {
   local queue_rel="$1"
   local planned="$2"
@@ -2239,7 +2996,25 @@ repair_stalled_state_reset() {
 
 remote_runner_count() {
   local remote_count
-  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -f 'watch_wfa_queue.sh|run_wfa_queue.py|python.*walk_forward' | awk -v self=\"\$\$\" '\$1 != self' | wc -l" || true)"
+  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
+import os
+patterns = ('watch_wfa_queue.sh', 'run_wfa_queue.py', 'run_wfa_fullcpu.sh', 'walk_forward')
+count = 0
+for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+        continue
+    try:
+        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
+    except Exception:
+        continue
+    if not cmd:
+        continue
+    if 'python3 - <<' in cmd or 'pgrep -f' in cmd:
+        continue
+    if any(p in cmd for p in patterns):
+        count += 1
+print(count)
+PY" || true)"
   if [[ -z "$remote_count" ]]; then
     echo 0
     return
@@ -2250,14 +3025,25 @@ remote_runner_count() {
 remote_queue_running() {
   local queue_rel="$1"
   local cnt
-  cnt="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -af \"run_wfa_queue.py --queue ${queue_rel}\" | wc -l" 2>/dev/null || echo 0)"
-  if [[ -z "$cnt" || ! "$cnt" =~ ^[0-9]+$ ]]; then
-    cnt=0
-  fi
-  if (( cnt > 0 )); then
-    return 0
-  fi
-  return 1
+  cnt="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
+import os
+needle = \"run_wfa_queue.py --queue ${queue_rel}\"
+count = 0
+for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+        continue
+    try:
+        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
+    except Exception:
+        continue
+    if not cmd or 'python3 - <<' in cmd or 'pgrep -af' in cmd:
+        continue
+    if needle in cmd:
+        count += 1
+print(count)
+PY" 2>/dev/null || echo 0)"
+  [[ -n "$cnt" && "$cnt" =~ ^[0-9]+$ ]] || cnt=0
+  (( cnt > 0 ))
 }
 
 sla_watch_queue() {
@@ -2300,19 +3086,24 @@ sla_watch_queue() {
 }
 
 is_driver_busy() {
+  busy_reason=""
   if _is_match_running "run_wfa_queue_powered.py --queue"; then
+    busy_reason="local_run_wfa_queue_powered"
     return 0
   fi
   if _is_match_running "watch_wfa_queue.sh --queue"; then
+    busy_reason="local_watch_wfa_queue"
     return 0
   fi
   if _is_match_running "scripts/optimization/run_wfa_queue.py --queue"; then
+    busy_reason="local_run_wfa_queue"
     return 0
   fi
 
   local remote_count
-  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "pgrep -f 'watch_wfa_queue.sh|run_wfa_queue.py|python.*walk_forward' | awk -v self=\"\$\$\" '\$1 != self' | wc -l" || true)"
+  remote_count="$(remote_runner_count)"
   if [[ -n "$remote_count" && "$remote_count" -gt 0 ]]; then
+    busy_reason="remote_runner_count:$remote_count"
     return 0
   fi
 
@@ -2358,35 +3149,315 @@ vps_is_reachable() {
   ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" 'echo ok' >/dev/null 2>&1
 }
 
-ensure_vps_ready() {
-  local reason="${1:-auto}"
-  local now_epoch
-  now_epoch="$(date +%s)"
-  local last_recover
-  last_recover="$(fullspan_state_metric_get vps_recover_last_epoch 0)"
-  if [[ -z "$last_recover" ]]; then
-    last_recover=0
-  fi
-
-  if vps_is_reachable; then
+vps_serverspace_state() {
+  local api_script="$ROOT_DIR/scripts/vps/serverspace_api.py"
+  local py="$ROOT_DIR/.venv/bin/python"
+  local raw
+  if [[ ! -f "$api_script" ]]; then
+    echo ""
     return 0
   fi
+  if [[ ! -x "$py" ]]; then
+    py="python3"
+  fi
+  raw="$("$py" "$api_script" --ip "$SERVER_IP" find 2>>"$LOG_FILE" || true)"
+  python3 - "$raw" <<'PY'
+import json
+import sys
 
-  if (( now_epoch - last_recover < 300 )); then
+raw = sys.argv[1] if len(sys.argv) > 1 else ""
+try:
+    obj = json.loads(raw)
+except Exception:
+    print("")
+    raise SystemExit(0)
+print(str(obj.get("state") or "").strip().lower())
+PY
+}
+
+vps_recover_backoff_seconds() {
+  local fail_streak="$1"
+  local base="$VPS_RECOVER_BASE_COOLDOWN_SEC"
+  local max_backoff="$VPS_RECOVER_MAX_COOLDOWN_SEC"
+  local backoff
+  local i
+
+  [[ "$base" =~ ^[0-9]+$ ]] || base=300
+  [[ "$max_backoff" =~ ^[0-9]+$ ]] || max_backoff=3600
+  if (( base < 30 )); then
+    base=30
+  fi
+  if (( max_backoff < base )); then
+    max_backoff="$base"
+  fi
+  [[ "$fail_streak" =~ ^[0-9]+$ ]] || fail_streak=1
+  if (( fail_streak < 1 )); then
+    fail_streak=1
+  fi
+
+  backoff="$base"
+  i=1
+  while (( i < fail_streak )); do
+    backoff=$((backoff * 2))
+    if (( backoff >= max_backoff )); then
+      backoff="$max_backoff"
+      break
+    fi
+    i=$((i + 1))
+  done
+
+  echo "$backoff"
+}
+
+vps_next_retry_sleep_seconds() {
+  local now_epoch next_epoch sleep_sec
+  now_epoch="$(date +%s)"
+  next_epoch="$(vps_runtime_next_retry_get)"
+  [[ "$next_epoch" =~ ^[0-9]+$ ]] || next_epoch=0
+  if (( next_epoch > now_epoch )); then
+    sleep_sec=$((next_epoch - now_epoch))
+  else
+    sleep_sec=5
+  fi
+  [[ "$VPS_UNREACHABLE_SLEEP_CAP_SEC" =~ ^[0-9]+$ ]] || VPS_UNREACHABLE_SLEEP_CAP_SEC=300
+  if (( sleep_sec > VPS_UNREACHABLE_SLEEP_CAP_SEC )); then
+    sleep_sec="$VPS_UNREACHABLE_SLEEP_CAP_SEC"
+  fi
+  if (( sleep_sec < 5 )); then
+    sleep_sec=5
+  fi
+  echo "$sleep_sec"
+}
+
+vps_force_power_cycle() {
+  local reason="${1:-auto}"
+  local api_script="$ROOT_DIR/scripts/vps/serverspace_api.py"
+  local py="$ROOT_DIR/.venv/bin/python"
+  local server_json server_id now_epoch
+  local shutdown_wait boot_wait
+
+  if [[ ! -f "$api_script" ]]; then
+    log "vps_force_cycle_skip reason=$reason cause=api_script_missing"
+    return 1
+  fi
+  if [[ ! -x "$py" ]]; then
+    py="python3"
+  fi
+
+  server_json="$("$py" "$api_script" --ip "$SERVER_IP" find 2>>"$LOG_FILE" || true)"
+  server_id="$(python3 - "$server_json" <<'PY'
+import json
+import sys
+
+raw = sys.argv[1] if len(sys.argv) > 1 else ""
+try:
+    obj = json.loads(raw)
+except Exception:
+    print("")
+    raise SystemExit(0)
+print(str(obj.get("server_id") or obj.get("id") or "").strip())
+PY
+)"
+  if [[ -z "$server_id" ]]; then
+    log "vps_force_cycle_skip reason=$reason cause=server_id_unresolved"
     return 1
   fi
 
-  fullspan_state_metric_set "vps_recover_last_epoch" "$now_epoch"
-  log "vps_recover_attempt reason=$reason"
-  if timeout 180 env SKIP_POWER=0 STOP_AFTER=0 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo ping >>"$LOG_FILE" 2>&1; then
-    fullspan_state_metric_inc "vps_recover_success_count" 1
-    log "vps_recover_success reason=$reason"
+  now_epoch="$(date +%s)"
+  vps_runtime_last_force_cycle_epoch="$now_epoch"
+  vps_runtime_commit
+  fullspan_state_metric_inc "vps_force_cycle_attempt_count" 1
+  log "vps_force_cycle_attempt reason=$reason server_id=$server_id"
+
+  "$py" "$api_script" shutdown --id "$server_id" >>"$LOG_FILE" 2>&1 || true
+  shutdown_wait="$VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC"
+  [[ "$shutdown_wait" =~ ^[0-9]+$ ]] || shutdown_wait=20
+  if (( shutdown_wait < 5 )); then
+    shutdown_wait=5
+  fi
+  sleep "$shutdown_wait"
+
+  if ! "$py" "$api_script" power-on --id "$server_id" >>"$LOG_FILE" 2>&1; then
+    fullspan_state_metric_inc "vps_force_cycle_fail_count" 1
+    log "vps_force_cycle_fail reason=$reason stage=power_on"
+    return 1
+  fi
+
+  boot_wait="$VPS_FORCE_CYCLE_BOOT_WAIT_SEC"
+  [[ "$boot_wait" =~ ^[0-9]+$ ]] || boot_wait=600
+  if (( boot_wait < 60 )); then
+    boot_wait=60
+  fi
+  local deadline=$(( $(date +%s) + boot_wait ))
+  while (( $(date +%s) < deadline )); do
+    if vps_is_reachable; then
+      fullspan_state_metric_inc "vps_force_cycle_success_count" 1
+      log "vps_force_cycle_success reason=$reason server_id=$server_id"
+      return 0
+    fi
+    sleep 5
+  done
+
+  fullspan_state_metric_inc "vps_force_cycle_fail_count" 1
+  log "vps_force_cycle_fail reason=$reason stage=ssh_wait timeout_sec=$boot_wait"
+  return 1
+}
+
+ensure_vps_ready() {
+  local reason="${1:-auto}"
+  local now_epoch
+  local unreachable_since fail_streak
+  local backoff next_epoch down_for attempt_no timeout_sec base_cooldown
+  local force_cycle_streak force_cycle_cooldown last_force_cycle
+  local state_hint active_fastpath skip_remote_probe
+  now_epoch="$(date +%s)"
+  base_cooldown="$VPS_RECOVER_BASE_COOLDOWN_SEC"
+  [[ "$base_cooldown" =~ ^[0-9]+$ ]] || base_cooldown=300
+  if (( base_cooldown < 30 )); then
+    base_cooldown=30
+  fi
+
+  [[ "$vps_runtime_fail_streak" =~ ^[0-9]+$ ]] || vps_runtime_fail_streak=0
+  [[ "$vps_runtime_unreachable_since" =~ ^[0-9]+$ ]] || vps_runtime_unreachable_since=0
+  [[ "$vps_runtime_last_recover_epoch" =~ ^[0-9]+$ ]] || vps_runtime_last_recover_epoch=0
+  [[ "$vps_runtime_next_retry_epoch" =~ ^[0-9]+$ ]] || vps_runtime_next_retry_epoch=0
+  [[ "$vps_runtime_last_force_cycle_epoch" =~ ^[0-9]+$ ]] || vps_runtime_last_force_cycle_epoch=0
+
+  if vps_is_reachable; then
+    unreachable_since="$vps_runtime_unreachable_since"
+    if (( unreachable_since > 0 )); then
+      down_for=$((now_epoch - unreachable_since))
+      if (( down_for < 0 )); then
+        down_for=0
+      fi
+      log "vps_recovered_after_outage reason=$reason down_for_sec=$down_for"
+    fi
+    vps_runtime_unreachable_since=0
+    vps_runtime_fail_streak=0
+    vps_runtime_next_retry_epoch=0
+    vps_runtime_commit
+    fullspan_state_metric_set "vps_infra_fail_closed" 0
     return 0
   fi
 
+  if (( vps_runtime_next_retry_epoch > now_epoch )); then
+    return 1
+  fi
+
+  if (( now_epoch - vps_runtime_last_recover_epoch < base_cooldown )); then
+    vps_runtime_next_retry_epoch=$((vps_runtime_last_recover_epoch + base_cooldown))
+    vps_runtime_commit
+    return 1
+  fi
+
+  if (( vps_runtime_unreachable_since <= 0 )); then
+    vps_runtime_unreachable_since="$now_epoch"
+    vps_runtime_commit
+  fi
+  unreachable_since="$vps_runtime_unreachable_since"
+
+  fail_streak="$vps_runtime_fail_streak"
+  attempt_no=$((fail_streak + 1))
+  force_cycle_streak="$VPS_FORCE_CYCLE_STREAK"
+  [[ "$force_cycle_streak" =~ ^[0-9]+$ ]] || force_cycle_streak=3
+  if (( force_cycle_streak < 2 )); then
+    force_cycle_streak=2
+  fi
+  force_cycle_cooldown="$VPS_FORCE_CYCLE_COOLDOWN_SEC"
+  [[ "$force_cycle_cooldown" =~ ^[0-9]+$ ]] || force_cycle_cooldown=1800
+  if (( force_cycle_cooldown < 120 )); then
+    force_cycle_cooldown=120
+  fi
+  last_force_cycle="$vps_runtime_last_force_cycle_epoch"
+  timeout_sec="$VPS_RECOVER_TIMEOUT_SEC"
+  [[ "$timeout_sec" =~ ^[0-9]+$ ]] || timeout_sec=420
+  if (( timeout_sec < 90 )); then
+    timeout_sec=90
+  fi
+  state_hint=""
+  active_fastpath=0
+  skip_remote_probe=0
+  if is_truthy "$VPS_RECOVER_ACTIVE_SSH_DOWN_FASTPATH"; then
+    state_hint="$(vps_serverspace_state)"
+    if [[ "$state_hint" == "active" ]]; then
+      active_fastpath=1
+    fi
+  fi
+
+  if (( active_fastpath == 1 )); then
+    if (( now_epoch - last_force_cycle >= force_cycle_cooldown )); then
+      log "vps_recover_fastpath reason=$reason state=$state_hint action=force_cycle"
+      if vps_force_power_cycle "${reason}:active_no_ssh"; then
+        vps_runtime_fail_streak=0
+        vps_runtime_next_retry_epoch=0
+        vps_runtime_unreachable_since=0
+        vps_runtime_commit
+        fullspan_state_metric_set "vps_infra_fail_closed" 0
+        log_decision_note "global" "VPS_FORCE_CYCLE_RECOVERED" "reason=$reason state=$state_hint mode=active_no_ssh" "resume_queue_dispatch"
+        return 0
+      fi
+      skip_remote_probe=1
+      log "vps_recover_fastpath_fail reason=$reason state=$state_hint action=skip_long_probe"
+    else
+      log "vps_recover_fastpath_deferred reason=$reason state=$state_hint cooldown_remaining=$((force_cycle_cooldown - (now_epoch - last_force_cycle)))"
+    fi
+  fi
+
+  vps_runtime_last_recover_epoch="$now_epoch"
+  vps_runtime_commit
+  if (( skip_remote_probe == 0 )); then
+    log "vps_recover_attempt reason=$reason attempt=$attempt_no timeout_sec=$timeout_sec state_hint=${state_hint:-unknown}"
+    if timeout "$timeout_sec" env SKIP_POWER=0 STOP_AFTER=0 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo ping >>"$LOG_FILE" 2>&1 && vps_is_reachable; then
+      fullspan_state_metric_inc "vps_recover_success_count" 1
+      vps_runtime_fail_streak=0
+      vps_runtime_next_retry_epoch=0
+      vps_runtime_unreachable_since=0
+      vps_runtime_commit
+      fullspan_state_metric_set "vps_infra_fail_closed" 0
+      log "vps_recover_success reason=$reason"
+      return 0
+    fi
+  else
+    log "vps_recover_skip_remote_probe reason=$reason state_hint=${state_hint:-unknown}"
+  fi
+
+  fail_streak=$((fail_streak + 1))
+  backoff="$(vps_recover_backoff_seconds "$fail_streak")"
+  [[ "$backoff" =~ ^[0-9]+$ ]] || backoff="$VPS_RECOVER_BASE_COOLDOWN_SEC"
+  if (( backoff < 30 )); then
+    backoff=30
+  fi
+  next_epoch=$((now_epoch + backoff))
+  down_for=$((now_epoch - unreachable_since))
+  if (( down_for < 0 )); then
+    down_for=0
+  fi
+
+  vps_runtime_fail_streak="$fail_streak"
+  vps_runtime_next_retry_epoch="$next_epoch"
+  vps_runtime_commit
+  fullspan_state_metric_set "vps_unreachable_duration_sec" "$down_for"
   fullspan_state_metric_inc "vps_recover_fail_count" 1
-  log_decision_note "global" "VPS_RECOVER_FAIL" "reason=$reason" "await_next_watchdog_cycle"
-  log "vps_recover_fail reason=$reason"
+
+  if (( fail_streak >= force_cycle_streak )) && (( now_epoch - last_force_cycle >= force_cycle_cooldown )); then
+    if vps_force_power_cycle "$reason"; then
+      vps_runtime_fail_streak=0
+      vps_runtime_next_retry_epoch=0
+      vps_runtime_unreachable_since=0
+      vps_runtime_commit
+      fullspan_state_metric_set "vps_infra_fail_closed" 0
+      log_decision_note "global" "VPS_FORCE_CYCLE_RECOVERED" "reason=$reason fail_streak=$fail_streak" "resume_queue_dispatch"
+      return 0
+    fi
+    log_decision_note "global" "VPS_FORCE_CYCLE_FAIL" "reason=$reason fail_streak=$fail_streak next_retry_epoch=$next_epoch" "await_next_watchdog_cycle"
+  fi
+
+  if (( fail_streak >= VPS_RECOVER_FAIL_HARD_NOTE_STREAK )); then
+    fullspan_state_metric_set "vps_infra_fail_closed" 1
+    log_decision_note "global" "INFRA_FAIL_CLOSED" "reason=vps_unreachable fail_streak=$fail_streak down_for_sec=$down_for next_retry_epoch=$next_epoch" "continue_search_without_promote"
+  fi
+  log_decision_note "global" "VPS_RECOVER_FAIL" "reason=$reason attempt=$fail_streak down_for_sec=$down_for next_retry_epoch=$next_epoch" "await_next_watchdog_cycle"
+  log "vps_recover_fail reason=$reason attempt=$fail_streak down_for_sec=$down_for backoff_sec=$backoff next_retry_epoch=$next_epoch"
   return 1
 }
 
@@ -2423,6 +3494,8 @@ trigger_confirm_fastlane() {
   local strict_pass_count="$4"
   local strict_run_groups="$5"
   local confirm_count="$6"
+  local candidate_uid="${7:-}"
+  local top_run_group top_score
 
   if [[ -z "$top_variant" ]]; then
     return 0
@@ -2431,8 +3504,19 @@ trigger_confirm_fastlane() {
     return 0
   fi
 
+  top_run_group="$(fullspan_state_get "$source_queue_rel" "top_run_group" "")"
+  top_score="$(fullspan_state_get "$source_queue_rel" "top_score" "")"
+  if [[ -z "$candidate_uid" ]]; then
+    candidate_uid="$(derive_candidate_uid "$top_run_group" "$top_variant" "$top_score")"
+  fi
+  if [[ -z "$candidate_uid" ]]; then
+    return 0
+  fi
+
   local now_epoch last_trigger
+  local dispatch_id
   now_epoch="$(date +%s)"
+  dispatch_id="d${now_epoch}_$(printf '%s' "${candidate_uid}|${top_variant}|${top_run_group}" | sha1sum | awk '{print substr($1,1,10)}')"
   last_trigger="$(fullspan_state_get "$source_queue_rel" "confirm_fastlane_last_trigger_epoch" "0")"
   if [[ -z "$last_trigger" ]]; then
     last_trigger=0
@@ -2475,29 +3559,53 @@ if src.exists():
     except Exception:
         rows = []
 
+def is_stress_row(config_path: str, results_dir: str) -> bool:
+    cfg = str(config_path or '').strip().lower()
+    if not cfg:
+        return False
+    cfg_name = Path(cfg).name
+    cfg_stem = Path(cfg).stem
+    if cfg.endswith('_stress.yaml'):
+        return True
+    if cfg_name.startswith('stress_') or cfg_stem.startswith('stress_'):
+        return True
+
+    results = str(results_dir or '').strip().lower().replace('\\', '/')
+    if not results:
+        return False
+    segments = [segment for segment in results.split('/') if segment]
+    run_id = segments[-1] if segments else ''
+    if run_id.startswith('stress_'):
+        return True
+    if 'stress' in segments:
+        return True
+    return False
+
 picked = []
 seen = set()
 for r in rows:
     cfg = str(r.get('config_path') or '').strip()
+    results_dir = str(r.get('results_dir') or '').strip()
     if not cfg or cfg in seen:
         continue
-    if cfg.endswith('_stress.yaml'):
+    if is_stress_row(cfg, results_dir):
         continue
-    blob = " ".join([cfg, str(r.get('results_dir') or ''), str(r.get('status') or '')]).lower()
+    blob = " ".join([cfg, results_dir, str(r.get('status') or '')]).lower()
     if needle and needle not in blob:
         continue
     seen.add(cfg)
-    picked.append({'config_path': cfg, 'results_dir': str(r.get('results_dir') or ''), 'status': 'planned'})
+    picked.append({'config_path': cfg, 'results_dir': results_dir, 'status': 'planned'})
 
 if not picked:
     for r in rows:
         cfg = str(r.get('config_path') or '').strip()
+        results_dir = str(r.get('results_dir') or '').strip()
         if not cfg or cfg in seen:
             continue
-        if cfg.endswith('_stress.yaml'):
+        if is_stress_row(cfg, results_dir):
             continue
         seen.add(cfg)
-        picked.append({'config_path': cfg, 'results_dir': str(r.get('results_dir') or ''), 'status': 'planned'})
+        picked.append({'config_path': cfg, 'results_dir': results_dir, 'status': 'planned'})
         break
 
 out.parent.mkdir(parents=True, exist_ok=True)
@@ -2536,11 +3644,31 @@ PY
   fullspan_state_queue_set "$source_queue_rel" \
     "confirm_fastlane_queue_rel" "$confirm_queue_rel" \
     "confirm_fastlane_last_trigger_epoch" "$now_epoch" \
-    "confirm_pending_since_epoch" "${now_epoch}"
+    "confirm_pending_since_epoch" "${now_epoch}" \
+    "candidate_uid" "$candidate_uid" \
+    "confirm_fastlane_last_dispatch_id" "$dispatch_id"
+
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/fullspan_lineage.py register \
+      --registry "$CONFIRM_LINEAGE_REGISTRY_FILE" \
+      --queue-rel "$confirm_queue_rel" \
+      --source-queue-rel "$source_queue_rel" \
+      --candidate-uid "$candidate_uid" \
+      --top-run-group "$top_run_group" \
+      --top-variant "$top_variant" \
+      --dispatch-id "$dispatch_id") >>"$LOG_FILE" 2>&1 || true
 
   local qlog="$STATE_DIR/confirm_fastlane_${safe_name}_$(date -u +%Y%m%d_%H%M%S).log"
+  local queue_poweroff
+  queue_poweroff="$(batch_session_queue_poweroff)"
+  if ! ensure_vps_ready "confirm_fastlane:$source_queue_rel"; then
+    log "confirm_fastlane_deferred source=$source_queue_rel reason=vps_unreachable candidate_uid=$candidate_uid dispatch_id=$dispatch_id"
+    log_decision_note "$source_queue_rel" "CONFIRM_FASTLANE_DEFERRED" "reason=vps_unreachable dispatch_id=$dispatch_id" "wait_vps_recovery"
+    return 0
+  fi
   (
     cd "$ROOT_DIR"
+    # Do not leak driver lock fd into long-lived child workers.
+    exec 9>&-
     AUTONOMOUS_MODE=1 \
     ALLOW_HEAVY_RUN=1 \
     ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py \
@@ -2553,13 +3681,14 @@ PY
       --watchdog true \
       --wait-completion false \
       --postprocess true \
-      --poweroff "$POWEROFF_AFTER_RUN" \
+      --poweroff "$queue_poweroff" \
       >>"$qlog" 2>&1
   ) &
+  batch_session_note_dispatch
 
   fullspan_state_metric_inc "confirm_fastlane_trigger_count" 1
-  log_decision_note "$source_queue_rel" "CONFIRM_FASTLANE_TRIGGER" "confirm_queue=$confirm_queue_rel variant=$top_variant" "await_confirm_replay"
-  log "confirm_fastlane_trigger source=$source_queue_rel confirm_queue=$confirm_queue_rel variant=$top_variant"
+  log_decision_note "$source_queue_rel" "CONFIRM_FASTLANE_TRIGGER" "confirm_queue=$confirm_queue_rel variant=$top_variant candidate_uid=$candidate_uid dispatch_id=$dispatch_id" "await_confirm_replay"
+  log "confirm_fastlane_trigger source=$source_queue_rel confirm_queue=$confirm_queue_rel variant=$top_variant candidate_uid=$candidate_uid dispatch_id=$dispatch_id"
 }
 
 start_queue() {
@@ -2580,18 +3709,25 @@ start_queue() {
 
   local parallel
   local max_retries
+  local queue_poweroff
 
   parallel="$(choose_parallel "$planned" "$running" "$stalled" "$total" "$cause")"
   max_retries="$(choose_max_retries "$cause")"
+  queue_poweroff="$(batch_session_queue_poweroff)"
 
   local stamp
   stamp="$(date -u +%Y%m%d_%H%M%S)"
   local qlog="$STATE_DIR/run_${stamp}_$(basename "$(dirname "$queue_rel")").log"
 
   log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries"
-  ensure_vps_ready "start_queue:$queue_rel" || true
+  if ! ensure_vps_ready "start_queue:$queue_rel"; then
+    log "start_blocked queue=$queue_rel reason=vps_unreachable"
+    return 1
+  fi
   (
     cd "$ROOT_DIR"
+    # Do not leak driver lock fd into long-lived child workers.
+    exec 9>&-
     AUTONOMOUS_MODE=1 \
     ALLOW_HEAVY_RUN=1 \
     ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py \
@@ -2604,9 +3740,10 @@ start_queue() {
       --watchdog true \
       --wait-completion false \
       --postprocess true \
-      --poweroff "$POWEROFF_AFTER_RUN" \
+      --poweroff "$queue_poweroff" \
       >>"$qlog" 2>&1
   ) &
+  batch_session_note_dispatch
   local rc=$?
   if [[ "$rc" -ne 0 ]]; then
     log "failed_to_start queue=$queue_rel rc=$rc"
@@ -2620,12 +3757,16 @@ start_queue() {
 declare -A last_pending_by_queue
 
 cleanup_orphans
+batch_session_load_state
+vps_runtime_load
+vps_runtime_commit
 
 declare -A stalled_repair_failures
 declare -A stalled_repair_last_reason_by_queue
 declare -A stalled_repair_same_reason_streak_by_queue
 declare -A no_progress_streak_by_queue
 declare -A vps_idle_pending_streak_by_queue
+declare -A vps_unreachable_streak_by_queue
 
 adaptive_idle_sleep=30
 prev_queue=""
@@ -2651,7 +3792,7 @@ while true; do
   fi
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
-    if fallback_pending_candidate; then
+    if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_fallback_selected reason=no_candidate_file"
     else
       log_state "idle now=none completed=all"
@@ -2662,6 +3803,7 @@ while true; do
       if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
         adaptive_idle_sleep=300
       fi
+      batch_session_maybe_stop "candidate_empty"
       sleep "$adaptive_idle_sleep"
       continue
     fi
@@ -2670,7 +3812,7 @@ while true; do
   IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
-    if fallback_pending_candidate; then
+    if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_parse_fallback reason=parse_empty"
       IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
     fi
@@ -2685,12 +3827,78 @@ while true; do
     if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
       adaptive_idle_sleep=300
     fi
+    batch_session_maybe_stop "candidate_parse_empty"
     sleep "$adaptive_idle_sleep"
     continue
   fi
 
   queue_rel="${queue#$ROOT_DIR/}"
   pending=$((planned + running + stalled + failed))
+
+  queue_abs="$ROOT_DIR/$queue_rel"
+  if [[ -f "$queue_abs" ]]; then
+    read -r q_planned q_running q_stalled q_failed q_completed q_total <<< "$(python3 - "$queue_abs" <<'PY'
+import csv
+import sys
+from collections import Counter
+from pathlib import Path
+
+p = Path(sys.argv[1])
+if not p.exists():
+    print("0 0 0 0 0 0")
+    raise SystemExit(0)
+
+rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
+c = Counter((r.get('status') or '').strip().lower() for r in rows)
+planned = int(c.get('planned', 0))
+running = int(c.get('running', 0))
+stalled = int(c.get('stalled', 0))
+failed = int(c.get('failed', 0)) + int(c.get('error', 0))
+completed = int(c.get('completed', 0))
+print(planned, running, stalled, failed, completed, len(rows))
+PY
+)"
+
+    if [[ "$q_planned" != "$planned" || "$q_running" != "$running" || "$q_stalled" != "$stalled" || "$q_failed" != "$failed" || "$q_completed" != "$completed" || "$q_total" != "$total" ]]; then
+      log "candidate_reconcile queue=$queue_rel cand=${planned}/${running}/${stalled}/${failed}/${completed}/${total} actual=${q_planned}/${q_running}/${q_stalled}/${q_failed}/${q_completed}/${q_total}"
+      planned="$q_planned"
+      running="$q_running"
+      stalled="$q_stalled"
+      failed="$q_failed"
+      completed="$q_completed"
+      total="$q_total"
+      pending=$((planned + running + stalled + failed))
+    fi
+  fi
+
+  if (( pending <= 0 )); then
+    : > "$CANDIDATE_FILE"
+    find_candidate 1
+    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+      cleanup_orphans
+      find_candidate 0
+    fi
+    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+      fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE" || true
+    fi
+    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+      log_state "idle now=none completed=all"
+      log "candidate_empty_after_reconcile"
+      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+      fi
+      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+        adaptive_idle_sleep=300
+      fi
+      batch_session_maybe_stop "candidate_empty_after_reconcile"
+      sleep "$adaptive_idle_sleep"
+      continue
+    fi
+    IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason < <(tail -n 1 "$CANDIDATE_FILE")
+    queue_rel="${queue#$ROOT_DIR/}"
+    pending=$((planned + running + stalled + failed))
+    log "candidate_reselect_after_reconcile queue=$queue_rel pending=$pending"
+  fi
 
   if (( planned > 0 )); then
     gate_prefilter_payload="$(prefilter_planned_gate_aware "$queue_rel")"
@@ -2715,6 +3923,44 @@ PY
     fi
   fi
 
+  if (( planned > 0 && running == 0 )); then
+    early_stop_payload="$(early_stop_low_yield_queue "$queue_rel")"
+    early_stop_trigger="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(bool(d.get(\"trigger\", False))))' "$early_stop_payload" 2>/dev/null || echo 0)"
+    if [[ "$early_stop_trigger" == "1" ]]; then
+      early_stop_reason="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(str(d.get(\"reason\") or \"EARLY_STOP_LOW_YIELD\"))' "$early_stop_payload" 2>/dev/null || echo EARLY_STOP_LOW_YIELD)"
+      early_stop_changed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get(\"changed\",0)))' "$early_stop_payload" 2>/dev/null || echo 0)"
+      early_stop_fail_fraction="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(float(d.get(\"fail_fraction\",0.0)))' "$early_stop_payload" 2>/dev/null || echo 0)"
+      state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
+      state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
+      state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
+      state_run_groups_csv="$(fullspan_state_run_groups_csv "$queue_rel")"
+      state_strict_summary_path="$(fullspan_state_get "$queue_rel" "strict_summary_path" "")"
+      fullspan_state_set "$queue_rel" "REJECT" \
+        "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" \
+        "$early_stop_reason" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT" "$early_stop_reason" "$state_run_groups_csv" "$state_strict_summary_path"
+      mark_orphan "$queue_rel" "early_stop_low_yield"
+      fullspan_state_metric_inc "early_stop_low_yield_count" 1
+      log_decision_note "$queue_rel" "EARLY_STOP_LOW_YIELD" "reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction" "skip_remaining_and_continue_search"
+      log "early_stop_low_yield queue=$queue_rel reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction"
+      read -r planned running stalled failed completed total <<< "$(python3 - "$ROOT_DIR/$queue_rel" <<'PY'
+import csv
+import sys
+from collections import Counter
+from pathlib import Path
+p=Path(sys.argv[1])
+rows=list(csv.DictReader(p.open(newline='',encoding='utf-8'))) if p.exists() else []
+c=Counter((r.get('status') or '').strip().lower() for r in rows)
+print(c.get('planned',0), c.get('running',0), c.get('stalled',0), c.get('failed',0)+c.get('error',0), c.get('completed',0), len(rows))
+PY
+)"
+      pending=$((planned + running + stalled + failed))
+      if (( pending <= 0 )); then
+        sleep 2
+        continue
+      fi
+    fi
+  fi
+
   promotion_verdict="ANALYZE"
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
   state_rejection_reason="$(fullspan_state_get "$queue_rel" "rejection_reason" "")"
@@ -2724,6 +3970,7 @@ PY
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
   state_top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
+  state_candidate_uid="$(fullspan_state_get "$queue_rel" "candidate_uid" "")"
   low_yield_fail_closed="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed" "0")"
   low_yield_fail_closed_reason="$(fullspan_state_get "$queue_rel" "low_yield_fail_closed_reason" "")"
 
@@ -2737,6 +3984,7 @@ PY
   state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
   state_top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
+  state_candidate_uid="$(fullspan_state_get "$queue_rel" "candidate_uid" "")"
 
   # If reject was caused by no-progress while queue is planned-only, reopen for execution.
   if [[ "$state_verdict" == "REJECT" && "$state_rejection_reason" == "no_progress_streak" && "$planned" -gt 0 && "$running" -eq 0 && "$stalled" -eq 0 ]]; then
@@ -2756,7 +4004,9 @@ PY
     fullspan_state_queue_set "$queue_rel" "confirm_pending_since_epoch" "0"
   fi
 
-  trigger_confirm_fastlane "$queue_rel" "$(basename "$(dirname "$queue_rel")")" "$state_top_variant" "$state_strict_pass_count" "$state_strict_run_groups" "$state_confirm_count"
+  if [[ "$DRIVER_CONFIRM_FASTLANE_ENABLE" == "1" || "$DRIVER_CONFIRM_FASTLANE_ENABLE" == "true" ]]; then
+    trigger_confirm_fastlane "$queue_rel" "$(basename "$(dirname "$queue_rel")")" "$state_top_variant" "$state_strict_pass_count" "$state_strict_run_groups" "$state_confirm_count" "$state_candidate_uid"
+  fi
 
   if [[ "$low_yield_fail_closed" == "1" ]]; then
     promotion_verdict="REJECT"
@@ -2801,17 +4051,45 @@ PY
 
   if (( pending > 0 )); then
     if (( running == 0 )) && ! vps_is_reachable; then
-      no_progress_streak_by_queue["$queue_rel"]=0
-      log "no_progress_pause queue=$queue_rel reason=vps_unreachable pending=$pending"
-      sleep 5
-      continue
+      if ensure_vps_ready "queue_start:$queue_rel"; then
+        vps_unreachable_streak_by_queue["$queue_rel"]=0
+        log "vps_recovered queue=$queue_rel pending=$pending"
+      else
+        unreachable_streak=0
+        sleep_sec=5
+        next_retry_epoch=0
+        no_progress_streak_by_queue["$queue_rel"]=0
+        unreachable_streak="${vps_unreachable_streak_by_queue[$queue_rel]:-0}"
+        unreachable_streak=$((unreachable_streak + 1))
+        vps_unreachable_streak_by_queue["$queue_rel"]="$unreachable_streak"
+        fullspan_state_metric_inc "vps_unreachable_loop_count" 1
+        next_retry_epoch="$(vps_runtime_next_retry_get)"
+        [[ "$next_retry_epoch" =~ ^[0-9]+$ ]] || next_retry_epoch=0
+        sleep_sec="$(vps_next_retry_sleep_seconds)"
+        if (( unreachable_streak >= VPS_UNREACHABLE_ORPHAN_STREAK )); then
+          LAST_REJECTED_QUEUE="$queue_rel"
+          mark_orphan "$queue_rel" "vps_unreachable_streak_${unreachable_streak}"
+          : > "$CANDIDATE_FILE"
+          vps_unreachable_streak_by_queue["$queue_rel"]=0
+          log_decision_note "$queue_rel" "INFRA_FAIL_CLOSED" "reason=vps_unreachable streak=$unreachable_streak next_retry_epoch=$next_retry_epoch" "orphan_and_continue_search"
+        fi
+        log "no_progress_pause queue=$queue_rel reason=vps_unreachable pending=$pending streak=$unreachable_streak next_retry_epoch=$next_retry_epoch sleep_sec=$sleep_sec"
+        sleep "$sleep_sec"
+        continue
+      fi
+    else
+      vps_unreachable_streak_by_queue["$queue_rel"]=0
     fi
 
     if (( running == 0 && stalled == 0 && planned > 0 )) && remote_queue_running "$queue_rel"; then
       no_progress_streak_by_queue["$queue_rel"]=0
       log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
       sync_queue_status "$queue_rel"
-      fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
+      if (( completed > 0 )); then
+        fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
+      else
+        log "fullspan_rollup_sync_skip queue=$queue_rel reason=remote_runner_active_sync completed=0"
+      fi
       sleep 3
       continue
     fi
@@ -2850,9 +4128,13 @@ PY
   fi
 
   if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
+    LAST_REJECTED_QUEUE="$queue_rel"
+    mark_orphan "$queue_rel" "gated_reject_no_progress"
+    : > "$CANDIDATE_FILE"
     log "candidate_gated_reject queue=$queue_rel promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
     log_decision_note "$queue_rel" "REJECT" "gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
-    sleep "$adaptive_idle_sleep"
+    batch_session_maybe_stop "gated_reject"
+    sleep 2
     continue
   fi
 
@@ -2944,7 +4226,7 @@ PY
       sleep "$busy_backoff_seconds"
     fi
     log_state "busy current_queue=$queue_rel running_or_stalled=$running,$stalled planned=$planned reason=$reason"
-    log "busy skip start queue_rel=$queue_rel urgency=$urgency reason=$reason pending=$pending repeat=$busy_repeat_count cause=$cause action=$action"
+    log "busy skip start queue_rel=$queue_rel urgency=$urgency reason=$reason pending=$pending repeat=$busy_repeat_count cause=$cause action=$action busy_reason=${busy_reason:-unknown}"
     continue
   fi
 
@@ -2958,6 +4240,7 @@ PY
     fi
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
     log "no_pending queue=$queue_rel action=WAIT selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
+    batch_session_maybe_stop "no_pending"
     sleep "$adaptive_idle_sleep"
     continue
   fi
@@ -2969,6 +4252,7 @@ PY
   log "candidate queue=$queue_rel reason=$reason cause=$cause urgency=$urgency planned=$planned running=$running stalled=$stalled failed=$failed completed=$completed action=$action selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE selection_profile=$PROMOTION_SELECTION_PROFILE promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason promotion_potential=$promotion_potential pre_rank_score=$pre_rank_score"
   if ! start_queue "$queue_rel" "$cause" "$planned" "$running" "$stalled" "$total"; then
     log "start_failed queue=$queue_rel cause=$cause"
+    batch_session_maybe_stop "start_failed"
   fi
 
   sleep 120
