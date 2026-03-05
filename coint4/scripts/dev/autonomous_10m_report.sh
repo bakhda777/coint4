@@ -301,72 +301,57 @@ next_action_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); prin
 need_user_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("need_user","нет"))' "$human_payload")"
 queue_line="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(d.get("queue","none"))' "$human_payload")"
 
-leaders_line="$(python3 - "$ROOT_DIR/artifacts/wfa/aggregate/rollup/run_index.csv" <<'PY'
-import csv
-import math
+leaders_line="$(python3 - "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 if not path.exists():
-    print('нет данных')
+    print('нет strict-лидеров в fullspan state')
     raise SystemExit(0)
 
-def to_float(v, d=0.0):
-    try:
-        if v is None:
-            return d
-        s = str(v).strip()
-        if s == '':
-            return d
-        return float(s)
-    except Exception:
-        return d
-
-def is_true(v):
-    return str(v or '').strip().lower() in {'1','true','yes','y','on'}
-
-rows = []
 try:
-    with path.open(newline='', encoding='utf-8') as f:
-        for r in csv.DictReader(f):
-            if not is_true(r.get('metrics_present')):
-                continue
-            if to_float(r.get('total_trades')) < 200:
-                continue
-            if to_float(r.get('total_pairs_traded')) < 20:
-                continue
-            dd = abs(to_float(r.get('max_drawdown_on_equity')))
-            if dd > 0.20:
-                continue
-            pnl = to_float(r.get('total_pnl'))
-            if pnl < 0:
-                continue
-            worst_step = to_float(r.get('tail_loss_worst_period_pnl', r.get('tail_loss_worst_pair_pnl')))
-            if worst_step < -200.0:
-                continue
-            sh = to_float(r.get('sharpe_ratio_abs'), float('nan'))
-            if not math.isfinite(sh):
-                continue
-            # lightweight proxy for fullspan ordering in report-only context
-            score = sh - max(0.0, (-worst_step / 1000.0) - 0.10)
-            run_group = (r.get('run_group') or '').strip()
-            run_id = (r.get('run_id') or '').strip()
-            if not run_group or not run_id:
-                continue
-            rows.append((score, run_group, run_id, dd, pnl, worst_step))
+    data = json.loads(path.read_text(encoding='utf-8'))
 except Exception:
-    print('нет данных')
+    print('нет strict-лидеров в fullspan state')
     raise SystemExit(0)
+
+queues = data.get('queues', {}) if isinstance(data, dict) else {}
+rows = []
+for queue_rel, entry in queues.items():
+    if not isinstance(entry, dict):
+        continue
+    try:
+        sp = int(float(entry.get('strict_pass_count', 0) or 0))
+        rg = int(float(entry.get('strict_run_group_count', 0) or 0))
+        cc = int(float(entry.get('confirm_count', 0) or 0))
+        score = float(entry.get('top_score', 0) or 0)
+    except Exception:
+        sp, rg, cc, score = 0, 0, 0, 0.0
+    if sp <= 0:
+        continue
+    rows.append((
+        score,
+        sp,
+        rg,
+        cc,
+        str(entry.get('promotion_verdict', 'ANALYZE') or 'ANALYZE'),
+        str(entry.get('top_run_group', '') or ''),
+        str(entry.get('top_variant', '') or ''),
+        str(queue_rel),
+    ))
 
 if not rows:
-    print('нет лидеров, проходящих строгие hard-gates')
+    print('нет strict-лидеров в fullspan state')
     raise SystemExit(0)
 
-rows.sort(key=lambda x: x[0], reverse=True)
+rows.sort(key=lambda x: (x[0], x[1], x[2], x[3]), reverse=True)
 out = []
-for score, rg, rid, dd, pnl, ws in rows[:3]:
-    out.append(f"{rg}/{rid} score≈{score:.3f} DD={dd:.3f} PnL={pnl:.2f} step={ws:.2f}")
+for score, sp, rg, cc, verdict, top_rg, top_var, queue_rel in rows[:3]:
+    label = top_var or queue_rel
+    rg_label = top_rg or queue_rel
+    out.append(f"{rg_label}/{label} score={score:.3f} passes={sp} run_groups={rg} confirm={cc} verdict={verdict}")
 print(' | '.join(out))
 PY
 )"
