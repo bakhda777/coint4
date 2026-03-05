@@ -57,6 +57,9 @@ STOP_AFTER=${STOP_AFTER:-"1"}
 # If SERVSPACE_API_KEY isn't available, you can still shut down via SSH after syncing back.
 STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
 SKIP_POWER=${SKIP_POWER:-"0"}
+ACTIVE_BATCH_STOP_GUARD=${ACTIVE_BATCH_STOP_GUARD:-"1"}
+ALLOW_STOP_DURING_ACTIVE_BATCH=${ALLOW_STOP_DURING_ACTIVE_BATCH:-"0"}
+ACTIVE_BATCH_GUARD_SEC=${ACTIVE_BATCH_GUARD_SEC:-"3600"}
 
 # Optional preflight guard (idempotency): run once after SSH is ready, but before any update/sync/stop.
 # If the command prints PREFLIGHT_MATCH and exits 0, this script exits 0 immediately (no side effects).
@@ -236,6 +239,48 @@ start_server() {
 stop_server() {
   if [[ "$STOP_AFTER" != "1" ]]; then
     return 0
+  fi
+
+  if [[ "$ACTIVE_BATCH_STOP_GUARD" == "1" && "$ALLOW_STOP_DURING_ACTIVE_BATCH" != "1" ]]; then
+    local batch_state=""
+    local guard_hit=""
+    for candidate in \
+      "$LOCAL_REPO_DIR/coint4/artifacts/wfa/aggregate/.autonomous/batch_session_state.json" \
+      "$LOCAL_REPO_DIR/artifacts/wfa/aggregate/.autonomous/batch_session_state.json"; do
+      if [[ -f "$candidate" ]]; then
+        batch_state="$candidate"
+        break
+      fi
+    done
+    if [[ -n "$batch_state" ]]; then
+      guard_hit="$(python3 - "$batch_state" "$ACTIVE_BATCH_GUARD_SEC" <<'PY'
+import json
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+guard_sec = max(0, int(float(sys.argv[2] or 0)))
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0")
+    raise SystemExit(0)
+
+active = bool(payload.get("active"))
+last_dispatch_epoch = int(float(payload.get("last_dispatch_epoch", 0) or 0))
+start_epoch = int(float(payload.get("start_epoch", 0) or 0))
+anchor = max(last_dispatch_epoch, start_epoch)
+now = int(time.time())
+recent = anchor > 0 and (now - anchor) <= guard_sec
+print("1" if active and recent else "0")
+PY
+)"
+      if [[ "$guard_hit" == "1" ]]; then
+        echo "[server] stop skipped: active batch session guard (${batch_state})"
+        return 0
+      fi
+    fi
   fi
 
   if [[ "$SKIP_POWER" != "1" && -n "$API_KEY" ]]; then

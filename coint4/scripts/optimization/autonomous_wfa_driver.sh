@@ -268,7 +268,7 @@ batch_session_stop() {
   fi
 
   log "batch_session_stop_attempt reason=$reason"
-  if timeout 180 env SKIP_POWER=1 STOP_AFTER=1 STOP_VIA_SSH=1 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo batch_session_stop >>"$LOG_FILE" 2>&1; then
+  if timeout 180 env SKIP_POWER=1 STOP_AFTER=1 STOP_VIA_SSH=1 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 ALLOW_STOP_DURING_ACTIVE_BATCH=1 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo batch_session_stop >>"$LOG_FILE" 2>&1; then
     batch_session_last_stop_epoch="$now_epoch"
     log "batch_session_stop_success reason=$reason runs_started=$batch_session_runs_started"
   else
