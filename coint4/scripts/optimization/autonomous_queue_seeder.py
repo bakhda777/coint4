@@ -62,6 +62,11 @@ def _load_args() -> argparse.Namespace:
         "windows": [token.strip() for token in os.getenv("AUTONOMOUS_QUEUE_SEEDER_WINDOWS", "").split(";") if token.strip()],
         "aggregate_dir": os.getenv("AUTONOMOUS_QUEUE_SEEDER_AGGREGATE_DIR", "artifacts/wfa/aggregate"),
         "python_bin": os.getenv("AUTONOMOUS_QUEUE_SEEDER_PYTHON_BIN", str(root / ".venv" / "bin" / "python")),
+        "fallback_base_configs": [
+            token.strip()
+            for token in os.getenv("AUTONOMOUS_QUEUE_SEEDER_FALLBACK_BASE_CONFIGS", "").split(",")
+            if token.strip()
+        ],
     }
 
     parser = argparse.ArgumentParser(description="Autonomously seed run queue when backlog is low.")
@@ -83,6 +88,12 @@ def _load_args() -> argparse.Namespace:
     parser.add_argument("--aggregate-dir", default=defaults["aggregate_dir"], help="Run queue root folder")
     parser.add_argument("--run-index", default=defaults["run_index"], help="run_index CSV path")
     parser.add_argument("--python-bin", default=defaults["python_bin"], help="Python binary for evolve_next_batch")
+    parser.add_argument(
+        "--fallback-base-config",
+        action="append",
+        default=defaults["fallback_base_configs"],
+        help="Fallback base config(s) when primary planner input fails",
+    )
     parser.add_argument("--state-prefix", default="queue_seeder", help="State artifact prefix")
     return parser.parse_args()
 
@@ -194,6 +205,7 @@ def main() -> int:
     lock_path = state_dir / f"{args.state_prefix}.lock"
     state_path = state_dir / f"{args.state_prefix}.state.json"
     log_path = state_dir / f"{args.state_prefix}.log.jsonl"
+    incident_path = state_dir / "incidents.jsonl"
     planner_script = app_root / "scripts" / "optimization" / "evolve_next_batch.py"
 
     # Strict fail-closed defaults: do not act when required inputs are missing.
@@ -206,6 +218,16 @@ def main() -> int:
         }
         _emit_state(state_path, payload)
         _append_log(log_path, payload)
+        _append_log(
+            incident_path,
+            {
+                "ts": _utc_now_iso(),
+                "agent": "queue_seeder",
+                "kind": "seed_failed",
+                "human": "Queue seeder: planner script missing; seeding skipped.",
+                "payload": payload,
+            },
+        )
         return 1
 
     # Basic locking to prevent concurrent seeders.
@@ -254,80 +276,128 @@ def main() -> int:
 
             decision_dir = aggregate_dir / controller_group / "decisions"
 
-            cmd: list[str] = [
-                str(Path(str(args.python_bin)).expanduser()),
-                "scripts/optimization/evolve_next_batch.py",
-                "--base-config",
-                base_config,
-                "--controller-group",
-                controller_group,
-                "--run-group",
-                run_group,
-                "--run-index",
-                str(_resolve_under_root(args.run_index, app_root)),
-                "--num-variants",
-                str(int(args.num_variants)),
-                "--ir-mode",
-                str(args.ir_mode),
-                "--dedupe-distance",
-                str(float(args.dedupe_distance)),
-                "--max-changed-keys",
-                str(int(args.max_changed_keys)),
-                "--policy-scale",
-                str(args.policy_scale),
+            fallback_configs = [
+                token.strip() for token in list(getattr(args, "fallback_base_config", []) or []) if token.strip()
             ]
-            for token in contains:
-                cmd.extend(["--contains", token])
-            for raw in args.window:
-                if not raw:
-                    continue
-                cmd.extend(["--window", raw])
-            if args.llm_propose:
-                cmd.extend(
-                    [
-                        "--llm-propose",
-                        "--llm-model",
-                        str(args.llm_model),
-                        "--llm-effort",
-                        str(args.llm_effort),
-                        "--llm-timeout-sec",
-                        str(int(args.llm_timeout_sec)),
-                    ]
-                )
+            planner_bases: list[str] = []
+            for cfg in [base_config, *fallback_configs]:
+                if cfg not in planner_bases:
+                    planner_bases.append(cfg)
 
             env = os.environ.copy()
             env["PYTHONPATH"] = f"{str((app_root / 'src'))}:{env.get('PYTHONPATH', '')}".rstrip(":")
 
-            result = subprocess.run(
-                cmd,
-                cwd=str(app_root),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
+            attempts: list[dict[str, Any]] = []
+            decision = None
+            final_result = None
+            final_cmd: list[str] | None = None
+            selected_base = None
 
-            snapshot["planner_cmd"] = cmd
-            snapshot["returncode"] = int(result.returncode)
-            snapshot["planner_stdout_tail"] = (result.stdout or "")[-2000:]
-            snapshot["planner_stderr_tail"] = (result.stderr or "")[-2000:]
+            for idx, cfg in enumerate(planner_bases):
+                run_group_try = run_group if idx == 0 else f"{run_group}_fb{idx}"
+                cmd: list[str] = [
+                    str(Path(str(args.python_bin)).expanduser()),
+                    "scripts/optimization/evolve_next_batch.py",
+                    "--base-config",
+                    cfg,
+                    "--controller-group",
+                    controller_group,
+                    "--run-group",
+                    run_group_try,
+                    "--run-index",
+                    str(_resolve_under_root(args.run_index, app_root)),
+                    "--num-variants",
+                    str(int(args.num_variants)),
+                    "--ir-mode",
+                    str(args.ir_mode),
+                    "--dedupe-distance",
+                    str(float(args.dedupe_distance)),
+                    "--max-changed-keys",
+                    str(int(args.max_changed_keys)),
+                    "--policy-scale",
+                    str(args.policy_scale),
+                ]
+                for token in contains:
+                    cmd.extend(["--contains", token])
+                for raw in args.window:
+                    if not raw:
+                        continue
+                    cmd.extend(["--window", raw])
+                if args.llm_propose:
+                    cmd.extend(
+                        [
+                            "--llm-propose",
+                            "--llm-model",
+                            str(args.llm_model),
+                            "--llm-effort",
+                            str(args.llm_effort),
+                            "--llm-timeout-sec",
+                            str(int(args.llm_timeout_sec)),
+                        ]
+                    )
 
-            if result.returncode != 0:
-                snapshot.update({"status": "failed", "reason": "evolve_failed"})
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(app_root),
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+                attempts.append(
+                    {
+                        "base_config": cfg,
+                        "run_group": run_group_try,
+                        "returncode": int(result.returncode),
+                        "stdout_tail": (result.stdout or "")[-800:],
+                        "stderr_tail": (result.stderr or "")[-800:],
+                    }
+                )
+
+                if result.returncode != 0:
+                    continue
+
+                decision_try = _load_decision_path(
+                    decision_dir=decision_dir,
+                    before_mtime=before_mtime,
+                    app_root=app_root,
+                )
+                if not decision_try:
+                    continue
+
+                decision = decision_try
+                final_result = result
+                final_cmd = cmd
+                selected_base = cfg
+                run_group = run_group_try
+                break
+
+            snapshot["attempts"] = attempts
+            if final_result is not None:
+                snapshot["planner_cmd"] = final_cmd
+                snapshot["returncode"] = int(final_result.returncode)
+                snapshot["planner_stdout_tail"] = (final_result.stdout or "")[-2000:]
+                snapshot["planner_stderr_tail"] = (final_result.stderr or "")[-2000:]
+                snapshot["selected_base_config"] = selected_base
+
+            if decision is None:
+                snapshot.update({"status": "failed", "reason": "all_planners_failed", "human": "Queue seeder failed: all planner inputs invalid/failed; waiting for fallback fix."})
                 _emit_state(state_path, snapshot)
                 _append_log(log_path, snapshot)
-                return int(result.returncode)
-
-            decision = _load_decision_path(
-                decision_dir=decision_dir,
-                before_mtime=before_mtime,
-                app_root=app_root,
-            )
-            if not decision:
-                snapshot.update({"status": "failed", "reason": "no_new_decision"})
-                _emit_state(state_path, snapshot)
-                _append_log(log_path, snapshot)
+                _append_log(
+                    incident_path,
+                    {
+                        "ts": _utc_now_iso(),
+                        "agent": "queue_seeder",
+                        "kind": "seed_failed",
+                        "human": snapshot["human"],
+                        "payload": {
+                            "controller_group": controller_group,
+                            "attempts": [{"base_config": a.get("base_config"), "returncode": a.get("returncode")} for a in attempts],
+                        },
+                    },
+                )
                 return 1
 
             queue_path = decision["queue_path"]
