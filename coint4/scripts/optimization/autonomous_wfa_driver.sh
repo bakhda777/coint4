@@ -2725,6 +2725,15 @@ PY
   state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
   state_top_variant="$(fullspan_state_get "$queue_rel" "top_variant" "")"
 
+  # If reject was caused by no-progress while queue is planned-only, reopen for execution.
+  if [[ "$state_verdict" == "REJECT" && "$state_rejection_reason" == "no_progress_streak" && "$planned" -gt 0 && "$running" -eq 0 && "$stalled" -eq 0 ]]; then
+    fullspan_state_queue_set "$queue_rel" "promotion_verdict" "ANALYZE" "rejection_reason" ""
+    state_verdict="ANALYZE"
+    state_rejection_reason=""
+    state_strict_gate_status="FULLSPAN_PREFILTER_UNKNOWN"
+    log "reopen_from_no_progress queue=$queue_rel planned=$planned"
+  fi
+
   if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
     pending_since_epoch="$(fullspan_state_get "$queue_rel" "confirm_pending_since_epoch" "0")"
     if [[ -z "$pending_since_epoch" || "$pending_since_epoch" == "0" ]]; then
@@ -2785,25 +2794,29 @@ PY
       continue
     fi
 
-    no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
-    if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
-      if [[ "$pending" -eq "$prev_pending" && "$running" -eq "$prev_running" && "$stalled" -eq "$prev_stalled" && "$planned" -eq "$prev_planned" && "$failed" -eq "$prev_failed" ]]; then
-        no_progress_count=$((no_progress_count + 1))
+    if (( running > 0 || stalled > 0 )); then
+      no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
+      if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
+        if [[ "$pending" -eq "$prev_pending" && "$running" -eq "$prev_running" && "$stalled" -eq "$prev_stalled" && "$planned" -eq "$prev_planned" && "$failed" -eq "$prev_failed" ]]; then
+          no_progress_count=$((no_progress_count + 1))
+        else
+          no_progress_count=0
+        fi
       else
         no_progress_count=0
       fi
-    else
-      no_progress_count=0
-    fi
 
-    no_progress_streak_by_queue["$queue_rel"]="$no_progress_count"
-    if (( no_progress_count >= NO_PROGRESS_STALE_CYCLES )); then
-      mark_orphan "$queue_rel" "no_progress_streak_${no_progress_count}"
-      fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "no_progress_streak" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT"
-      log_decision_note "$queue_rel" "FULLSPAN_NO_PROGRESS_FAIL_CLOSED" "no_progress_streak=${no_progress_count}" "retry_orphan_closed"
-      log "no_progress_fail_closed queue=$queue_rel streak=$no_progress_count pending=$pending"
-      sleep 2
-      continue
+      no_progress_streak_by_queue["$queue_rel"]="$no_progress_count"
+      if (( no_progress_count >= NO_PROGRESS_STALE_CYCLES )); then
+        mark_orphan "$queue_rel" "no_progress_streak_${no_progress_count}"
+        fullspan_state_set "$queue_rel" "REJECT" "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" "no_progress_streak" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT"
+        log_decision_note "$queue_rel" "FULLSPAN_NO_PROGRESS_FAIL_CLOSED" "no_progress_streak=${no_progress_count}" "retry_orphan_closed"
+        log "no_progress_fail_closed queue=$queue_rel streak=$no_progress_count pending=$pending"
+        sleep 2
+        continue
+      fi
+    else
+      no_progress_streak_by_queue["$queue_rel"]=0
     fi
   else
     no_progress_streak_by_queue["$queue_rel"]=0
