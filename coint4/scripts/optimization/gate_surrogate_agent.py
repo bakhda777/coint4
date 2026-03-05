@@ -493,6 +493,29 @@ def apply_contribution(contribs: list[dict[str, Any]], key: str, delta: float) -
     contribs.append({"key": key, "delta": round(float(delta), 4)})
 
 
+def is_placeholder_fullspan_probe(fullspan_entry: dict[str, Any] | None) -> bool:
+    if not isinstance(fullspan_entry, dict) or not fullspan_entry:
+        return False
+    verdict = str(fullspan_entry.get("promotion_verdict") or "").strip().upper()
+    contract_reason = str(fullspan_entry.get("contract_reason") or "").strip().upper()
+    strict_reason = str(fullspan_entry.get("strict_gate_reason") or "").strip().upper()
+    reject_reason = str(fullspan_entry.get("rejection_reason") or "").strip().upper()
+    windows_total = parse_int(fullspan_entry.get("contract_windows_total"), 0)
+    windows_passed = parse_int(fullspan_entry.get("contract_windows_passed"), 0)
+    score = fullspan_entry.get("score_fullspan_v1")
+    avg_sharpe = fullspan_entry.get("avg_robust_sharpe")
+    return (
+        verdict in {"", "ANALYZE"}
+        and contract_reason == "METRICS_MISSING"
+        and strict_reason in {"", "METRICS_MISSING"}
+        and reject_reason == ""
+        and windows_total == 0
+        and windows_passed == 0
+        and score in {None, ""}
+        and avg_sharpe in {None, ""}
+    )
+
+
 def decide_queue(
     *,
     queue_key: str,
@@ -509,11 +532,16 @@ def decide_queue(
     risk = 0.15
     contributions: list[dict[str, Any]] = []
     validation_error = False
+    cold_start_exploration = False
 
     queue_completed = int(queue_status.get("completed", 0))
     queue_pending = int(sum(queue_status.get(status, 0) for status in PENDING_STATUSES))
     queue_errors = int(sum(queue_status.get(status, 0) for status in ERROR_STATUSES))
     queue_skipped = int(queue_status.get("skipped", 0))
+
+    pending_ratio = 0.0
+    error_ratio = 0.0
+    skipped_ratio = 0.0
 
     if queue_rows <= 0:
         apply_contribution(contributions, "queue_empty", 0.20)
@@ -549,6 +577,7 @@ def decide_queue(
     run_index_rows = 0
     lineages: list[str] = []
     legacy_lineages: list[str] = []
+    fullspan_placeholder_probe = is_placeholder_fullspan_probe(fullspan_entry)
 
     if isinstance(run_index_entry, dict) and run_index_entry:
         run_index_rows = int(run_index_entry.get("rows", 0) or 0)
@@ -650,10 +679,10 @@ def decide_queue(
             apply_contribution(contributions, "fullspan_pending_confirm", 0.08)
             risk += 0.08
 
-        if fullspan_reason == "METRICS_MISSING":
+        if fullspan_reason == "METRICS_MISSING" and not fullspan_placeholder_probe:
             apply_contribution(contributions, "fullspan_metrics_missing", 0.12)
             risk += 0.12
-        elif fullspan_reason and fullspan_reason not in {"UNKNOWN", "PASS", "OK"}:
+        elif fullspan_reason and fullspan_reason not in {"UNKNOWN", "PASS", "OK", "METRICS_MISSING"}:
             apply_contribution(contributions, f"fullspan_{fullspan_reason.lower()}", 0.20)
             risk += 0.20
 
@@ -699,6 +728,23 @@ def decide_queue(
         apply_contribution(contributions, "quarantine_global_active", 0.03)
         risk += 0.03
 
+    if (
+        queue_rows > 0
+        and queue_completed == 0
+        and queue_pending > 0
+        and (queue_pending + queue_skipped) == queue_rows
+        and queue_errors == 0
+        and run_index_rows <= 0
+        and (
+            not (isinstance(fullspan_entry, dict) and fullspan_entry)
+            or fullspan_placeholder_probe
+        )
+        and quarantine_total == 0
+    ):
+        cold_start_exploration = True
+        apply_contribution(contributions, "cold_start_clean_queue", -0.30)
+        risk -= 0.30
+
     risk = max(0.0, min(1.0, risk))
 
     if risk >= reject_threshold:
@@ -713,6 +759,8 @@ def decide_queue(
         reason = sorted(positive_contribs, key=lambda item: (-float(item["delta"]), str(item["key"])))[0]["key"]
     else:
         reason = "healthy_signal"
+    if decision == "allow" and cold_start_exploration:
+        reason = "cold_start_clean_queue"
 
     evidence = {
         "run_group": run_group,
@@ -726,8 +774,13 @@ def decide_queue(
         "fullspan_verdict": fullspan_verdict,
         "fullspan_reason": fullspan_reason,
         "fullspan_contract_pass": bool(fullspan_contract_pass),
+        "fullspan_placeholder_probe": bool(fullspan_placeholder_probe),
         "quarantine_total": int(quarantine_total),
         "quarantine_codes": quarantine_codes,
+        "cold_start_exploration": bool(cold_start_exploration),
+        "pending_ratio": round(float(pending_ratio), 6),
+        "error_ratio": round(float(error_ratio), 6),
+        "skipped_ratio": round(float(skipped_ratio), 6),
         "lineage_tokens": lineages,
         "lineage_uids": lineages,
         "legacy_evo_tokens": legacy_lineages,

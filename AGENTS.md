@@ -1,3 +1,8 @@
+Break the task into independent subtasks.
+Spawn separate agents for each subtask.
+Run them in parallel and merge the results.
+Синхронизируй наш код с GitHub и мощным VPS, чтобы состояние было одинаковым.
+
 # AGENTS
 
 Цель: убрать двусмысленность в структуре репозитория и в том, где лежат результаты/журналы.
