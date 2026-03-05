@@ -1,0 +1,13 @@
+[Unit]
+Description=Autonomous WFA Queue Seeder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT_DIR__
+ExecStart=__ROOT_DIR__/scripts/optimization/autonomous_queue_seeder.py
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
