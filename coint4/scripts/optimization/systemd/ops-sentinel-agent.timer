@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Ops Sentinel Agent every 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=ops-sentinel-agent.service
+
+[Install]
+WantedBy=timers.target
