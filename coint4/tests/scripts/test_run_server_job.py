@@ -165,7 +165,7 @@ else:
     rsync_stub.chmod(0o755)
 
 
-def _run_sync_up(tmp_path: Path, local_repo: Path, remote_repo: Path, mode: str) -> subprocess.CompletedProcess[str]:
+def _run_sync_up(tmp_path: Path, local_repo: Path, remote_repo: Path, mode: str | None) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     _write_stubs(bin_dir)
     env = os.environ.copy()
@@ -175,7 +175,8 @@ def _run_sync_up(tmp_path: Path, local_repo: Path, remote_repo: Path, mode: str)
     env["SYNC_BACK"] = "0"
     env["UPDATE_CODE"] = "0"
     env["SYNC_UP"] = "1"
-    env["SYNC_UP_MODE"] = mode
+    if mode is not None:
+        env["SYNC_UP_MODE"] = mode
     env["SERVER_IP"] = "127.0.0.1"
     env["SERVER_USER"] = "root"
     env["SSH_KEY"] = str(tmp_path / "dummy_ed25519")
@@ -245,3 +246,25 @@ def test_sync_up_code_cleans_only_in_scope_tracked_paths(tmp_path: Path) -> None
     assert (remote_repo / ".ralph-tui/prd.json").exists()
     assert (remote_repo / "coint4/outputs/runtime.log").exists()
     assert "sync_up cleanup removed 2 stale scope files (mode=code)" in proc.stdout
+
+
+def test_sync_up_defaults_to_code_mode(tmp_path: Path) -> None:
+    local_repo, remote_repo, _ = _prepare_repos(
+        tmp_path,
+        initial_files={
+            "README.md": "demo\n",
+            "scripts/data/current.py": "print('current')\n",
+            "scripts/data/stale.py": "print('stale')\n",
+        },
+        removed_after_clone=["scripts/data/stale.py"],
+    )
+    _write(remote_repo / "scripts/data/untracked_orphan.py", "print('orphan')\n")
+    _write(remote_repo / "coint4/.venv/bin/python", "#!/usr/bin/env python3\n")
+
+    proc = _run_sync_up(tmp_path, local_repo, remote_repo, None)
+
+    assert proc.returncode == 0, proc.stderr
+    assert not (remote_repo / "scripts/data/stale.py").exists()
+    assert not (remote_repo / "scripts/data/untracked_orphan.py").exists()
+    assert (remote_repo / "coint4/.venv/bin/python").exists()
+    assert "syncing files (code)" in proc.stdout

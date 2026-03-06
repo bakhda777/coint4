@@ -307,10 +307,34 @@ def _sync_code_include_paths(project_root: Path) -> list[str]:
     return includes
 
 
-def _build_local_sync_manifest(project_root: Path, includes: Iterable[str]) -> dict[str, object]:
+def _manifest_entries_digest(entries: Iterable[dict[str, object]], *, include_hash: bool) -> str:
     digest = hashlib.sha256()
+    for entry in entries:
+        rel_text = str(entry.get("path") or "").strip()
+        if not rel_text:
+            continue
+        digest.update(rel_text.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(int(entry.get("size") or 0)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(int(entry.get("mtime_ns") or 0)).encode("ascii"))
+        digest.update(b"\0")
+        if include_hash:
+            digest.update(str(entry.get("sha256") or "").encode("ascii"))
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _build_local_sync_manifest(
+    project_root: Path,
+    includes: Iterable[str],
+    *,
+    include_hash: bool = True,
+    selected_paths: Iterable[str] | None = None,
+) -> dict[str, object]:
     entries: list[dict[str, object]] = []
     root = project_root.resolve()
+    selected = {str(item or "").strip() for item in (selected_paths or []) if str(item or "").strip()}
 
     for include in sorted({str(item or "").strip() for item in includes if str(item or "").strip()}):
         include_path = (root / include).resolve()
@@ -325,18 +349,24 @@ def _build_local_sync_manifest(project_root: Path, includes: Iterable[str]) -> d
             rel_path = candidate.relative_to(root)
             if _should_skip_sync_relpath(rel_path):
                 continue
-            file_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
             rel_text = rel_path.as_posix()
-            digest.update(rel_text.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(file_digest.encode("ascii"))
-            digest.update(b"\0")
-            entries.append({"path": rel_text, "sha256": file_digest, "size": int(candidate.stat().st_size)})
+            if selected and rel_text not in selected:
+                continue
+            stat_result = candidate.stat()
+            entry: dict[str, object] = {
+                "path": rel_text,
+                "size": int(stat_result.st_size),
+                "mtime_ns": int(getattr(stat_result, "st_mtime_ns", int(stat_result.st_mtime * 1_000_000_000))),
+            }
+            if include_hash:
+                entry["sha256"] = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            entries.append(entry)
 
     return {
-        "digest": digest.hexdigest(),
+        "digest": _manifest_entries_digest(entries, include_hash=include_hash),
         "count": len(entries),
         "entries": entries,
+        "mode": "sha256" if include_hash else "fingerprint",
     }
 
 
@@ -534,11 +564,17 @@ def _remote_sync_manifest(
     port: int,
     log_path: Path,
     log: Callable[[str], None],
+    include_hash: bool = True,
+    selected_paths: Iterable[str] | None = None,
 ) -> dict[str, object]:
     include_list = [str(item or "").strip() for item in includes if str(item or "").strip()]
+    selected_list = [str(item or "").strip() for item in (selected_paths or []) if str(item or "").strip()]
+    digest_mode = "sha256" if include_hash else "fingerprint"
     remote_cmd = (
         f"cd {shlex.quote(str(remote_repo))} "
         f"&& INCLUDE_JSON={shlex.quote(json.dumps(include_list, ensure_ascii=True))} "
+        f"SELECTED_JSON={shlex.quote(json.dumps(selected_list, ensure_ascii=True))} "
+        f"DIGEST_MODE={shlex.quote(digest_mode)} "
         "python3 - <<'PY'\n"
         "import hashlib\n"
         "import json\n"
@@ -554,8 +590,9 @@ def _remote_sync_manifest(
         "\n"
         "root = pathlib.Path.cwd()\n"
         "includes = json.loads(os.environ.get('INCLUDE_JSON', '[]'))\n"
-        "digest = hashlib.sha256()\n"
-        "count = 0\n"
+        "selected = {str(item or '').strip() for item in json.loads(os.environ.get('SELECTED_JSON', '[]')) if str(item or '').strip()}\n"
+        "digest_mode = str(os.environ.get('DIGEST_MODE') or 'sha256').strip().lower()\n"
+        "include_hash = digest_mode == 'sha256'\n"
         "entries = []\n"
         "for include in sorted({str(item or '').strip() for item in includes if str(item or '').strip()}):\n"
         "    path = (root / include).resolve()\n"
@@ -569,14 +606,26 @@ def _remote_sync_manifest(
         "        rel_path = candidate.relative_to(root)\n"
         "        if should_skip(rel_path):\n"
         "            continue\n"
-        "        file_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()\n"
-        "        digest.update(rel_path.as_posix().encode('utf-8'))\n"
+        "        rel_text = rel_path.as_posix()\n"
+        "        if selected and rel_text not in selected:\n"
+        "            continue\n"
+        "        stat = candidate.stat()\n"
+        "        entry = {'path': rel_text, 'size': int(stat.st_size), 'mtime_ns': int(getattr(stat, 'st_mtime_ns', int(stat.st_mtime * 1000000000)))}\n"
+        "        if include_hash:\n"
+        "            entry['sha256'] = hashlib.sha256(candidate.read_bytes()).hexdigest()\n"
+        "        entries.append(entry)\n"
+        "digest = hashlib.sha256()\n"
+        "for entry in entries:\n"
+        "    digest.update(str(entry.get('path') or '').encode('utf-8'))\n"
+        "    digest.update(b'\\0')\n"
+        "    digest.update(str(int(entry.get('size') or 0)).encode('ascii'))\n"
+        "    digest.update(b'\\0')\n"
+        "    digest.update(str(int(entry.get('mtime_ns') or 0)).encode('ascii'))\n"
+        "    digest.update(b'\\0')\n"
+        "    if include_hash:\n"
+        "        digest.update(str(entry.get('sha256') or '').encode('ascii'))\n"
         "        digest.update(b'\\0')\n"
-        "        digest.update(file_digest.encode('ascii'))\n"
-        "        digest.update(b'\\0')\n"
-        "        count += 1\n"
-        "        entries.append({'path': rel_path.as_posix(), 'sha256': file_digest, 'size': int(candidate.stat().st_size)})\n"
-        "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': count, 'entries': entries}, sort_keys=True))\n"
+        "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': len(entries), 'entries': entries, 'mode': digest_mode}, sort_keys=True))\n"
         "PY"
     )
     rc, output = _exec_ssh_command(
@@ -599,6 +648,7 @@ def _remote_sync_manifest(
         "digest": str(payload.get("digest") or ""),
         "count": int(payload.get("count") or 0),
         "entries": payload.get("entries") if isinstance(payload.get("entries"), list) else [],
+        "mode": str(payload.get("mode") or digest_mode),
     }
 
 
@@ -626,6 +676,81 @@ def _manifest_remote_only_paths(
     local_paths = set(_manifest_entry_index(local_manifest))
     remote_paths = sorted(set(_manifest_entry_index(remote_manifest)) - local_paths)
     return remote_paths
+
+
+def _manifest_mismatched_paths(
+    local_manifest: dict[str, object] | None,
+    remote_manifest: dict[str, object] | None,
+) -> list[str]:
+    local_index = _manifest_entry_index(local_manifest)
+    remote_index = _manifest_entry_index(remote_manifest)
+    mismatched: list[str] = []
+    for path_text, local_entry in local_index.items():
+        remote_entry = remote_index.get(path_text)
+        if not remote_entry:
+            continue
+        if (
+            int(local_entry.get("size") or 0) != int(remote_entry.get("size") or 0)
+            or int(local_entry.get("mtime_ns") or 0) != int(remote_entry.get("mtime_ns") or 0)
+            or (
+                "sha256" in local_entry
+                and "sha256" in remote_entry
+                and str(local_entry.get("sha256") or "") != str(remote_entry.get("sha256") or "")
+            )
+        ):
+            mismatched.append(path_text)
+    return sorted(mismatched)
+
+
+def _sync_code_state_path(log_path: Path) -> Path:
+    return log_path.with_name(f"{log_path.stem}__sync_code_state.json")
+
+
+def _write_sync_code_state(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _record_sync_code_state(
+    path: Path,
+    *,
+    status: str,
+    source_commit: str,
+    remote_head: str,
+    manifest_digest: str,
+    remote_manifest_digest: str,
+    remote_git_identity_drift: bool,
+    drift_detected: bool,
+    drift_reason: str,
+    mode: str,
+    includes: Iterable[str],
+    error_class: str = "",
+    message: str = "",
+    mismatched_paths: Iterable[str] | None = None,
+    remote_only_paths: Iterable[str] | None = None,
+) -> None:
+    payload = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": str(status or "").strip() or "unknown",
+        "source_commit": str(source_commit or "").strip(),
+        "remote_head": str(remote_head or "").strip(),
+        "manifest_digest": str(manifest_digest or "").strip(),
+        "remote_manifest_digest": str(remote_manifest_digest or "").strip(),
+        "remote_git_identity_drift": bool(remote_git_identity_drift),
+        "drift_detected": bool(drift_detected),
+        "drift_reason": str(drift_reason or "").strip() or "unknown",
+        "mode": str(mode or "").strip() or "unknown",
+        "includes": [str(item or "").strip() for item in includes if str(item or "").strip()],
+        "error_class": str(error_class or "").strip(),
+        "message": str(message or "").strip(),
+        "mismatched_paths": [
+            str(item or "").strip() for item in (mismatched_paths or []) if str(item or "").strip()
+        ][:16],
+        "remote_only_paths": [
+            str(item or "").strip() for item in (remote_only_paths or []) if str(item or "").strip()
+        ][:16],
+    }
+    _write_sync_code_state(path, payload)
 
 
 def _prune_remote_sync_extras(
@@ -2112,15 +2237,48 @@ def _sync_repo_code(
     logic (e.g. coverage alignment when walk_forward.max_steps truncates execution).
     """
     includes = _sync_code_include_paths(project_root)
+    sync_state_path = _sync_code_state_path(log_path)
     if not includes:
         log("powered: sync_code skipped (no include paths found)")
+        _write_sync_code_state(
+            sync_state_path,
+            {
+                "status": "skipped",
+                "reason": "no_include_paths",
+                "source_commit": _git_head_revision(project_root),
+                "remote_git_identity_drift": False,
+            },
+        )
         return
 
-    local_manifest = _build_local_sync_manifest(project_root, includes)
-    local_manifest_digest = str(local_manifest.get("digest") or "")
+    local_manifest_fast = _build_local_sync_manifest(project_root, includes, include_hash=False)
+    local_manifest_fast_digest = str(local_manifest_fast.get("digest") or "")
+    local_manifest_full: Optional[dict[str, object]] = None
+    local_manifest_digest = ""
     remote_manifest_before: Optional[dict[str, object]] = None
     remote_manifest_after: Optional[dict[str, object]] = None
-    local_entry_index = _manifest_entry_index(local_manifest)
+    local_entry_index = _manifest_entry_index(local_manifest_fast)
+    local_head = _git_head_revision(project_root)
+    local_dirty = _local_paths_have_tracked_changes(project_root, includes)
+    remote_head = _remote_git_head_revision(
+        host=host,
+        user=user,
+        remote_repo=remote_repo,
+        port=port,
+        log_path=log_path,
+        log=log,
+    )
+    sync_state: dict[str, object] = {
+        "source_commit": local_head,
+        "source_dirty": bool(local_dirty),
+        "includes": includes,
+        "manifest_mode": "fingerprint",
+        "manifest_digest": local_manifest_fast_digest,
+        "remote_manifest_digest": "",
+        "remote_head": remote_head,
+        "remote_git_identity_drift": bool(local_head and remote_head and local_head != remote_head),
+        "status": "starting",
+    }
     try:
         remote_manifest_before = _remote_sync_manifest(
             host=host,
@@ -2130,6 +2288,7 @@ def _sync_repo_code(
             port=port,
             log_path=log_path,
             log=log,
+            include_hash=False,
         )
     except _PoweredFailure as exc:
         log(
@@ -2141,15 +2300,20 @@ def _sync_repo_code(
         )
 
     remote_manifest_before_digest = str((remote_manifest_before or {}).get("digest") or "")
-    if local_manifest_digest and remote_manifest_before_digest == local_manifest_digest:
+    sync_state["remote_manifest_digest"] = remote_manifest_before_digest
+    if local_manifest_fast_digest and remote_manifest_before_digest == local_manifest_fast_digest:
         log(
-            "powered: sync_code skipped reason=manifest_match digest={digest} files={count}".format(
-                digest=local_manifest_digest,
-                count=int(local_manifest.get("count") or 0),
+            "powered: sync_code skipped reason=manifest_match digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
+                digest=local_manifest_fast_digest,
+                count=int(local_manifest_fast.get("count") or 0),
+                remote_head=remote_head or "none",
+                drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
             )
         )
+        sync_state["status"] = "skipped_manifest_match"
+        _write_sync_code_state(sync_state_path, sync_state)
         return
-    remote_only_before = _manifest_remote_only_paths(local_manifest, remote_manifest_before)
+    remote_only_before = _manifest_remote_only_paths(local_manifest_fast, remote_manifest_before)
     if remote_only_before:
         log(
             "powered: sync_code remote_only_before count={count} sample={sample}".format(
@@ -2174,27 +2338,62 @@ def _sync_repo_code(
             port=port,
             log_path=log_path,
             log=log,
+            include_hash=False,
         )
         remote_manifest_before_digest = str((remote_manifest_before or {}).get("digest") or "")
-        if local_manifest_digest and remote_manifest_before_digest == local_manifest_digest:
+        sync_state["remote_manifest_digest"] = remote_manifest_before_digest
+        if local_manifest_fast_digest and remote_manifest_before_digest == local_manifest_fast_digest:
             log(
                 "powered: sync_code ok reason=post_prune_manifest_match digest={digest} files={count}".format(
-                    digest=local_manifest_digest,
-                    count=int(local_manifest.get("count") or 0),
+                    digest=local_manifest_fast_digest,
+                    count=int(local_manifest_fast.get("count") or 0),
                 )
             )
+            sync_state["status"] = "ok_post_prune_manifest_match"
+            _write_sync_code_state(sync_state_path, sync_state)
             return
 
-    local_head = _git_head_revision(project_root)
-    local_dirty = _local_paths_have_tracked_changes(project_root, includes)
-    remote_head = _remote_git_head_revision(
-        host=host,
-        user=user,
-        remote_repo=remote_repo,
-        port=port,
-        log_path=log_path,
-        log=log,
-    )
+    fingerprint_mismatched_paths = _manifest_mismatched_paths(local_manifest_fast, remote_manifest_before)
+    if fingerprint_mismatched_paths:
+        local_manifest_full = _build_local_sync_manifest(
+            project_root,
+            includes,
+            include_hash=True,
+            selected_paths=fingerprint_mismatched_paths,
+        )
+        remote_manifest_verify = _remote_sync_manifest(
+            host=host,
+            user=user,
+            remote_repo=remote_repo,
+            includes=includes,
+            port=port,
+            log_path=log_path,
+            log=log,
+            include_hash=True,
+            selected_paths=fingerprint_mismatched_paths,
+        )
+        local_manifest_digest = str(local_manifest_full.get("digest") or "")
+        remote_manifest_verify_digest = str(remote_manifest_verify.get("digest") or "")
+        if (
+            local_manifest_digest
+            and remote_manifest_verify_digest == local_manifest_digest
+            and int(local_manifest_full.get("count") or 0) == int(remote_manifest_verify.get("count") or 0)
+        ):
+            sync_state["status"] = "ok_fingerprint_hash_match"
+            sync_state["manifest_mode"] = "sha256_subset"
+            sync_state["manifest_digest"] = local_manifest_digest
+            sync_state["remote_manifest_digest"] = remote_manifest_verify_digest
+            sync_state["mismatched_paths"] = fingerprint_mismatched_paths[:16]
+            log(
+                "powered: sync_code ok reason=fingerprint_hash_match digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
+                    digest=local_manifest_digest,
+                    count=int(local_manifest_fast.get("count") or 0),
+                    remote_head=remote_head or "none",
+                    drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
+                )
+            )
+            _write_sync_code_state(sync_state_path, sync_state)
+            return
 
     # NOTE: do not rely on remote /tmp for code sync. Some images mount /tmp small or noexec.
     # Stream a tarball directly over SSH into remote_repo.
@@ -2334,10 +2533,12 @@ def _sync_repo_code(
             port=port,
             log_path=log_path,
             log=log,
+            include_hash=False,
         )
         remote_manifest_after_digest = str(remote_manifest_after.get("digest") or "")
-        remote_only_after = _manifest_remote_only_paths(local_manifest, remote_manifest_after)
-        if local_manifest_digest and remote_manifest_after_digest != local_manifest_digest and remote_only_after:
+        sync_state["remote_manifest_digest"] = remote_manifest_after_digest
+        remote_only_after = _manifest_remote_only_paths(local_manifest_fast, remote_manifest_after)
+        if local_manifest_fast_digest and remote_manifest_after_digest != local_manifest_fast_digest and remote_only_after:
             log(
                 "powered: sync_code remote_only_after count={count} sample={sample}".format(
                     count=len(remote_only_after),
@@ -2361,17 +2562,45 @@ def _sync_repo_code(
                 port=port,
                 log_path=log_path,
                 log=log,
+                include_hash=False,
             )
             remote_manifest_after_digest = str(remote_manifest_after.get("digest") or "")
-        if local_manifest_digest and remote_manifest_after_digest != local_manifest_digest:
+            sync_state["remote_manifest_digest"] = remote_manifest_after_digest
+        local_manifest_digest = local_manifest_fast_digest
+        mismatched_paths = _manifest_mismatched_paths(local_manifest_fast, remote_manifest_after)
+        if local_manifest_fast_digest and remote_manifest_after_digest != local_manifest_fast_digest and mismatched_paths:
+            local_manifest_full = _build_local_sync_manifest(
+                project_root,
+                includes,
+                include_hash=True,
+                selected_paths=mismatched_paths,
+            )
+            remote_manifest_verify = _remote_sync_manifest(
+                host=host,
+                user=user,
+                remote_repo=remote_repo,
+                includes=includes,
+                port=port,
+                log_path=log_path,
+                log=log,
+                include_hash=True,
+                selected_paths=mismatched_paths,
+            )
+            local_manifest_digest = str(local_manifest_full.get("digest") or "")
+            remote_manifest_verify_digest = str(remote_manifest_verify.get("digest") or "")
+            sync_state["manifest_mode"] = "sha256_subset"
+            sync_state["manifest_digest"] = local_manifest_digest
+            sync_state["remote_manifest_digest"] = remote_manifest_verify_digest
+            remote_entry_index = _manifest_entry_index(remote_manifest_verify)
+            local_entry_index = _manifest_entry_index(local_manifest_full)
+            remote_only_final = sorted(set(remote_entry_index) - set(local_entry_index))
+            mismatched_paths = _manifest_mismatched_paths(local_manifest_full, remote_manifest_verify)
+            if local_manifest_digest and remote_manifest_verify_digest == local_manifest_digest:
+                mismatched_paths = []
+        else:
             remote_entry_index = _manifest_entry_index(remote_manifest_after)
             remote_only_final = sorted(set(remote_entry_index) - set(local_entry_index))
-            mismatched_paths = sorted(
-                path_text
-                for path_text, entry in local_entry_index.items()
-                if path_text in remote_entry_index
-                and str(entry.get("sha256") or "") != str(remote_entry_index[path_text].get("sha256") or "")
-            )
+        if local_manifest_digest and sync_state["remote_manifest_digest"] != local_manifest_digest:
             mismatch_detail = "remote_only={remote_only} mismatched={mismatched}".format(
                 remote_only=",".join(remote_only_final[:5]) or "none",
                 mismatched=",".join(mismatched_paths[:5]) or "none",
@@ -2383,35 +2612,34 @@ def _sync_repo_code(
             )
 
         log(
-            "powered: sync_code ok includes={includes} digest={digest} files={count}".format(
+            "powered: sync_code ok includes={includes} digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
                 includes=includes,
                 digest=local_manifest_digest or "none",
-                count=int(local_manifest.get("count") or 0),
+                count=int(local_manifest_fast.get("count") or 0),
+                remote_head=remote_head or "none",
+                drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
             )
         )
+        sync_state["status"] = "ok"
+        _write_sync_code_state(sync_state_path, sync_state)
     except _PoweredFailure as exc:
-        remote_manifest_known = bool(remote_manifest_before_digest or str((remote_manifest_after or {}).get("digest") or ""))
         remote_manifest_digest = str(
-            (remote_manifest_after or remote_manifest_before or {}).get("digest") or ""
+            sync_state.get("remote_manifest_digest")
+            or str((remote_manifest_after or remote_manifest_before or {}).get("digest") or "")
         )
+        remote_manifest_known = bool(remote_manifest_digest)
         drift_detected = bool(
-            local_manifest_digest
+            str(sync_state.get("manifest_digest") or local_manifest_fast_digest)
             and (
                 not remote_manifest_known
                 or not remote_manifest_digest
-                or remote_manifest_digest != local_manifest_digest
+                or remote_manifest_digest != str(sync_state.get("manifest_digest") or local_manifest_fast_digest)
             )
         )
         drift_reason = "manifest_mismatch" if drift_detected else "manifest_match"
         if not drift_detected and local_dirty:
             drift_detected = True
             drift_reason = "local_tracked_changes"
-        if not drift_detected and local_head and remote_head and local_head != remote_head:
-            drift_detected = True
-            drift_reason = "git_head_mismatch"
-        if not drift_detected and (not local_head or not remote_head):
-            drift_detected = True
-            drift_reason = "unknown_git_state"
         log(
             "powered: sync_code failed error_class={cls} fatal={fatal} msg={msg} "
             "local_head={local_head} remote_head={remote_head} local_manifest={local_manifest} "
@@ -2421,12 +2649,19 @@ def _sync_repo_code(
                 msg=str(exc),
                 local_head=local_head or "none",
                 remote_head=remote_head or "none",
-                local_manifest=local_manifest_digest or "none",
+                local_manifest=str(sync_state.get("manifest_digest") or local_manifest_fast_digest or "none"),
                 remote_manifest=remote_manifest_digest or "none",
                 drift=str(bool(drift_detected)).lower(),
                 drift_reason=drift_reason,
             )
         )
+        sync_state["status"] = "failed"
+        sync_state["error_class"] = exc.error_class
+        sync_state["error_message"] = str(exc)
+        sync_state["remote_manifest_digest"] = remote_manifest_digest
+        sync_state["drift_detected"] = bool(drift_detected)
+        sync_state["drift_reason"] = drift_reason
+        _write_sync_code_state(sync_state_path, sync_state)
         if drift_detected:
             raise _PoweredFailure(
                 "sync_code failed with remote code drift detected",

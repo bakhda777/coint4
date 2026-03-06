@@ -45,6 +45,8 @@ def _run_reselect_block(
     pending_before_reconcile: int = 0,
     completed: int = 0,
 ) -> subprocess.CompletedProcess[str]:
+    count_fn = _extract_shell_function(_source(), "csv_data_row_count")
+    has_rows_fn = _extract_shell_function(_source(), "candidate_file_has_rows")
     candidate_file = tmp_path / "candidate.csv"
     header = (
         "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,"
@@ -82,6 +84,8 @@ total=0
 queue="{tmp_path / 'artifacts/wfa/aggregate/current/run_queue.csv'}"
 queue_rel="artifacts/wfa/aggregate/current/run_queue.csv"
 recent_yield=0
+{count_fn}
+{has_rows_fn}
 cleanup_orphans() {{ :; }}
 find_candidate() {{
   cat > "$CANDIDATE_FILE" <<'CSV'
@@ -140,9 +144,9 @@ def test_candidate_reselect_after_reconcile_header_only_parse_falls_back_to_idle
     block = _extract_reselect_after_reconcile_block(_source())
     proc = _run_reselect_block(tmp_path, block, fallback_success=False)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
-    assert "LOG:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "LOG:candidate_empty_after_reconcile" in proc.stdout
     assert "STATE:idle now=none completed=all" in proc.stdout
-    assert "STOP:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "STOP:candidate_empty_after_reconcile" in proc.stdout
     assert "FALLBACK_CALLS:1" in proc.stdout
 
 
@@ -150,10 +154,9 @@ def test_candidate_reselect_after_reconcile_header_only_parse_can_recover_via_fa
     block = _extract_reselect_after_reconcile_block(_source())
     proc = _run_reselect_block(tmp_path, block, fallback_success=True)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
-    assert "LOG:candidate_parse_fallback reason=parse_empty_after_reconcile" in proc.stdout
     assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/demo/run_queue.csv pending=1" in proc.stdout
     assert "BLOCK_DONE" in proc.stdout
-    assert "LOG:candidate_parse_empty_after_reconcile" not in proc.stdout
+    assert "LOG:candidate_empty_after_reconcile" not in proc.stdout
     assert "FALLBACK_CALLS:1" in proc.stdout
 
 
@@ -187,9 +190,9 @@ def test_candidate_reselect_after_reconcile_selector_guard_skips_auto_seed(tmp_p
     block = _extract_reselect_after_reconcile_block(_source())
     proc = _run_reselect_block(tmp_path, block, fallback_success=False, selector_guard=True)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
-    assert "LOG:candidate_parse_empty_after_reconcile" in proc.stdout
-    assert "GUARD:candidate_parse_empty_after_reconcile" in proc.stdout
-    assert "SEED:candidate_parse_empty_after_reconcile" not in proc.stdout
+    assert "LOG:candidate_empty_after_reconcile" in proc.stdout
+    assert "GUARD:candidate_empty_after_reconcile" in proc.stdout
+    assert "SEED:candidate_empty_after_reconcile" not in proc.stdout
     assert "STOP:selector_empty_candidate_pool" in proc.stdout
 
 
@@ -564,6 +567,7 @@ READY_BUFFER_REFILL_THRESHOLD=2
 AUTO_SEED_COOLDOWN_SEC=0
 AUTO_SEED_NUM_VARIANTS=64
 AUTO_SEED_NUM_VARIANTS_FLOOR=24
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 {fn}
 global_backlog_snapshot() {{
   echo "0 0 0"
@@ -573,6 +577,15 @@ ready_buffer_depth() {{
 }}
 yield_governor_hard_block_snapshot() {{
   printf '0\\t\\t0\\t0\\n'
+}}
+ensure_remote_runtime_snapshot() {{
+  return 0
+}}
+remote_runtime_snapshot_is_fresh() {{
+  echo "1"
+}}
+remote_runtime_state_value() {{
+  echo "1"
 }}
 remote_active_queue_jobs() {{
   echo "0"
@@ -624,6 +637,7 @@ READY_BUFFER_REFILL_THRESHOLD=2
 AUTO_SEED_COOLDOWN_SEC=0
 AUTO_SEED_NUM_VARIANTS=64
 AUTO_SEED_NUM_VARIANTS_FLOOR=24
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 {fn}
 global_backlog_snapshot() {{
   echo "0 0 0"
@@ -636,6 +650,15 @@ yield_governor_hard_block_snapshot() {{
 }}
 process_slo_remote_coverage_snapshot() {{
   printf '0\\t0\\n'
+}}
+ensure_remote_runtime_snapshot() {{
+  return 0
+}}
+remote_runtime_snapshot_is_fresh() {{
+  echo "1"
+}}
+remote_runtime_state_value() {{
+  echo "0"
 }}
 remote_active_queue_jobs() {{
   echo "0"
@@ -673,6 +696,79 @@ maybe_trigger_auto_seed candidate_empty_after_reconcile
     assert "INFRA:hard_block|infra_recovery_mode_remote_unreachable_no_coverage_ready|" in proc.stdout
     assert "NOTE:global|AUTO_SEED_HARD_BLOCK|" in proc.stdout
     assert "AUTO_SEED_TRIGGER" not in proc.stdout
+
+
+def test_maybe_trigger_auto_seed_logs_remote_state_mismatch_without_hard_block(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+AUTO_SEED_PENDING_THRESHOLD=96
+READY_BUFFER_REFILL_THRESHOLD=2
+AUTO_SEED_COOLDOWN_SEC=999999
+AUTO_SEED_NUM_VARIANTS=64
+AUTO_SEED_NUM_VARIANTS_FLOOR=24
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
+{fn}
+global_backlog_snapshot() {{
+  echo "0 0 0"
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+yield_governor_hard_block_snapshot() {{
+  printf '0\\t\\t0\\t0\\n'
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '0\\t0\\n'
+}}
+ensure_remote_runtime_snapshot() {{
+  return 0
+}}
+remote_runtime_snapshot_is_fresh() {{
+  echo "1"
+}}
+remote_runtime_state_value() {{
+  echo "1"
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    last_seed_trigger_epoch) echo "9999999999" ;;
+    auto_seed_hard_block) echo "0" ;;
+    auto_seed_block_reason) echo "" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "" ;;
+    startup_failure_code) echo "" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+set_infra_gate_state() {{
+  printf 'INFRA:%s|%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}" "${{5:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+maybe_trigger_auto_seed candidate_empty_after_reconcile
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "LOG:REMOTE_STATE_MISMATCH reason=candidate_empty_after_reconcile process_remote_reachable=0 remote_runtime_reachable=1 coverage_ready=0" in proc.stdout
+    assert "NOTE:global|REMOTE_STATE_MISMATCH|" in proc.stdout
+    assert "infra_recovery_mode_remote_unreachable_no_coverage_ready" not in proc.stdout
+    assert "AUTO_SEED_HARD_BLOCK" not in proc.stdout
 
 
 def test_process_slo_remote_coverage_snapshot_prefers_queue_remote_reachable_with_fallback(tmp_path: Path) -> None:
@@ -766,6 +862,110 @@ fi
     assert "EVENT:selector_empty_candidate_pool|" in proc.stdout
     assert "NOTE:global|SELECTOR_EMPTY_CANDIDATE_POOL|" in proc.stdout
     assert "LOG:selector_empty_candidate_pool reason=candidate_parse_empty executable_pending=3" in proc.stdout
+
+
+def test_driver_runtime_contract_includes_runtime_state_file_and_reconcile_hook() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'DRIVER_RUNTIME_STATE_FILE',
+            'driver_runtime_guard()',
+            'write_driver_runtime_state "active"',
+            'driver_runtime_reconcile_derived_state()',
+            'DRIVER_RUNTIME_STALE',
+            'reason=driver_runtime_stale',
+        ],
+    )
+
+
+def test_candidate_file_has_rows_treats_header_only_csv_as_empty(tmp_path: Path) -> None:
+    count_fn = _extract_shell_function(_source(), "csv_data_row_count")
+    has_rows_fn = _extract_shell_function(_source(), "candidate_file_has_rows")
+    candidate_path = tmp_path / "candidate.csv"
+    candidate_path.write_text("queue,planned,running\n", encoding="utf-8")
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+CANDIDATE_FILE="{candidate_path}"
+{count_fn}
+{has_rows_fn}
+if candidate_file_has_rows; then
+  echo "HEADER_ONLY:rows"
+else
+  echo "HEADER_ONLY:empty"
+fi
+cat > "$CANDIDATE_FILE" <<'CSV'
+queue,planned,running
+artifacts/wfa/aggregate/demo/run_queue.csv,1,0
+CSV
+if candidate_file_has_rows; then
+  echo "WITH_DATA:rows"
+else
+  echo "WITH_DATA:empty"
+fi
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "HEADER_ONLY:empty" in proc.stdout
+    assert "WITH_DATA:rows" in proc.stdout
+
+
+def test_driver_runtime_guard_detects_script_hash_drift(tmp_path: Path) -> None:
+    sha_fn = _extract_shell_function(_source(), "driver_script_sha256")
+    guard_fn = _extract_shell_function(_source(), "driver_runtime_guard")
+    script_path = tmp_path / "autonomous_wfa_driver.sh"
+    script_path.write_text("#!/usr/bin/env bash\necho first\n", encoding="utf-8")
+    runtime_state_path = tmp_path / "driver_runtime_state.json"
+    runtime_sha = subprocess.run(
+        ["bash", "-lc", f"python3 - <<'PY'\nimport hashlib\nfrom pathlib import Path\nprint(hashlib.sha256(Path({json.dumps(str(script_path))}).read_bytes()).hexdigest())\nPY"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    script_path.write_text("#!/usr/bin/env bash\necho second\n", encoding="utf-8")
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+DRIVER_RUNTIME_STATE_FILE="{runtime_state_path}"
+DRIVER_SCRIPT_PATH="{script_path}"
+DRIVER_SCRIPT_SHA256="{runtime_sha}"
+DRIVER_STARTED_AT="2026-03-06T12:00:00Z"
+STATE_FILE="{tmp_path / 'driver_state.txt'}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+{sha_fn}
+{guard_fn}
+write_driver_runtime_state() {{
+  printf '%s\n' '{{"status": "stale"}}' > "$DRIVER_RUNTIME_STATE_FILE"
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+log_state() {{
+  printf 'STATE:%s\\n' "$*"
+}}
+if driver_runtime_guard; then
+  echo "RC:0"
+else
+  echo "RC:1"
+fi
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    runtime_payload = json.loads(runtime_state_path.read_text(encoding="utf-8"))
+    assert "RC:1" in proc.stdout
+    assert "SET:driver_runtime_stale=1" in proc.stdout
+    assert "LOG:DRIVER_RUNTIME_STALE pid=" in proc.stdout
+    assert "NOTE:global|DRIVER_RUNTIME_STALE|" in proc.stdout
+    assert "STATE:idle now=none reason=driver_runtime_stale" in proc.stdout
+    assert runtime_payload["status"] == "stale"
 
 
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:

@@ -6,9 +6,11 @@ set -euo pipefail
 # run_wfa_queue_powered without manual intervention.
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+DRIVER_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 QUEUE_ROOT="$ROOT_DIR/artifacts/wfa/aggregate"
 STATE_DIR="$ROOT_DIR/artifacts/wfa/aggregate/.autonomous"
 STATE_FILE="$STATE_DIR/driver_state.txt"
+DRIVER_RUNTIME_STATE_FILE="$STATE_DIR/driver_runtime_state.json"
 LOG_FILE="$STATE_DIR/driver.log"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
@@ -160,13 +162,117 @@ log_state() {
   echo "$*" > "$STATE_FILE"
 }
 
+driver_script_sha256() {
+  local script_path="${1:-$DRIVER_SCRIPT_PATH}"
+  python3 - "$script_path" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("")
+    raise SystemExit(0)
+print(hashlib.sha256(path.read_bytes()).hexdigest())
+PY
+}
+
+DRIVER_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+DRIVER_SCRIPT_SHA256="$(driver_script_sha256 "$DRIVER_SCRIPT_PATH")"
+
+write_driver_runtime_state() {
+  local status="${1:-active}"
+  local current_sha="${2:-$DRIVER_SCRIPT_SHA256}"
+  python3 - "$DRIVER_RUNTIME_STATE_FILE" "$$" "$DRIVER_STARTED_AT" "$DRIVER_SCRIPT_PATH" "$DRIVER_SCRIPT_SHA256" "$current_sha" "$status" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {
+    "pid": int(float(sys.argv[2] or 0)),
+    "started_at": sys.argv[3],
+    "script_path": sys.argv[4],
+    "runtime_script_sha256": sys.argv[5],
+    "current_script_sha256": sys.argv[6],
+    "status": sys.argv[7],
+    "updated_at": sys.argv[8],
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+driver_runtime_on_exit() {
+  write_driver_runtime_state "stopped" "$(driver_script_sha256 "$DRIVER_SCRIPT_PATH")"
+}
+
+driver_runtime_guard() {
+  local current_sha
+  current_sha="$(driver_script_sha256 "$DRIVER_SCRIPT_PATH")"
+  if [[ -z "$current_sha" ]]; then
+    return 0
+  fi
+  if [[ -n "$DRIVER_SCRIPT_SHA256" && "$current_sha" != "$DRIVER_SCRIPT_SHA256" ]]; then
+    write_driver_runtime_state "stale" "$current_sha"
+    fullspan_state_metric_set "driver_runtime_stale" "1"
+    fullspan_state_metric_set "driver_runtime_stale_epoch" "$(date +%s)"
+    log "DRIVER_RUNTIME_STALE pid=$$ runtime_sha=$DRIVER_SCRIPT_SHA256 current_sha=$current_sha"
+    log_decision_note "global" "DRIVER_RUNTIME_STALE" "pid=$$ runtime_sha=$DRIVER_SCRIPT_SHA256 current_sha=$current_sha" "restart_driver_to_pick_up_new_script"
+    log_state "idle now=none reason=driver_runtime_stale"
+    return 1
+  fi
+  write_driver_runtime_state "active" "$current_sha"
+  fullspan_state_metric_set "driver_runtime_stale" "0"
+  return 0
+}
+
+csv_data_row_count() {
+  local path="${1:-}"
+  python3 - "$path" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+
+count = 0
+try:
+    with path.open(newline='', encoding='utf-8') as handle:
+        for row in csv.DictReader(handle):
+            if any(str(value or '').strip() for value in row.values()):
+                count += 1
+except Exception:
+    count = 0
+print(max(0, count))
+PY
+}
+
+candidate_file_has_rows() {
+  local count
+  count="$(csv_data_row_count "$CANDIDATE_FILE")"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  (( count > 0 ))
+}
+
+driver_runtime_reconcile_derived_state() {
+  rm -f "$CANDIDATE_FILE" "$READY_BUFFER_POOL_FILE"
+  fullspan_state_metric_set "selector_error" ""
+  fullspan_state_metric_set "selector_error_context" ""
+  fullspan_state_metric_set "selector_error_epoch" 0
+}
+
 # Single driver instance guard.
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "driver_already_running"
   exit 0
 fi
-trap 'batch_session_save_state; flock -u 9; rm -f "$LOCK_FILE"' EXIT
+trap 'driver_runtime_on_exit; batch_session_save_state; flock -u 9; rm -f "$LOCK_FILE"' EXIT
+write_driver_runtime_state "active" "$DRIVER_SCRIPT_SHA256"
 
 batch_session_active=0
 batch_session_start_epoch=0
@@ -5606,26 +5712,7 @@ PY
 }
 
 candidate_pool_ready_count() {
-  python3 - "$READY_BUFFER_POOL_FILE" <<'PY'
-import csv
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-if not path.exists():
-    print(0)
-    raise SystemExit(0)
-
-count = 0
-try:
-    with path.open(newline='', encoding='utf-8') as handle:
-        for row in csv.DictReader(handle):
-            if any(str(value or '').strip() for value in row.values()):
-                count += 1
-except Exception:
-    count = 0
-print(max(0, count))
-PY
+  csv_data_row_count "$READY_BUFFER_POOL_FILE"
 }
 
 selector_empty_candidate_pool_guard() {
@@ -5697,6 +5784,7 @@ maybe_trigger_auto_seed() {
   local runtime_block_active runtime_block_reason
   local infra_gate_status startup_failure_code
   local process_remote_reachable process_coverage_ready
+  local remote_runtime_reachable remote_runtime_fresh remote_state_mismatch
   local gate_block_status="hard_block"
   local prev_blocked prev_block_reason
   local remote_count=0
@@ -5729,6 +5817,40 @@ maybe_trigger_auto_seed() {
   IFS=$'\t' read -r process_remote_reachable process_coverage_ready <<< "$(process_slo_remote_coverage_snapshot)"
   [[ "$process_remote_reachable" =~ ^[01]$ ]] || process_remote_reachable=1
   [[ "$process_coverage_ready" =~ ^[0-9]+$ ]] || process_coverage_ready=0
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_fresh="$(remote_runtime_snapshot_is_fresh "$REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC")"
+  [[ "$remote_runtime_fresh" =~ ^[01]$ ]] || remote_runtime_fresh=0
+  remote_runtime_reachable="$process_remote_reachable"
+  if [[ "$remote_runtime_fresh" == "1" ]]; then
+    remote_runtime_reachable="$(remote_runtime_state_value "reachable" "$process_remote_reachable")"
+    [[ "$remote_runtime_reachable" =~ ^[01]$ ]] || remote_runtime_reachable="$process_remote_reachable"
+  fi
+  remote_state_mismatch=0
+  if [[ "$remote_runtime_fresh" == "1" && "$process_remote_reachable" != "$remote_runtime_reachable" ]]; then
+    remote_state_mismatch=1
+    fullspan_state_metric_set "remote_state_mismatch" "1"
+    fullspan_state_metric_set "remote_state_mismatch_epoch" "$(date +%s)"
+    log "REMOTE_STATE_MISMATCH reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready"
+    log_decision_note "global" "REMOTE_STATE_MISMATCH" "reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready" "retry_selector_without_remote_unreachable_hard_block"
+  else
+    fullspan_state_metric_set "remote_state_mismatch" "0"
+  fi
+  if [[ "$runtime_block_reason" == *"infra_recovery_mode_remote_unreachable_no_coverage_ready"* ]] && [[ "$infra_gate_status" != "fail_closed" ]]; then
+    if [[ "$process_remote_reachable" == "1" || "$remote_runtime_reachable" == "1" || "$remote_state_mismatch" == "1" ]]; then
+      runtime_block_reason="${runtime_block_reason//infra_recovery_mode_remote_unreachable_no_coverage_ready/}"
+      runtime_block_reason="${runtime_block_reason//,,/,}"
+      runtime_block_reason="${runtime_block_reason#,}"
+      runtime_block_reason="${runtime_block_reason%,}"
+      if [[ -z "$runtime_block_reason" ]]; then
+        runtime_block_active=0
+      fi
+      fullspan_state_metric_set "auto_seed_hard_block" "$runtime_block_active"
+      fullspan_state_metric_set "auto_seed_block_reason" "$runtime_block_reason"
+      set_infra_gate_state "ok" "" "" "0" ""
+      log "auto_seed_hard_block_cleared reason=$reason block_reason=infra_recovery_mode_remote_unreachable_no_coverage_ready process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable remote_state_mismatch=$remote_state_mismatch"
+      log_decision_note "global" "AUTO_SEED_HARD_BLOCK_CLEARED" "reason=$reason block_reason=infra_recovery_mode_remote_unreachable_no_coverage_ready process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable remote_state_mismatch=$remote_state_mismatch" "resume_selector_and_seed_evaluation"
+    fi
+  fi
   if [[ "$(fullspan_state_metric_get vps_infra_fail_closed 0)" == "1" ]]; then
     runtime_block_active=1
     if [[ -z "$runtime_block_reason" ]]; then
@@ -5761,7 +5883,7 @@ maybe_trigger_auto_seed() {
       hard_block_reason="${hard_block_reason},${runtime_block_reason:-runtime_hard_block}"
     fi
   fi
-  if [[ "$process_remote_reachable" == "0" && "$process_coverage_ready" -le 0 ]]; then
+  if [[ "$process_remote_reachable" == "0" && "$process_coverage_ready" -le 0 && "$remote_runtime_fresh" == "1" && "$remote_runtime_reachable" == "0" && "$remote_state_mismatch" == "0" ]]; then
     hard_block_active=1
     if [[ -z "$hard_block_reason" ]]; then
       hard_block_reason="infra_recovery_mode_remote_unreachable_no_coverage_ready"
@@ -6745,6 +6867,7 @@ maybe_dispatch_overlap_from_buffer() {
 declare -A last_pending_by_queue
 
 cleanup_orphans
+driver_runtime_reconcile_derived_state
 batch_session_load_state
 vps_runtime_load
 vps_runtime_commit
@@ -6790,6 +6913,9 @@ if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
 fi
 
 while true; do
+  if ! driver_runtime_guard; then
+    exit 75
+  fi
   maybe_trigger_auto_seed "low_planned_backlog" || true
   fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
   fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
@@ -6835,20 +6961,20 @@ while true; do
   find_candidate 1
   ready_buffer_refresh "" || true
 
-  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+  if ! candidate_file_has_rows; then
     cleanup_orphans
     find_candidate 0
     ready_buffer_refresh "" || true
   fi
 
-  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+  if ! candidate_file_has_rows; then
     if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
       log "ready_buffer_hit reason=no_candidate_file"
       log_decision_note "global" "READY_BUFFER_HIT" "reason=no_candidate_file" "reuse_ready_buffer_candidate"
     fi
   fi
 
-  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+  if ! candidate_file_has_rows; then
     if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_fallback_selected reason=no_candidate_file"
 	    else
@@ -6977,17 +7103,17 @@ PY
       log "ready_buffer_hit reason=reconcile_pending_zero"
       log_decision_note "global" "READY_BUFFER_HIT" "reason=reconcile_pending_zero" "reuse_ready_buffer_candidate"
     fi
-    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    if ! candidate_file_has_rows; then
       find_candidate 1
     fi
-    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    if ! candidate_file_has_rows; then
       cleanup_orphans
       find_candidate 0
     fi
-    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    if ! candidate_file_has_rows; then
       fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE" || true
     fi
-	    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+	    if ! candidate_file_has_rows; then
 	      log_state "idle now=none completed=all"
 	      log "candidate_empty_after_reconcile"
 	      if selector_empty_candidate_pool_guard "candidate_empty_after_reconcile"; then

@@ -20,6 +20,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from _queue_status_contract import (
+    DISPATCHABLE_STATUSES,
+    PENDING_LIKE_STATUSES,
+    normalize_queue_status,
+    row_counts_executable,
+)
+
 
 def _parse_bool(value: str | bool, default: bool = False) -> bool:
     if isinstance(value, bool):
@@ -204,7 +215,9 @@ def _load_queue_rows(queue_path: Path) -> list[dict[str, str]]:
     with queue_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
-            rows.append({k: (v or "").strip() for k, v in row.items()})
+            normalized = {k: (v or "").strip() for k, v in row.items()}
+            if any(str(value or "").strip() for value in normalized.values()):
+                rows.append(normalized)
     return rows
 
 
@@ -233,6 +246,23 @@ def _write_queue_rows(queue_path: Path, rows: list[dict[str, str]]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def _legacy_header_only_queue_reason(queue_path: Path) -> str:
+    if not queue_path.exists():
+        return ""
+    try:
+        with queue_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            header = next(reader, [])
+            if not header:
+                return ""
+            for row in reader:
+                if any(str(value or "").strip() for value in row):
+                    return ""
+    except Exception:
+        return ""
+    return "queue_pruned_empty_legacy"
 
 
 def _load_yaml_config(path: Path) -> dict[str, Any]:
@@ -749,12 +779,65 @@ def _hygiene_seed_queues(
             run_index_groups = {}
     for queue_path in sorted(aggregate_dir.glob(f"{run_group_prefix}_*/run_queue.csv")):
         rows = _load_queue_rows(queue_path)
+        legacy_reason = ""
         if not rows:
+            legacy_reason = _legacy_header_only_queue_reason(queue_path)
+            if legacy_reason:
+                prune_stats = _prune_seed_queue(queue_path=queue_path, app_root=app_root)
+                queue_rel = _safe_rel(queue_path, app_root)
+                queue_policy_path = _write_queue_policy_sidecar(
+                    queue_path=queue_path,
+                    app_root=app_root,
+                    planner_policy_hash="coverage_hygiene",
+                    selected_lane="hygiene",
+                    selected_lane_index=0,
+                    token_rotation=0,
+                    parent_rotation_offset=0,
+                    parent_diversity_depth=0,
+                    confirm_replay_hints=[],
+                    decision_payload={},
+                    coverage_verified=False,
+                    coverage_reason=legacy_reason,
+                    ready_buffer_excluded=True,
+                )
+                _decorate_queue_metadata(
+                    queue_path=queue_path,
+                    planner_policy_hash="coverage_hygiene",
+                    queue_policy_path=queue_policy_path,
+                    app_root=app_root,
+                    coverage_verified=False,
+                    coverage_reason=legacy_reason,
+                    ready_buffer_excluded=True,
+                )
+                _upsert_orphan_queue(
+                    orphan_path=orphan_path,
+                    queue_rel=queue_rel,
+                    reason=legacy_reason,
+                    cooldown_sec=cooldown_sec,
+                )
+                orphaned += 1
+                queue_results.append(
+                    {
+                        "queue": queue_rel,
+                        "rows_after": int(prune_stats.get("rows_after", 0) or 0),
+                        "coverage_rejected": int(prune_stats.get("coverage_rejected", 0) or 0),
+                        "dedupe_rejected": int(prune_stats.get("dedupe_rejected", 0) or 0),
+                        "zero_coverage_history": False,
+                        "orphan_reason": legacy_reason,
+                        "blocked_rows_written": int(prune_stats.get("blocked_rows_written", 0) or 0),
+                        "promotion_potential": 0.0,
+                        "pre_rank_score": 0.0,
+                        "gate_status": "UNKNOWN",
+                        "gate_reason": legacy_reason,
+                        "strict_gate_status": "UNKNOWN",
+                        "strict_gate_reason": legacy_reason,
+                    }
+                )
             continue
-        statuses = {(row.get("status") or "").strip().lower() for row in rows}
+        statuses = {normalize_queue_status(row.get("status")) for row in rows}
         if "completed" in statuses or "error" in statuses:
             continue
-        if not statuses.intersection({"planned", "queued", "running", "stalled", "failed", "active"}):
+        if not statuses.intersection(PENDING_LIKE_STATUSES):
             continue
         reviewed += 1
         prune_stats = _prune_seed_queue(queue_path=queue_path, app_root=app_root)
@@ -772,7 +855,7 @@ def _hygiene_seed_queues(
         ) and _rank_result_has_zero_coverage_binding(rank_result)
         reason = ""
         if rows_after <= 0:
-            reason = str(queue_prune.get("block_reason") or "queue_pruned_empty")
+            reason = str(prune_stats.get("block_reason") or "queue_pruned_empty")
         elif zero_coverage_history:
             reason = "zero_coverage_fail_closed"
             zero_coverage_rejected += 1
@@ -835,6 +918,12 @@ def _hygiene_seed_queues(
                 "zero_coverage_history": bool(zero_coverage_history),
                 "orphan_reason": reason,
                 "blocked_rows_written": int(prune_stats.get("blocked_rows_written", 0) or 0),
+                "promotion_potential": 0.0,
+                "pre_rank_score": 0.0,
+                "gate_status": "UNKNOWN",
+                "gate_reason": str(reason or "coverage_verified"),
+                "strict_gate_status": "UNKNOWN",
+                "strict_gate_reason": str(reason or "coverage_verified"),
             }
         )
     return {
@@ -850,8 +939,6 @@ def _hygiene_seed_queues(
 
 
 def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, list[Path]]:
-    pending_like_status = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
-    dispatchable_status = {"planned", "queued", "running", "failed"}
     total_pending_like = 0
     dispatchable_pending = 0
     executable_pending = 0
@@ -868,27 +955,20 @@ def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, lis
         scanned += 1
         queue_paths.append(queue_file)
         rows = _load_queue_rows(queue_file)
+        legacy_reason = _legacy_header_only_queue_reason(queue_file)
+        if legacy_reason:
+            rows = []
         queue_executable = 0
         for row in rows:
-            status = (row.get("status") or "").strip().lower()
-            if status in pending_like_status:
+            status = normalize_queue_status(row.get("status"))
+            if status in PENDING_LIKE_STATUSES:
                 total_pending_like += 1
-            if status not in dispatchable_status:
+            if row_counts_executable(status, row.get("config_path"), app_root):
+                executable_pending += 1
+                queue_executable += 1
+            if status not in DISPATCHABLE_STATUSES:
                 continue
             dispatchable_pending += 1
-            if status == "running":
-                executable_pending += 1
-                queue_executable += 1
-                continue
-            config_path = (row.get("config_path") or "").strip()
-            if not config_path:
-                continue
-            cfg_path = Path(config_path)
-            if not cfg_path.is_absolute():
-                cfg_path = app_root / cfg_path
-            if cfg_path.exists():
-                executable_pending += 1
-                queue_executable += 1
         if queue_executable > 0:
             runnable_queue_count += 1
     return total_pending_like, dispatchable_pending, executable_pending, runnable_queue_count, scanned, queue_paths
@@ -912,6 +992,25 @@ def _safe_rel(path: Path, root: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except Exception:
         return path.as_posix()
+
+
+def _normalized_selector_evidence(decision_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = decision_payload if isinstance(decision_payload, dict) else {}
+
+    def _as_score(key: str) -> float:
+        try:
+            return float(payload.get(key) or 0.0)
+        except Exception:
+            return 0.0
+
+    return {
+        "promotion_potential": _as_score("promotion_potential"),
+        "pre_rank_score": _as_score("pre_rank_score"),
+        "gate_status": str(payload.get("gate_status") or "UNKNOWN").strip() or "UNKNOWN",
+        "gate_reason": str(payload.get("gate_reason") or "UNKNOWN").strip() or "UNKNOWN",
+        "strict_gate_status": str(payload.get("strict_gate_status") or "UNKNOWN").strip() or "UNKNOWN",
+        "strict_gate_reason": str(payload.get("strict_gate_reason") or "UNKNOWN").strip() or "UNKNOWN",
+    }
 
 
 def _write_queue_policy_sidecar(
@@ -953,6 +1052,8 @@ def _write_queue_policy_sidecar(
         if isinstance(raw_parent, dict):
             primary_parent = dict(raw_parent)
 
+    selector_evidence = _normalized_selector_evidence(decision_payload)
+
     payload = {
         "ts": _utc_now_iso(),
         "queue_path": _safe_rel(queue_path, app_root),
@@ -985,6 +1086,7 @@ def _write_queue_policy_sidecar(
         "coverage_verified": bool(coverage_verified),
         "coverage_reason": str(coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")).strip(),
         "ready_buffer_excluded": bool(ready_buffer_excluded),
+        **selector_evidence,
     }
     sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     return sidecar_path
@@ -1012,6 +1114,15 @@ def _decorate_queue_metadata(
         fieldnames.append("metadata_json")
     queue_policy_rel = _safe_rel(queue_policy_path, app_root)
     queue_rel = _safe_rel(queue_path, app_root)
+    queue_policy_payload = {}
+    if queue_policy_path.exists():
+        try:
+            parsed_policy = json.loads(queue_policy_path.read_text(encoding="utf-8"))
+        except Exception:
+            parsed_policy = {}
+        if isinstance(parsed_policy, dict):
+            queue_policy_payload = parsed_policy
+    selector_evidence = _normalized_selector_evidence(queue_policy_payload)
     for row in rows:
         meta: dict[str, Any] = {}
         raw_meta = str(row.get("metadata_json") or "").strip()
@@ -1031,6 +1142,14 @@ def _decorate_queue_metadata(
             coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")
         ).strip()
         meta["ready_buffer_excluded"] = bool(ready_buffer_excluded)
+        for key, default_value in selector_evidence.items():
+            if key in {"promotion_potential", "pre_rank_score"}:
+                try:
+                    meta[key] = float(meta.get(key, default_value) or default_value)
+                except Exception:
+                    meta[key] = float(default_value)
+            else:
+                meta[key] = str(meta.get(key) or default_value).strip() or str(default_value)
         row["metadata_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with queue_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)

@@ -286,7 +286,9 @@ def test_dry_run_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -
     result = module.main(argv)
     captured = capsys.readouterr()
     assert result == 0
-    log_path = module._log_file_path(tmp_path, queue)
+    log_candidates = sorted((tmp_path / "artifacts" / "wfa" / "aggregate").rglob("powered_*.log"))
+    assert log_candidates
+    log_path = log_candidates[-1]
     assert log_path.exists()
     text = log_path.read_text(encoding="utf-8")
     assert "powered: start dry_run=True" in text
@@ -439,14 +441,20 @@ def test_sync_repo_code_retries_transient_stream_failure(
     (tmp_path / "src").mkdir()
     (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
 
-    local_manifest = module._build_local_sync_manifest(tmp_path, module._sync_code_include_paths(tmp_path))
+    includes = module._sync_code_include_paths(tmp_path)
+    local_manifest = module._build_local_sync_manifest(tmp_path, includes, include_hash=False)
     manifest_calls: list[str] = []
 
     def _remote_sync_manifest(**_kwargs):
         manifest_calls.append("manifest")
         if len(manifest_calls) == 1:
-            return {"digest": "remote-before", "count": 1}
-        return {"digest": local_manifest["digest"], "count": local_manifest["count"]}
+            return {"digest": "remote-before", "count": 1, "entries": [], "mode": "fingerprint"}
+        return {
+            "digest": local_manifest["digest"],
+            "count": local_manifest["count"],
+            "entries": local_manifest["entries"],
+            "mode": "fingerprint",
+        }
 
     monkeypatch.setattr(module, "_remote_sync_manifest", _remote_sync_manifest)
     monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
@@ -518,6 +526,115 @@ def test_sync_repo_code_retries_transient_stream_failure(
     assert any("sync_code ok" in entry for entry in logs)
 
 
+def test_sync_repo_code_manifest_match_ignores_remote_head_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
+
+    fast_manifest = module._build_local_sync_manifest(
+        tmp_path,
+        module._sync_code_include_paths(tmp_path),
+        include_hash=False,
+    )
+    calls: list[bool] = []
+
+    def _remote_sync_manifest(**kwargs):
+        calls.append(bool(kwargs.get("include_hash", True)))
+        return {
+            "digest": fast_manifest["digest"],
+            "count": fast_manifest["count"],
+            "entries": fast_manifest["entries"],
+            "mode": "fingerprint",
+        }
+
+    monkeypatch.setattr(module, "_remote_sync_manifest", _remote_sync_manifest)
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+
+    log_path = tmp_path / "powered.log"
+    logs: list[str] = []
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=log_path,
+        log=lambda msg: logs.append(msg),
+    )
+
+    assert calls == [False]
+    state = json.loads(module._sync_code_state_path(log_path).read_text(encoding="utf-8"))
+    assert state["status"] == "skipped_manifest_match"
+    assert state["remote_git_identity_drift"] is True
+    assert any("identity_drift=true" in entry for entry in logs)
+
+
+def test_sync_repo_code_uses_sha_verify_only_for_mismatched_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    target = tmp_path / "src/app.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+
+    includes = module._sync_code_include_paths(tmp_path)
+    fast_manifest = module._build_local_sync_manifest(tmp_path, includes, include_hash=False)
+    verify_manifest = module._build_local_sync_manifest(
+        tmp_path,
+        includes,
+        include_hash=True,
+        selected_paths=["src/app.py"],
+    )
+    fast_entries = list(fast_manifest["entries"])
+    mismatched_entry = dict(fast_entries[0])
+    mismatched_entry["mtime_ns"] = int(mismatched_entry["mtime_ns"]) + 1
+    calls: list[tuple[bool, tuple[str, ...]]] = []
+
+    def _remote_sync_manifest(**kwargs):
+        include_hash = bool(kwargs.get("include_hash", True))
+        selected_paths = tuple(kwargs.get("selected_paths") or ())
+        calls.append((include_hash, selected_paths))
+        if not include_hash and len(calls) == 1:
+            return {"digest": "remote-before", "count": 1, "entries": [mismatched_entry], "mode": "fingerprint"}
+        assert include_hash is True
+        assert selected_paths == ("src/app.py",)
+        return {
+            "digest": verify_manifest["digest"],
+            "count": verify_manifest["count"],
+            "entries": verify_manifest["entries"],
+            "mode": "sha256",
+        }
+
+    monkeypatch.setattr(module, "_remote_sync_manifest", _remote_sync_manifest)
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(module, "_sync_retry", lambda fn, **_kwargs: None)
+
+    log_path = tmp_path / "powered.log"
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=log_path,
+        log=lambda _msg: None,
+    )
+
+    assert calls[0] == (False, ())
+    assert calls[-1] == (True, ("src/app.py",))
+    assert any(not include_hash for include_hash, _selected in calls)
+    state = json.loads(module._sync_code_state_path(log_path).read_text(encoding="utf-8"))
+    assert state["status"] in {"ok", "ok_fingerprint_hash_match"}
+    assert state["manifest_mode"] == "sha256_subset"
+    assert state["remote_git_identity_drift"] is True
+
+
 def test_sync_repo_code_prunes_remote_only_files_before_stream_when_parity_is_restored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -525,13 +642,18 @@ def test_sync_repo_code_prunes_remote_only_files_before_stream_when_parity_is_re
     (tmp_path / "src").mkdir()
     (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
 
-    local_manifest = module._build_local_sync_manifest(tmp_path, module._sync_code_include_paths(tmp_path))
+    local_manifest = module._build_local_sync_manifest(
+        tmp_path,
+        module._sync_code_include_paths(tmp_path),
+        include_hash=False,
+    )
     local_entries = list(local_manifest["entries"])
     remote_before = {
         "digest": "remote-before",
         "count": int(local_manifest["count"]) + 1,
         "entries": local_entries
-        + [{"path": "scripts/data/build_market_metrics.py", "sha256": "deadbeef", "size": 17}],
+        + [{"path": "scripts/data/build_market_metrics.py", "size": 17, "mtime_ns": 17}],
+        "mode": "fingerprint",
     }
     manifest_payloads = [remote_before, local_manifest]
     pruned_paths: list[str] = []
@@ -569,6 +691,49 @@ def test_sync_repo_code_prunes_remote_only_files_before_stream_when_parity_is_re
     assert pruned_paths == ["scripts/data/build_market_metrics.py"]
     assert any("remote_only_before count=1" in entry for entry in logs)
     assert any("reason=post_prune_manifest_match" in entry for entry in logs)
+
+
+def test_sync_repo_code_treats_remote_git_head_drift_as_observability_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
+
+    local_manifest = module._build_local_sync_manifest(
+        tmp_path,
+        module._sync_code_include_paths(tmp_path),
+        include_hash=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_sync_manifest",
+        lambda **_kwargs: {
+            "digest": local_manifest["digest"],
+            "count": local_manifest["count"],
+            "entries": local_manifest["entries"],
+            "mode": "fingerprint",
+        },
+    )
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+
+    log_path = tmp_path / "powered.log"
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=log_path,
+        log=lambda _msg: None,
+    )
+
+    sync_state = json.loads(module._sync_code_state_path(log_path).read_text(encoding="utf-8"))
+    assert sync_state["status"] == "skipped_manifest_match"
+    assert sync_state["remote_git_identity_drift"] is True
+    assert sync_state["manifest_mode"] == "fingerprint"
 
 
 def test_wait_for_completion_until_metrics_ready(

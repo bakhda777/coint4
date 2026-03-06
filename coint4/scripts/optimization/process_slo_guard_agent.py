@@ -27,7 +27,14 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-PENDING_STATUSES = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
+from _queue_status_contract import (
+    FAILED_LIKE_STATUSES,
+    PENDING_LIKE_STATUSES,
+    normalize_queue_status,
+    row_counts_executable,
+    row_counts_pending,
+)
+
 CONFIRM_PENDING_VERDICTS = {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}
 
 
@@ -333,26 +340,23 @@ def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
 
         for row in rows:
             row_count += 1
-            status = str(row.get("status") or "").strip().lower()
+            status = normalize_queue_status(row.get("status"))
             config_path = str(row.get("config_path") or "").strip()
-
-            cfg_exists = False
-            if config_path:
-                cfg_exists = resolve_under_root(config_path, app_root).exists()
-            if cfg_exists or status == "running":
+            executable = row_counts_executable(status, config_path, app_root)
+            if executable:
                 executable_rows += 1
 
             if status == "completed":
                 completed += 1
-            if status in PENDING_STATUSES:
+            if row_counts_pending(status):
                 pending += 1
-                if (cfg_exists or status == "running"):
+                if executable:
                     executable_pending += 1
             if status == "running":
                 running += 1
             elif status == "stalled":
                 stalled += 1
-            elif status in {"failed", "error"}:
+            elif status in FAILED_LIKE_STATUSES:
                 failed += 1
 
         per_queue[queue_rel] = {

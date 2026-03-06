@@ -53,7 +53,7 @@ SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
 SYNC_UP=${SYNC_UP:-"0"}
 # SYNC_UP_MODE=tracked  -> sync all git-tracked files.
 # SYNC_UP_MODE=code     -> sync tracked files, excluding artifacts/outputs/logs/pids.
-SYNC_UP_MODE=${SYNC_UP_MODE:-"tracked"}
+SYNC_UP_MODE=${SYNC_UP_MODE:-"code"}
 STOP_AFTER=${STOP_AFTER:-"1"}
 # If SERVSPACE_API_KEY isn't available, you can still shut down via SSH after syncing back.
 STOP_VIA_SSH=${STOP_VIA_SSH:-"0"}
@@ -385,6 +385,7 @@ cleanup_remote_stale_tracked_files() {
 
   ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "python3 - ${quoted_repo_dir} ${quoted_manifest} ${quoted_mode} <<'PY'
 import sys
+import os
 from pathlib import Path
 
 repo_dir = Path(sys.argv[1]).resolve()
@@ -435,6 +436,31 @@ def in_scope(rel_path: str) -> bool:
         return not blocked
     raise SystemExit(f'Unsupported SYNC_UP_MODE={mode}')
 
+def should_descend_dir(rel_dir: str) -> bool:
+    if mode != 'code':
+        return True
+    blocked_prefixes = {
+        'coint4/artifacts',
+        'coint4/outputs',
+        'outputs',
+        '.ralph-tui',
+        'coint4/.venv',
+        '.venv',
+        'coint4/.cache',
+        '.cache',
+        'coint4/.pytest_cache',
+        '.pytest_cache',
+        'coint4/.mypy_cache',
+        '.mypy_cache',
+        'coint4/.ruff_cache',
+        '.ruff_cache',
+        '__pycache__',
+    }
+    rel_dir = rel_dir.strip('/')
+    if not rel_dir:
+        return True
+    return rel_dir not in blocked_prefixes
+
 scope_roots = {Path(rel_path).parts[0] for rel_path in local_paths if Path(rel_path).parts}
 remote_paths: list[str] = []
 for root_name in sorted(scope_roots):
@@ -450,10 +476,19 @@ for root_name in sorted(scope_roots):
         if in_scope(rel_path):
             remote_paths.append(rel_path)
         continue
-    for candidate in sorted(path for path in root_path.rglob('*') if path.is_file()):
-        rel_path = candidate.relative_to(repo_dir).as_posix()
-        if in_scope(rel_path):
-            remote_paths.append(rel_path)
+    for current_root, dirnames, filenames in os.walk(root_path):
+        current_path = Path(current_root)
+        rel_dir = current_path.relative_to(repo_dir).as_posix()
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if should_descend_dir((current_path / name).relative_to(repo_dir).as_posix())
+        )
+        for filename in sorted(filenames):
+            candidate = current_path / filename
+            rel_path = candidate.relative_to(repo_dir).as_posix()
+            if in_scope(rel_path):
+                remote_paths.append(rel_path)
 
 stale_paths: list[Path] = []
 for rel_path in remote_paths:
