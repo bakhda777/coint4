@@ -48,6 +48,8 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
                 "run_id": "holdout_autonomous_seed_demo_v001",
                 "run_group": "autonomous_seed_demo",
                 "metrics_present": "true",
+                "observed_test_days": "75",
+                "coverage_ratio": "1.0",
                 "total_trades": "500",
                 "total_pairs_traded": "30",
                 "max_drawdown_on_equity": "0.05",
@@ -75,6 +77,11 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert "strict_rg" in payload["preferred_contains"]
     assert payload["replay_fastlane"]["enabled"] is True
     assert "strict_rg" in payload["replay_fastlane"]["contains"]
+    assert payload["positive_lineage_count"] == 1
+    assert payload["zero_evidence_lineage_count"] == 0
+    assert payload["winner_proximate_positive_lineage_count"] == 1
+    assert payload["broad_search_allowed"] is False
+    assert payload["seed_generation_mode"] == "winner_proximate_only"
     assert payload["lane_weights"] == {
         "winner_proximate": 65,
         "confirm_replay": 20,
@@ -84,4 +91,6 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["policy-hash"] == payload["policy_hash"]
     assert payload["planner-policy-inputs"]["policy_family"] == "exploit_first"
     assert payload["planner-policy-inputs"]["lane_weights"]["winner_proximate"] == 65
+    assert payload["planner-policy-inputs"]["search_quality"]["positive_lineage_count"] == 1
+    assert payload["planner-policy-inputs"]["search_quality"]["broad_search_allowed"] is False
     assert payload["planner-policy-inputs"] == payload["planner_policy_inputs"]

@@ -40,6 +40,16 @@ def _to_float(value: Any, default: float | None = None) -> float | None:
         return default
 
 
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return default
+        return int(float(text))
+    except Exception:
+        return default
+
+
 def _lookup_metric(row: Mapping[str, Any], *keys: str) -> float | None:
     for key in keys:
         if key not in row:
@@ -133,3 +143,84 @@ def summarize_recent_zero_evidence(rows: Iterable[Mapping[str, Any]], *, limit: 
         "dominant_zero_reason": dominant_reason,
         "zero_reason_counts": dict(reason_counts),
     }
+
+
+def build_search_quality_state(
+    *,
+    positive_lineage_count: int,
+    zero_evidence_lineage_count: int,
+    winner_proximate_positive_lineage_count: int = 0,
+    broad_search_allowed: bool | None = None,
+    seed_generation_mode: str = "",
+) -> dict[str, Any]:
+    positive = max(0, int(positive_lineage_count))
+    zero_evidence = max(0, int(zero_evidence_lineage_count))
+    winner_positive = max(0, int(winner_proximate_positive_lineage_count))
+    broad_allowed = bool(broad_search_allowed) if broad_search_allowed is not None else winner_positive <= 0
+    mode = str(seed_generation_mode or "").strip().lower()
+    if mode not in {"winner_proximate_only", "broad_search_micro"}:
+        mode = "broad_search_micro" if broad_allowed else "winner_proximate_only"
+    return {
+        "positive_lineage_count": positive,
+        "zero_evidence_lineage_count": zero_evidence,
+        "winner_proximate_positive_lineage_count": winner_positive,
+        "broad_search_allowed": bool(broad_allowed),
+        "seed_generation_mode": mode,
+    }
+
+
+def normalize_search_quality_state(
+    payload: Mapping[str, Any] | None,
+    *,
+    winner_proximate_contains: Iterable[Any] | None = None,
+) -> dict[str, Any]:
+    source = payload if isinstance(payload, Mapping) else {}
+    nested = source.get("search_quality", {}) if isinstance(source.get("search_quality"), Mapping) else {}
+    winner_tokens = [
+        str(token).strip()
+        for token in list(winner_proximate_contains or [])
+        if str(token).strip()
+    ]
+    positive = max(
+        0,
+        _to_int(
+            nested.get(
+                "positive_lineage_count",
+                source.get("positive_lineage_count", 0),
+            ),
+            0,
+        ),
+    )
+    zero_evidence = max(
+        0,
+        _to_int(
+            nested.get(
+                "zero_evidence_lineage_count",
+                source.get("zero_evidence_lineage_count", 0),
+            ),
+            0,
+        ),
+    )
+    default_winner_positive = 1 if positive > 0 and winner_tokens else 0
+    winner_positive = max(
+        0,
+        _to_int(
+            nested.get(
+                "winner_proximate_positive_lineage_count",
+                source.get("winner_proximate_positive_lineage_count", default_winner_positive),
+            ),
+            default_winner_positive,
+        ),
+    )
+    broad_raw = nested.get("broad_search_allowed")
+    if broad_raw is None:
+        broad_raw = source.get("broad_search_allowed")
+    broad_allowed = bool(broad_raw) if broad_raw is not None else winner_positive <= 0
+    mode = str(nested.get("seed_generation_mode") or source.get("seed_generation_mode") or "").strip().lower()
+    return build_search_quality_state(
+        positive_lineage_count=positive,
+        zero_evidence_lineage_count=zero_evidence,
+        winner_proximate_positive_lineage_count=winner_positive,
+        broad_search_allowed=broad_allowed,
+        seed_generation_mode=mode,
+    )

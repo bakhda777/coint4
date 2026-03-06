@@ -53,3 +53,33 @@ def test_summarize_recent_zero_evidence_prefers_canonical_reason_when_no_positiv
 
     assert summary["has_positive_coverage_trade_evidence"] is False
     assert summary["dominant_zero_reason"] == "ZERO_OBSERVED_TEST_DAYS"
+
+
+def test_build_search_quality_state_blocks_broad_search_when_winner_positive_exists() -> None:
+    payload = module.build_search_quality_state(
+        positive_lineage_count=3,
+        zero_evidence_lineage_count=5,
+        winner_proximate_positive_lineage_count=2,
+    )
+
+    assert payload["positive_lineage_count"] == 3
+    assert payload["zero_evidence_lineage_count"] == 5
+    assert payload["winner_proximate_positive_lineage_count"] == 2
+    assert payload["broad_search_allowed"] is False
+    assert payload["seed_generation_mode"] == "winner_proximate_only"
+
+
+def test_normalize_search_quality_state_infers_winner_positive_from_counts_and_tokens() -> None:
+    payload = module.normalize_search_quality_state(
+        {
+            "positive_lineage_count": 1,
+            "zero_evidence_lineage_count": 4,
+        },
+        winner_proximate_contains=["strict_rg"],
+    )
+
+    assert payload["positive_lineage_count"] == 1
+    assert payload["zero_evidence_lineage_count"] == 4
+    assert payload["winner_proximate_positive_lineage_count"] == 1
+    assert payload["broad_search_allowed"] is False
+    assert payload["seed_generation_mode"] == "winner_proximate_only"

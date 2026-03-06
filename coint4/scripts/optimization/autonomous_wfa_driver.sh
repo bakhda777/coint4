@@ -6199,12 +6199,14 @@ handle_empty_candidate_state() {
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
   local now_epoch last_seed planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
+  local candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending
   local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
   local runtime_block_active runtime_block_reason
   local infra_gate_status startup_failure_code
   local process_remote_reachable process_coverage_ready
   local remote_runtime_reachable remote_runtime_fresh remote_state_mismatch
+  local remote_active_jobs remote_busy_without_queue remote_work_flag expected_idle_state
   local gate_block_status="hard_block"
   local prev_blocked prev_block_reason
   local remote_count=0
@@ -6229,6 +6231,9 @@ maybe_trigger_auto_seed() {
   ready_depth="$(ready_buffer_depth)"
   [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
   fullspan_state_metric_set "ready_buffer_depth" "$ready_depth"
+  IFS=$'\t' read -r candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending <<< "$(candidate_pool_status_snapshot)"
+  fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
+  fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
 
   IFS=$'\t' read -r yield_block_active yield_block_reason yield_block_until yield_block_streak <<< "$(yield_governor_hard_block_snapshot "$now_epoch")"
   [[ "$yield_block_active" =~ ^[0-9]+$ ]] || yield_block_active=0
@@ -6250,15 +6255,34 @@ maybe_trigger_auto_seed() {
     remote_runtime_reachable="$(remote_runtime_state_value "reachable" "$process_remote_reachable")"
     [[ "$remote_runtime_reachable" =~ ^[01]$ ]] || remote_runtime_reachable="$process_remote_reachable"
   fi
+  expected_idle_state=0
+  if [[ "$candidate_pool_status" == "empty_expected" ]] && (( dispatchable_pending <= 0 )); then
+    remote_active_jobs="$(remote_active_queue_jobs)"
+    [[ "$remote_active_jobs" =~ ^[0-9]+$ ]] || remote_active_jobs=0
+    remote_busy_without_queue="$(remote_cpu_busy_without_queue_job)"
+    [[ "$remote_busy_without_queue" =~ ^[01]$ ]] || remote_busy_without_queue=0
+    remote_work_flag="$(remote_work_active)"
+    [[ "$remote_work_flag" =~ ^[01]$ ]] || remote_work_flag=0
+    if (( remote_active_jobs <= 0 )) && [[ "$remote_busy_without_queue" == "0" && "$remote_work_flag" == "0" ]]; then
+      expected_idle_state=1
+    fi
+  fi
   remote_state_mismatch=0
   if [[ "$remote_runtime_fresh" == "1" && "$process_remote_reachable" != "$remote_runtime_reachable" ]]; then
     remote_state_mismatch=1
     fullspan_state_metric_set "remote_state_mismatch" "1"
     fullspan_state_metric_set "remote_state_mismatch_epoch" "$(date +%s)"
-    log "REMOTE_STATE_MISMATCH reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready"
-    log_decision_note "global" "REMOTE_STATE_MISMATCH" "reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready" "retry_selector_without_remote_unreachable_hard_block"
+    if (( expected_idle_state > 0 )); then
+      fullspan_state_metric_set "remote_state_mismatch_idle_suppressed" "1"
+      fullspan_state_metric_set "remote_state_mismatch_idle_suppressed_epoch" "$(date +%s)"
+    else
+      fullspan_state_metric_set "remote_state_mismatch_idle_suppressed" "0"
+      log "REMOTE_STATE_MISMATCH reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready"
+      log_decision_note "global" "REMOTE_STATE_MISMATCH" "reason=$reason process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable coverage_ready=$process_coverage_ready" "retry_selector_without_remote_unreachable_hard_block"
+    fi
   else
     fullspan_state_metric_set "remote_state_mismatch" "0"
+    fullspan_state_metric_set "remote_state_mismatch_idle_suppressed" "0"
   fi
   if [[ "$runtime_block_reason" == *"infra_recovery_mode_remote_unreachable_no_coverage_ready"* ]] && [[ "$infra_gate_status" != "fail_closed" ]]; then
     if [[ "$process_remote_reachable" == "1" || "$remote_runtime_reachable" == "1" || "$remote_state_mismatch" == "1" ]]; then

@@ -583,11 +583,17 @@ REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 global_backlog_snapshot() {{
   echo "0 0 0 0"
 }}
+candidate_pool_status_snapshot() {{
+  printf 'ready\\t1\\t0\\t0\\t0\\t0\\n'
+}}
 ready_buffer_depth() {{
   echo "0"
 }}
 yield_governor_hard_block_snapshot() {{
   printf '0\\t\\t0\\t0\\n'
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '1\\t0\\n'
 }}
 ensure_remote_runtime_snapshot() {{
   return 0
@@ -599,6 +605,12 @@ remote_runtime_state_value() {{
   echo "1"
 }}
 remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+remote_work_active() {{
   echo "0"
 }}
 fullspan_state_metric_get() {{
@@ -653,6 +665,9 @@ REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 global_backlog_snapshot() {{
   echo "0 0 0 0"
 }}
+candidate_pool_status_snapshot() {{
+  printf 'ready\\t1\\t0\\t0\\t0\\t0\\n'
+}}
 ready_buffer_depth() {{
   echo "0"
 }}
@@ -672,6 +687,12 @@ remote_runtime_state_value() {{
   echo "0"
 }}
 remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+remote_work_active() {{
   echo "0"
 }}
 fullspan_state_metric_get() {{
@@ -725,6 +746,9 @@ REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 global_backlog_snapshot() {{
   echo "0 0 0 0"
 }}
+candidate_pool_status_snapshot() {{
+  printf 'ready\\t1\\t0\\t0\\t0\\t0\\n'
+}}
 ready_buffer_depth() {{
   echo "0"
 }}
@@ -744,6 +768,12 @@ remote_runtime_state_value() {{
   echo "1"
 }}
 remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+remote_work_active() {{
   echo "0"
 }}
 fullspan_state_metric_get() {{
@@ -782,6 +812,94 @@ maybe_trigger_auto_seed candidate_empty_after_reconcile
     assert "AUTO_SEED_HARD_BLOCK" not in proc.stdout
 
 
+def test_maybe_trigger_auto_seed_suppresses_remote_state_mismatch_when_empty_expected_idle(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+AUTO_SEED_PENDING_THRESHOLD=96
+READY_BUFFER_REFILL_THRESHOLD=2
+AUTO_SEED_COOLDOWN_SEC=999999
+AUTO_SEED_NUM_VARIANTS=64
+AUTO_SEED_NUM_VARIANTS_FLOOR=24
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
+{fn}
+global_backlog_snapshot() {{
+  echo "0 0 1 5"
+}}
+candidate_pool_status_snapshot() {{
+  printf 'empty_expected\\t0\\t0\\t0\\t1\\t5\\n'
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+yield_governor_hard_block_snapshot() {{
+  printf '0\\t\\t0\\t0\\n'
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '0\\t0\\n'
+}}
+ensure_remote_runtime_snapshot() {{
+  return 0
+}}
+remote_runtime_snapshot_is_fresh() {{
+  echo "1"
+}}
+remote_runtime_state_value() {{
+  case "$1" in
+    reachable) echo "1" ;;
+    remote_work_active) echo "0" ;;
+    cpu_busy_without_queue_job) echo "0" ;;
+    *) echo "0" ;;
+  esac
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+remote_work_active() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    last_seed_trigger_epoch) echo "9999999999" ;;
+    auto_seed_hard_block) echo "0" ;;
+    auto_seed_block_reason) echo "" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "" ;;
+    startup_failure_code) echo "" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+set_infra_gate_state() {{
+  printf 'INFRA:%s|%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}" "${{5:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+maybe_trigger_auto_seed candidate_empty_after_reconcile
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "SET:remote_state_mismatch=1" in proc.stdout
+    assert "SET:remote_state_mismatch_idle_suppressed=1" in proc.stdout
+    assert "LOG:REMOTE_STATE_MISMATCH" not in proc.stdout
+    assert "NOTE:global|REMOTE_STATE_MISMATCH|" not in proc.stdout
+    assert "AUTO_SEED_HARD_BLOCK" not in proc.stdout
+
+
 def test_process_slo_remote_coverage_snapshot_prefers_queue_remote_reachable_with_fallback(tmp_path: Path) -> None:
     fn = _extract_shell_function(_source(), "process_slo_remote_coverage_snapshot")
     state_dir = tmp_path / "state"
@@ -805,6 +923,7 @@ process_slo_remote_coverage_snapshot
 
 
 def test_selector_empty_candidate_pool_guard_signals_when_pool_empty_with_healthy_vps(tmp_path: Path) -> None:
+    row_count_fn = _extract_shell_function(_source(), "csv_data_row_count")
     count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
     status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
     guard_fn = _extract_shell_function(_source(), "selector_empty_candidate_pool_guard")
@@ -822,6 +941,7 @@ READY_BUFFER_POOL_FILE="{pool_path}"
 FULLSPAN_DECISION_STATE_FILE="{tmp_path / 'fullspan_state.json'}"
 RUNTIME_OBSERVABILITY_STATE_FILE="{tmp_path / 'runtime_observability.json'}"
 SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC=300
+{row_count_fn}
 {count_fn}
 {status_fn}
 {guard_fn}
@@ -879,6 +999,7 @@ fi
 
 
 def test_candidate_pool_status_snapshot_marks_empty_expected_when_dispatchable_is_zero(tmp_path: Path) -> None:
+    row_count_fn = _extract_shell_function(_source(), "csv_data_row_count")
     count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
     status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
     pool_path = tmp_path / "candidate_pool.csv"
@@ -892,6 +1013,7 @@ def test_candidate_pool_status_snapshot_marks_empty_expected_when_dispatchable_i
     script = f"""#!/usr/bin/env bash
 set -euo pipefail
 READY_BUFFER_POOL_FILE="{pool_path}"
+{row_count_fn}
 {count_fn}
 {status_fn}
 global_backlog_snapshot() {{
@@ -905,6 +1027,7 @@ candidate_pool_status_snapshot
 
 
 def test_handle_empty_candidate_state_empty_expected_stops_batch_session(tmp_path: Path) -> None:
+    row_count_fn = _extract_shell_function(_source(), "csv_data_row_count")
     count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
     status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
     handle_fn = _extract_shell_function(_source(), "handle_empty_candidate_state")
@@ -920,6 +1043,7 @@ def test_handle_empty_candidate_state_empty_expected_stops_batch_session(tmp_pat
 set -euo pipefail
 READY_BUFFER_POOL_FILE="{pool_path}"
 adaptive_idle_sleep=30
+{row_count_fn}
 {count_fn}
 {status_fn}
 {handle_fn}

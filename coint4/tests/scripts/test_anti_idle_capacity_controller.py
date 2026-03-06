@@ -470,6 +470,100 @@ def test_process_slo_exposes_infra_and_auto_seed_gate_state(tmp_path: Path, monk
     assert process_state["runtime"]["auto_seed_blocked"] is True
 
 
+def test_process_slo_exposes_search_quality_counters_for_control_plane(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json")
+    (state_dir / "yield_governor_state.json").write_text(
+        json.dumps(
+            {
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
+                "hard_block_until_epoch": int(time.time()) + 600,
+                "zero_coverage_seed_streak": 4,
+                "lineages": [
+                    {
+                        "lineage_uid": "positive_alpha",
+                        "metrics_present": 3,
+                        "zero_activity": 0,
+                        "yield_score": 1.25,
+                    },
+                    {
+                        "lineage_uid": "zero_beta",
+                        "metrics_present": 0,
+                        "zero_activity": 1,
+                        "yield_score": 0.0,
+                    },
+                ],
+                "winner_proximate": {
+                    "enabled": True,
+                    "contains": ["positive_alpha", "positive_gamma"],
+                    "reason": "strict_pass_or_high_yield_lineage",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "queue_seeder.state.json").write_text(
+        json.dumps(
+            {
+                "recent_seed_quality": {
+                    "backlog_suppress": True,
+                    "zero_coverage_seed_streak": 4,
+                },
+                "quality_governor": {
+                    "repair_mode_effective": True,
+                    "variant_cap": 4,
+                },
+                "directive": {
+                    "policy_scale": "micro",
+                    "mode": "neutral",
+                    "repair_mode": True,
+                    "winner_proximate_tokens": ["positive_alpha", "positive_gamma"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["search_quality"]["positive_lineage_count"] == 2
+    assert process_state["search_quality"]["zero_evidence_lineage_count"] == 1
+    assert process_state["search_quality"]["broad_search_allowed"] is False
+    assert process_state["search_quality"]["seed_generation_mode"] == "micro"
+    assert process_state["search_quality"]["zero_coverage_seed_streak"] == 4
+    assert process_state["queue"]["positive_lineage_count"] == 2
+    assert process_state["queue"]["zero_evidence_lineage_count"] == 1
+    assert process_state["runtime"]["broad_search_allowed"] is False
+    assert process_state["runtime"]["seed_generation_mode"] == "micro"
+    assert process_state["kpi"]["positive_lineage_count"] == 2
+    assert process_state["kpi"]["zero_evidence_lineage_count"] == 1
+
+
 def test_process_slo_falls_back_to_queue_seeder_state_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "app"
     aggregate_root = root / "artifacts" / "wfa" / "aggregate"

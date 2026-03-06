@@ -28,6 +28,12 @@ def _run_embedded_python(code: str, argv: list[str], cwd: Path) -> None:
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
 
 
+def _run_embedded_python_capture(code: str, argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    return proc
+
+
 def _write_queue(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -515,7 +521,9 @@ def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -
         pool_rows = list(csv.DictReader(handle))
     assert pool_rows
     assert all(row["queue"] != str(cold_queue.relative_to(app_root)) for row in pool_rows)
-    assert any(row["queue"] == str(hot_queue.relative_to(app_root)) for row in pool_rows)
+    hot_row = next(row for row in pool_rows if row["queue"] == str(hot_queue.relative_to(app_root)))
+    assert int(hot_row["dispatchable_pending"]) == 1
+    assert int(hot_row["executable_pending"]) == 1
 
 
 def test_find_candidate_skips_fail_closed_queue_state(tmp_path: Path) -> None:
@@ -598,7 +606,9 @@ def test_ready_buffer_policy_hash_and_replay_fastlane_hooks_contract() -> None:
     required = [
         "current_planner_policy_hash()",
         "ready_buffer_policy_hash()",
+        "ready_buffer_snapshot_hash()",
         "planner_policy_hash",
+        "snapshot_hash",
         "queue_file_mtime",
         "ready_buffer_policy_mismatch_count",
         "dispatch_replay_fastlane_hooks()",
@@ -608,3 +618,218 @@ def test_ready_buffer_policy_hash_and_replay_fastlane_hooks_contract() -> None:
     ]
     missing = [snippet for snippet in required if snippet not in src]
     assert not missing, f"missing runtime selector hooks: {missing}"
+
+
+def test_ready_buffer_snapshot_hash_changes_without_policy_mismatch(tmp_path: Path) -> None:
+    policy_code = _extract_embedded_python("ready_buffer_policy_hash")
+    snapshot_code = _extract_embedded_python("ready_buffer_snapshot_hash")
+    pool_csv = tmp_path / "candidate_pool.csv"
+    pool_csv.write_text(
+        "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,"
+        "gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,"
+        "stalled_share,queue_yield_score,recent_yield,dispatchable_pending,executable_pending\n"
+        "artifacts/wfa/aggregate/demo/run_queue.csv,1,0,0,0,0,1,1.000,123,POSSIBLE,OPEN,seed,5.000,"
+        "FULLSPAN_PREFILTER_PASSED,,1,0.000000,5.000,0.000,1,1\n",
+        encoding="utf-8",
+    )
+    surrogate_path = tmp_path / "surrogate.json"
+    fullspan_path = tmp_path / "fullspan.json"
+    surrogate_path.write_text("{}", encoding="utf-8")
+    fullspan_path.write_text("{}", encoding="utf-8")
+    planner_policy_hash = "planner-A"
+
+    policy_one = _run_embedded_python_capture(
+        policy_code,
+        ["fullspan_v1", "3", "2", planner_policy_hash],
+        cwd=tmp_path,
+    ).stdout.strip()
+    snapshot_one = _run_embedded_python_capture(
+        snapshot_code,
+        [str(pool_csv), str(surrogate_path), str(fullspan_path), "3", planner_policy_hash],
+        cwd=tmp_path,
+    ).stdout.strip()
+
+    time.sleep(1)
+    pool_csv.write_text(pool_csv.read_text(encoding="utf-8").replace(",123,", ",124,"), encoding="utf-8")
+
+    policy_two = _run_embedded_python_capture(
+        policy_code,
+        ["fullspan_v1", "3", "2", planner_policy_hash],
+        cwd=tmp_path,
+    ).stdout.strip()
+    snapshot_two = _run_embedded_python_capture(
+        snapshot_code,
+        [str(pool_csv), str(surrogate_path), str(fullspan_path), "3", planner_policy_hash],
+        cwd=tmp_path,
+    ).stdout.strip()
+
+    assert policy_one == policy_two
+    assert snapshot_one != snapshot_two
+
+
+def test_early_stop_low_yield_queue_marks_min_windows_unreachable(tmp_path: Path) -> None:
+    queue_rel = "artifacts/wfa/aggregate/demo/run_queue.csv"
+    queue_path = tmp_path / queue_rel
+    run_index_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    run_index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_alpha_oos1",
+                "status": "completed",
+            },
+            {
+                "config_path": "configs/beta.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_beta_oos1",
+                "status": "planned",
+            },
+        ],
+    )
+    with run_index_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "run_id",
+                "status",
+                "metrics_present",
+                "coverage_ratio",
+                "total_trades",
+                "total_pairs_traded",
+                "max_drawdown_on_equity",
+                "total_pnl",
+                "tail_loss_worst_period_pnl",
+                "tail_loss_worst_pair_pnl",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "run_id": "holdout_alpha_oos1",
+                "status": "completed",
+                "metrics_present": "1",
+                "coverage_ratio": "1.0",
+                "total_trades": "500",
+                "total_pairs_traded": "50",
+                "max_drawdown_on_equity": "0.05",
+                "total_pnl": "100.0",
+                "tail_loss_worst_period_pnl": "-50.0",
+                "tail_loss_worst_pair_pnl": "-25.0",
+            }
+        )
+
+    code = _extract_embedded_python("early_stop_low_yield_queue")
+    proc = _run_embedded_python_capture(
+        code,
+        [
+            queue_rel,
+            str(queue_path),
+            str(run_index_path),
+            "8",
+            "0.75",
+            "0.70",
+            "6",
+            "12",
+            "0.80",
+            "6",
+            "3",
+            "0.95",
+        ],
+        cwd=tmp_path,
+    )
+    payload = json.loads(proc.stdout.strip())
+    assert payload["trigger"] is True
+    assert payload["reason"] == "MIN_WINDOWS_UNREACHABLE"
+    assert payload["changed"] == 1
+
+    with queue_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["status"] == "completed"
+    assert rows[1]["status"] == "skipped"
+
+
+def test_early_stop_low_yield_queue_marks_coverage_unreachable(tmp_path: Path) -> None:
+    queue_rel = "artifacts/wfa/aggregate/demo/run_queue.csv"
+    queue_path = tmp_path / queue_rel
+    run_index_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    run_index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_alpha_oos1",
+                "status": "completed",
+            },
+            {
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_alpha_oos2",
+                "status": "planned",
+            },
+        ],
+    )
+    with run_index_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "run_id",
+                "status",
+                "metrics_present",
+                "coverage_ratio",
+                "total_trades",
+                "total_pairs_traded",
+                "max_drawdown_on_equity",
+                "total_pnl",
+                "tail_loss_worst_period_pnl",
+                "tail_loss_worst_pair_pnl",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "run_id": "holdout_alpha_oos1",
+                "status": "completed",
+                "metrics_present": "1",
+                "coverage_ratio": "0.40",
+                "total_trades": "500",
+                "total_pairs_traded": "50",
+                "max_drawdown_on_equity": "0.05",
+                "total_pnl": "100.0",
+                "tail_loss_worst_period_pnl": "-50.0",
+                "tail_loss_worst_pair_pnl": "-25.0",
+            }
+        )
+
+    code = _extract_embedded_python("early_stop_low_yield_queue")
+    proc = _run_embedded_python_capture(
+        code,
+        [
+            queue_rel,
+            str(queue_path),
+            str(run_index_path),
+            "8",
+            "0.75",
+            "0.70",
+            "6",
+            "12",
+            "0.80",
+            "6",
+            "2",
+            "0.95",
+        ],
+        cwd=tmp_path,
+    )
+    payload = json.loads(proc.stdout.strip())
+    assert payload["trigger"] is True
+    assert payload["reason"] == "COVERAGE_UNREACHABLE"
+    assert payload["changed"] == 1
+
+    with queue_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["status"] == "completed"
+    assert rows[1]["status"] == "skipped"

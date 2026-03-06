@@ -36,6 +36,7 @@ from _search_quality_contract import (
     canonical_zero_evidence_reason,
     has_positive_coverage_trade_evidence,
     micro_broad_search_caps,
+    normalize_search_quality_state,
     summarize_recent_zero_evidence,
 )
 
@@ -1490,6 +1491,8 @@ def _select_seed_lane(
     winner_tokens = [str(token).strip() for token in list(winner_proximate_tokens or []) if str(token).strip()]
     preferred_tokens = [str(token).strip() for token in list(preferred_any_contains or []) if str(token).strip()]
     generic_tokens = [str(token).strip() for token in list(generic_contains or []) if str(token).strip()]
+    search_quality = normalize_search_quality_state(yield_governor, winner_proximate_contains=winner_tokens)
+    broad_search_allowed = bool(search_quality.get("broad_search_allowed"))
     confirm_replay_source = "winner_fallback"
     confirm_replay_tokens = _to_tokens(directive_replay_fastlane_tokens or [])
     if confirm_replay_tokens:
@@ -1509,17 +1512,19 @@ def _select_seed_lane(
     if not confirm_replay_tokens:
         # Compatibility fallback only when replay fastlane is genuinely empty.
         confirm_replay_tokens = list(winner_tokens)
+    if not broad_search_allowed and confirm_replay_source == "winner_fallback":
+        confirm_replay_tokens = []
 
     lane_tokens = {
         "winner_proximate": winner_tokens,
-        "broad_search": preferred_tokens or generic_tokens,
+        "broad_search": (preferred_tokens or generic_tokens) if broad_search_allowed else [],
         "confirm_replay": confirm_replay_tokens,
     }
     available_lanes = [lane for lane in ("winner_proximate", "broad_search", "confirm_replay") if lane_tokens.get(lane)]
     if not available_lanes:
-        fallback = generic_tokens or ["autonomous_queue_seeder"]
-        lane_tokens["broad_search"] = fallback
-        available_lanes = ["broad_search"]
+        fallback = winner_tokens or confirm_replay_tokens or generic_tokens or ["autonomous_queue_seeder"]
+        lane_tokens["winner_proximate"] = fallback
+        available_lanes = ["winner_proximate"]
 
     ranked = sorted(
         available_lanes,
@@ -1580,6 +1585,7 @@ def _select_seed_lane(
         "confirm_replay_hints": list(confirm_replay_hints),
         "confirm_replay_source": str(confirm_replay_source),
         "parent_rotation_offset": int(parent_rotation_offset),
+        "search_quality": search_quality,
     }
 
 
@@ -1796,6 +1802,7 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "hard_block_reason": "",
         "hard_block_until_epoch": 0,
         "zero_coverage_seed_streak": 0,
+        "zero_coverage_seed_streak_reason": "",
         "preferred_contains": [],
         "cooldown_contains": [],
         "preferred_operator_ids": [],
@@ -1804,6 +1811,18 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "replay_fastlane": {"enabled": False, "contains": [], "replay_ready_count": 0, "source": "missing"},
         "confirm_replay": {"enabled": False, "contains": [], "replay_ready_count": 0, "source": "missing"},
         "confirm_replay_contains": [],
+        "search_quality": {
+            "positive_lineage_count": 0,
+            "zero_evidence_lineage_count": 0,
+            "winner_proximate_positive_lineage_count": 0,
+            "broad_search_allowed": True,
+            "seed_generation_mode": "broad_search_micro",
+        },
+        "positive_lineage_count": 0,
+        "zero_evidence_lineage_count": 0,
+        "winner_proximate_positive_lineage_count": 0,
+        "broad_search_allowed": True,
+        "seed_generation_mode": "broad_search_micro",
         "lane_weights": {},
         "policy_overrides": {},
     }
@@ -1854,6 +1873,8 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         or replay_contains
         or int(replay_ready_count) > 0
     )
+    winner_contains = _to_tokens(winner.get("contains", []))
+    search_quality = normalize_search_quality_state(payload, winner_proximate_contains=winner_contains)
 
     state.update(
         {
@@ -1864,13 +1885,14 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "hard_block_reason": str(payload.get("hard_block_reason") or "").strip(),
             "hard_block_until_epoch": int(_as_int(payload.get("hard_block_until_epoch"), default=0, min_value=0) or 0),
             "zero_coverage_seed_streak": int(_as_int(payload.get("zero_coverage_seed_streak"), default=0, min_value=0) or 0),
+            "zero_coverage_seed_streak_reason": str(payload.get("zero_coverage_seed_streak_reason") or "").strip(),
             "preferred_contains": _to_tokens(payload.get("preferred_contains", [])),
             "cooldown_contains": _to_tokens(payload.get("cooldown_contains", [])),
             "preferred_operator_ids": _to_tokens(payload.get("preferred_operator_ids", [])),
             "cooldown_operator_ids": _to_tokens(payload.get("cooldown_operator_ids", [])),
             "winner_proximate": {
                 "enabled": bool(winner.get("enabled")),
-                "contains": _to_tokens(winner.get("contains", [])),
+                "contains": list(winner_contains),
                 "reason": str(winner.get("reason") or "").strip(),
             },
             "replay_fastlane": {
@@ -1886,6 +1908,14 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
                 "source": str(replay_source),
             },
             "confirm_replay_contains": list(replay_contains),
+            "search_quality": dict(search_quality),
+            "positive_lineage_count": int(search_quality.get("positive_lineage_count", 0) or 0),
+            "zero_evidence_lineage_count": int(search_quality.get("zero_evidence_lineage_count", 0) or 0),
+            "winner_proximate_positive_lineage_count": int(
+                search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
+            ),
+            "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
+            "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
             "lane_weights": {str(k): (_as_int(v, default=0, min_value=0) or 0) for k, v in lane_weights.items()},
             "policy_overrides": dict(policy_overrides),
         }
@@ -2202,6 +2232,7 @@ def main() -> int:
             current_epoch = int(datetime.now(timezone.utc).timestamp())
             yield_updates: dict[str, Any] = {
                 "zero_coverage_seed_streak": int(recent_seed_quality.get("zero_coverage_seed_streak", 0) or 0),
+                "zero_coverage_seed_streak_reason": str(recent_seed_quality.get("hard_block_reason") or "").strip(),
             }
             existing_hard_block_reason = str(yield_governor.get("hard_block_reason") or "").strip()
             if bool(recent_seed_quality.get("hard_block_recommended")) and (
@@ -2550,6 +2581,21 @@ def main() -> int:
             )
             confirm_replay_hints = list(lane_selection_payload.get("confirm_replay_hints") or [])
             confirm_replay_source = str(lane_selection_payload.get("confirm_replay_source") or "").strip()
+            search_quality_state = dict(lane_selection_payload.get("search_quality") or {})
+            if selected_lane == "broad_search":
+                effective_policy_scale = "micro"
+                effective_max_changed_keys = min(
+                    int(effective_max_changed_keys),
+                    int(micro_caps["max_changed_keys_cap"]),
+                )
+                effective_dedupe_distance = max(
+                    float(effective_dedupe_distance),
+                    float(micro_caps["dedupe_distance_floor"]),
+                )
+                effective_num_variants = min(
+                    int(effective_num_variants),
+                    int(micro_caps["num_variants_cap"]),
+                )
             if selected_lane == "winner_proximate":
                 parent_diversity_depth = 5
             elif selected_lane == "confirm_replay":
@@ -2576,6 +2622,9 @@ def main() -> int:
                 "exclude_knobs": list(effective_exclude_knobs),
                 "parent_rotation_offset": int(parent_rotation_offset),
                 "parent_diversity_depth": int(parent_diversity_depth),
+                "search_quality": dict(search_quality_state),
+                "broad_search_allowed": bool(search_quality_state.get("broad_search_allowed")),
+                "seed_generation_mode": str(search_quality_state.get("seed_generation_mode") or ""),
             }
             planner_policy_hash = _stable_hash(policy_fingerprint_payload, prefix="policy")
 
@@ -2655,6 +2704,7 @@ def main() -> int:
                 "hard_block_reason": str(yield_governor.get("hard_block_reason") or ""),
                 "hard_block_until_epoch": int(yield_governor.get("hard_block_until_epoch") or 0),
                 "zero_coverage_seed_streak": int(yield_governor.get("zero_coverage_seed_streak") or 0),
+                "zero_coverage_seed_streak_reason": str(yield_governor.get("zero_coverage_seed_streak_reason") or ""),
                 "preferred_contains": list(yield_governor.get("preferred_contains", []) or [])[:8],
                 "cooldown_contains": list(yield_governor.get("cooldown_contains", []) or [])[:8],
                 "winner_proximate": dict(yield_governor.get("winner_proximate") or {}),
@@ -2680,6 +2730,11 @@ def main() -> int:
                 "variant_cap": quality_variant_cap,
                 "include_stress_effective": bool(effective_include_stress),
                 "repair_mode_effective": bool(effective_repair_mode),
+                "search_quality": dict(search_quality_state),
+                "positive_lineage_count": int(search_quality_state.get("positive_lineage_count", 0) or 0),
+                "zero_evidence_lineage_count": int(search_quality_state.get("zero_evidence_lineage_count", 0) or 0),
+                "broad_search_allowed": bool(search_quality_state.get("broad_search_allowed")),
+                "seed_generation_mode": str(search_quality_state.get("seed_generation_mode") or "broad_search_micro"),
             }
             if hard_block_active:
                 snapshot.update(

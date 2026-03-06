@@ -280,19 +280,49 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
             "hard_block_reason": "",
             "hard_block_until_epoch": 0,
             "zero_coverage_seed_streak": 0,
+            "zero_coverage_seed_streak_reason": "",
+            "positive_lineage_count": 0,
+            "zero_evidence_lineage_count": 0,
+            "broad_search_allowed": None,
+            "seed_generation_mode": "",
+            "lineages": [],
+            "winner_proximate": {},
         }
+    lineages = data.get("lineages", [])
+    if not isinstance(lineages, list):
+        lineages = []
+    winner_proximate = data.get("winner_proximate", {})
+    if not isinstance(winner_proximate, dict):
+        winner_proximate = {}
     return {
         "hard_block_active": parse_bool(data.get("hard_block_active"), False),
         "hard_block_reason": str(data.get("hard_block_reason") or ""),
         "hard_block_until_epoch": parse_int(data.get("hard_block_until_epoch"), 0),
         "zero_coverage_seed_streak": parse_int(data.get("zero_coverage_seed_streak"), 0),
+        "zero_coverage_seed_streak_reason": str(data.get("zero_coverage_seed_streak_reason") or ""),
+        "positive_lineage_count": parse_int(data.get("positive_lineage_count"), 0),
+        "zero_evidence_lineage_count": parse_int(data.get("zero_evidence_lineage_count"), 0),
+        "broad_search_allowed": data.get("broad_search_allowed"),
+        "seed_generation_mode": str(data.get("seed_generation_mode") or ""),
+        "lineages": lineages,
+        "winner_proximate": winner_proximate,
     }
 
 
 def read_queue_seeder_state(path: Path) -> dict[str, Any]:
     data = load_json(path, {})
     if not isinstance(data, dict):
-        return {"covered_window_count": 0, "coverage_verified_ready_count": 0}
+        return {
+            "covered_window_count": 0,
+            "coverage_verified_ready_count": 0,
+            "positive_lineage_count": 0,
+            "zero_evidence_lineage_count": 0,
+            "broad_search_allowed": None,
+            "seed_generation_mode": "",
+            "recent_seed_quality": {},
+            "quality_governor": {},
+            "directive": {},
+        }
     covered_window_count = parse_int(data.get("covered_window_count"), 0)
     coverage_verified_ready_count = parse_int(data.get("coverage_verified_ready_count"), 0)
     hygiene = data.get("hygiene", {})
@@ -313,9 +343,118 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
             ready_queue_buffer.get("coverage_verified_ready_count"),
             coverage_verified_ready_count,
         )
+    recent_seed_quality = data.get("recent_seed_quality", {})
+    if not isinstance(recent_seed_quality, dict):
+        recent_seed_quality = {}
+    quality_governor = data.get("quality_governor", {})
+    if not isinstance(quality_governor, dict):
+        quality_governor = {}
+    directive = data.get("directive", {})
+    if not isinstance(directive, dict):
+        directive = {}
     return {
         "covered_window_count": covered_window_count,
         "coverage_verified_ready_count": coverage_verified_ready_count,
+        "positive_lineage_count": parse_int(data.get("positive_lineage_count"), 0),
+        "zero_evidence_lineage_count": parse_int(data.get("zero_evidence_lineage_count"), 0),
+        "broad_search_allowed": data.get("broad_search_allowed"),
+        "seed_generation_mode": str(data.get("seed_generation_mode") or ""),
+        "recent_seed_quality": recent_seed_quality,
+        "quality_governor": quality_governor,
+        "directive": directive,
+    }
+
+
+def _count_non_empty_tokens(values: Any) -> int:
+    if not isinstance(values, list):
+        return 0
+    return sum(1 for value in values if str(value or "").strip())
+
+
+def derive_search_quality_state(
+    *,
+    yield_governor_state: dict[str, Any],
+    queue_seeder_state: dict[str, Any],
+) -> dict[str, Any]:
+    positive_lineage_count = parse_int(yield_governor_state.get("positive_lineage_count"), 0)
+    zero_evidence_lineage_count = parse_int(yield_governor_state.get("zero_evidence_lineage_count"), 0)
+
+    winner_proximate = yield_governor_state.get("winner_proximate", {})
+    if not isinstance(winner_proximate, dict):
+        winner_proximate = {}
+    lineages = yield_governor_state.get("lineages", [])
+    if not isinstance(lineages, list):
+        lineages = []
+
+    if positive_lineage_count <= 0:
+        positive_lineage_count = _count_non_empty_tokens(winner_proximate.get("contains"))
+    if positive_lineage_count <= 0:
+        directive = queue_seeder_state.get("directive", {})
+        if not isinstance(directive, dict):
+            directive = {}
+        positive_lineage_count = _count_non_empty_tokens(directive.get("winner_proximate_tokens"))
+    if positive_lineage_count <= 0 and lineages:
+        positive_lineage_count = sum(
+            1
+            for entry in lineages
+            if isinstance(entry, dict)
+            and parse_int(entry.get("metrics_present"), 0) > 0
+            and parse_int(entry.get("zero_activity"), 0) <= 0
+        )
+
+    if zero_evidence_lineage_count <= 0 and lineages:
+        zero_evidence_lineage_count = sum(
+            1
+            for entry in lineages
+            if isinstance(entry, dict)
+            and (
+                parse_int(entry.get("metrics_present"), 0) <= 0
+                or parse_int(entry.get("zero_activity"), 0) > 0
+            )
+        )
+    if zero_evidence_lineage_count <= 0:
+        zero_evidence_lineage_count = parse_int(queue_seeder_state.get("zero_evidence_lineage_count"), 0)
+
+    recent_seed_quality = queue_seeder_state.get("recent_seed_quality", {})
+    if not isinstance(recent_seed_quality, dict):
+        recent_seed_quality = {}
+    quality_governor = queue_seeder_state.get("quality_governor", {})
+    if not isinstance(quality_governor, dict):
+        quality_governor = {}
+    directive = queue_seeder_state.get("directive", {})
+    if not isinstance(directive, dict):
+        directive = {}
+
+    broad_search_allowed = queue_seeder_state.get("broad_search_allowed")
+    if broad_search_allowed is None:
+        broad_search_allowed = yield_governor_state.get("broad_search_allowed")
+    if broad_search_allowed is None:
+        broad_search_allowed = not (
+            parse_bool(yield_governor_state.get("hard_block_active"), False)
+            or parse_bool(recent_seed_quality.get("backlog_suppress"), False)
+            or parse_bool(quality_governor.get("repair_mode_effective"), False)
+            or parse_bool(directive.get("repair_mode"), False)
+        )
+    else:
+        broad_search_allowed = parse_bool(broad_search_allowed, True)
+
+    seed_generation_mode = str(queue_seeder_state.get("seed_generation_mode") or "").strip()
+    if not seed_generation_mode:
+        seed_generation_mode = str(yield_governor_state.get("seed_generation_mode") or "").strip()
+    if not seed_generation_mode:
+        seed_generation_mode = str(directive.get("policy_scale") or "").strip()
+    if not seed_generation_mode:
+        seed_generation_mode = str(directive.get("mode") or "").strip()
+    if not seed_generation_mode and parse_bool(quality_governor.get("repair_mode_effective"), False):
+        seed_generation_mode = "repair"
+
+    return {
+        "positive_lineage_count": max(0, int(positive_lineage_count)),
+        "zero_evidence_lineage_count": max(0, int(zero_evidence_lineage_count)),
+        "broad_search_allowed": bool(broad_search_allowed),
+        "seed_generation_mode": seed_generation_mode,
+        "zero_coverage_seed_streak": parse_int(yield_governor_state.get("zero_coverage_seed_streak"), 0),
+        "zero_coverage_seed_streak_reason": str(yield_governor_state.get("zero_coverage_seed_streak_reason") or ""),
     }
 
 
@@ -524,6 +663,10 @@ def main() -> int:
         yield_governor_state = read_yield_governor_state(yield_governor_state_path)
         ready_buffer_state = read_ready_queue_buffer(ready_buffer_state_path)
         queue_seeder_state = read_queue_seeder_state(queue_seeder_state_path)
+        search_quality_state = derive_search_quality_state(
+            yield_governor_state=yield_governor_state,
+            queue_seeder_state=queue_seeder_state,
+        )
         candidate_pool_ready_count = csv_data_row_count(candidate_pool_path)
         queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
         if not isinstance(queues, dict):
@@ -874,6 +1017,7 @@ def main() -> int:
             "covered_window_count": covered_window_count,
             "coverage_verified_ready_count": coverage_verified_ready_count,
             "startup_failure_code": startup_failure_code,
+            "search_quality": search_quality_state,
             "funnel": {
                 "generated": total_rows,
                 "executable": executable_rows,
@@ -922,6 +1066,12 @@ def main() -> int:
                 "auto_seed_blocked": auto_seed_blocked,
                 "auto_seed_block_reason": auto_seed_block_reason,
                 "startup_failure_code": startup_failure_code,
+                "positive_lineage_count": search_quality_state["positive_lineage_count"],
+                "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
+                "broad_search_allowed": search_quality_state["broad_search_allowed"],
+                "seed_generation_mode": search_quality_state["seed_generation_mode"],
+                "zero_coverage_seed_streak": search_quality_state["zero_coverage_seed_streak"],
+                "zero_coverage_seed_streak_reason": search_quality_state["zero_coverage_seed_streak_reason"],
             },
             "kpi": {
                 "completed_rows": completed_rows,
@@ -963,6 +1113,8 @@ def main() -> int:
                 "covered_window_count": covered_window_count,
                 "auto_seed_blocked": auto_seed_blocked,
                 "startup_failure_code": startup_failure_code,
+                "positive_lineage_count": search_quality_state["positive_lineage_count"],
+                "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
             },
             "runtime": {
                 "ready_buffer_depth": ready_buffer_depth,
@@ -999,6 +1151,12 @@ def main() -> int:
                 "auto_seed_blocked": auto_seed_blocked,
                 "auto_seed_block_reason": auto_seed_block_reason,
                 "startup_failure_code": startup_failure_code,
+                "positive_lineage_count": search_quality_state["positive_lineage_count"],
+                "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
+                "broad_search_allowed": search_quality_state["broad_search_allowed"],
+                "seed_generation_mode": search_quality_state["seed_generation_mode"],
+                "zero_coverage_seed_streak": search_quality_state["zero_coverage_seed_streak"],
+                "zero_coverage_seed_streak_reason": search_quality_state["zero_coverage_seed_streak_reason"],
             },
             "wip": {
                 "search_max": wip_search_max,
@@ -1048,6 +1206,8 @@ def main() -> int:
                 "metrics_missing_abort_count_30m={metrics_missing_abort_count_30m} winner_proximate_dispatch_count_30m={winner_proximate_dispatch_count_30m} "
                 "hot_standby_active={hot_standby_active} "
                 "dispatchable_pending={dispatchable_pending} hard_rejected_pending={hard_rejected_pending} "
+                "positive_lineage_count={positive_lineage_count} zero_evidence_lineage_count={zero_evidence_lineage_count} "
+                "broad_search_allowed={broad_search_allowed} seed_generation_mode={seed_generation_mode} "
                 "candidate_pool_status={candidate_pool_status} "
                 "idle_with_executable_pending={idle_with_executable_pending} "
                 "alerts={alerts} emitted={emitted}"
@@ -1093,6 +1253,10 @@ def main() -> int:
                 hot_standby_active=int(bool(summary["runtime"]["hot_standby_active"])),
                 dispatchable_pending=summary["queue"]["dispatchable_pending"],
                 hard_rejected_pending=summary["queue"]["hard_rejected_pending"],
+                positive_lineage_count=summary["search_quality"]["positive_lineage_count"],
+                zero_evidence_lineage_count=summary["search_quality"]["zero_evidence_lineage_count"],
+                broad_search_allowed=int(bool(summary["search_quality"]["broad_search_allowed"])),
+                seed_generation_mode=summary["search_quality"]["seed_generation_mode"] or "unknown",
                 candidate_pool_status=summary["queue"]["candidate_pool_status"] or "none",
                 idle_with_executable_pending=int(bool(summary["queue"]["idle_with_executable_pending"])),
                 alerts=summary["alerts_count"],

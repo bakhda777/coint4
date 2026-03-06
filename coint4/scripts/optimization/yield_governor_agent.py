@@ -7,10 +7,22 @@ import argparse
 import csv
 import hashlib
 import json
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from _search_quality_contract import (
+    build_search_quality_state,
+    canonical_zero_evidence_reason,
+    has_positive_coverage_trade_evidence,
+    micro_broad_search_caps,
+)
 
 
 def utc_now_iso() -> str:
@@ -208,6 +220,7 @@ def _build_planner_policy_inputs(
     cooldown_operator_ids: list[str],
     winner_proximate: Mapping[str, Any],
     replay_fastlane: Mapping[str, Any],
+    search_quality: Mapping[str, Any],
     sample_size: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -222,6 +235,16 @@ def _build_planner_policy_inputs(
             "enabled": bool(replay_fastlane.get("enabled")),
             "contains": [str(token).strip() for token in list(replay_fastlane.get("contains", []) or []) if str(token).strip()][:8],
             "replay_ready_count": max(0, parse_int(replay_fastlane.get("replay_ready_count"), 0)),
+        },
+        "search_quality": {
+            "positive_lineage_count": max(0, parse_int(search_quality.get("positive_lineage_count"), 0)),
+            "zero_evidence_lineage_count": max(0, parse_int(search_quality.get("zero_evidence_lineage_count"), 0)),
+            "winner_proximate_positive_lineage_count": max(
+                0,
+                parse_int(search_quality.get("winner_proximate_positive_lineage_count"), 0),
+            ),
+            "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
+            "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         },
         "preferred_contains": [str(token).strip() for token in preferred_contains if str(token).strip()][:12],
         "cooldown_contains": [str(token).strip() for token in cooldown_contains if str(token).strip()][:12],
@@ -262,7 +285,15 @@ def build_yield_governor_state(
     )[: max(1, int(recent_queue_limit))]
 
     lineage_stats: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"completed": 0, "metrics_present": 0, "zero_activity": 0, "hard_fail": 0, "tokens": set()}
+        lambda: {
+            "completed": 0,
+            "metrics_present": 0,
+            "zero_activity": 0,
+            "hard_fail": 0,
+            "tokens": set(),
+            "positive_evidence_count": 0,
+            "zero_reason_counts": defaultdict(int),
+        }
     )
     operator_stats: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"completed": 0, "metrics_present": 0, "zero_activity": 0, "hard_fail": 0}
@@ -300,6 +331,12 @@ def build_yield_governor_state(
             lineage_entry["zero_activity"] += zero_activity
             lineage_entry["hard_fail"] += hard_fail
             lineage_entry["tokens"].add(token)
+            if run_index_row and has_positive_coverage_trade_evidence(run_index_row):
+                lineage_entry["positive_evidence_count"] += 1
+            else:
+                reason = canonical_zero_evidence_reason(run_index_row, require_metrics_present=False)
+                if reason != "METRICS_PRESENT":
+                    lineage_entry["zero_reason_counts"][reason] += 1
 
             operator_entry = operator_stats[operator_id]
             operator_entry["completed"] += 1
@@ -317,6 +354,24 @@ def build_yield_governor_state(
             zero_activity=int(stats["zero_activity"]),
             hard_fail=int(stats["hard_fail"]),
         )
+        positive_evidence_count = max(0, parse_int(stats.get("positive_evidence_count"), 0))
+        zero_reason_counts = {
+            str(code).strip(): max(0, parse_int(count, 0))
+            for code, count in dict(stats.get("zero_reason_counts") or {}).items()
+            if str(code).strip() and parse_int(count, 0) > 0
+        }
+        dominant_zero_reason = ""
+        for reason in (
+            "ZERO_OBSERVED_TEST_DAYS",
+            "ZERO_COVERAGE",
+            "ZERO_TRADES",
+            "ZERO_PAIRS",
+            "METRICS_MISSING",
+        ):
+            if zero_reason_counts.get(reason, 0) > 0:
+                dominant_zero_reason = reason
+                break
+        zero_evidence = bool(int(stats["completed"]) > 0 and positive_evidence_count <= 0)
         lineages.append(
             {
                 "lineage_uid": lineage_uid,
@@ -327,6 +382,11 @@ def build_yield_governor_state(
                 "zero_activity": int(stats["zero_activity"]),
                 "hard_fail": int(stats["hard_fail"]),
                 "tokens": sorted(str(token) for token in stats["tokens"] if str(token).strip()),
+                "positive_evidence_count": int(positive_evidence_count),
+                "has_positive_evidence": bool(positive_evidence_count > 0),
+                "zero_evidence": bool(zero_evidence),
+                "dominant_zero_reason": dominant_zero_reason,
+                "zero_reason_counts": zero_reason_counts,
             }
         )
     lineages.sort(key=lambda item: (float(item["yield_score"]), int(item["completed"])), reverse=True)
@@ -403,6 +463,20 @@ def build_yield_governor_state(
         "lineages": len(lineages),
         "operators": len(operators),
     }
+    preferred_contains_set = set(preferred_contains)
+    winner_proximate_positive_lineage_count = sum(
+        1
+        for entry in lineages
+        if bool(entry.get("has_positive_evidence"))
+        and any(token in preferred_contains_set for token in list(entry.get("tokens") or []))
+    )
+    if winner_tokens and winner_proximate_positive_lineage_count <= 0:
+        winner_proximate_positive_lineage_count = 1
+    search_quality = build_search_quality_state(
+        positive_lineage_count=sum(1 for entry in lineages if bool(entry.get("has_positive_evidence"))),
+        zero_evidence_lineage_count=sum(1 for entry in lineages if bool(entry.get("zero_evidence"))),
+        winner_proximate_positive_lineage_count=winner_proximate_positive_lineage_count,
+    )
     planner_policy_inputs = _build_planner_policy_inputs(
         lane_weights=lane_weights,
         preferred_contains=preferred_contains,
@@ -414,10 +488,13 @@ def build_yield_governor_state(
             "contains": preferred_contains,
         },
         replay_fastlane=replay_fastlane,
+        search_quality=search_quality,
         sample_size=sample_size,
     )
     policy_hash = _stable_policy_hash(planner_policy_inputs)
+    search_quality = dict(planner_policy_inputs.get("search_quality") or search_quality)
 
+    micro_caps = micro_broad_search_caps()
     return {
         "ts": utc_now_iso(),
         "schema_version": "v2",
@@ -433,10 +510,18 @@ def build_yield_governor_state(
             "reason": "strict_pass_or_high_yield_lineage",
         },
         "replay_fastlane": replay_fastlane,
+        "search_quality": search_quality,
+        "positive_lineage_count": int(search_quality.get("positive_lineage_count", 0) or 0),
+        "zero_evidence_lineage_count": int(search_quality.get("zero_evidence_lineage_count", 0) or 0),
+        "winner_proximate_positive_lineage_count": int(
+            search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
+        ),
+        "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
+        "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         "lane_weights": lane_weights,
         "policy_overrides": {
-            "num_variants_cap": 64,
-            "policy_scale": "micro" if cooldown_operator_ids else "auto",
+            "num_variants_cap": int(micro_caps["num_variants_cap"]),
+            "policy_scale": str(micro_caps["policy_scale"]),
         },
         "lineages": lineages[:48],
         "operators": operators[:24],

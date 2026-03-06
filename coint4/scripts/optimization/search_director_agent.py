@@ -20,7 +20,11 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _search_quality_contract import CANONICAL_ZERO_EVIDENCE_REASONS, micro_broad_search_caps
+from _search_quality_contract import (
+    CANONICAL_ZERO_EVIDENCE_REASONS,
+    micro_broad_search_caps,
+    normalize_search_quality_state,
+)
 from yield_governor_agent import build_yield_governor_state, dump_json as dump_yield_json
 
 
@@ -181,6 +185,9 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
     repair_mode = directive.get("repair_mode", {})
     if not isinstance(repair_mode, dict):
         repair_mode = {}
+    search_quality = directive.get("search_quality", {})
+    if not isinstance(search_quality, dict):
+        search_quality = {}
     return {
         "version": max(1, parse_int(directive.get("version"), 1)),
         "policy_family": "exploit_first",
@@ -201,6 +208,16 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
             "contains": [str(token).strip() for token in list(replay.get("contains", []) or []) if str(token).strip()][:8],
             "pending_confirm_queues": [str(queue).strip() for queue in list(replay.get("pending_confirm_queues", []) or []) if str(queue).strip()][:16],
             "replay_ready_count": max(0, parse_int(replay.get("replay_ready_count"), 0)),
+        },
+        "search_quality": {
+            "positive_lineage_count": max(0, parse_int(search_quality.get("positive_lineage_count"), 0)),
+            "zero_evidence_lineage_count": max(0, parse_int(search_quality.get("zero_evidence_lineage_count"), 0)),
+            "winner_proximate_positive_lineage_count": max(
+                0,
+                parse_int(search_quality.get("winner_proximate_positive_lineage_count"), 0),
+            ),
+            "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
+            "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         },
         "yield_governor": {
             "active": bool(yield_governor.get("active")),
@@ -285,7 +302,13 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
     yield_winner_contains = [
         str(token).strip() for token in list(winner_proximate.get("contains", []) or []) if str(token).strip()
     ]
+    search_quality = normalize_search_quality_state(
+        yield_state,
+        winner_proximate_contains=_merge_unique(proximate_tokens, yield_winner_contains, limit=8),
+    )
     lane_weights = _normalize_lane_weights(yield_state.get("lane_weights", {}))
+    if not bool(search_quality.get("broad_search_allowed")):
+        lane_weights["broad_search"] = 0
     replay_fastlane = _collect_replay_fastlane(queues, yield_state=yield_state)
     contains = _merge_unique(proximate_tokens, _merge_unique(yield_winner_contains, yield_preferred_contains), limit=8) or contains
 
@@ -317,6 +340,11 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
             "cooldown_operator_ids": [str(token).strip() for token in list(yield_state.get("cooldown_operator_ids", []) or []) if str(token).strip()][:8],
         },
         "replay_fastlane": replay_fastlane,
+        "search_quality": search_quality,
+        "positive_lineage_count": int(search_quality.get("positive_lineage_count", 0) or 0),
+        "zero_evidence_lineage_count": int(search_quality.get("zero_evidence_lineage_count", 0) or 0),
+        "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
+        "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         "lane_weights": lane_weights,
     }
 
@@ -396,6 +424,21 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
                     **micro_caps,
                 },
             }
+        )
+
+    if str(search_quality.get("seed_generation_mode") or "") == "broad_search_micro":
+        directive["policy_scale"] = "micro"
+        directive["max_changed_keys"] = min(
+            max(1, parse_int(directive.get("max_changed_keys"), micro_caps["max_changed_keys_cap"])),
+            int(micro_caps["max_changed_keys_cap"]),
+        )
+        directive["num_variants"] = min(
+            max(1, parse_int(directive.get("num_variants"), micro_caps["num_variants_cap"])),
+            int(micro_caps["num_variants_cap"]),
+        )
+        directive["dedupe_distance"] = max(
+            float(micro_caps["dedupe_distance_floor"]),
+            parse_float(directive.get("dedupe_distance"), float(micro_caps["dedupe_distance_floor"])),
         )
 
     return _attach_policy_metadata(directive)
@@ -565,6 +608,9 @@ def main() -> int:
     if not isinstance(queues, dict):
         queues = {}
     gate_state = load_json(gate_state_path, {})
+    existing_yield_state = load_json(yield_state_path, {})
+    if not isinstance(existing_yield_state, dict):
+        existing_yield_state = {}
     yield_state = build_yield_governor_state(
         root=root,
         aggregate_dir=root / "artifacts" / "wfa" / "aggregate",
@@ -572,6 +618,15 @@ def main() -> int:
         fullspan_state_path=fullspan_state_path,
         recent_queue_limit=200,
     )
+    for key in (
+        "hard_block_active",
+        "hard_block_reason",
+        "hard_block_until_epoch",
+        "zero_coverage_seed_streak",
+        "zero_coverage_seed_streak_reason",
+    ):
+        if key in existing_yield_state:
+            yield_state[key] = existing_yield_state[key]
 
     directive = build_directive(queues, yield_state=yield_state)
     directive.update(build_gate_surrogate_overlay(gate_state))

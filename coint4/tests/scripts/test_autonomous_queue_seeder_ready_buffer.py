@@ -139,6 +139,13 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
                 "cooldown_contains": ["rg_cold"],
                 "winner_proximate": {"enabled": True, "contains": ["rg_fast"], "reason": "strict_pass"},
                 "replay_fastlane": {"enabled": True, "contains": ["confirm_rg"], "replay_ready_count": 2},
+                "search_quality": {
+                    "positive_lineage_count": 3,
+                    "zero_evidence_lineage_count": 4,
+                    "winner_proximate_positive_lineage_count": 1,
+                    "broad_search_allowed": False,
+                    "seed_generation_mode": "winner_proximate_only",
+                },
                 "lane_weights": {"winner_proximate": 40, "broad_search": 45, "confirm_replay": 15},
                 "policy_overrides": {"policy_scale": "micro", "num_variants_cap": 64},
             },
@@ -161,6 +168,11 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["replay_fastlane"]["replay_ready_count"] == 2
     assert state["confirm_replay"]["contains"] == ["confirm_rg"]
     assert state["confirm_replay_contains"] == ["confirm_rg"]
+    assert state["search_quality"]["positive_lineage_count"] == 3
+    assert state["search_quality"]["zero_evidence_lineage_count"] == 4
+    assert state["search_quality"]["winner_proximate_positive_lineage_count"] == 1
+    assert state["broad_search_allowed"] is False
+    assert state["seed_generation_mode"] == "winner_proximate_only"
     assert state["lane_weights"]["winner_proximate"] == 40
 
 
@@ -202,6 +214,29 @@ def test_select_seed_lane_prefers_winner_then_rotates_after_streak() -> None:
     )
     assert second["selected_lane"] == "broad_search"
     assert second["contains"] == ["yield_rg"]
+
+
+def test_select_seed_lane_keeps_broad_search_blocked_when_positive_winner_exists() -> None:
+    selection = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["strict_rg", "strict_alt"],
+        preferred_any_contains=["yield_rg"],
+        generic_contains=["autonomous_queue_seeder"],
+        yield_governor={
+            "search_quality": {
+                "positive_lineage_count": 2,
+                "zero_evidence_lineage_count": 5,
+                "winner_proximate_positive_lineage_count": 1,
+                "broad_search_allowed": False,
+                "seed_generation_mode": "winner_proximate_only",
+            },
+            "lane_weights": {"winner_proximate": 60, "broad_search": 30, "confirm_replay": 10},
+        },
+        previous_state={"lane_selection": {"selected_lane": "winner_proximate", "lane_streak": 2, "token_rotation": 0}},
+    )
+
+    assert selection["selected_lane"] == "winner_proximate"
+    assert selection["search_quality"]["broad_search_allowed"] is False
+    assert selection["search_quality"]["seed_generation_mode"] == "winner_proximate_only"
 
 
 def test_load_yield_governor_state_backfills_replay_fastlane_from_legacy_confirm_fields(tmp_path: Path) -> None:

@@ -53,6 +53,40 @@ def test_build_directive_prefers_winner_proximate_and_yield_tokens() -> None:
     assert directive["planner-policy-inputs"] == directive["planner_policy_inputs"]
 
 
+def test_build_directive_disables_broad_search_when_positive_winner_lineage_exists() -> None:
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_a/run_queue.csv": {
+            "promotion_verdict": "PROMOTE_PENDING_CONFIRM",
+            "strict_pass_count": 1,
+            "top_run_group": "strict_rg",
+            "rejection_reason": "",
+            "strict_gate_reason": "",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["strict_rg"],
+        "winner_proximate": {"enabled": True, "contains": ["strict_rg"], "reason": "strict_pass_or_high_yield_lineage"},
+        "search_quality": {
+            "positive_lineage_count": 2,
+            "zero_evidence_lineage_count": 3,
+            "winner_proximate_positive_lineage_count": 1,
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+        },
+        "lane_weights": {"winner_proximate": 65, "broad_search": 15, "confirm_replay": 20},
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state)
+
+    assert directive["search_quality"]["positive_lineage_count"] == 2
+    assert directive["search_quality"]["winner_proximate_positive_lineage_count"] == 1
+    assert directive["broad_search_allowed"] is False
+    assert directive["seed_generation_mode"] == "winner_proximate_only"
+    assert directive["lane_weights"]["broad_search"] == 0
+    assert directive["planner-policy-inputs"]["search_quality"]["broad_search_allowed"] is False
+
+
 def test_materialize_cold_fail_index_backfills_rejects(tmp_path: Path) -> None:
     cold_path = tmp_path / "cold_fail_index.json"
     queues = {
@@ -97,3 +131,5 @@ def test_build_directive_preserves_zero_coverage_reasons_and_micro_caps() -> Non
     assert directive["impossibility_pruner"]["dedupe_distance_floor"] == 0.04
     assert directive["impossibility_pruner"]["num_variants_cap"] == 48
     assert directive["impossibility_pruner"]["policy_scale"] == "micro"
+    assert directive["search_quality"]["broad_search_allowed"] is True
+    assert directive["search_quality"]["seed_generation_mode"] == "broad_search_micro"
