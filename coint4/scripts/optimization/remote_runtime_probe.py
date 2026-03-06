@@ -83,8 +83,73 @@ def _resolve_queue_path(cmdline: str) -> str:
 
 def _probe_remote_processes(server_user: str, server_ip: str, connect_timeout_sec: int) -> dict[str, Any]:
     remote_script = r"""
+import csv
 import json
 import os
+import pathlib
+import time
+
+
+def extract_queue_path(cmdline: str) -> str:
+    parts = cmdline.split()
+    for idx, part in enumerate(parts):
+        if part == '--queue' and idx + 1 < len(parts):
+            return str(parts[idx + 1]).strip()
+    return ''
+
+
+def resolve_queue_path(queue_path: str, cwd: str = '') -> str:
+    text = str(queue_path or '').strip()
+    if not text:
+        return ''
+    path = pathlib.Path(text)
+    if path.is_absolute():
+        return str(path)
+    base = pathlib.Path(str(cwd or '').strip())
+    if str(base):
+        try:
+            return str((base / path).resolve())
+        except Exception:
+            return str(base / path)
+    return text
+
+
+def queue_snapshot(queue_path: str, cwd: str = '') -> dict:
+    payload = {
+        'queue_rel': str(queue_path or '').strip(),
+        'queue_path': '',
+        'counts': {},
+        'total': 0,
+        'last_progress_epoch': 0,
+        'last_progress_age_sec': -1,
+    }
+    if not payload['queue_rel']:
+        return payload
+    resolved_path = resolve_queue_path(payload['queue_rel'], cwd)
+    payload['queue_path'] = resolved_path
+    try:
+        mtime = int(os.path.getmtime(resolved_path))
+    except Exception:
+        mtime = 0
+    payload['last_progress_epoch'] = mtime
+    if mtime > 0:
+        payload['last_progress_age_sec'] = max(0, int(time.time()) - mtime)
+    counts = {}
+    total = 0
+    try:
+        with open(resolved_path, 'r', encoding='utf-8', newline='') as handle:
+            for row in csv.DictReader(handle):
+                total += 1
+                status = str((row.get('status') or '')).strip().lower()
+                if not status:
+                    continue
+                counts[status] = int(counts.get(status, 0)) + 1
+    except Exception:
+        counts = {}
+        total = 0
+    payload['counts'] = counts
+    payload['total'] = int(total)
+    return payload
 
 load1 = 0.0
 try:
@@ -100,6 +165,22 @@ watch_queue_paths = []
 run_wfa_fullcpu_count = 0
 walk_forward_count = 0
 heavy_guardrails_count = 0
+postprocess_queue_count = 0
+postprocess_queue_paths = []
+build_run_index_count = 0
+owned_queue_refs = {}
+
+
+def note_queue(queue_path: str, cwd: str = '') -> None:
+    queue_rel = str(queue_path or '').strip()
+    if not queue_rel:
+        return
+    resolved = resolve_queue_path(queue_rel, cwd)
+    key = resolved or queue_rel
+    owned_queue_refs[key] = {
+        'queue_rel': queue_rel,
+        'cwd': str(cwd or ''),
+    }
 
 for pid in os.listdir('/proc'):
     if not pid.isdigit():
@@ -108,6 +189,10 @@ for pid in os.listdir('/proc'):
         cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\x00', b' ').decode('utf-8', 'ignore').strip()
     except Exception:
         continue
+    try:
+        cwd = os.readlink(f'/proc/{pid}/cwd')
+    except Exception:
+        cwd = ''
     if not cmd:
         continue
     if 'python3 - <<' in cmd or 'pgrep -f' in cmd:
@@ -120,7 +205,9 @@ for pid in os.listdir('/proc'):
         try:
             qidx = tokens.index('--queue')
             if qidx + 1 < len(tokens):
-                queue_paths.append(tokens[qidx + 1])
+                qpath = tokens[qidx + 1]
+                queue_paths.append(qpath)
+                note_queue(qpath, cwd)
         except Exception:
             pass
 
@@ -130,7 +217,9 @@ for pid in os.listdir('/proc'):
         try:
             qidx = tokens.index('--queue')
             if qidx + 1 < len(tokens):
-                watch_queue_paths.append(tokens[qidx + 1])
+                qpath = tokens[qidx + 1]
+                watch_queue_paths.append(qpath)
+                note_queue(qpath, cwd)
         except Exception:
             pass
     if 'run_wfa_fullcpu.sh' in cmd:
@@ -139,15 +228,50 @@ for pid in os.listdir('/proc'):
         walk_forward_count += 1
     if 'coint2.ops.heavy_guardrails' in cmd:
         heavy_guardrails_count += 1
+    if 'postprocess_queue.py' in cmd:
+        postprocess_queue_count += 1
+        qpath = extract_queue_path(cmd)
+        if qpath:
+            postprocess_queue_paths.append(qpath)
+            note_queue(qpath, cwd)
+    if 'build_run_index.py --output-dir' in cmd:
+        build_run_index_count += 1
 
-remote_child_process_count = walk_forward_count + heavy_guardrails_count + run_wfa_fullcpu_count
-owned_queue_paths = sorted(set([path for path in queue_paths if path] + [path for path in watch_queue_paths if path]))
+owned_queue_paths = sorted(set([path for path in queue_paths if path] + [path for path in watch_queue_paths if path] + [path for path in postprocess_queue_paths if path]))
+active_queues = [
+    queue_snapshot(entry.get('queue_rel', ''), entry.get('cwd', ''))
+    for entry in owned_queue_refs.values()
+]
+active_queues.sort(key=lambda item: str(item.get('queue_rel') or item.get('queue_path') or ''))
+remote_child_process_count = (
+    walk_forward_count
+    + heavy_guardrails_count
+    + run_wfa_fullcpu_count
+    + postprocess_queue_count
+    + build_run_index_count
+)
 remote_queue_job_count = len(owned_queue_paths)
 if remote_queue_job_count <= 0 and (top_level_queue_jobs > 0 or watch_queue_count > 0):
     remote_queue_job_count = top_level_queue_jobs + watch_queue_count
 remote_runner_count = max(remote_queue_job_count, top_level_queue_jobs + watch_queue_count, remote_child_process_count)
-remote_work_active = bool(remote_queue_job_count > 0 or remote_child_process_count > 0 or load1 >= 1.5)
-cpu_busy_without_queue_job = bool(remote_queue_job_count == 0 and (remote_child_process_count > 0 or load1 >= 1.5))
+postprocess_active = bool(postprocess_queue_count > 0)
+build_index_active = bool(build_run_index_count > 0)
+remote_work_active = bool(
+    remote_queue_job_count > 0
+    or remote_child_process_count > 0
+    or postprocess_active
+    or build_index_active
+    or load1 >= 1.5
+)
+cpu_busy_without_queue_job = bool(
+    remote_queue_job_count == 0
+    and (remote_child_process_count > 0 or postprocess_active or build_index_active or load1 >= 1.5)
+)
+active_remote_queue_rel = ''
+remote_queue_sync_age_sec = -1
+if active_queues:
+    active_remote_queue_rel = str(active_queues[0].get('queue_rel') or '').strip()
+    remote_queue_sync_age_sec = int(active_queues[0].get('last_progress_age_sec') or -1)
 
 payload = {
     'load1': load1,
@@ -161,6 +285,14 @@ payload = {
     'run_wfa_fullcpu_count': run_wfa_fullcpu_count,
     'walk_forward_count': walk_forward_count,
     'heavy_guardrails_count': heavy_guardrails_count,
+    'postprocess_queue_count': postprocess_queue_count,
+    'postprocess_active': postprocess_active,
+    'build_run_index_count': build_run_index_count,
+    'build_index_active': build_index_active,
+    'active_queues': active_queues,
+    'active_queue_rels': [str(entry.get('queue_rel') or '').strip() for entry in active_queues if str(entry.get('queue_rel') or '').strip()],
+    'active_remote_queue_rel': active_remote_queue_rel,
+    'remote_queue_sync_age_sec': remote_queue_sync_age_sec,
     'remote_child_process_count': remote_child_process_count,
     'remote_runner_count': remote_runner_count,
     'remote_work_active': remote_work_active,
@@ -220,6 +352,14 @@ def build_remote_runtime_snapshot(
             "run_wfa_fullcpu_count": 0,
             "walk_forward_count": 0,
             "heavy_guardrails_count": 0,
+            "postprocess_queue_count": 0,
+            "postprocess_active": False,
+            "build_run_index_count": 0,
+            "build_index_active": False,
+            "active_queues": [],
+            "active_queue_rels": [],
+            "active_remote_queue_rel": "",
+            "remote_queue_sync_age_sec": -1,
             "remote_child_process_count": 0,
             "remote_runner_count": -1,
             "remote_work_active": False,
@@ -253,6 +393,14 @@ def build_remote_runtime_snapshot(
         "run_wfa_fullcpu_count": parse_int(remote.get("run_wfa_fullcpu_count"), 0),
         "walk_forward_count": parse_int(remote.get("walk_forward_count"), 0),
         "heavy_guardrails_count": parse_int(remote.get("heavy_guardrails_count"), 0),
+        "postprocess_queue_count": parse_int(remote.get("postprocess_queue_count"), 0),
+        "postprocess_active": bool(remote.get("postprocess_active")),
+        "build_run_index_count": parse_int(remote.get("build_run_index_count"), 0),
+        "build_index_active": bool(remote.get("build_index_active")),
+        "active_queues": list(remote.get("active_queues") or []),
+        "active_queue_rels": list(remote.get("active_queue_rels") or []),
+        "active_remote_queue_rel": str(remote.get("active_remote_queue_rel") or ""),
+        "remote_queue_sync_age_sec": parse_int(remote.get("remote_queue_sync_age_sec"), -1),
         "queue_job_pids": list(remote.get("queue_job_pids") or []),
         "queue_paths": list(remote.get("queue_paths") or []),
         "remote_work_active": bool(remote.get("remote_work_active")),

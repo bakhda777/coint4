@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import importlib.util
 import json
 import sys
@@ -145,7 +146,7 @@ def test_sync_inputs_skips_queue_upload_when_remote_has_progress(
     monkeypatch.setattr(
         module,
         "_fetch_remote_file",
-        lambda source_user, source_host, source, destination, *, port, log: fetch_calls.append(
+        lambda source_user, source_host, source, destination, *, port, log, atomic=False: fetch_calls.append(
             f"{source_user}@{source_host}:{source}->{destination}"
         ),
     )
@@ -431,11 +432,98 @@ def test_run_with_retry_backoff_logs(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert any("retry:" in m for m in logs)
 
 
+def test_sync_repo_code_retries_transient_stream_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
+
+    local_manifest = module._build_local_sync_manifest(tmp_path, module._sync_code_include_paths(tmp_path))
+    manifest_calls: list[str] = []
+
+    def _remote_sync_manifest(**_kwargs):
+        manifest_calls.append("manifest")
+        if len(manifest_calls) == 1:
+            return {"digest": "remote-before", "count": 1}
+        return {"digest": local_manifest["digest"], "count": local_manifest["count"]}
+
+    monkeypatch.setattr(module, "_remote_sync_manifest", _remote_sync_manifest)
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(module.time, "sleep", lambda *_args, **_kwargs: None)
+
+    class _FakeStdout:
+        def close(self) -> None:
+            return None
+
+    class _FakeTarProc:
+        def __init__(self) -> None:
+            self.stdout = _FakeStdout()
+            self.stderr = io.BytesIO(b"")
+
+        def wait(self, timeout=None) -> int:
+            _ = timeout
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    class _FakeSshProc:
+        def __init__(self, *, returncode: int, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self._stdout = stdout
+            self._stderr = stderr
+
+        def communicate(self, timeout=None) -> tuple[str, str]:
+            _ = timeout
+            return self._stdout, self._stderr
+
+        def kill(self) -> None:
+            return None
+
+    ssh_attempts: list[int] = []
+
+    def _popen(cmd, **_kwargs):
+        program = Path(str(cmd[0])).name
+        if program == "tar":
+            return _FakeTarProc()
+        if program == "ssh":
+            ssh_attempts.append(1)
+            if len(ssh_attempts) == 1:
+                return _FakeSshProc(
+                    returncode=255,
+                    stderr="ssh: connect to host 85.198.90.128 port 22: Connection timed out",
+                )
+            return _FakeSshProc(returncode=0)
+        raise AssertionError(f"unexpected popen program: {cmd}")
+
+    monkeypatch.setattr(module.subprocess, "Popen", _popen)
+
+    logs: list[str] = []
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=tmp_path / "powered.log",
+        log=lambda msg: logs.append(msg),
+    )
+
+    assert len(ssh_attempts) == 2
+    assert len(manifest_calls) == 2
+    assert any("sync_retry description=sync_code_stream" in entry for entry in logs)
+    assert any("sync_code ok" in entry for entry in logs)
+
+
 def test_wait_for_completion_until_metrics_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _load_powered_module(tmp_path)
     attempts: list[int] = []
+    sync_calls: list[str] = []
 
     probe_payloads = [
         {
@@ -460,6 +548,11 @@ def test_wait_for_completion_until_metrics_ready(
         return 0, json.dumps(payload, sort_keys=True) + "\n"
 
     monkeypatch.setattr(module, "_exec_ssh_command", _exec)
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda **kwargs: sync_calls.append(str(kwargs.get("queue_relative") or "")),
+    )
     monkeypatch.setattr(module.time, "sleep", lambda *_args, **_kwargs: None)
 
     logs: list[str] = []
@@ -473,10 +566,15 @@ def test_wait_for_completion_until_metrics_ready(
         port=22,
         timeout_sec=300,
         poll_sec=1,
+        local_queue_path=tmp_path / "run_queue.csv",
         log=lambda msg: logs.append(msg),
     )
 
     assert len(attempts) == 2
+    assert sync_calls == [
+        "artifacts/wfa/aggregate/group/run_queue_mini.csv",
+        "artifacts/wfa/aggregate/group/run_queue_mini.csv",
+    ]
     assert any("wait_completion attempt=1" in line for line in logs)
     assert any("completion detected" in line for line in logs)
 
@@ -653,6 +751,73 @@ def test_run_powered_queue_waits_after_queue_run(
     assert events.index("remote-postprocess-queue") > events.index("wait_completion")
     assert events.index("sync_rollup_back") > events.index("remote-postprocess-queue")
     assert events.index("remote_rank") > events.index("sync_rollup_back")
+
+
+def test_run_powered_queue_logs_degraded_success_when_sync_back_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,planned\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_remote_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "_sync_rollup_back",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            module._PoweredFailure("sync-back", error_class="NETWORK", fatal=False)
+        ),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_remote_rank_and_sync", lambda *_args, **_kwargs: tmp_path / "rank.json")
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="planned",
+        parallel=1,
+        postprocess=False,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
+    assert "powered: degraded_success" in log_text
+    assert "sync_back:NETWORK" in log_text
 
 
 def test_run_powered_queue_skip_power_uses_ssh_preflight(

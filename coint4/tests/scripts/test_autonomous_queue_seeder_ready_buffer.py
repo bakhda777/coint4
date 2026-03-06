@@ -240,3 +240,90 @@ def test_stable_hash_is_deterministic() -> None:
     right = autonomous_queue_seeder._stable_hash({"b": ["x", "y"], "a": 1}, prefix="policy", size=12)
     assert left == right
     assert left.startswith("policy_")
+
+
+def test_coverage_gate_rejects_missing_oos_months(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    config_path = app_root / "configs" / "sample.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        "walk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-09-30\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+
+    gate = autonomous_queue_seeder._coverage_gate_for_config(config_path=config_path, app_root=app_root)
+
+    assert gate["ok"] is False
+    assert gate["reason"] == "missing_data_coverage"
+    assert gate["missing_months"] == ["2025-08", "2025-09"]
+
+
+def test_prune_seed_queue_filters_missing_coverage_and_duplicates(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "group_a" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    configs_dir = app_root / "configs"
+    configs_dir.mkdir(parents=True, exist_ok=True)
+
+    valid_cfg = configs_dir / "valid_holdout.yaml"
+    valid_cfg.write_text(
+        "metadata:\n  evo_hash: evo_a\n  lineage_uid: line_a\nwalk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-07-31\n",
+        encoding="utf-8",
+    )
+    dup_cfg = configs_dir / "dup_holdout.yaml"
+    dup_cfg.write_text(valid_cfg.read_text(encoding="utf-8"), encoding="utf-8")
+    missing_cfg = configs_dir / "missing.yaml"
+    missing_cfg.write_text(
+        "metadata:\n  evo_hash: evo_b\n  lineage_uid: line_b\nwalk_forward:\n  start_date: 2025-08-01\n  end_date: 2025-09-30\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "valid,configs/valid_holdout.yaml,planned",
+                "dup,configs/dup_holdout.yaml,planned",
+                "missing,configs/missing.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    stats = autonomous_queue_seeder._prune_seed_queue(queue_path=queue_path, app_root=app_root)
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+
+    assert stats["rows_before"] == 3
+    assert stats["rows_after"] == 1
+    assert stats["coverage_rejected"] == 1
+    assert stats["dedupe_rejected"] == 1
+    assert stats["missing_months"] == ["2025-08", "2025-09"]
+    assert [row["run_name"] for row in rows] == ["valid"]
+
+
+def test_recent_zero_yield_signal_activates_on_zero_activity_streak(tmp_path: Path) -> None:
+    rank_results_dir = tmp_path / "artifacts" / "optimization_state" / "rank_results"
+    rank_results_dir.mkdir(parents=True, exist_ok=True)
+    for idx in range(4):
+        (rank_results_dir / f"autonomous_seed_{idx}_latest.json").write_text(
+            json.dumps(
+                {
+                    "coverage": 0.0,
+                    "observed_test_days": 0,
+                    "total_trades": 0,
+                    "details": "RANK_OK_FALLBACK_STRICT_BINDING:min_windows,min_trades,min_pairs,coverage_below",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+    signal = autonomous_queue_seeder._recent_zero_yield_signal(rank_results_dir)
+
+    assert signal["active"] is True
+    assert signal["analyzed"] == 4
+    assert signal["zeroish"] == 4
+    assert signal["strict_binding"] == 4

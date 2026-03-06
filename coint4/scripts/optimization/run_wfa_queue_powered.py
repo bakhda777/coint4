@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
 import math
@@ -14,6 +15,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import traceback
@@ -34,6 +36,39 @@ class _PoweredFailure(RuntimeError):
 _SP_MODULE = None
 
 _OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
+_DEFAULT_SSH_TIMEOUT_SEC = 180
+_DEFAULT_QUEUE_RUN_TIMEOUT_SEC = 86400
+_DEFAULT_POSTPROCESS_TIMEOUT_SEC = 7200
+_DEFAULT_BUILD_INDEX_TIMEOUT_SEC = 3600
+_DEFAULT_BOOTSTRAP_TIMEOUT_SEC = 1800
+_DEFAULT_SCP_TIMEOUT_SEC = 900
+_DEFAULT_SYNC_STREAM_TIMEOUT_SEC = 1800
+_DEFAULT_TRANSIENT_SYNC_RETRIES = 3
+_DEFAULT_TRANSIENT_SYNC_BACKOFF_SEC = 5.0
+_SYNC_EXCLUDES = (
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+)
+_SYNC_EXCLUDE_SUFFIXES = (".pyc", ".nbc", ".nbi")
+_RETRYABLE_SYNC_PATTERNS = (
+    "connection timed out",
+    "operation timed out",
+    "connection reset",
+    "connection closed",
+    "broken pipe",
+    "lost connection",
+    "connection refused",
+    "network is unreachable",
+    "no route to host",
+    "temporary failure",
+    "resource temporarily unavailable",
+)
+_SSH_CONNECT_TIMEOUT_SEC = 10
+_SSH_COMMAND_TIMEOUT_SEC = max(60, int(os.getenv("COINT4_REMOTE_SSH_TIMEOUT_SEC", "3600")))
+_SCP_TIMEOUT_SEC = max(30, int(os.getenv("COINT4_REMOTE_SCP_TIMEOUT_SEC", "900")))
+_WAIT_QUEUE_SYNC_MIN_INTERVAL_SEC = max(1, int(os.getenv("COINT4_WAIT_QUEUE_SYNC_MIN_INTERVAL_SEC", "5")))
 
 
 def _find_repo_root(start_path: Path | None = None) -> Path:
@@ -158,6 +193,130 @@ def compute_backoff_delay(attempt_index: int, base_seconds: float, cap_seconds: 
     return min(float(cap_seconds), float(base_seconds) * (2.0 ** max(0, attempt_index)))
 
 
+def _ssh_timeout_for_purpose(command_purpose: str) -> Optional[int]:
+    purpose = str(command_purpose or "").strip().lower()
+    if purpose == "queue-run":
+        return _DEFAULT_QUEUE_RUN_TIMEOUT_SEC
+    if purpose in {"remote-postprocess-queue"}:
+        return _DEFAULT_POSTPROCESS_TIMEOUT_SEC
+    if purpose in {"remote-build-run-index"}:
+        return _DEFAULT_BUILD_INDEX_TIMEOUT_SEC
+    if purpose.startswith("bootstrap"):
+        return _DEFAULT_BOOTSTRAP_TIMEOUT_SEC
+    return _DEFAULT_SSH_TIMEOUT_SEC
+
+
+def _sync_timeout_for_includes(includes: Iterable[str]) -> int:
+    includes_set = {str(item or "").strip() for item in includes if str(item or "").strip()}
+    if {"src", "scripts"} & includes_set:
+        return _DEFAULT_SYNC_STREAM_TIMEOUT_SEC
+    return _DEFAULT_SSH_TIMEOUT_SEC
+
+
+def _is_retryable_sync_output(return_code: int, output: str) -> bool:
+    lowered = str(output or "").lower()
+    if int(return_code) == 255:
+        return True
+    return any(pattern in lowered for pattern in _RETRYABLE_SYNC_PATTERNS)
+
+
+def _classify_scp_failure(return_code: int, output: str) -> tuple[str, bool]:
+    lowered = str(output or "").lower()
+    if "permission denied" in lowered:
+        return "SSH_AUTH_FAILED", True
+    if "no such file or directory" in lowered:
+        return "REMOTE_PATH_MISSING", True
+    if _is_retryable_sync_output(return_code, output):
+        return "NETWORK", False
+    return "REMOTE_SYNC_FAILED", False
+
+
+def _sync_retry(
+    operation: Callable[[], None],
+    *,
+    description: str,
+    log: Callable[[str], None],
+    max_retries: int = _DEFAULT_TRANSIENT_SYNC_RETRIES,
+    backoff_seconds: float = _DEFAULT_TRANSIENT_SYNC_BACKOFF_SEC,
+) -> None:
+    if max_retries < 1:
+        raise ValueError("max_retries must be >= 1")
+
+    for attempt in range(1, int(max_retries) + 1):
+        try:
+            operation()
+            return
+        except _PoweredFailure as exc:
+            log(f"powered: sync_retry description={description} error_class={exc.error_class} fatal={str(exc.fatal).lower()}")
+            if exc.fatal or attempt >= max_retries:
+                raise
+            delay = compute_backoff_delay(attempt - 1, float(backoff_seconds), cap_seconds=60.0)
+            log(
+                "powered: sync_retry description={description} attempt={attempt}/{total} next_in={delay:.0f}s".format(
+                    description=description,
+                    attempt=attempt,
+                    total=int(max_retries),
+                    delay=delay,
+                )
+            )
+            time.sleep(delay)
+
+
+def _should_skip_sync_relpath(rel_path: Path) -> bool:
+    parts = rel_path.parts
+    if any(part in _SYNC_EXCLUDES for part in parts):
+        return True
+    return rel_path.name.endswith(_SYNC_EXCLUDE_SUFFIXES)
+
+
+def _sync_code_include_paths(project_root: Path) -> list[str]:
+    includes: list[str] = []
+    for rel in (
+        "src",
+        "scripts",
+        "pyproject.toml",
+        "requirements.txt",
+        "pytest.ini",
+        "artifacts/wfa/aggregate/rollup",
+    ):
+        if (project_root / rel).exists():
+            includes.append(rel)
+    return includes
+
+
+def _build_local_sync_manifest(project_root: Path, includes: Iterable[str]) -> dict[str, object]:
+    digest = hashlib.sha256()
+    entries: list[dict[str, object]] = []
+    root = project_root.resolve()
+
+    for include in sorted({str(item or "").strip() for item in includes if str(item or "").strip()}):
+        include_path = (root / include).resolve()
+        if not include_path.exists():
+            continue
+        if include_path.is_file():
+            candidate_paths = [include_path]
+        else:
+            candidate_paths = sorted(path for path in include_path.rglob("*") if path.is_file())
+
+        for candidate in candidate_paths:
+            rel_path = candidate.relative_to(root)
+            if _should_skip_sync_relpath(rel_path):
+                continue
+            file_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            rel_text = rel_path.as_posix()
+            digest.update(rel_text.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(file_digest.encode("ascii"))
+            digest.update(b"\0")
+            entries.append({"path": rel_text, "sha256": file_digest, "size": int(candidate.stat().st_size)})
+
+    return {
+        "digest": digest.hexdigest(),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
 def _resolve_queue_argument(queue_arg: str, project_root: Path) -> Path:
     queue_candidate = Path(queue_arg)
     if queue_candidate.is_absolute():
@@ -203,13 +362,17 @@ def _exec_ssh_command(
     command_purpose: str,
     log: Callable[[str], None],
 ) -> tuple[int, str]:
+    timeout_sec = max(
+        float(_SSH_COMMAND_TIMEOUT_SEC),
+        float(_ssh_timeout_for_purpose(command_purpose) or 0),
+    )
     remote_shell_cmd = f"bash -lc {shlex.quote(remote_command)}"
     ssh_cmd = [
         "ssh",
         "-o",
         "BatchMode=yes",
         "-o",
-        "ConnectTimeout=10",
+        f"ConnectTimeout={int(_SSH_CONNECT_TIMEOUT_SEC)}",
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-p",
@@ -224,9 +387,16 @@ def _exec_ssh_command(
             capture_output=True,
             text=True,
             check=False,
+            timeout=timeout_sec,
         )
     except FileNotFoundError as exc:
         raise _PoweredFailure(f"SSH executable missing: {exc}", error_class="SSH_BINARY_MISSING", fatal=True) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise _PoweredFailure(
+            f"SSH command timed out after {int(timeout_sec)}s: {command_purpose}",
+            error_class="NETWORK",
+            fatal=False,
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise _PoweredFailure(
             f"SSH command failed to start: {type(exc).__name__}: {exc}",
@@ -242,12 +412,176 @@ def _exec_ssh_command(
     return proc.returncode, output
 
 
+def _classify_sync_error(return_code: int, output: str) -> tuple[str, bool]:
+    lowered = str(output or "").strip().lower()
+    if return_code == 255 or any(
+        token in lowered
+        for token in (
+            "connection timed out",
+            "operation timed out",
+            "connection reset",
+            "broken pipe",
+            "closed by remote host",
+            "lost connection",
+            "no route to host",
+            "network is unreachable",
+            "connection refused",
+            "kex_exchange_identification",
+        )
+    ):
+        return "NETWORK", False
+    if "permission denied" in lowered:
+        return "REMOTE_PERMISSION_DENIED", True
+    if "no such file or directory" in lowered:
+        return "REMOTE_FILE_MISSING", True
+    return "REMOTE_SYNC_FAILED", True
+
+
+def _atomic_fetch_destination(destination: Path) -> Path:
+    stamp = f"{int(time.time())}_{os.getpid()}"
+    return destination.parent / f".{destination.name}.fetching.{stamp}.tmp"
+
+
+def _git_head_revision(project_root: Path) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(project_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return str(proc.stdout or "").strip()
+
+
+def _local_paths_have_tracked_changes(project_root: Path, includes: Iterable[str]) -> bool:
+    rels = [str(item).strip() for item in includes if str(item).strip()]
+    if not rels:
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(project_root), "status", "--short", "--untracked-files=no", "--", *rels],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except Exception:  # noqa: BLE001
+        return True
+    if proc.returncode != 0:
+        return True
+    return bool(str(proc.stdout or "").strip())
+
+
+def _remote_git_head_revision(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> str:
+    cmd = f"cd {shlex.quote(str(remote_repo))} && git rev-parse HEAD"
+    return_code, output = _exec_ssh_command(
+        host,
+        user,
+        cmd,
+        log_path,
+        port=port,
+        command_purpose="remote-git-head",
+        log=log,
+    )
+    if return_code != 0:
+        return ""
+    lines = [line.strip() for line in str(output or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def _remote_sync_manifest(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    includes: Iterable[str],
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> dict[str, object]:
+    include_list = [str(item or "").strip() for item in includes if str(item or "").strip()]
+    remote_cmd = (
+        f"cd {shlex.quote(str(remote_repo))} "
+        f"&& INCLUDE_JSON={shlex.quote(json.dumps(include_list, ensure_ascii=True))} "
+        "python3 - <<'PY'\n"
+        "import hashlib\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "\n"
+        "SYNC_EXCLUDES = {'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'}\n"
+        "SYNC_EXCLUDE_SUFFIXES = ('.pyc', '.nbc', '.nbi')\n"
+        "def should_skip(rel_path: pathlib.Path) -> bool:\n"
+        "    if any(part in SYNC_EXCLUDES for part in rel_path.parts):\n"
+        "        return True\n"
+        "    return rel_path.name.endswith(SYNC_EXCLUDE_SUFFIXES)\n"
+        "\n"
+        "root = pathlib.Path.cwd()\n"
+        "includes = json.loads(os.environ.get('INCLUDE_JSON', '[]'))\n"
+        "digest = hashlib.sha256()\n"
+        "count = 0\n"
+        "for include in sorted({str(item or '').strip() for item in includes if str(item or '').strip()}):\n"
+        "    path = (root / include).resolve()\n"
+        "    if not path.exists():\n"
+        "        continue\n"
+        "    if path.is_file():\n"
+        "        candidates = [path]\n"
+        "    else:\n"
+        "        candidates = sorted(candidate for candidate in path.rglob('*') if candidate.is_file())\n"
+        "    for candidate in candidates:\n"
+        "        rel_path = candidate.relative_to(root)\n"
+        "        if should_skip(rel_path):\n"
+        "            continue\n"
+        "        file_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()\n"
+        "        digest.update(rel_path.as_posix().encode('utf-8'))\n"
+        "        digest.update(b'\\0')\n"
+        "        digest.update(file_digest.encode('ascii'))\n"
+        "        digest.update(b'\\0')\n"
+        "        count += 1\n"
+        "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': count}, sort_keys=True))\n"
+        "PY"
+    )
+    rc, output = _exec_ssh_command(
+        host,
+        user,
+        remote_cmd,
+        log_path,
+        port=port,
+        command_purpose="sync-code-manifest",
+        log=log,
+    )
+    payload = _extract_last_json_line(output)
+    if rc != 0 or not isinstance(payload, dict) or not bool(payload.get("ok")):
+        raise _PoweredFailure(
+            "sync manifest probe failed",
+            error_class="REMOTE_SYNC_FAILED" if rc == 0 else "NETWORK",
+            fatal=False,
+        )
+    return {
+        "digest": str(payload.get("digest") or ""),
+        "count": int(payload.get("count") or 0),
+    }
+
+
 def _run_scp_file(source: Path, destination_user: str, destination_host: str, destination: Path, *, port: int, log: Callable[[str], None]) -> None:
     target = f"{destination_user}@{destination_host}:{destination}"
     scp_cmd = [
         "scp",
         "-o",
-        "ConnectTimeout=10",
+        f"ConnectTimeout={int(_SSH_CONNECT_TIMEOUT_SEC)}",
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-P",
@@ -256,30 +590,50 @@ def _run_scp_file(source: Path, destination_user: str, destination_host: str, de
         target,
     ]
     log(f"powered: scp_cmd={shlex.join(scp_cmd[:-1])} {target}")
-    try:
-        proc = subprocess.run(scp_cmd, capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise _PoweredFailure(f"SCP executable missing: {exc}", error_class="SCP_BINARY_MISSING", fatal=True) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise _PoweredFailure(
-            f"SCP command failed: {type(exc).__name__}: {exc}",
-            error_class="NETWORK",
-            fatal=False,
-        ) from exc
+    def _attempt() -> None:
+        try:
+            proc = subprocess.run(
+                scp_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=float(_SCP_TIMEOUT_SEC),
+            )
+        except FileNotFoundError as exc:
+            raise _PoweredFailure(f"SCP executable missing: {exc}", error_class="SCP_BINARY_MISSING", fatal=True) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise _PoweredFailure(
+                f"SCP timed out after {_SCP_TIMEOUT_SEC}s target={target}: {type(exc).__name__}",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise _PoweredFailure(
+                f"SCP command failed: {type(exc).__name__}: {exc}",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
 
-    output = f"{proc.stdout or ''}{proc.stderr or ''}"
-    if proc.returncode != 0:
-        tail = (output or "").strip()[-1200:]
-        if tail:
-            log(f"powered: scp_error_output_tail=\n{tail}")
-        raise _PoweredFailure(
-            f"SCP failed rc={proc.returncode} target={target}",
-            error_class="REMOTE_SYNC_FAILED",
-            fatal=True,
-        )
-    log(f"powered: scp_ok target={target}")
-    if output.strip():
-        log(f"powered: scp_output=\n{output}")
+        output = f"{proc.stdout or ''}{proc.stderr or ''}"
+        if proc.returncode != 0:
+            tail = (output or "").strip()[-1200:]
+            if tail:
+                log(f"powered: scp_error_output_tail=\n{tail}")
+            error_class, fatal = _classify_sync_error(proc.returncode, output)
+            raise _PoweredFailure(
+                f"SCP failed rc={proc.returncode} target={target}",
+                error_class=error_class,
+                fatal=fatal,
+            )
+        log(f"powered: scp_ok target={target}")
+        if output.strip():
+            log(f"powered: scp_output=\n{output}")
+
+    _sync_retry(
+        _attempt,
+        description=f"scp_upload:{Path(source).name}->{destination}",
+        log=log,
+    )
 
 
 def _fetch_remote_file(
@@ -290,39 +644,70 @@ def _fetch_remote_file(
     *,
     port: int,
     log: Callable[[str], None],
+    atomic: bool = False,
 ) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_ref = f"{source_user}@{source_host}:{source}"
+    destination_path = _atomic_fetch_destination(destination) if atomic else destination
     scp_cmd = [
         "scp",
+        "-o",
+        f"ConnectTimeout={int(_SSH_CONNECT_TIMEOUT_SEC)}",
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-P",
         str(int(port)),
         source_ref,
-        str(destination),
+        str(destination_path),
     ]
-    log(f"powered: scp_fetch={source_ref} -> {destination}")
-    try:
-        proc = subprocess.run(scp_cmd, capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise _PoweredFailure(f"SCP executable missing: {exc}", error_class="SCP_BINARY_MISSING", fatal=True) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise _PoweredFailure(
-            f"SCP fetch failed: {type(exc).__name__}: {exc}",
-            error_class="NETWORK",
-            fatal=False,
-        ) from exc
+    log(f"powered: scp_fetch={source_ref} -> {destination_path}")
+    def _attempt() -> None:
+        try:
+            proc = subprocess.run(
+                scp_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=float(_SCP_TIMEOUT_SEC),
+            )
+        except FileNotFoundError as exc:
+            raise _PoweredFailure(f"SCP executable missing: {exc}", error_class="SCP_BINARY_MISSING", fatal=True) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise _PoweredFailure(
+                f"SCP fetch timed out after {_SCP_TIMEOUT_SEC}s for {source_ref}: {type(exc).__name__}",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise _PoweredFailure(
+                f"SCP fetch failed: {type(exc).__name__}: {exc}",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
 
-    output = f"{proc.stdout or ''}{proc.stderr or ''}"
-    if proc.returncode != 0:
-        raise _PoweredFailure(
-            f"SCP fetch failed for {source_ref}",
-            error_class="REMOTE_SYNC_FAILED",
-            fatal=True,
-        )
-    if output.strip():
-        log(f"powered: scp_fetch_output=\n{output}")
+        output = f"{proc.stdout or ''}{proc.stderr or ''}"
+        if proc.returncode != 0:
+            if atomic:
+                try:
+                    destination_path.unlink(missing_ok=True)
+                except Exception:  # noqa: BLE001
+                    pass
+            error_class, fatal = _classify_sync_error(proc.returncode, output)
+            raise _PoweredFailure(
+                f"SCP fetch failed for {source_ref}",
+                error_class=error_class,
+                fatal=fatal,
+            )
+        if atomic:
+            destination_path.replace(destination)
+        if output.strip():
+            log(f"powered: scp_fetch_output=\n{output}")
+
+    _sync_retry(
+        _attempt,
+        description=f"scp_fetch:{source_ref}",
+        log=log,
+    )
 
 
 def _sync_rollup_back(
@@ -344,6 +729,7 @@ def _sync_rollup_back(
         destination=queue_path,
         port=port,
         log=log,
+        atomic=True,
     )
 
     local_rollup_dir = local_project_root / "artifacts" / "wfa" / "aggregate" / "rollup"
@@ -355,6 +741,7 @@ def _sync_rollup_back(
         destination=local_rollup_dir / "run_index.csv",
         port=port,
         log=log,
+        atomic=True,
     )
     for name in ("run_index.json", "run_index.md"):
         try:
@@ -365,9 +752,32 @@ def _sync_rollup_back(
                 destination=local_rollup_dir / name,
                 port=port,
                 log=log,
+                atomic=True,
             )
         except _PoweredFailure:
             log(f"powered: optional rollup artifact missing on remote: {name}")
+
+
+def _sync_active_remote_queue_back(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    queue_relative: str,
+    local_queue_path: Path,
+    port: int,
+    log: Callable[[str], None],
+) -> None:
+    remote_queue = remote_repo / str(queue_relative).replace("\\", "/")
+    _fetch_remote_file(
+        source_user=user,
+        source_host=host,
+        source=remote_queue,
+        destination=local_queue_path,
+        port=port,
+        log=log,
+        atomic=True,
+    )
 
 
 def _remote_rank_result_local_path(project_root: Path, run_group: str) -> Path:
@@ -1581,22 +1991,54 @@ def _sync_repo_code(
     repo can lag behind and produce metrics that don't match current gating/ranking
     logic (e.g. coverage alignment when walk_forward.max_steps truncates execution).
     """
-    includes = []
-    # Include rollup index (small, tracked) so remote rebuilds can preserve historical metrics
-    # even after remote run artifacts are cleaned up.
-    for rel in (
-        "src",
-        "scripts",
-        "pyproject.toml",
-        "requirements.txt",
-        "pytest.ini",
-        "artifacts/wfa/aggregate/rollup",
-    ):
-        if (project_root / rel).exists():
-            includes.append(rel)
+    includes = _sync_code_include_paths(project_root)
     if not includes:
         log("powered: sync_code skipped (no include paths found)")
         return
+
+    local_manifest = _build_local_sync_manifest(project_root, includes)
+    local_manifest_digest = str(local_manifest.get("digest") or "")
+    remote_manifest_before: Optional[dict[str, object]] = None
+    remote_manifest_after: Optional[dict[str, object]] = None
+    try:
+        remote_manifest_before = _remote_sync_manifest(
+            host=host,
+            user=user,
+            remote_repo=remote_repo,
+            includes=includes,
+            port=port,
+            log_path=log_path,
+            log=log,
+        )
+    except _PoweredFailure as exc:
+        log(
+            "powered: sync_code manifest_probe_before failed error_class={cls} fatal={fatal} msg={msg}".format(
+                cls=exc.error_class,
+                fatal=str(bool(exc.fatal)).lower(),
+                msg=str(exc),
+            )
+        )
+
+    remote_manifest_before_digest = str((remote_manifest_before or {}).get("digest") or "")
+    if local_manifest_digest and remote_manifest_before_digest == local_manifest_digest:
+        log(
+            "powered: sync_code skipped reason=manifest_match digest={digest} files={count}".format(
+                digest=local_manifest_digest,
+                count=int(local_manifest.get("count") or 0),
+            )
+        )
+        return
+
+    local_head = _git_head_revision(project_root)
+    local_dirty = _local_paths_have_tracked_changes(project_root, includes)
+    remote_head = _remote_git_head_revision(
+        host=host,
+        user=user,
+        remote_repo=remote_repo,
+        port=port,
+        log_path=log_path,
+        log=log,
+    )
 
     # NOTE: do not rely on remote /tmp for code sync. Some images mount /tmp small or noexec.
     # Stream a tarball directly over SSH into remote_repo.
@@ -1639,8 +2081,12 @@ def _sync_repo_code(
     log(f"powered: sync_code stream_start includes={includes}")
     log(f"powered: sync_code tar_cmd={shlex.join(tar_cmd)} | ssh ...")
     log(f"powered: sync_code ssh_cmd={shlex.join(ssh_cmd)}")
+    sync_timeout_sec = max(
+        float(_SSH_COMMAND_TIMEOUT_SEC),
+        float(_sync_timeout_for_includes(includes)),
+    )
 
-    try:
+    def _stream_sync_once() -> None:
         try:
             tar_proc = subprocess.Popen(
                 tar_cmd,
@@ -1677,8 +2123,25 @@ def _sync_repo_code(
             except Exception:  # noqa: BLE001
                 pass
 
-        ssh_out, ssh_err = ssh_proc.communicate()
-        tar_rc = tar_proc.wait()
+        try:
+            ssh_out, ssh_err = ssh_proc.communicate(timeout=sync_timeout_sec)
+        except subprocess.TimeoutExpired as exc:
+            ssh_proc.kill()
+            tar_proc.kill()
+            raise _PoweredFailure(
+                f"sync_code stream timed out after {int(sync_timeout_sec)}s",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
+        try:
+            tar_rc = tar_proc.wait(timeout=sync_timeout_sec)
+        except subprocess.TimeoutExpired as exc:
+            tar_proc.kill()
+            raise _PoweredFailure(
+                f"sync_code tar cleanup timed out after {int(sync_timeout_sec)}s",
+                error_class="NETWORK",
+                fatal=False,
+            ) from exc
         ssh_rc = int(ssh_proc.returncode or 0)
 
         tar_err_bytes = b""
@@ -1694,22 +2157,87 @@ def _sync_repo_code(
             tail = (combined or "").strip()[-1200:]
             if tail:
                 log(f"powered: sync_code stream_error_output_tail=\n{tail}")
+            error_class, fatal = _classify_sync_error(ssh_rc or tar_rc, combined)
             raise _PoweredFailure(
                 f"sync_code stream failed rc_tar={tar_rc} rc_ssh={ssh_rc}",
+                error_class=error_class,
+                fatal=fatal,
+            )
+
+    try:
+        _sync_retry(
+            _stream_sync_once,
+            description="sync_code_stream",
+            log=log,
+        )
+        remote_manifest_after = _remote_sync_manifest(
+            host=host,
+            user=user,
+            remote_repo=remote_repo,
+            includes=includes,
+            port=port,
+            log_path=log_path,
+            log=log,
+        )
+        remote_manifest_after_digest = str(remote_manifest_after.get("digest") or "")
+        if local_manifest_digest and remote_manifest_after_digest != local_manifest_digest:
+            raise _PoweredFailure(
+                "sync_code verification failed: remote manifest mismatch",
                 error_class="REMOTE_SYNC_FAILED",
                 fatal=True,
             )
 
-        log(f"powered: sync_code ok includes={includes}")
-    except _PoweredFailure as exc:
-        # Best-effort: do not abort the whole powered run if code sync fails.
         log(
-            "powered: sync_code failed error_class={cls} fatal={fatal} msg={msg}; continue without code sync".format(
+            "powered: sync_code ok includes={includes} digest={digest} files={count}".format(
+                includes=includes,
+                digest=local_manifest_digest or "none",
+                count=int(local_manifest.get("count") or 0),
+            )
+        )
+    except _PoweredFailure as exc:
+        remote_manifest_known = bool(remote_manifest_before_digest or str((remote_manifest_after or {}).get("digest") or ""))
+        remote_manifest_digest = str(
+            (remote_manifest_after or remote_manifest_before or {}).get("digest") or ""
+        )
+        drift_detected = bool(
+            local_manifest_digest
+            and (
+                not remote_manifest_known
+                or not remote_manifest_digest
+                or remote_manifest_digest != local_manifest_digest
+            )
+        )
+        drift_reason = "manifest_mismatch" if drift_detected else "manifest_match"
+        if not drift_detected and local_dirty:
+            drift_detected = True
+            drift_reason = "local_tracked_changes"
+        if not drift_detected and local_head and remote_head and local_head != remote_head:
+            drift_detected = True
+            drift_reason = "git_head_mismatch"
+        if not drift_detected and (not local_head or not remote_head):
+            drift_detected = True
+            drift_reason = "unknown_git_state"
+        log(
+            "powered: sync_code failed error_class={cls} fatal={fatal} msg={msg} "
+            "local_head={local_head} remote_head={remote_head} local_manifest={local_manifest} "
+            "remote_manifest={remote_manifest} drift_detected={drift} drift_reason={drift_reason}".format(
                 cls=exc.error_class,
                 fatal=str(bool(exc.fatal)).lower(),
                 msg=str(exc),
+                local_head=local_head or "none",
+                remote_head=remote_head or "none",
+                local_manifest=local_manifest_digest or "none",
+                remote_manifest=remote_manifest_digest or "none",
+                drift=str(bool(drift_detected)).lower(),
+                drift_reason=drift_reason,
             )
         )
+        if drift_detected:
+            raise _PoweredFailure(
+                "sync_code failed with remote code drift detected",
+                error_class=exc.error_class,
+                fatal=True,
+            ) from exc
         return
 
 
@@ -1780,6 +2308,7 @@ def _sync_inputs(
                     destination=queue_path,
                     port=int(port),
                     log=log,
+                    atomic=True,
                 )
         except _PoweredFailure as exc:
             if exc.error_class == "QUEUE_MISSING":
@@ -2522,6 +3051,7 @@ def _wait_for_completion(
     watchdog_parallel: Optional[int] = None,
     watchdog_postprocess: bool = False,
     watchdog_max_restarts: int = 3,
+    local_queue_path: Optional[Path] = None,
     log: Callable[[str], None],
 ) -> None:
     deadline = time.time() + max(1, int(timeout_sec))
@@ -2531,6 +3061,7 @@ def _wait_for_completion(
     last_counts: Optional[dict[str, int]] = None
     last_change_ts = time.time()
     last_watchdog_ts = 0.0
+    last_queue_sync_ts = 0.0
     restarts = 0
 
     def _restart_queue(*, statuses: str, rationale: str) -> bool:
@@ -2633,9 +3164,39 @@ def _wait_for_completion(
             normalized_counts = {}
 
         now_ts = time.time()
-        if last_counts is None or normalized_counts != last_counts:
+        counts_changed = bool(last_counts is None or normalized_counts != last_counts)
+        if counts_changed:
             last_counts = dict(normalized_counts)
             last_change_ts = now_ts
+
+        should_sync_queue = bool(local_queue_path) and (
+            last_queue_sync_ts <= 0.0
+            or counts_changed
+            or (now_ts - last_queue_sync_ts) >= float(_WAIT_QUEUE_SYNC_MIN_INTERVAL_SEC)
+            or all_done
+        )
+        if should_sync_queue and local_queue_path is not None:
+            try:
+                _sync_active_remote_queue_back(
+                    host=host,
+                    user=user,
+                    remote_repo=remote_repo,
+                    queue_relative=queue_relative,
+                    local_queue_path=local_queue_path,
+                    port=int(port),
+                    log=log,
+                )
+                last_queue_sync_ts = now_ts
+            except _PoweredFailure as exc:
+                log(
+                    "powered: wait_completion queue_sync_failed error_class={cls} fatal={fatal} msg={msg}".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                        msg=str(exc),
+                    )
+                )
+                if exc.fatal:
+                    raise
 
         if all_done and has_metrics:
             log("powered: wait_completion completion detected")
@@ -3115,9 +3676,11 @@ def run_powered_queue(
                 watchdog_restart=bool(getattr(args, "watchdog", False)) and bool(statuses_auto_mode),
                 watchdog_parallel=int(chosen_parallel),
                 watchdog_postprocess=bool(args.postprocess),
+                local_queue_path=queue_path,
                 log=log,
             )
 
+        degraded_steps: list[str] = []
         postprocess_ok = False
         if bool(args.postprocess):
             try:
@@ -3133,6 +3696,7 @@ def run_powered_queue(
                 )
                 postprocess_ok = True
             except _PoweredFailure as exc:
+                degraded_steps.append(f"postprocess:{exc.error_class}")
                 log(
                     "powered: postprocess failed error_class={cls} fatal={fatal} msg={msg}; fallback build_run_index".format(
                         cls=exc.error_class,
@@ -3142,48 +3706,82 @@ def run_powered_queue(
                 )
 
         if not postprocess_ok:
-            _remote_rebuild_rollup(
+            try:
+                _remote_rebuild_rollup(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    remote_python=remote_python,
+                    queue_relative=remote_queue_name,
+                    log_path=log_path,
+                    port=int(args.ssh_port),
+                    log=log,
+                )
+            except _PoweredFailure as exc:
+                degraded_steps.append(f"build_run_index:{exc.error_class}")
+                log(
+                    "powered: remote_build_run_index failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                        msg=str(exc),
+                    )
+                )
+        try:
+            _sync_rollup_back(
+                host=args.compute_host,
+                user=args.ssh_user,
+                remote_repo=remote_repo,
+                local_project_root=project_root,
+                queue_path=queue_path,
+                queue_relative=queue_relative,
+                port=int(args.ssh_port),
+                log=log,
+            )
+        except _PoweredFailure as exc:
+            degraded_steps.append(f"sync_back:{exc.error_class}")
+            log(
+                "powered: sync_back failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                    cls=exc.error_class,
+                    fatal=str(bool(exc.fatal)).lower(),
+                    msg=str(exc),
+                )
+            )
+        try:
+            _fetch_stalled_diagnostics(
+                host=args.compute_host,
+                user=args.ssh_user,
+                remote_repo=remote_repo,
+                queue_path=queue_path,
+                project_root=project_root,
+                port=int(args.ssh_port),
+                log_path=log_path,
+                log=log,
+            )
+        except _PoweredFailure as exc:
+            degraded_steps.append(f"stalled_diagnostics:{exc.error_class}")
+            log(
+                "powered: stalled_diagnostics failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                    cls=exc.error_class,
+                    fatal=str(bool(exc.fatal)).lower(),
+                    msg=str(exc),
+                )
+            )
+        try:
+            _remote_rank_and_sync(
                 host=args.compute_host,
                 user=args.ssh_user,
                 remote_repo=remote_repo,
                 remote_python=remote_python,
                 queue_relative=remote_queue_name,
+                run_group=_derive_run_group(queue_path),
+                project_root=project_root,
                 log_path=log_path,
                 port=int(args.ssh_port),
                 log=log,
             )
-        _sync_rollup_back(
-            host=args.compute_host,
-            user=args.ssh_user,
-            remote_repo=remote_repo,
-            local_project_root=project_root,
-            queue_path=queue_path,
-            queue_relative=queue_relative,
-            port=int(args.ssh_port),
-            log=log,
-        )
-        _fetch_stalled_diagnostics(
-            host=args.compute_host,
-            user=args.ssh_user,
-            remote_repo=remote_repo,
-            queue_path=queue_path,
-            project_root=project_root,
-            port=int(args.ssh_port),
-            log_path=log_path,
-            log=log,
-        )
-        _remote_rank_and_sync(
-            host=args.compute_host,
-            user=args.ssh_user,
-            remote_repo=remote_repo,
-            remote_python=remote_python,
-            queue_relative=remote_queue_name,
-            run_group=_derive_run_group(queue_path),
-            project_root=project_root,
-            log_path=log_path,
-            port=int(args.ssh_port),
-            log=log,
-        )
+        except Exception as exc:  # noqa: BLE001
+            degraded_steps.append(f"rank_sync:{type(exc).__name__}")
+            log(f"powered: rank_sync failed type={type(exc).__name__} msg={exc}; continue degraded")
         if should_wait_completion and bool(getattr(args, "cleanup_remote_runs", False)):
             try:
                 _cleanup_remote_run_artifacts(
@@ -3204,6 +3802,14 @@ def run_powered_queue(
                     )
                 )
 
+        if degraded_steps:
+            _emit(
+                "powered: degraded_success queue={queue} degraded_steps={steps}".format(
+                    queue=remote_queue_name,
+                    steps=",".join(degraded_steps),
+                ),
+                log_path,
+            )
         return int(remote_rc)
     finally:
         if args.poweroff and started_on_compute and not skip_power:

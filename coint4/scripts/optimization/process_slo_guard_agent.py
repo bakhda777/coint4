@@ -66,15 +66,23 @@ def append_log(path: Path, message: str) -> None:
 
 
 def parse_int(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, str) and not value.strip():
+        return default
     try:
-        return int(float(value or 0))
+        return int(float(value))
     except Exception:
         return default
 
 
 def parse_float(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, str) and not value.strip():
+        return default
     try:
-        return float(value or 0.0)
+        return float(value)
     except Exception:
         return default
 
@@ -189,6 +197,11 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
             "remote_runner_count": -1,
             "remote_work_active": False,
             "cpu_busy_without_queue_job": False,
+            "postprocess_active": False,
+            "build_index_active": False,
+            "active_queues": [],
+            "active_remote_queue_rel": "",
+            "remote_queue_sync_age_sec": -1,
             "ts_epoch": 0,
         }
     return {
@@ -208,6 +221,11 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
         "remote_runner_count": parse_int(data.get("remote_runner_count"), -1),
         "remote_work_active": parse_bool(data.get("remote_work_active"), False),
         "cpu_busy_without_queue_job": parse_bool(data.get("cpu_busy_without_queue_job"), False),
+        "postprocess_active": parse_bool(data.get("postprocess_active"), False),
+        "build_index_active": parse_bool(data.get("build_index_active"), False),
+        "active_queues": list(data.get("active_queues") or []),
+        "active_remote_queue_rel": str(data.get("active_remote_queue_rel") or ""),
+        "remote_queue_sync_age_sec": parse_int(data.get("remote_queue_sync_age_sec"), -1),
         "ts_epoch": parse_ts_epoch(data.get("ts_epoch") or data.get("ts")),
     }
 
@@ -484,6 +502,11 @@ def main() -> int:
             remote_child_process_count = parse_int(remote_runtime_snapshot.get("remote_child_process_count"), 0)
             remote_work_active = bool(remote_runtime_snapshot.get("remote_work_active"))
             cpu_busy_without_queue_job = bool(remote_runtime_snapshot.get("cpu_busy_without_queue_job"))
+            postprocess_active = bool(remote_runtime_snapshot.get("postprocess_active"))
+            build_index_active = bool(remote_runtime_snapshot.get("build_index_active"))
+            active_remote_queue_rel = str(remote_runtime_snapshot.get("active_remote_queue_rel") or "")
+            remote_queue_sync_age_sec = parse_int(remote_runtime_snapshot.get("remote_queue_sync_age_sec"), -1)
+            active_queues = list(remote_runtime_snapshot.get("active_queues") or [])
         else:
             remote_runner_count = parse_int(remote_snapshot.get("runner_count"), -1)
             remote_load1 = parse_float(remote_snapshot.get("load1"), 0.0)
@@ -522,6 +545,11 @@ def main() -> int:
                 remote_snapshot.get("cpu_busy_without_queue_job"),
                 parse_bool(runtime_metrics.get("cpu_busy_without_queue_job"), False),
             )
+            postprocess_active = parse_bool(runtime_metrics.get("postprocess_active"), False)
+            build_index_active = parse_bool(runtime_metrics.get("build_index_active"), False)
+            active_remote_queue_rel = str(runtime_metrics.get("active_remote_queue_rel") or "")
+            remote_queue_sync_age_sec = parse_int(runtime_metrics.get("remote_queue_sync_age_sec"), -1)
+            active_queues = []
         ready_buffer_depth = parse_int(runtime_metrics.get("ready_buffer_depth"), 0)
         cold_fail_active_count = parse_int(runtime_metrics.get("cold_fail_active_count"), 0)
         if cold_fail_active_count <= 0:
@@ -530,13 +558,20 @@ def main() -> int:
             remote_work_active = bool(
                 remote_queue_job_count > 0
                 or remote_child_process_count > 0
+                or postprocess_active
+                or build_index_active
                 or (remote_reachable and remote_load1 >= 1.5)
             )
         if not cpu_busy_without_queue_job:
             cpu_busy_without_queue_job = bool(
                 remote_reachable
                 and remote_queue_job_count <= 0
-                and (remote_child_process_count > 0 or remote_load1 >= 1.5)
+                and (
+                    remote_child_process_count > 0
+                    or postprocess_active
+                    or build_index_active
+                    or remote_load1 >= 1.5
+                )
             )
         surrogate_idle_override_count = parse_int(runtime_metrics.get("surrogate_idle_override_count"), 0)
         overlap_dispatch_count = parse_int(runtime_metrics.get("overlap_dispatch_count"), 0)
@@ -553,6 +588,17 @@ def main() -> int:
             0,
         )
         hot_standby_active = parse_bool(runtime_metrics.get("hot_standby_active"), False)
+        progress_source = "local_queue"
+        if remote_runtime_fresh and (
+            active_remote_queue_rel
+            or remote_queue_sync_age_sec >= 0
+            or postprocess_active
+            or build_index_active
+        ):
+            progress_source = "remote_runtime_state"
+        elif remote_work_active:
+            progress_source = "capacity_or_runtime_metrics"
+
         idle_with_executable_pending = bool(
             executable_pending_rows > 0
             and local_runner_count <= 0
@@ -657,6 +703,9 @@ def main() -> int:
             "process_start_epoch": process_start_epoch,
             "first_strict_pass_epoch": first_strict_pass_epoch,
             "first_promote_epoch": first_promote_epoch,
+            "progress_source": progress_source,
+            "active_remote_queue_rel": active_remote_queue_rel,
+            "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
             "funnel": {
                 "generated": total_rows,
                 "executable": executable_rows,
@@ -682,8 +731,14 @@ def main() -> int:
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
+                "postprocess_active": postprocess_active,
+                "build_index_active": build_index_active,
                 "remote_reachable": remote_reachable,
                 "idle_with_executable_pending": idle_with_executable_pending,
+                "progress_source": progress_source,
+                "active_remote_queue_rel": active_remote_queue_rel,
+                "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
+                "active_queues": active_queues[:8],
                 "ready_buffer_depth": ready_buffer_depth,
                 "cold_fail_active_count": cold_fail_active_count,
                 "fastlane_replay_pending": fastlane_replay_pending,
@@ -709,6 +764,11 @@ def main() -> int:
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
+                "postprocess_active": postprocess_active,
+                "build_index_active": build_index_active,
+                "progress_source": progress_source,
+                "active_remote_queue_rel": active_remote_queue_rel,
+                "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
                 "idle_with_executable_pending": idle_with_executable_pending,
                 "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
                 "ready_buffer_policy_mismatch_count": ready_buffer_policy_mismatch_count,
@@ -729,6 +789,12 @@ def main() -> int:
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
+                "postprocess_active": postprocess_active,
+                "build_index_active": build_index_active,
+                "progress_source": progress_source,
+                "active_remote_queue_rel": active_remote_queue_rel,
+                "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
+                "active_queues": active_queues[:8],
                 "surrogate_idle_override_count": surrogate_idle_override_count,
                 "overlap_dispatch_count": overlap_dispatch_count,
                 "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
@@ -773,6 +839,9 @@ def main() -> int:
                 "remote_child_process_count={remote_child_process_count} remote_queue_job_count={remote_queue_job_count} "
                 "remote_active_queue_jobs={remote_active_queue_jobs} remote_work_active={remote_work_active} "
                 "remote_snapshot_age_sec={remote_snapshot_age_sec} ready_buffer_depth={ready_buffer_depth} "
+                "progress_source={progress_source} active_remote_queue_rel={active_remote_queue_rel} "
+                "remote_queue_sync_age_sec={remote_queue_sync_age_sec} postprocess_active={postprocess_active} "
+                "build_index_active={build_index_active} "
                 "cold_fail_active_count={cold_fail_active_count} surrogate_idle_override_count={surrogate_idle_override_count} "
                 "overlap_dispatch_count={overlap_dispatch_count} cpu_busy_without_queue_job={cpu_busy_without_queue_job} "
                 "vps_duty_cycle_30m={vps_duty_cycle_30m:.3f} ready_buffer_policy_mismatch_count={ready_buffer_policy_mismatch_count} "
@@ -798,6 +867,11 @@ def main() -> int:
                 remote_work_active=int(bool(summary["queue"]["remote_work_active"])),
                 remote_snapshot_age_sec=summary["queue"]["remote_snapshot_age_sec"],
                 ready_buffer_depth=summary["queue"]["ready_buffer_depth"],
+                progress_source=summary["queue"]["progress_source"],
+                active_remote_queue_rel=summary["queue"]["active_remote_queue_rel"] or "none",
+                remote_queue_sync_age_sec=summary["queue"]["remote_queue_sync_age_sec"],
+                postprocess_active=int(bool(summary["queue"]["postprocess_active"])),
+                build_index_active=int(bool(summary["queue"]["build_index_active"])),
                 cold_fail_active_count=summary["queue"]["cold_fail_active_count"],
                 surrogate_idle_override_count=summary["runtime"]["surrogate_idle_override_count"],
                 overlap_dispatch_count=summary["runtime"]["overlap_dispatch_count"],

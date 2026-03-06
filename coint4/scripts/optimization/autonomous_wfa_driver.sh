@@ -4706,7 +4706,7 @@ remote_runner_count() {
 
 remote_active_queue_jobs() {
   ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
-  remote_runtime_state_value "remote_queue_job_count" "0"
+  remote_runtime_state_value "remote_active_queue_jobs" "0"
 }
 
 remote_top_level_queue_jobs() {
@@ -4731,20 +4731,126 @@ remote_cpu_busy_without_queue_job() {
   [[ "$value" == "1" ]] && echo 1 || echo 0
 }
 
+remote_postprocess_active() {
+  local value
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  value="$(remote_runtime_state_value "postprocess_active" "0")"
+  [[ "$value" == "1" ]] && echo 1 || echo 0
+}
+
+remote_build_index_active() {
+  local value
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  value="$(remote_runtime_state_value "build_index_active" "0")"
+  [[ "$value" == "1" ]] && echo 1 || echo 0
+}
+
+remote_active_queue_rel() {
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "active_remote_queue_rel" ""
+}
+
+remote_queue_sync_age_sec() {
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "remote_queue_sync_age_sec" "-1"
+}
+
+remote_runtime_queue_snapshot() {
+  local queue_rel="$1"
+  python3 - "$REMOTE_RUNTIME_STATE_FILE" "$queue_rel" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+target = str(sys.argv[2] or "").strip()
+empty = "0,0,0,0,0,0,0,-1,"
+if not path.exists() or not target:
+    print(empty)
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print(empty)
+    raise SystemExit(0)
+entries = payload.get("active_queues", [])
+if not isinstance(entries, list):
+    print(empty)
+    raise SystemExit(0)
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    queue_rel = str(entry.get("queue_rel") or "").strip()
+    if queue_rel != target:
+        continue
+    counts = entry.get("counts", {})
+    if not isinstance(counts, dict):
+        counts = {}
+    def to_int(value, default=0):
+        try:
+            return int(float(value or 0))
+        except Exception:
+            return default
+    print(
+        "{planned},{running},{stalled},{failed},{completed},{total},{last_progress_epoch},{last_progress_age_sec},{source}".format(
+            planned=to_int(counts.get("planned"), 0),
+            running=to_int(counts.get("running"), 0),
+            stalled=to_int(counts.get("stalled"), 0),
+            failed=to_int(counts.get("failed"), 0) + to_int(counts.get("error"), 0),
+            completed=to_int(counts.get("completed"), 0),
+            total=to_int(entry.get("total"), 0),
+            last_progress_epoch=to_int(entry.get("last_progress_epoch"), 0),
+            last_progress_age_sec=to_int(entry.get("last_progress_age_sec"), -1),
+            source="remote_runtime_state",
+        )
+    )
+    raise SystemExit(0)
+print(empty)
+PY
+}
+
+remote_queue_activity_source() {
+  local queue_rel="$1"
+  local active_queue_rel postprocess_active build_index_active
+  active_queue_rel="$(remote_active_queue_rel)"
+  postprocess_active="$(remote_postprocess_active)"
+  build_index_active="$(remote_build_index_active)"
+  if [[ -n "$queue_rel" && -n "$active_queue_rel" && "$active_queue_rel" == "$queue_rel" ]]; then
+    echo "remote_runtime_state"
+    return 0
+  fi
+  if (( postprocess_active > 0 )); then
+    echo "postprocess_active"
+    return 0
+  fi
+  if (( build_index_active > 0 )); then
+    echo "build_index_active"
+    return 0
+  fi
+  echo ""
+}
+
 refresh_remote_runtime_metrics() {
-  local queue_jobs top_level_jobs child_count cpu_busy work_active snapshot_age
+  local queue_jobs top_level_jobs child_count cpu_busy work_active snapshot_age postprocess_active build_index_active active_queue_rel sync_age
   ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
   queue_jobs="$(remote_active_queue_jobs)"
   top_level_jobs="$(remote_top_level_queue_jobs)"
   child_count="$(remote_child_process_count)"
   cpu_busy="$(remote_cpu_busy_without_queue_job)"
   work_active="$(remote_work_active)"
+  postprocess_active="$(remote_postprocess_active)"
+  build_index_active="$(remote_build_index_active)"
+  active_queue_rel="$(remote_active_queue_rel)"
+  sync_age="$(remote_queue_sync_age_sec)"
   snapshot_age="$(remote_runtime_state_age_sec)"
   [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
   [[ "$top_level_jobs" =~ ^[0-9]+$ ]] || top_level_jobs=0
   [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
   [[ "$cpu_busy" =~ ^[0-9]+$ ]] || cpu_busy=0
   [[ "$work_active" =~ ^[0-9]+$ ]] || work_active=0
+  [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+  [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+  [[ "$sync_age" =~ ^-?[0-9]+$ ]] || sync_age=-1
   [[ "$snapshot_age" =~ ^-?[0-9]+$ ]] || snapshot_age=-1
   fullspan_state_metric_set "remote_active_queue_jobs" "$queue_jobs"
   fullspan_state_metric_set "remote_queue_job_count" "$queue_jobs"
@@ -4752,6 +4858,10 @@ refresh_remote_runtime_metrics() {
   fullspan_state_metric_set "remote_child_process_count" "$child_count"
   fullspan_state_metric_set "cpu_busy_without_queue_job" "$cpu_busy"
   fullspan_state_metric_set "remote_work_active" "$work_active"
+  fullspan_state_metric_set "postprocess_active" "$postprocess_active"
+  fullspan_state_metric_set "build_index_active" "$build_index_active"
+  fullspan_state_metric_set "active_remote_queue_rel" "$active_queue_rel"
+  fullspan_state_metric_set "remote_queue_sync_age_sec" "$sync_age"
   fullspan_state_metric_set "remote_runtime_snapshot_age_sec" "$snapshot_age"
 }
 
@@ -5900,10 +6010,18 @@ maybe_dispatch_overlap_from_buffer() {
     return 1
   fi
 
-  local remote_jobs
+  local remote_jobs postprocess_active build_index_active
   remote_jobs="$(remote_active_queue_jobs)"
   [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
   refresh_remote_runtime_metrics
+  postprocess_active="$(remote_postprocess_active)"
+  build_index_active="$(remote_build_index_active)"
+  [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+  [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+  if (( postprocess_active > 0 || build_index_active > 0 )); then
+    log "ready_buffer_dispatch_skip source=$active_queue_rel reason=remote_postprocess_or_build_index_active postprocess_active=$postprocess_active build_index_active=$build_index_active"
+    return 1
+  fi
   if (( remote_jobs >= READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES )); then
     return 1
   fi
@@ -6213,6 +6331,10 @@ PY
 	      no_progress_breaker_streak_count=0
 	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
 	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=queue_runner_active"
+	    elif [[ -n "$(remote_queue_activity_source "$queue_rel")" ]]; then
+	      no_progress_breaker_streak_count=0
+	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=$(remote_queue_activity_source "$queue_rel")"
 	    else
 	    no_progress_breaker_streak_count=0
 	    fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
@@ -6297,6 +6419,38 @@ PY
       fi
     fi
   fi
+
+  refresh_remote_runtime_metrics
+  remote_progress_source=""
+  remote_progress_epoch=0
+  remote_progress_age_sec=-1
+  remote_planned=0
+  remote_running=0
+  remote_stalled=0
+  remote_failed=0
+  remote_completed=0
+  remote_total=0
+  IFS=',' read -r remote_planned remote_running remote_stalled remote_failed remote_completed remote_total remote_progress_epoch remote_progress_age_sec remote_progress_source <<< "$(remote_runtime_queue_snapshot "$queue_rel")"
+  [[ "$remote_planned" =~ ^[0-9]+$ ]] || remote_planned=0
+  [[ "$remote_running" =~ ^[0-9]+$ ]] || remote_running=0
+  [[ "$remote_stalled" =~ ^[0-9]+$ ]] || remote_stalled=0
+  [[ "$remote_failed" =~ ^[0-9]+$ ]] || remote_failed=0
+  [[ "$remote_completed" =~ ^[0-9]+$ ]] || remote_completed=0
+  [[ "$remote_total" =~ ^[0-9]+$ ]] || remote_total=0
+  [[ "$remote_progress_epoch" =~ ^[0-9]+$ ]] || remote_progress_epoch=0
+  [[ "$remote_progress_age_sec" =~ ^-?[0-9]+$ ]] || remote_progress_age_sec=-1
+  if [[ -n "$remote_progress_source" && "$remote_total" -gt 0 ]]; then
+    planned="$remote_planned"
+    running="$remote_running"
+    stalled="$remote_stalled"
+    failed="$remote_failed"
+    completed="$remote_completed"
+    total="$remote_total"
+    pending=$((planned + running + stalled + failed))
+  fi
+  fullspan_state_metric_set "progress_source" "${remote_progress_source:-local_queue}"
+  fullspan_state_metric_set "active_remote_queue_rel" "$(remote_active_queue_rel)"
+  fullspan_state_metric_set "remote_queue_sync_age_sec" "$(remote_queue_sync_age_sec)"
 
   promotion_verdict="ANALYZE"
   state_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
@@ -6418,20 +6572,29 @@ PY
       vps_unreachable_streak_by_queue["$queue_rel"]=0
     fi
 
-    if remote_queue_running "$queue_rel" || local_powered_queue_running "$queue_rel"; then
+    remote_activity_source="$(remote_queue_activity_source "$queue_rel")"
+    if remote_queue_running "$queue_rel" || local_powered_queue_running "$queue_rel" || [[ -n "$remote_activity_source" ]]; then
       no_progress_streak_by_queue["$queue_rel"]=0
       if remote_queue_running "$queue_rel"; then
         log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
-      else
+      elif local_powered_queue_running "$queue_rel"; then
         log "no_progress_pause queue=$queue_rel reason=local_powered_runner_active pending=$pending"
+      else
+        log "no_progress_pause queue=$queue_rel reason=$remote_activity_source pending=$pending progress_source=${remote_progress_source:-local_queue} remote_queue_sync_age_sec=${remote_progress_age_sec:-$(remote_queue_sync_age_sec)}"
       fi
-      sync_queue_status "$queue_rel"
+      if [[ -z "$remote_progress_source" ]]; then
+        sync_queue_status "$queue_rel"
+      fi
       if (( completed > 0 )); then
         fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
       else
         log "fullspan_rollup_sync_skip queue=$queue_rel reason=remote_runner_active_sync completed=0"
       fi
-      maybe_dispatch_overlap_from_buffer "$queue_rel" "$pending" "$running" "$stalled" "$failed" "$total" || true
+      if [[ "$remote_activity_source" == "postprocess_active" || "$remote_activity_source" == "build_index_active" ]]; then
+        log "overlap_dispatch_skip queue=$queue_rel reason=$remote_activity_source"
+      else
+        maybe_dispatch_overlap_from_buffer "$queue_rel" "$pending" "$running" "$stalled" "$failed" "$total" || true
+      fi
       sleep 3
       continue
     fi

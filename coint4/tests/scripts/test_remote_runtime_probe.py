@@ -91,6 +91,56 @@ def test_probe_remote_runtime_treats_watcher_only_queue_as_active_work(tmp_path:
     assert result["cpu_busy_without_queue_job"] is False
 
 
+def test_probe_remote_runtime_exposes_postprocess_and_active_queue_counts(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module(tmp_path)
+    payload = {
+        "reachable": True,
+        "load1": 4.2,
+        "top_level_queue_jobs": 0,
+        "queue_job_pids": [],
+        "queue_paths": [],
+        "watch_queue_count": 0,
+        "watch_queue_paths": [],
+        "remote_queue_job_count": 1,
+        "remote_active_queue_jobs": 1,
+        "walk_forward_count": 0,
+        "heavy_guardrails_count": 0,
+        "run_wfa_fullcpu_count": 0,
+        "postprocess_queue_count": 1,
+        "postprocess_active": True,
+        "build_run_index_count": 1,
+        "build_index_active": True,
+        "active_remote_queue_rel": "artifacts/wfa/aggregate/group_a/run_queue.csv",
+        "remote_queue_sync_age_sec": 7,
+        "active_queues": [
+            {
+                "queue_rel": "artifacts/wfa/aggregate/group_a/run_queue.csv",
+                "counts": {"running": 3, "completed": 2},
+                "total": 5,
+                "last_progress_epoch": 1700000000,
+                "last_progress_age_sec": 7,
+            }
+        ],
+        "remote_child_process_count": 2,
+        "remote_runner_count": 2,
+        "remote_work_active": True,
+        "cpu_busy_without_queue_job": False,
+    }
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: _Proc(returncode=0, stdout=json.dumps(payload), stderr=""),
+    )
+
+    result = module.probe_remote_runtime(server_user="root", server_ip="85.198.90.128")
+    assert result["postprocess_active"] is True
+    assert result["build_index_active"] is True
+    assert result["active_remote_queue_rel"] == "artifacts/wfa/aggregate/group_a/run_queue.csv"
+    assert result["remote_queue_sync_age_sec"] == 7
+    assert result["active_queues"][0]["counts"]["running"] == 3
+
+
 def test_probe_remote_runtime_handles_ssh_failure(tmp_path: Path, monkeypatch) -> None:
     module = _load_module(tmp_path)
     monkeypatch.setattr(

@@ -14,11 +14,16 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+_OOS_WINDOW_RE = re.compile(r"_oos(?P<start>\d{8})_(?P<end>\d{8})")
+_EVO_HASH_RE = re.compile(r"_evo_(?P<hash>[0-9a-fA-F]+)")
 
 
 def _parse_bool(value: str | bool, default: bool = False) -> bool:
@@ -206,6 +211,238 @@ def _load_queue_rows(queue_path: Path) -> list[dict[str, str]]:
         for row in reader:
             rows.append({k: (v or "").strip() for k, v in row.items()})
     return rows
+
+
+def _write_queue_rows(queue_path: Path, rows: list[dict[str, str]]) -> None:
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fieldnames:
+                fieldnames.append(str(key))
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    with queue_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _load_yaml_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return {}
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _walk_forward_window(config_payload: dict[str, Any]) -> tuple[str, str]:
+    walk_forward = config_payload.get("walk_forward", {}) if isinstance(config_payload, dict) else {}
+    if not isinstance(walk_forward, dict):
+        walk_forward = {}
+    start = str(walk_forward.get("start_date") or "").strip()
+    end = str(walk_forward.get("end_date") or "").strip()
+    return start, end
+
+
+def _month_sequence(start_date: str, end_date: str) -> list[tuple[int, int]]:
+    try:
+        start = datetime.strptime(str(start_date).strip(), "%Y-%m-%d")
+        end = datetime.strptime(str(end_date).strip(), "%Y-%m-%d")
+    except Exception:
+        return []
+    if end < start:
+        return []
+    months: list[tuple[int, int]] = []
+    year = int(start.year)
+    month = int(start.month)
+    end_key = (int(end.year), int(end.month))
+    while (year, month) <= end_key:
+        months.append((year, month))
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return months
+
+
+def _coverage_gate_for_config(*, config_path: Path, app_root: Path) -> dict[str, Any]:
+    payload = _load_yaml_config(config_path)
+    start_date, end_date = _walk_forward_window(payload)
+    if not start_date or not end_date:
+        return {"ok": True, "reason": "window_missing", "missing_months": []}
+    data_root = app_root / "data_downloaded"
+    missing_months: list[str] = []
+    for year, month in _month_sequence(start_date, end_date):
+        month_dir = data_root / f"year={year:04d}" / f"month={month:02d}"
+        if not month_dir.exists():
+            missing_months.append(f"{year:04d}-{month:02d}")
+    return {
+        "ok": len(missing_months) == 0,
+        "reason": "ok" if len(missing_months) == 0 else "missing_data_coverage",
+        "window": {"start_date": start_date, "end_date": end_date},
+        "missing_months": missing_months,
+    }
+
+
+def _decision_lineage_uid(decision_payload: dict[str, Any]) -> str:
+    if not isinstance(decision_payload, dict):
+        return ""
+    parent_resolution = decision_payload.get("parent_resolution", {})
+    if isinstance(parent_resolution, dict):
+        lineage = str(parent_resolution.get("lineage_uid") or "").strip()
+        if lineage:
+            return lineage
+    parent_diversification = decision_payload.get("parent_diversification", {})
+    if not isinstance(parent_diversification, dict):
+        parent_diversification = {}
+    pool = list(parent_diversification.get("pool") or [])
+    try:
+        primary_idx = int(parent_diversification.get("primary_parent_index") or 0)
+    except Exception:
+        primary_idx = 0
+    if 0 <= primary_idx < len(pool):
+        primary = pool[primary_idx]
+        if isinstance(primary, dict):
+            return str(primary.get("lineage_uid") or "").strip()
+    primary_parent = decision_payload.get("primary_parent", {})
+    if isinstance(primary_parent, dict):
+        return str(primary_parent.get("lineage_uid") or "").strip()
+    return ""
+
+
+def _config_identity_signature(
+    *,
+    row: dict[str, str],
+    config_payload: dict[str, Any],
+    config_path: Path,
+    fallback_lineage_uid: str = "",
+) -> str:
+    meta_raw = str(row.get("metadata_json") or "").strip()
+    meta: dict[str, Any] = {}
+    if meta_raw:
+        try:
+            parsed = json.loads(meta_raw)
+        except Exception:
+            parsed = {}
+        if isinstance(parsed, dict):
+            meta = dict(parsed)
+    evolution = config_payload.get("evolution", {}) if isinstance(config_payload, dict) else {}
+    if not isinstance(evolution, dict):
+        evolution = {}
+    metadata = config_payload.get("metadata", {}) if isinstance(config_payload, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    start_date, end_date = _walk_forward_window(config_payload)
+    evo_hash = (
+        str(meta.get("evo_hash") or metadata.get("evo_hash") or evolution.get("evo_hash") or "")
+        .strip()
+    )
+    lineage = (
+        str(meta.get("lineage_uid") or metadata.get("lineage_uid") or evolution.get("lineage_uid") or "")
+        .strip()
+    )
+    if not lineage:
+        lineage = str(fallback_lineage_uid or "").strip()
+    run_name = str(row.get("run_name") or "").strip().lower()
+    config_text = str(config_path).lower()
+    role = "default"
+    if "stress" in run_name or "stress" in config_text:
+        role = "stress"
+    elif "holdout" in run_name or "holdout" in config_text:
+        role = "holdout"
+    return "|".join([evo_hash, start_date, end_date, lineage, role])
+
+
+def _prune_seed_queue(
+    *,
+    queue_path: Path,
+    app_root: Path,
+    lineage_uid: str = "",
+) -> dict[str, Any]:
+    rows = _load_queue_rows(queue_path)
+    if not rows:
+        return {"rows_before": 0, "rows_after": 0, "coverage_rejected": 0, "dedupe_rejected": 0, "missing_months": []}
+
+    filtered_rows: list[dict[str, str]] = []
+    seen_signatures: set[str] = set()
+    coverage_rejected = 0
+    dedupe_rejected = 0
+    missing_months: set[str] = set()
+
+    for row in rows:
+        config_rel = str(row.get("config_path") or "").strip()
+        config_path = _resolve_under_root(config_rel, app_root)
+        config_payload = _load_yaml_config(config_path)
+        coverage = _coverage_gate_for_config(config_path=config_path, app_root=app_root)
+        if not bool(coverage.get("ok")):
+            coverage_rejected += 1
+            for item in list(coverage.get("missing_months") or []):
+                token = str(item).strip()
+                if token:
+                    missing_months.add(token)
+            continue
+        signature = _config_identity_signature(
+            row=row,
+            config_payload=config_payload,
+            config_path=config_path,
+            fallback_lineage_uid=lineage_uid,
+        )
+        if signature and signature in seen_signatures:
+            dedupe_rejected += 1
+            continue
+        if signature:
+            seen_signatures.add(signature)
+        filtered_rows.append(row)
+
+    _write_queue_rows(queue_path, filtered_rows)
+    return {
+        "rows_before": len(rows),
+        "rows_after": len(filtered_rows),
+        "coverage_rejected": coverage_rejected,
+        "dedupe_rejected": dedupe_rejected,
+        "missing_months": sorted(missing_months),
+    }
+
+
+def _recent_zero_yield_signal(rank_results_dir: Path, *, limit: int = 24) -> dict[str, Any]:
+    files = sorted(
+        rank_results_dir.glob("autonomous_seed*_latest.json"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0.0,
+        reverse=True,
+    )[: max(1, int(limit))]
+    analyzed = 0
+    zeroish = 0
+    strict_binding = 0
+    for path in files:
+        payload = _load_directive(path)
+        if not payload:
+            continue
+        analyzed += 1
+        details = str(payload.get("details") or "").strip()
+        coverage = float(payload.get("coverage") or 0.0)
+        observed_test_days = int(float(payload.get("observed_test_days") or 0))
+        total_trades = int(float(payload.get("total_trades") or 0))
+        if coverage <= 0.0 or observed_test_days <= 0 or total_trades <= 0:
+            zeroish += 1
+        if details.startswith("RANK_OK_FALLBACK_STRICT_BINDING") or any(
+            token in details for token in ("min_windows", "min_trades", "min_pairs", "coverage_below")
+        ):
+            strict_binding += 1
+    zeroish_ratio = (float(zeroish) / float(analyzed)) if analyzed > 0 else 0.0
+    active = bool(analyzed >= 4 and (zeroish_ratio >= 0.75 or strict_binding >= 3))
+    return {
+        "active": active,
+        "analyzed": analyzed,
+        "zeroish": zeroish,
+        "strict_binding": strict_binding,
+        "zeroish_ratio": zeroish_ratio,
+    }
 
 
 def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, list[Path]]:
@@ -1187,6 +1424,7 @@ def main() -> int:
             gate_surrogate = _load_gate_surrogate_state(gate_surrogate_path)
             yield_governor_path = _resolve_under_root(str(args.yield_governor_state_path), app_root)
             yield_governor = _load_yield_governor_state(yield_governor_path)
+            zero_yield_signal = _recent_zero_yield_signal(app_root / "artifacts" / "optimization_state" / "rank_results")
             hard_fail_risk_policy = gate_surrogate.get("hard_fail_risk_policy", {})
             if not isinstance(hard_fail_risk_policy, dict):
                 hard_fail_risk_policy = {}
@@ -1261,6 +1499,14 @@ def main() -> int:
                     )
             except Exception:
                 pass
+            if bool(zero_yield_signal.get("active")):
+                repair_variant_cap = max(4, min(int(effective_num_variants_floor), 8))
+                effective_repair_mode = True
+                effective_policy_scale = "micro"
+                effective_dedupe_distance = max(float(effective_dedupe_distance), 0.08)
+                effective_num_variants_floor = min(int(effective_num_variants_floor), int(repair_variant_cap))
+                effective_num_variants = min(int(effective_num_variants), int(repair_variant_cap))
+                effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), 8)
 
             directive_pruner = directive.get("impossibility_pruner", {})
             if isinstance(directive_pruner, dict) and bool(directive_pruner.get("enabled")):
@@ -1589,6 +1835,13 @@ def main() -> int:
                 "lane_weights": dict(yield_governor.get("lane_weights") or {}),
                 "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
             }
+            snapshot["recent_zero_yield_signal"] = {
+                "active": bool(zero_yield_signal.get("active")),
+                "analyzed": int(zero_yield_signal.get("analyzed", 0) or 0),
+                "zeroish": int(zero_yield_signal.get("zeroish", 0) or 0),
+                "strict_binding": int(zero_yield_signal.get("strict_binding", 0) or 0),
+                "zeroish_ratio": float(zero_yield_signal.get("zeroish_ratio", 0.0) or 0.0),
+            }
             snapshot["lane_selection"] = {
                 "selected_lane": selected_lane,
                 "selected_index": int(selected_lane_index),
@@ -1908,6 +2161,39 @@ def main() -> int:
             decision_payload = decision.get("decision_payload", {})
             if not isinstance(decision_payload, dict):
                 decision_payload = {}
+            queue_prune = _prune_seed_queue(
+                queue_path=queue_path,
+                app_root=app_root,
+                lineage_uid=_decision_lineage_uid(decision_payload),
+            )
+            snapshot["queue_prune"] = dict(queue_prune)
+            if int(queue_prune.get("rows_after", 0)) <= 0:
+                snapshot.update(
+                    {
+                        "status": "failed",
+                        "reason": "queue_pruned_empty",
+                        "human": "Queue seeder pruned all generated rows due to missing OOS coverage or duplicate seed signatures.",
+                        "queue_path": _safe_rel(queue_path, app_root),
+                    }
+                )
+                _emit_state(state_path, snapshot)
+                _append_log(log_path, snapshot)
+                _append_log(
+                    incident_path,
+                    {
+                        "ts": _utc_now_iso(),
+                        "agent": "queue_seeder",
+                        "kind": "seed_failed",
+                        "human": snapshot["human"],
+                        "payload": {
+                            "queue_path": snapshot["queue_path"],
+                            "coverage_rejected": int(queue_prune.get("coverage_rejected", 0) or 0),
+                            "dedupe_rejected": int(queue_prune.get("dedupe_rejected", 0) or 0),
+                            "missing_months": list(queue_prune.get("missing_months", []) or []),
+                        },
+                    },
+                )
+                return 1
             queue_policy_path = _write_queue_policy_sidecar(
                 queue_path=queue_path,
                 app_root=app_root,

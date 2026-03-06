@@ -82,6 +82,9 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
     assert process_state["kpi"]["remote_work_active"] is False
     assert process_state["kpi"]["cpu_busy_without_queue_job"] is False
     assert process_state["kpi"]["idle_with_executable_pending"] is True
+    assert process_state["progress_source"] == "local_queue"
+    assert process_state["active_remote_queue_rel"] == ""
+    assert process_state["remote_queue_sync_age_sec"] == -1
 
     capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
     monkeypatch.setattr(
@@ -316,6 +319,58 @@ def test_process_slo_prefers_remote_runtime_snapshot_over_stale_runtime_metrics(
     assert process_state["queue"]["remote_child_process_count"] == 30
     assert process_state["queue"]["remote_work_active"] is True
     assert process_state["queue"]["idle_with_executable_pending"] is False
+
+
+def test_process_slo_exposes_remote_progress_source_and_sync_age(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 1, "load1": 0.2}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        remote_queue_job_count=1,
+        remote_active_queue_jobs=1,
+        remote_runner_count=1,
+        remote_work_active=True,
+        postprocess_active=True,
+        build_index_active=True,
+        active_remote_queue_rel="artifacts/wfa/aggregate/group_a/run_queue.csv",
+        remote_queue_sync_age_sec=5,
+        active_queues=[
+            {
+                "queue_rel": "artifacts/wfa/aggregate/group_a/run_queue.csv",
+                "counts": {"planned": 1},
+                "total": 1,
+                "last_progress_epoch": int(time.time()) - 5,
+                "last_progress_age_sec": 5,
+            }
+        ],
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["progress_source"] == "remote_runtime_state"
+    assert process_state["active_remote_queue_rel"] == "artifacts/wfa/aggregate/group_a/run_queue.csv"
+    assert process_state["remote_queue_sync_age_sec"] == 5
+    assert process_state["queue"]["postprocess_active"] is True
+    assert process_state["queue"]["build_index_active"] is True
+    assert process_state["queue"]["progress_source"] == "remote_runtime_state"
 
 
 def test_process_slo_treats_stale_runtime_snapshot_with_high_capacity_load_as_busy(
