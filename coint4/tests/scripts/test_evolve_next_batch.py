@@ -57,10 +57,8 @@ def _write_run_index(path: Path, *, cfg_path: Path, run_group: str) -> None:
         )
 
 
-def test_evolve_next_batch_dry_run(tmp_path: Path) -> None:
-    module = _load_script(tmp_path.name)
-    base_cfg = tmp_path / "base.yaml"
-    base_cfg.write_text(
+def _write_base_config(path: Path) -> None:
+    path.write_text(
         "\n".join(
             [
                 "walk_forward:",
@@ -73,6 +71,7 @@ def test_evolve_next_batch_dry_run(tmp_path: Path) -> None:
                 "  zscore_entry_threshold: 1.2",
                 "  zscore_exit: 0.15",
                 "  rolling_window: 96",
+                "  max_var_multiplier: 1.05",
                 "pair_selection:",
                 "  max_pairs: 24",
                 "  min_correlation: 0.4",
@@ -86,6 +85,12 @@ def test_evolve_next_batch_dry_run(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_evolve_next_batch_dry_run(tmp_path: Path) -> None:
+    module = _load_script(tmp_path.name)
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
     run_index = tmp_path / "run_index.csv"
     _write_run_index(run_index, cfg_path=base_cfg, run_group="rgdry")
 
@@ -118,32 +123,7 @@ def test_evolve_next_batch_dry_run(tmp_path: Path) -> None:
 def test_evolve_next_batch_writes_queue_and_decision(tmp_path: Path) -> None:
     module = _load_script(f"{tmp_path.name}_write")
     base_cfg = tmp_path / "base.yaml"
-    base_cfg.write_text(
-        "\n".join(
-            [
-                "walk_forward:",
-                "  start_date: '2022-01-01'",
-                "  end_date: '2022-12-31'",
-                "portfolio:",
-                "  risk_per_position_pct: 0.01",
-                "  max_active_positions: 16",
-                "backtest:",
-                "  zscore_entry_threshold: 1.2",
-                "  zscore_exit: 0.15",
-                "  rolling_window: 96",
-                "pair_selection:",
-                "  max_pairs: 24",
-                "  min_correlation: 0.4",
-                "  coint_pvalue_threshold: 0.2",
-                "filter_params:",
-                "  max_hurst_exponent: 0.8",
-                "  min_mean_crossings: 2",
-                "  max_half_life_days: 60",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    _write_base_config(base_cfg)
     run_index = tmp_path / "run_index.csv"
     _write_run_index(run_index, cfg_path=base_cfg, run_group="rgwrite")
 
@@ -206,3 +186,132 @@ def test_evolve_next_batch_writes_queue_and_decision(tmp_path: Path) -> None:
     assert payload["lineage"]["unique_uids"] >= 1
     assert payload["operators"][0]["kind"] in {"crossover_uniform_v1", "coordinate_sweep_v1"}
     assert state_path.exists()
+
+
+def test_invalid_firewall_blocks_known_invalid_before_materialization(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_invalid")
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
+    parent_cfg = module.load_effective_yaml_config(base_cfg)
+    knob_space = module._load_knob_space(None)
+    invalid_cfg = dict(parent_cfg)
+    invalid_cfg.setdefault("backtest", {})
+    invalid_cfg["backtest"] = dict(invalid_cfg["backtest"])
+    invalid_cfg["backtest"]["max_var_multiplier"] = 0.95
+    invalid_genome = module.genome_from_config(invalid_cfg, knob_space=knob_space)
+    proposal = module.CandidateProposal(
+        candidate_id="cand_invalid",
+        operator_id="op_test_invalid",
+        parents=("parent::base",),
+        genome=invalid_genome,
+        changed_keys=("backtest.max_var_multiplier",),
+        nearest_id="",
+        nearest_distance=1.0,
+        notes="invalid proposal",
+        patch_ir=None,
+    )
+    invalid_state = tmp_path / "invalid_proposal_index.json"
+    accepted, summary, state = module.filter_invalid_proposals_before_materialization(
+        proposals=[proposal],
+        app_root=tmp_path,
+        invalid_index_path=invalid_state,
+        parent_cfg=parent_cfg,
+        windows=[("2022-01-01", "2022-12-31")],
+        include_stress=True,
+        ir_mode="knob",
+        persist_state=True,
+    )
+    assert accepted == []
+    assert summary["skipped_invalid"] == 1
+    assert summary["codes"]["MAX_VAR_MULTIPLIER_INVALID"] == 1
+    assert invalid_state.exists()
+    persisted = json.loads(invalid_state.read_text(encoding="utf-8"))
+    assert persisted["entries"][0]["code"] == "MAX_VAR_MULTIPLIER_INVALID"
+    assert state["entries"][0]["fingerprint"].startswith("invalid_")
+
+
+def test_invalid_firewall_quarantines_repeat_fingerprint(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_repeat")
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
+    parent_cfg = module.load_effective_yaml_config(base_cfg)
+    knob_space = module._load_knob_space(None)
+    invalid_cfg = dict(parent_cfg)
+    invalid_cfg.setdefault("backtest", {})
+    invalid_cfg["backtest"] = dict(invalid_cfg["backtest"])
+    invalid_cfg["backtest"]["max_var_multiplier"] = 0.95
+    invalid_genome = module.genome_from_config(invalid_cfg, knob_space=knob_space)
+    proposal = module.CandidateProposal(
+        candidate_id="cand_repeat",
+        operator_id="op_test_repeat",
+        parents=("parent::base",),
+        genome=invalid_genome,
+        changed_keys=("backtest.max_var_multiplier",),
+        nearest_id="",
+        nearest_distance=1.0,
+        notes="repeat invalid proposal",
+        patch_ir=None,
+    )
+    invalid_state = tmp_path / "invalid_proposal_index.json"
+    module.filter_invalid_proposals_before_materialization(
+        proposals=[proposal],
+        app_root=tmp_path,
+        invalid_index_path=invalid_state,
+        parent_cfg=parent_cfg,
+        windows=[("2022-01-01", "2022-12-31")],
+        include_stress=True,
+        ir_mode="knob",
+        persist_state=True,
+    )
+    accepted, summary, state = module.filter_invalid_proposals_before_materialization(
+        proposals=[proposal],
+        app_root=tmp_path,
+        invalid_index_path=invalid_state,
+        parent_cfg=parent_cfg,
+        windows=[("2022-01-01", "2022-12-31")],
+        include_stress=True,
+        ir_mode="knob",
+        persist_state=True,
+    )
+    assert accepted == []
+    assert summary["skipped_quarantined"] == 1
+    assert state["entries"][0]["occurrences"] >= 2
+
+
+def test_invalid_firewall_allows_valid_candidate(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_valid")
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
+    parent_cfg = module.load_effective_yaml_config(base_cfg)
+    knob_space = module._load_knob_space(None)
+    valid_cfg = dict(parent_cfg)
+    valid_cfg.setdefault("backtest", {})
+    valid_cfg["backtest"] = dict(valid_cfg["backtest"])
+    valid_cfg["backtest"]["max_var_multiplier"] = 1.10
+    valid_genome = module.genome_from_config(valid_cfg, knob_space=knob_space)
+    proposal = module.CandidateProposal(
+        candidate_id="cand_valid",
+        operator_id="op_test_valid",
+        parents=("parent::base",),
+        genome=valid_genome,
+        changed_keys=("backtest.max_var_multiplier",),
+        nearest_id="",
+        nearest_distance=1.0,
+        notes="valid proposal",
+        patch_ir=None,
+    )
+    invalid_state = tmp_path / "invalid_proposal_index.json"
+    accepted, summary, _state = module.filter_invalid_proposals_before_materialization(
+        proposals=[proposal],
+        app_root=tmp_path,
+        invalid_index_path=invalid_state,
+        parent_cfg=parent_cfg,
+        windows=[("2022-01-01", "2022-12-31")],
+        include_stress=True,
+        ir_mode="knob",
+        persist_state=True,
+    )
+    assert len(accepted) == 1
+    assert accepted[0].candidate_id == "cand_valid"
+    assert summary["accepted"] == 1
+    assert summary["skipped_invalid"] == 0

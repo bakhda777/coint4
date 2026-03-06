@@ -41,7 +41,7 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
 
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / "capacity_controller_state.json").write_text(
-        json.dumps({"remote": {"reachable": True, "runner_count": 0}}, ensure_ascii=False),
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -54,6 +54,9 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
     assert process_state["kpi"]["executable_pending_rows"] == 1
     assert process_state["kpi"]["local_runner_count"] == 0
     assert process_state["kpi"]["remote_runner_count"] == 0
+    assert process_state["kpi"]["remote_child_process_count"] == 0
+    assert process_state["kpi"]["remote_queue_job_count"] == 0
+    assert process_state["kpi"]["cpu_busy_without_queue_job"] is False
     assert process_state["kpi"]["idle_with_executable_pending"] is True
 
     capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
@@ -67,3 +70,37 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
     assert "anti_idle_executable_backlog" in capacity_state["reasons"]
     assert int(capacity_state["policy"]["search_parallel_min"]) >= 16
     assert int(capacity_state["policy"]["search_parallel_max"]) >= 48
+
+
+def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 12, "load1": 8.5}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps({"runtime_metrics": {"remote_active_queue_jobs": 0, "remote_child_process_count": 12}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["remote_child_process_count"] == 12
+    assert process_state["queue"]["remote_queue_job_count"] == 0
+    assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
+    assert process_state["queue"]["idle_with_executable_pending"] is False

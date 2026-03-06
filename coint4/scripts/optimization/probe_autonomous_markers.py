@@ -608,9 +608,13 @@ def collect_runtime_observability_markers(
         field="remote_active_queue_jobs",
         data_candidates=[
             ("runtime", data["runtime"], ("remote_active_queue_jobs",)),
+            ("runtime", data["runtime"], ("remote_queue_job_count",)),
             ("process_slo", data["process_slo"], ("runtime", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("runtime", "remote_queue_job_count")),
             ("process_slo", data["process_slo"], ("queue", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("queue", "remote_queue_job_count")),
             ("process_slo", data["process_slo"], ("kpi", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("kpi", "remote_queue_job_count")),
             ("process_slo", data["process_slo"], ("remote_active_queue_jobs",)),
             ("capacity", data["capacity"], ("remote", "remote_active_queue_jobs")),
             ("capacity", data["capacity"], ("runtime", "remote_active_queue_jobs")),
@@ -622,6 +626,35 @@ def collect_runtime_observability_markers(
             ("directive", data["directive"], ("remote_active_queue_jobs",)),
         ],
         log_keys=["remote_active_queue_jobs", "remote_queue_jobs_active", "remote_runner_count"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    remote_child_process_count = resolve_counter_metric(
+        field="remote_child_process_count",
+        data_candidates=[
+            ("runtime", data["runtime"], ("remote_child_process_count",)),
+            ("process_slo", data["process_slo"], ("runtime", "remote_child_process_count")),
+            ("process_slo", data["process_slo"], ("queue", "remote_child_process_count")),
+            ("process_slo", data["process_slo"], ("kpi", "remote_child_process_count")),
+            ("capacity", data["capacity"], ("remote", "runner_count")),
+            ("process_slo", data["process_slo"], ("queue", "remote_runner_count")),
+            ("process_slo", data["process_slo"], ("kpi", "remote_runner_count")),
+        ],
+        log_keys=["remote_child_process_count", "remote_runner_count"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    cpu_busy_without_queue_job = resolve_counter_metric(
+        field="cpu_busy_without_queue_job",
+        data_candidates=[
+            ("runtime", data["runtime"], ("cpu_busy_without_queue_job",)),
+            ("process_slo", data["process_slo"], ("runtime", "cpu_busy_without_queue_job")),
+            ("process_slo", data["process_slo"], ("queue", "cpu_busy_without_queue_job")),
+            ("process_slo", data["process_slo"], ("kpi", "cpu_busy_without_queue_job")),
+        ],
+        log_keys=["cpu_busy_without_queue_job", "remote_cpu_busy_without_queue_job"],
         driver_log_path=driver_log_path,
         note_records=decision_records,
     )
@@ -661,7 +694,9 @@ def collect_runtime_observability_markers(
     return {
         "ready_buffer_depth": ready_buffer_depth,
         "cold_fail_active_count": cold_fail_active_count,
+        "remote_child_process_count": remote_child_process_count,
         "remote_active_queue_jobs": remote_active_queue_jobs,
+        "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
         "surrogate_idle_override_count": surrogate_idle_override_count,
         "overlap_dispatch_count": overlap_dispatch_count,
     }
@@ -1035,7 +1070,9 @@ def print_text(payload: dict[str, Any]) -> None:
     runtime_observability = markers.get("runtime_observability", {}) if isinstance(markers.get("runtime_observability"), dict) else {}
     ready_buffer_depth = runtime_observability.get("ready_buffer_depth", {}) if isinstance(runtime_observability.get("ready_buffer_depth"), dict) else {}
     cold_fail_active_count = runtime_observability.get("cold_fail_active_count", {}) if isinstance(runtime_observability.get("cold_fail_active_count"), dict) else {}
+    remote_child_process_count = runtime_observability.get("remote_child_process_count", {}) if isinstance(runtime_observability.get("remote_child_process_count"), dict) else {}
     remote_active_queue_jobs = runtime_observability.get("remote_active_queue_jobs", {}) if isinstance(runtime_observability.get("remote_active_queue_jobs"), dict) else {}
+    cpu_busy_without_queue_job = runtime_observability.get("cpu_busy_without_queue_job", {}) if isinstance(runtime_observability.get("cpu_busy_without_queue_job"), dict) else {}
     surrogate_idle_override_count = runtime_observability.get("surrogate_idle_override_count", {}) if isinstance(runtime_observability.get("surrogate_idle_override_count"), dict) else {}
     overlap_dispatch_count = runtime_observability.get("overlap_dispatch_count", {}) if isinstance(runtime_observability.get("overlap_dispatch_count"), dict) else {}
 
@@ -1067,7 +1104,9 @@ def print_text(payload: dict[str, Any]) -> None:
     print(f"SURROGATE_BRANCH_REASON={str(surrogate_branch.get('reason', ''))}")
     print(f"READY_BUFFER_DEPTH={parse_int(ready_buffer_depth.get('value'), 0)}")
     print(f"COLD_FAIL_ACTIVE_COUNT={parse_int(cold_fail_active_count.get('value'), 0)}")
+    print(f"REMOTE_CHILD_PROCESS_COUNT={parse_int(remote_child_process_count.get('value'), 0)}")
     print(f"REMOTE_ACTIVE_QUEUE_JOBS={parse_int(remote_active_queue_jobs.get('value'), 0)}")
+    print(f"CPU_BUSY_WITHOUT_QUEUE_JOB={parse_int(cpu_busy_without_queue_job.get('value'), 0)}")
     print(f"SURROGATE_IDLE_OVERRIDE_COUNT={parse_int(surrogate_idle_override_count.get('value'), 0)}")
     print(f"OVERLAP_DISPATCH_COUNT={parse_int(overlap_dispatch_count.get('value'), 0)}")
 

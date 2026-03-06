@@ -74,6 +74,9 @@ EARLY_STOP_MIN_COMPLETED="${EARLY_STOP_MIN_COMPLETED:-8}"
 EARLY_STOP_FAIL_FRACTION="${EARLY_STOP_FAIL_FRACTION:-0.75}"
 EARLY_STOP_DOMINANT_FRACTION="${EARLY_STOP_DOMINANT_FRACTION:-0.70}"
 EARLY_STOP_DOMINANT_MIN="${EARLY_STOP_DOMINANT_MIN:-6}"
+EARLY_ABORT_MIN_COMPLETED="${EARLY_ABORT_MIN_COMPLETED:-12}"
+EARLY_ABORT_ZERO_ACTIVITY_SHARE="${EARLY_ABORT_ZERO_ACTIVITY_SHARE:-0.80}"
+EARLY_ABORT_ZERO_ACTIVITY_MIN="${EARLY_ABORT_ZERO_ACTIVITY_MIN:-6}"
 CONFIRM_FASTLANE_LIMIT="${CONFIRM_FASTLANE_LIMIT:-1}"
 CONFIRM_FASTLANE_PARALLEL="${CONFIRM_FASTLANE_PARALLEL:-2}"
 CONFIRM_FASTLANE_COOLDOWN_SEC="${CONFIRM_FASTLANE_COOLDOWN_SEC:-1800}"
@@ -303,12 +306,12 @@ batch_session_maybe_stop() {
 
   local now_epoch
   now_epoch="$(date +%s)"
-  local remote_count
-  remote_count="$(remote_runner_count)"
-  if [[ -z "$remote_count" || ! "$remote_count" =~ ^[0-9]+$ ]]; then
-    remote_count=0
-  fi
-  if (( remote_count > 0 )); then
+  local remote_count cpu_busy_without_queue_job
+  remote_count="$(remote_active_queue_jobs)"
+  cpu_busy_without_queue_job="$(remote_cpu_busy_without_queue_job)"
+  [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+  [[ "$cpu_busy_without_queue_job" =~ ^[0-9]+$ ]] || cpu_busy_without_queue_job=0
+  if (( remote_count > 0 || cpu_busy_without_queue_job == 1 )); then
     return 0
   fi
 
@@ -3505,7 +3508,7 @@ PY
 early_stop_low_yield_queue() {
   local queue_rel="$1"
   local queue_path="$ROOT_DIR/$queue_rel"
-  python3 - "$queue_path" "$RUN_INDEX_PATH" "$EARLY_STOP_MIN_COMPLETED" "$EARLY_STOP_FAIL_FRACTION" "$EARLY_STOP_DOMINANT_FRACTION" "$EARLY_STOP_DOMINANT_MIN" <<'PY'
+  python3 - "$queue_rel" "$queue_path" "$RUN_INDEX_PATH" "$EARLY_STOP_MIN_COMPLETED" "$EARLY_STOP_FAIL_FRACTION" "$EARLY_STOP_DOMINANT_FRACTION" "$EARLY_STOP_DOMINANT_MIN" "$EARLY_ABORT_MIN_COMPLETED" "$EARLY_ABORT_ZERO_ACTIVITY_SHARE" "$EARLY_ABORT_ZERO_ACTIVITY_MIN" <<'PY'
 import csv
 import json
 import re
@@ -3513,12 +3516,16 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-queue_path = Path(sys.argv[1])
-run_index_path = Path(sys.argv[2])
-min_completed = int(float(sys.argv[3] or 8))
-fail_fraction_gate = float(sys.argv[4] or 0.75)
-dominant_fraction_gate = float(sys.argv[5] or 0.70)
-dominant_min = int(float(sys.argv[6] or 6))
+queue_rel = str(sys.argv[1] or "").strip()
+queue_path = Path(sys.argv[2])
+run_index_path = Path(sys.argv[3])
+min_completed = int(float(sys.argv[4] or 8))
+fail_fraction_gate = float(sys.argv[5] or 0.75)
+dominant_fraction_gate = float(sys.argv[6] or 0.70)
+dominant_min = int(float(sys.argv[7] or 6))
+zero_activity_min_completed = int(float(sys.argv[8] or 12))
+zero_activity_share_gate = float(sys.argv[9] or 0.80)
+zero_activity_min = int(float(sys.argv[10] or 6))
 
 INITIAL_CAPITAL = 1000.0
 
@@ -3530,9 +3537,15 @@ payload = {
     "evaluated": 0,
     "fail_fraction": 0.0,
     "dominant_fraction": 0.0,
+    "zero_activity_fraction": 0.0,
 }
 
-if not queue_path.exists() or not run_index_path.exists():
+if (
+    not queue_path.exists()
+    or not run_index_path.exists()
+    or "confirm_fastlane_" in queue_rel
+    or "/confirm_fastlane_" in queue_rel
+):
     print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(0)
 
@@ -3604,6 +3617,17 @@ for row in completed_rows:
 fail_counter = Counter()
 pass_count = 0
 eval_count = 0
+zero_activity_count = 0
+
+def is_zero_activity(row):
+    if not row:
+        return True
+    if not is_true(row.get("metrics_present")):
+        return True
+    trades = to_float(row.get("total_trades"), 0.0) or 0.0
+    pairs = to_float(row.get("total_pairs_traded"), 0.0) or 0.0
+    pnl = to_float(row.get("total_pnl"), 0.0)
+    return trades <= 0.0 or pairs <= 0.0 or pnl is None
 
 for bundle in by_base.values():
     h = bundle.get("holdout")
@@ -3611,6 +3635,8 @@ for bundle in by_base.values():
     if h is None and s is None:
         continue
     eval_count += 1
+    if is_zero_activity(h) and is_zero_activity(s):
+        zero_activity_count += 1
     h_reason = hard_gate_reason(h) if h is not None else "METRICS_MISSING"
     s_reason = hard_gate_reason(s) if s is not None else "METRICS_MISSING"
     if not h_reason and not s_reason:
@@ -3620,6 +3646,32 @@ for bundle in by_base.values():
 
 payload["evaluated"] = eval_count
 if eval_count < max(1, min_completed):
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+zero_activity_fraction = float(zero_activity_count / eval_count) if eval_count > 0 else 0.0
+payload["zero_activity_fraction"] = zero_activity_fraction
+if (
+    eval_count >= max(1, zero_activity_min_completed)
+    and zero_activity_count >= max(1, zero_activity_min)
+    and zero_activity_fraction >= zero_activity_share_gate
+    and pass_count <= 0
+):
+    changed = 0
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "stalled", "failed", "error"}:
+            row["status"] = "skipped"
+            changed += 1
+    if changed > 0 and rows:
+        with queue_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+    payload["trigger"] = bool(changed > 0)
+    payload["changed"] = changed
+    payload["reason"] = "EARLY_ABORT_ZERO_ACTIVITY"
     print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(0)
 
@@ -3653,7 +3705,7 @@ if changed > 0 and rows:
 
 payload["trigger"] = bool(changed > 0)
 payload["changed"] = changed
-payload["reason"] = f"EARLY_STOP_LOW_YIELD_{dominant_reason}"
+payload["reason"] = f"EARLY_ABORT_LOW_INFORMATION_{dominant_reason}"
 print(json.dumps(payload, ensure_ascii=False))
 PY
 }
@@ -3839,6 +3891,41 @@ PY" || true)"
   echo "$remote_count"
 }
 
+remote_child_process_count() {
+  remote_runner_count
+}
+
+remote_cpu_busy_without_queue_job() {
+  local child_count queue_jobs load1
+  child_count="$(remote_child_process_count)"
+  queue_jobs="$(remote_active_queue_jobs)"
+  load1="$(get_vps_load)"
+  [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
+  [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
+  if [[ -z "$load1" ]]; then
+    load1=0
+  fi
+  if (( queue_jobs == 0 && child_count > 0 )) && awk -v v="$load1" 'BEGIN { exit (v + 0.0 >= 1.5) ? 0 : 1 }'; then
+    echo 1
+    return
+  fi
+  echo 0
+}
+
+refresh_remote_runtime_metrics() {
+  local queue_jobs child_count cpu_busy
+  queue_jobs="$(remote_active_queue_jobs)"
+  child_count="$(remote_child_process_count)"
+  cpu_busy="$(remote_cpu_busy_without_queue_job)"
+  [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
+  [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
+  [[ "$cpu_busy" =~ ^[0-9]+$ ]] || cpu_busy=0
+  fullspan_state_metric_set "remote_active_queue_jobs" "$queue_jobs"
+  fullspan_state_metric_set "remote_queue_job_count" "$queue_jobs"
+  fullspan_state_metric_set "remote_child_process_count" "$child_count"
+  fullspan_state_metric_set "cpu_busy_without_queue_job" "$cpu_busy"
+}
+
 remote_queue_running() {
   local queue_rel="$1"
   local cnt
@@ -3878,18 +3965,20 @@ sla_watch_queue() {
   local state_verdict="$4"
 
   if (( pending > 0 && running == 0 )); then
-    local rc
-    rc="$(remote_runner_count)"
-    if [[ -z "$rc" || ! "$rc" =~ ^[0-9]+$ ]]; then
-      rc=0
-    fi
-    if (( rc == 0 )); then
+    local rc remote_child_count cpu_busy_without_queue_job
+    rc="$(remote_active_queue_jobs)"
+    remote_child_count="$(remote_child_process_count)"
+    cpu_busy_without_queue_job="$(remote_cpu_busy_without_queue_job)"
+    [[ "$rc" =~ ^[0-9]+$ ]] || rc=0
+    [[ "$remote_child_count" =~ ^[0-9]+$ ]] || remote_child_count=0
+    [[ "$cpu_busy_without_queue_job" =~ ^[0-9]+$ ]] || cpu_busy_without_queue_job=0
+    if (( rc == 0 && cpu_busy_without_queue_job == 0 )); then
       local idle_streak="${vps_idle_pending_streak_by_queue[$queue_rel]:-0}"
       idle_streak=$((idle_streak + 1))
       vps_idle_pending_streak_by_queue["$queue_rel"]="$idle_streak"
       if (( idle_streak >= SLA_VPS_IDLE_PENDING_CYCLES )); then
         fullspan_state_metric_inc "sla_vps_idle_with_pending_trigger" 1
-        log_decision_note "$queue_rel" "SLA_VPS_IDLE_WITH_PENDING" "streak=$idle_streak pending=$pending" "watchdog_or_manual_intervention"
+        log_decision_note "$queue_rel" "SLA_VPS_IDLE_WITH_PENDING" "streak=$idle_streak pending=$pending remote_queue_jobs=$rc remote_child_processes=$remote_child_count" "watchdog_or_manual_intervention"
       fi
     else
       vps_idle_pending_streak_by_queue["$queue_rel"]=0
@@ -4150,7 +4239,7 @@ maybe_trigger_auto_seed() {
 
   case "$reason" in
     candidate_empty|candidate_parse_empty|candidate_empty_after_reconcile|candidate_parse_empty_after_reconcile)
-      remote_count="$(remote_runner_count)"
+      remote_count="$(remote_active_queue_jobs)"
       [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
       if (( remote_count == 0 )); then
         force_seed=1
@@ -4878,7 +4967,7 @@ maybe_dispatch_overlap_from_buffer() {
   local remote_jobs
   remote_jobs="$(remote_active_queue_jobs)"
   [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
-  fullspan_state_metric_set "remote_active_queue_jobs" "$remote_jobs"
+  refresh_remote_runtime_metrics
   if (( remote_jobs >= READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES )); then
     return 1
   fi
@@ -4960,7 +5049,7 @@ while true; do
   maybe_trigger_auto_seed "low_planned_backlog" || true
   fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
   fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
-  fullspan_state_metric_set "remote_active_queue_jobs" "$(remote_active_queue_jobs)"
+  refresh_remote_runtime_metrics
 
   current_epoch="$(date +%s)"
   global_completed_metrics_now="$(global_completed_metrics_count)"
@@ -5221,9 +5310,10 @@ PY
     early_stop_payload="$(early_stop_low_yield_queue "$queue_rel")"
     early_stop_trigger="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(bool(d.get(\"trigger\", False))))' "$early_stop_payload" 2>/dev/null || echo 0)"
     if [[ "$early_stop_trigger" == "1" ]]; then
-      early_stop_reason="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(str(d.get(\"reason\") or \"EARLY_STOP_LOW_YIELD\"))' "$early_stop_payload" 2>/dev/null || echo EARLY_STOP_LOW_YIELD)"
+      early_stop_reason="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(str(d.get(\"reason\") or \"EARLY_ABORT_LOW_INFORMATION\"))' "$early_stop_payload" 2>/dev/null || echo EARLY_ABORT_LOW_INFORMATION)"
       early_stop_changed="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get(\"changed\",0)))' "$early_stop_payload" 2>/dev/null || echo 0)"
       early_stop_fail_fraction="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(float(d.get(\"fail_fraction\",0.0)))' "$early_stop_payload" 2>/dev/null || echo 0)"
+      early_stop_zero_activity_fraction="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(float(d.get(\"zero_activity_fraction\",0.0)))' "$early_stop_payload" 2>/dev/null || echo 0)"
       state_strict_pass_count="$(fullspan_state_get "$queue_rel" "strict_pass_count" "0")"
       state_strict_run_groups="$(fullspan_state_get "$queue_rel" "strict_run_group_count" "0")"
       state_confirm_count="$(fullspan_state_get "$queue_rel" "confirm_count" "0")"
@@ -5233,9 +5323,13 @@ PY
         "$state_strict_pass_count" "$state_strict_run_groups" "" "" "" \
         "$early_stop_reason" "$state_confirm_count" "FULLSPAN_PREFILTER_REJECT" "$early_stop_reason" "$state_run_groups_csv" "$state_strict_summary_path"
       mark_orphan "$queue_rel" "early_stop_low_yield"
-      fullspan_state_metric_inc "early_stop_low_yield_count" 1
-      log_decision_note "$queue_rel" "EARLY_STOP_LOW_YIELD" "reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction" "skip_remaining_and_continue_search"
-      log "early_stop_low_yield queue=$queue_rel reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction"
+      if [[ "$early_stop_reason" == "EARLY_ABORT_ZERO_ACTIVITY" ]]; then
+        fullspan_state_metric_inc "early_abort_zero_activity_count" 1
+      else
+        fullspan_state_metric_inc "early_abort_low_information_count" 1
+      fi
+      log_decision_note "$queue_rel" "${early_stop_reason}" "reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction zero_activity_fraction=$early_stop_zero_activity_fraction" "skip_remaining_and_continue_search"
+      log "early_abort queue=$queue_rel reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction zero_activity_fraction=$early_stop_zero_activity_fraction"
       read -r planned running stalled failed completed total <<< "$(python3 - "$ROOT_DIR/$queue_rel" <<'PY'
 import csv
 import sys
@@ -5561,7 +5655,7 @@ PY
   [[ "$remote_active_jobs" =~ ^[0-9]+$ ]] || remote_active_jobs=0
   idle_with_pending="$(process_slo_idle_with_executable_pending)"
   [[ "$idle_with_pending" =~ ^[0-9]+$ ]] || idle_with_pending=0
-  fullspan_state_metric_set "remote_active_queue_jobs" "$remote_active_jobs"
+  refresh_remote_runtime_metrics
   if [[ "$surrogate_decision" == "refine" && "${surrogate_reason:-}" == "queue_pending_backlog" && "$planned" -gt 0 && "$running" -eq 0 && "$stalled" -eq 0 && "$failed" -eq 0 && "$completed" -eq 0 ]]; then
     if (( remote_active_jobs == 0 || idle_with_pending == 1 )); then
       surrogate_decision="allow"

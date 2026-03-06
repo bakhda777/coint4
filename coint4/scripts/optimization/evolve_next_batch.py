@@ -2418,6 +2418,342 @@ def _dump_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _default_invalid_proposal_index_path(app_root: Path) -> Path:
+    return app_root / "artifacts" / "wfa" / "aggregate" / ".autonomous" / "invalid_proposal_index.json"
+
+
+def _load_invalid_proposal_index(path: Path) -> dict[str, Any]:
+    payload = _load_state(path)
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+    normalized: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        fingerprint = str(entry.get("fingerprint") or "").strip()
+        code = str(entry.get("code") or "").strip().upper()
+        if not fingerprint or not code:
+            continue
+        normalized.append(
+            {
+                "fingerprint": fingerprint,
+                "code": code,
+                "reason": str(entry.get("reason") or "").strip(),
+                "occurrences": max(1, _coerce_int(entry.get("occurrences"), default=1)),
+                "operator_id": str(entry.get("operator_id") or "").strip(),
+                "candidate_id": str(entry.get("candidate_id") or "").strip(),
+                "changed_keys": [str(key) for key in list(entry.get("changed_keys") or []) if str(key).strip()],
+                "first_seen_at": str(entry.get("first_seen_at") or "").strip(),
+                "last_seen_at": str(entry.get("last_seen_at") or "").strip(),
+            }
+        )
+    return {
+        "schema_version": "v1",
+        "updated_at": str(payload.get("updated_at") or "").strip(),
+        "entries": normalized,
+    }
+
+
+def _upsert_invalid_proposal_index_entry(
+    *,
+    state: dict[str, Any],
+    fingerprint: str,
+    code: str,
+    reason: str,
+    operator_id: str,
+    candidate_id: str,
+    changed_keys: Sequence[str],
+) -> dict[str, Any]:
+    entries = state.setdefault("entries", [])
+    if not isinstance(entries, list):
+        entries = []
+        state["entries"] = entries
+    now = _utc_now_iso()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("fingerprint") or "").strip() != fingerprint:
+            continue
+        entry["code"] = code
+        entry["reason"] = reason
+        entry["operator_id"] = operator_id
+        entry["candidate_id"] = candidate_id
+        entry["changed_keys"] = [str(key) for key in list(changed_keys or []) if str(key).strip()]
+        entry["occurrences"] = max(1, _coerce_int(entry.get("occurrences"), default=1)) + 1
+        if not str(entry.get("first_seen_at") or "").strip():
+            entry["first_seen_at"] = now
+        entry["last_seen_at"] = now
+        state["updated_at"] = now
+        return entry
+
+    entry = {
+        "fingerprint": fingerprint,
+        "code": code,
+        "reason": reason,
+        "occurrences": 1,
+        "operator_id": operator_id,
+        "candidate_id": candidate_id,
+        "changed_keys": [str(key) for key in list(changed_keys or []) if str(key).strip()],
+        "first_seen_at": now,
+        "last_seen_at": now,
+    }
+    entries.append(entry)
+    state["updated_at"] = now
+    return entry
+
+
+def _find_invalid_proposal_index_entry(state: Mapping[str, Any], fingerprint: str) -> Mapping[str, Any] | None:
+    entries = state.get("entries")
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        if str(entry.get("fingerprint") or "").strip() == fingerprint:
+            return entry
+    return None
+
+
+def _dump_invalid_proposal_index(path: Path, payload: Mapping[str, Any]) -> None:
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+    normalized = {
+        "schema_version": "v1",
+        "updated_at": str(payload.get("updated_at") or _utc_now_iso()).strip() or _utc_now_iso(),
+        "entries": entries[-10000:],
+    }
+    _dump_json(path, normalized)
+
+
+def _build_invalid_proposal_fingerprint(
+    *,
+    proposal: CandidateProposal,
+    ir_mode: str,
+    patch_payload: Mapping[str, Any] | None,
+) -> str:
+    changed_payload = {
+        key: proposal.genome.get(key)
+        for key in proposal.changed_keys
+        if key in proposal.genome
+    }
+    fingerprint_payload = canonicalize_object(
+        {
+            "ir_mode": str(ir_mode),
+            "operator_id": str(proposal.operator_id),
+            "changed_keys": list(proposal.changed_keys),
+            "changed_values": changed_payload,
+            "patch": dict(patch_payload or {}),
+        }
+    )
+    raw = json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"invalid_{hashlib.sha1(raw.encode('utf-8')).hexdigest()[:20]}"
+
+
+def _preflight_validate_materialized_candidate(
+    *,
+    parent_cfg: Mapping[str, Any],
+    proposal: CandidateProposal,
+    patch_payload: Mapping[str, Any] | None,
+    window_start: str,
+    window_end: str,
+    include_stress: bool,
+    enforce_app_config_validation: bool,
+) -> tuple[str | None, str]:
+    from coint2.utils.config import AppConfig
+
+    if proposal.patch_ir is not None and not isinstance(proposal.patch_ir, dict):
+        return "PATCH_IR_INVALID", "proposal.patch_ir must be a mapping"
+    if proposal.patch_ir is not None:
+        patch_ir_errors = validate_patch_ir_payload(proposal.patch_ir)
+        if patch_ir_errors:
+            return "PATCH_IR_INVALID", f"proposal.patch_ir failed validate_patch_ir_payload: {patch_ir_errors}"
+
+    holdout_cfg_payload = copy.deepcopy(dict(parent_cfg))
+    try:
+        if patch_payload is not None:
+            _apply_materialized_patch(holdout_cfg_payload, patch_payload)
+        else:
+            changed = {key: proposal.genome.get(key) for key in proposal.changed_keys if key in proposal.genome}
+            _apply_genome_overrides(holdout_cfg_payload, changed)
+        _set_nested(holdout_cfg_payload, "walk_forward.start_date", window_start)
+        _set_nested(holdout_cfg_payload, "walk_forward.end_date", window_end)
+    except Exception as exc:  # noqa: BLE001
+        return "CONFIG_VALIDATION_ERROR", f"materialization failed: {type(exc).__name__}: {exc}"
+
+    backtest_block = holdout_cfg_payload.get("backtest") or {}
+    try:
+        max_var_multiplier = float(backtest_block.get("max_var_multiplier"))
+    except Exception:  # noqa: BLE001
+        max_var_multiplier = None
+    if max_var_multiplier is not None and max_var_multiplier <= 1.0:
+        return "MAX_VAR_MULTIPLIER_INVALID", f"backtest.max_var_multiplier={max_var_multiplier:.6f} <= 1.0"
+
+    if enforce_app_config_validation:
+        try:
+            AppConfig(**holdout_cfg_payload)
+        except Exception as exc:  # noqa: BLE001
+            return "CONFIG_VALIDATION_ERROR", f"holdout AppConfig validation failed: {type(exc).__name__}: {exc}"
+
+        if include_stress:
+            stress_cfg_payload = copy.deepcopy(holdout_cfg_payload)
+            for dotted_key, value in STRESS_OVERRIDES.items():
+                _set_nested(stress_cfg_payload, dotted_key, value)
+            try:
+                AppConfig(**stress_cfg_payload)
+            except Exception as exc:  # noqa: BLE001
+                return "CONFIG_VALIDATION_ERROR", f"stress AppConfig validation failed: {type(exc).__name__}: {exc}"
+
+    return None, ""
+
+
+def _baseline_parent_supports_app_config_validation(
+    *,
+    parent_cfg: Mapping[str, Any],
+    window_start: str,
+    window_end: str,
+    include_stress: bool,
+) -> bool:
+    from coint2.utils.config import AppConfig
+
+    payload = copy.deepcopy(dict(parent_cfg))
+    _set_nested(payload, "walk_forward.start_date", window_start)
+    _set_nested(payload, "walk_forward.end_date", window_end)
+    try:
+        AppConfig(**payload)
+    except Exception:  # noqa: BLE001
+        return False
+    if include_stress:
+        stress_payload = copy.deepcopy(payload)
+        for dotted_key, value in STRESS_OVERRIDES.items():
+            _set_nested(stress_payload, dotted_key, value)
+        try:
+            AppConfig(**stress_payload)
+        except Exception:  # noqa: BLE001
+            return False
+    return True
+
+
+def filter_invalid_proposals_before_materialization(
+    *,
+    proposals: Sequence[CandidateProposal],
+    app_root: Path,
+    invalid_index_path: Path,
+    parent_cfg: Mapping[str, Any],
+    windows: Sequence[tuple[str, str]],
+    include_stress: bool,
+    ir_mode: str,
+    persist_state: bool,
+) -> tuple[list[CandidateProposal], dict[str, Any], dict[str, Any]]:
+    state = _load_invalid_proposal_index(invalid_index_path)
+    accepted: list[CandidateProposal] = []
+    summary: dict[str, Any] = {
+        "checked": 0,
+        "accepted": 0,
+        "skipped_invalid": 0,
+        "skipped_quarantined": 0,
+        "codes": {},
+        "entries": [],
+        "state_path": _relative_to_root(invalid_index_path, root=app_root),
+    }
+    code_counter: dict[str, int] = {}
+    if not proposals:
+        return accepted, summary, state
+    if not windows:
+        raise ValueError("windows must not be empty")
+
+    first_window_start, first_window_end = windows[0]
+    enforce_app_config_validation = _baseline_parent_supports_app_config_validation(
+        parent_cfg=parent_cfg,
+        window_start=first_window_start,
+        window_end=first_window_end,
+        include_stress=bool(include_stress),
+    )
+    state_dirty = False
+    quarantine_codes = {"MAX_VAR_MULTIPLIER_INVALID", "CONFIG_VALIDATION_ERROR", "PATCH_IR_INVALID"}
+    for proposal in proposals:
+        summary["checked"] += 1
+        patch_payload: dict[str, Any] | None = None
+        if str(ir_mode) == "patch_ast" and isinstance(proposal.patch_ir, dict):
+            raw_patch = proposal.patch_ir.get("materialized_patch")
+            if isinstance(raw_patch, dict):
+                patch_payload = raw_patch
+
+        fingerprint = _build_invalid_proposal_fingerprint(
+            proposal=proposal,
+            ir_mode=str(ir_mode),
+            patch_payload=patch_payload,
+        )
+        existing = _find_invalid_proposal_index_entry(state, fingerprint)
+        existing_code = str(existing.get("code") or "").strip().upper() if isinstance(existing, Mapping) else ""
+        if existing_code in quarantine_codes and _coerce_int(existing.get("occurrences"), default=1) >= 1:
+            entry = _upsert_invalid_proposal_index_entry(
+                state=state,
+                fingerprint=fingerprint,
+                code=existing_code,
+                reason=str(existing.get("reason") or "quarantined repeat invalid proposal").strip(),
+                operator_id=proposal.operator_id,
+                candidate_id=proposal.candidate_id,
+                changed_keys=proposal.changed_keys,
+            )
+            state_dirty = True
+            code_counter[existing_code] = code_counter.get(existing_code, 0) + 1
+            summary["skipped_quarantined"] += 1
+            summary["entries"].append(
+                {
+                    "candidate_id": proposal.candidate_id,
+                    "fingerprint": fingerprint,
+                    "action": "quarantined",
+                    "code": existing_code,
+                    "reason": str(entry.get("reason") or "").strip(),
+                }
+            )
+            continue
+
+        code, reason = _preflight_validate_materialized_candidate(
+            parent_cfg=parent_cfg,
+            proposal=proposal,
+            patch_payload=patch_payload,
+            window_start=first_window_start,
+            window_end=first_window_end,
+            include_stress=bool(include_stress),
+            enforce_app_config_validation=bool(enforce_app_config_validation),
+        )
+        if code:
+            _upsert_invalid_proposal_index_entry(
+                state=state,
+                fingerprint=fingerprint,
+                code=code,
+                reason=reason,
+                operator_id=proposal.operator_id,
+                candidate_id=proposal.candidate_id,
+                changed_keys=proposal.changed_keys,
+            )
+            state_dirty = True
+            code_counter[code] = code_counter.get(code, 0) + 1
+            summary["skipped_invalid"] += 1
+            summary["entries"].append(
+                {
+                    "candidate_id": proposal.candidate_id,
+                    "fingerprint": fingerprint,
+                    "action": "invalid",
+                    "code": code,
+                    "reason": reason,
+                }
+            )
+            continue
+
+        accepted.append(proposal)
+
+    summary["accepted"] = len(accepted)
+    summary["codes"] = code_counter
+    summary["enforce_app_config_validation"] = bool(enforce_app_config_validation)
+    if persist_state and state_dirty:
+        _dump_invalid_proposal_index(invalid_index_path, state)
+    return accepted, summary, state
+
+
 def _render_knob_space_payload(knob_space: Sequence[KnobSpec]) -> list[dict[str, Any]]:
     return [
         {
@@ -2584,6 +2920,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-dir", default="artifacts/wfa/runs", help="Base runs directory for queue results_dir paths.")
     parser.add_argument("--state-path", help="Override evolution state path.")
     parser.add_argument("--decision-dir", help="Override decision output directory.")
+    parser.add_argument(
+        "--invalid-proposal-state-path",
+        help="Override persistent invalid proposal index path (default: artifacts/wfa/aggregate/.autonomous/invalid_proposal_index.json).",
+    )
     parser.add_argument("--include-noncompleted", action="store_true", help="Allow non-completed rows in diagnostics.")
     parser.add_argument("--min-windows", type=int, default=3)
     parser.add_argument("--min-trades", type=float, default=200.0)
@@ -2741,6 +3081,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.decision_dir
         else (app_root / "artifacts" / "wfa" / "aggregate" / controller_group / "decisions")
     )
+    if args.invalid_proposal_state_path:
+        invalid_proposal_state_path = _resolve_under_root(str(args.invalid_proposal_state_path), root=app_root)
+    else:
+        invalid_proposal_state_path = None
     rng_state_seed = int(seed + generation)
     rng = np.random.default_rng(rng_state_seed)
     if str(args.ir_mode) == "patch_ast":
@@ -2891,6 +3235,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     decision_path = decision_dir / f"{decision_id}.json"
     configs_base = _resolve_under_root(str(args.configs_dir), root=app_root) / run_group
     runs_base = _resolve_under_root(str(args.runs_dir), root=app_root) / run_group
+    if invalid_proposal_state_path is None:
+        outputs_external = any(
+            base.resolve() != app_root.resolve() and app_root.resolve() not in base.resolve().parents
+            for base in (queue_base.parent, configs_base.parent, runs_base.parent, state_path.parent, decision_dir)
+        )
+        invalid_proposal_state_path = (
+            state_path.parent / "invalid_proposal_index.json"
+            if outputs_external
+            else _default_invalid_proposal_index_path(app_root)
+        )
+
+    proposals, invalid_firewall_summary, invalid_proposal_state = filter_invalid_proposals_before_materialization(
+        proposals=proposals,
+        app_root=app_root,
+        invalid_index_path=invalid_proposal_state_path,
+        parent_cfg=parent_cfg,
+        windows=windows,
+        include_stress=bool(args.include_stress),
+        ir_mode=str(args.ir_mode),
+        persist_state=not bool(args.dry_run),
+    )
 
     queue_rows: list[dict[str, Any]] = []
     decision_proposals: list[dict[str, Any]] = []
@@ -2913,11 +3278,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             if isinstance(raw_patch, dict):
                 patch_payload = raw_patch
                 patch_rel = f"{_relative_to_root(configs_base, root=app_root)}/{run_group}_v{idx:03d}_{proposal.candidate_id}.patch.yaml"
-                patch_path = app_root / patch_rel
-                if not args.dry_run:
-                    patch_path.parent.mkdir(parents=True, exist_ok=True)
-                    patch_path.write_text(yaml.safe_dump(patch_payload, sort_keys=True), encoding="utf-8")
-                    created_files.append(_relative_to_root(patch_path, root=app_root))
 
         for window_start, window_end in windows:
             window_tag = f"{window_start.replace('-', '')}_{window_end.replace('-', '')}"
@@ -2935,6 +3295,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             _set_nested(holdout_cfg_payload, "walk_forward.end_date", window_end)
             holdout_cfg_rel = f"{_relative_to_root(configs_base, root=app_root)}/{variant_tag}.yaml"
             holdout_cfg_path = app_root / holdout_cfg_rel
+
+            if patch_payload is not None and not args.dry_run:
+                patch_path = app_root / str(patch_rel)
+                if not patch_path.exists():
+                    patch_path.parent.mkdir(parents=True, exist_ok=True)
+                    patch_path.write_text(yaml.safe_dump(patch_payload, sort_keys=True), encoding="utf-8")
+                    created_files.append(_relative_to_root(patch_path, root=app_root))
 
             if not args.dry_run:
                 holdout_cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3022,7 +3389,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if not queue_rows:
-        raise SystemExit("no queue entries were generated")
+        raise SystemExit("no valid queue entries were generated after preflight firewall")
 
     search_space_md = _render_search_space_md(
         run_group=run_group,
@@ -3112,6 +3479,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "exclude_knobs": sorted(exclude_knobs),
             "summary": dict(repair_summary),
         },
+        "preflight_firewall": {
+            "invalid_proposal_state_path": _relative_to_root(invalid_proposal_state_path, root=app_root),
+            "summary": invalid_firewall_summary,
+            "tracked_entries": len(list(invalid_proposal_state.get("entries") or [])),
+        },
         "lineage": {
             "uid_field": "lineage_uid",
             "metadata_field": "metadata_json",
@@ -3146,6 +3518,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "queue_path": _relative_to_root(queue_path, root=app_root),
             "repair_mode": str(args.repair_mode),
             "repair_summary": dict(repair_summary),
+            "invalid_firewall_summary": dict(invalid_firewall_summary),
             "created_at": _utc_now_iso(),
         }
     )
@@ -3171,6 +3544,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"[dry-run] policy_scale={args.policy_scale}")
         print(f"[dry-run] repair_mode={args.repair_mode} max_neighbors={int(args.repair_max_neighbors)} exclude={sorted(exclude_knobs)}")
         print(f"[dry-run] repair_summary={json.dumps(repair_summary, ensure_ascii=False)}")
+        print(f"[dry-run] invalid_firewall={json.dumps(invalid_firewall_summary, ensure_ascii=False)}")
         print(f"[dry-run] operator={operator_plan.operator_kind} params={json.dumps(operator_plan.params, ensure_ascii=False)}")
         print(f"[dry-run] llm_used={llm_policy.used} source={llm_policy.source} reason={llm_policy.reason}")
         print(f"[dry-run] generated_variants={len(proposals)} windows={len(windows)} queue_rows={len(queue_rows)}")
@@ -3194,6 +3568,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Failure mode:      {failure.failure_mode}")
     print(f"Operator:          {operator_plan.operator_kind}")
     print(f"LLM policy used:   {llm_policy.used} ({llm_policy.source})")
+    print(f"Preflight invalid: {json.dumps(invalid_firewall_summary['codes'], ensure_ascii=False)}")
     print(f"Generated variants:{len(proposals)}")
     return 0
 

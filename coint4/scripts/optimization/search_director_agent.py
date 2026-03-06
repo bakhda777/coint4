@@ -9,10 +9,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from yield_governor_agent import build_yield_governor_state, dump_json as dump_yield_json
 
 
 def utc_now_iso() -> str:
@@ -74,14 +82,36 @@ def canonical_reason(entry: dict[str, Any]) -> str:
     return merged or "UNKNOWN"
 
 
-def build_directive(queues: dict[str, Any]) -> dict[str, Any]:
+def _merge_unique(tokens: list[str], extra: list[str], limit: int = 8) -> list[str]:
+    out: list[str] = []
+    seen = set()
+    for token in [*tokens, *extra]:
+        value = str(token or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None = None) -> dict[str, Any]:
     reasons = Counter()
     run_group_hints: list[str] = []
+    proximate_tokens: list[str] = []
 
     for queue, entry in queues.items():
         if not isinstance(entry, dict):
             continue
         verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+        strict_pass = parse_int(entry.get("strict_pass_count"), 0)
+        if verdict in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM", "PROMOTE_ELIGIBLE"} or strict_pass > 0:
+            token = str(entry.get("top_run_group") or "").strip()
+            if not token:
+                token = Path(str(queue)).parent.name
+            if token:
+                proximate_tokens.append(token)
         if verdict != "REJECT":
             continue
         reason = canonical_reason(entry)
@@ -107,6 +137,20 @@ def build_directive(queues: dict[str, Any]) -> dict[str, Any]:
         if len(contains) >= 3:
             break
 
+    yield_state = yield_state if isinstance(yield_state, dict) else {}
+    yield_active = bool(yield_state.get("active"))
+    yield_preferred_contains = [str(token).strip() for token in list(yield_state.get("preferred_contains", []) or []) if str(token).strip()]
+    winner_proximate = yield_state.get("winner_proximate", {})
+    if not isinstance(winner_proximate, dict):
+        winner_proximate = {}
+    yield_winner_contains = [
+        str(token).strip() for token in list(winner_proximate.get("contains", []) or []) if str(token).strip()
+    ]
+    lane_weights = yield_state.get("lane_weights", {})
+    if not isinstance(lane_weights, dict):
+        lane_weights = {}
+    contains = _merge_unique(proximate_tokens, _merge_unique(yield_winner_contains, yield_preferred_contains), limit=8) or contains
+
     directive: dict[str, Any] = {
         "version": 1,
         "mode": "neutral",
@@ -124,6 +168,23 @@ def build_directive(queues: dict[str, Any]) -> dict[str, Any]:
             "dedupe_distance_floor": 0.03,
             "num_variants_cap": 24,
             "policy_scale": "auto",
+        },
+        "winner_proximate": {
+            "enabled": bool(proximate_tokens or yield_winner_contains),
+            "contains": _merge_unique(proximate_tokens, yield_winner_contains, limit=8),
+            "reason": "strict_pass_or_high_yield_lineage",
+        },
+        "yield_governor": {
+            "active": yield_active,
+            "preferred_contains": yield_preferred_contains[:8],
+            "cooldown_contains": [str(token).strip() for token in list(yield_state.get("cooldown_contains", []) or []) if str(token).strip()][:12],
+            "preferred_operator_ids": [str(token).strip() for token in list(yield_state.get("preferred_operator_ids", []) or []) if str(token).strip()][:8],
+            "cooldown_operator_ids": [str(token).strip() for token in list(yield_state.get("cooldown_operator_ids", []) or []) if str(token).strip()][:8],
+        },
+        "lane_weights": {
+            "winner_proximate": max(0, parse_int(lane_weights.get("winner_proximate"), 40)),
+            "broad_search": max(0, parse_int(lane_weights.get("broad_search"), 45)),
+            "confirm_replay": max(0, parse_int(lane_weights.get("confirm_replay"), 15)),
         },
     }
 
@@ -211,6 +272,69 @@ def build_directive(queues: dict[str, Any]) -> dict[str, Any]:
         )
 
     return directive
+
+
+def materialize_cold_fail_index(
+    *,
+    queues: dict[str, Any],
+    path: Path,
+    ttl_sec: int = 21600,
+    policy_version: str = "fullspan_v1",
+) -> dict[str, Any]:
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    payload = load_json(path, {"ts": "", "policy_version": policy_version, "entries": []})
+    entries = payload.get("entries", []) if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        entries = []
+
+    live_entries: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get("queue") or "").strip()
+        if not queue:
+            continue
+        until_ts = parse_int(entry.get("until_ts"), 0)
+        if until_ts <= now_ts:
+            continue
+        live_entries[queue] = dict(entry)
+
+    added = 0
+    for queue, entry in queues.items():
+        if not isinstance(entry, dict):
+            continue
+        verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+        strict_gate = str(entry.get("strict_gate_status") or "").strip().upper()
+        if verdict != "REJECT" and strict_gate != "FULLSPAN_PREFILTER_REJECT":
+            continue
+        gate_reason = canonical_reason(entry)
+        if not gate_reason:
+            continue
+        existing = live_entries.get(queue, {})
+        live_entries[queue] = {
+            "queue": str(queue),
+            "run_group": str(entry.get("top_run_group") or Path(str(queue)).parent.name).strip(),
+            "lineage_uid": str(entry.get("candidate_uid") or "").strip(),
+            "gate_reason": gate_reason,
+            "source_verdict": verdict or "REJECT",
+            "inserted_ts": parse_int(existing.get("inserted_ts"), now_ts),
+            "until_ts": max(parse_int(existing.get("until_ts"), 0), now_ts + max(0, int(ttl_sec))),
+            "policy_version": policy_version,
+        }
+        if not existing:
+            added += 1
+
+    materialized = {
+        "ts": utc_now_iso(),
+        "policy_version": policy_version,
+        "entries": sorted(live_entries.values(), key=lambda item: str(item.get("queue") or "")),
+    }
+    dump_json(path, materialized)
+    return {
+        "path": str(path),
+        "active_count": len(materialized["entries"]),
+        "added": added,
+    }
 
 
 def _neutral_hard_fail_risk_policy() -> dict[str, Any]:
@@ -303,29 +427,46 @@ def main() -> int:
     state_dir = root / "artifacts" / "wfa" / "aggregate" / ".autonomous"
     fullspan_state_path = state_dir / "fullspan_decision_state.json"
     gate_state_path = state_dir / "gate_surrogate_state.json"
+    yield_state_path = state_dir / "yield_governor_state.json"
+    cold_fail_state_path = state_dir / "cold_fail_index.json"
     directive_path = state_dir / "search_director_directive.json"
     log_path = state_dir / "search_director.log"
+    run_index_path = root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
 
     fullspan_state = load_json(fullspan_state_path, {})
     queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
     if not isinstance(queues, dict):
         queues = {}
     gate_state = load_json(gate_state_path, {})
+    yield_state = build_yield_governor_state(
+        root=root,
+        aggregate_dir=root / "artifacts" / "wfa" / "aggregate",
+        run_index_path=run_index_path,
+        fullspan_state_path=fullspan_state_path,
+        recent_queue_limit=200,
+    )
 
-    directive = build_directive(queues)
+    directive = build_directive(queues, yield_state=yield_state)
     directive.update(build_gate_surrogate_overlay(gate_state))
     directive["ts"] = utc_now_iso()
     directive["source"] = "search_director_agent"
     directive["queue_count"] = len(queues)
+    directive["yield_governor_state_path"] = str(yield_state_path)
+    directive["cold_fail_index_path"] = str(cold_fail_state_path)
+    cold_fail_summary = materialize_cold_fail_index(queues=queues, path=cold_fail_state_path)
+    directive["cold_fail_active_count"] = int(cold_fail_summary.get("active_count", 0))
 
     if not args.dry_run:
+        dump_yield_json(yield_state_path, yield_state)
         dump_json(directive_path, directive)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(
                 f"{utc_now_iso()} | mode={directive.get('mode')} dominant_reason={directive.get('dominant_reason')} "
                 f"contains={directive.get('contains')} risk_policy={int(bool((directive.get('hard_fail_risk_policy') or {}).get('enabled')))} "
                 f"lineage={len(list(directive.get('lineage_priority') or []))} "
-                f"repair={int(bool((directive.get('repair_mode') or {}).get('enabled')))}\n"
+                f"repair={int(bool((directive.get('repair_mode') or {}).get('enabled')))} "
+                f"winner_proximate={len(list((directive.get('winner_proximate') or {}).get('contains') or []))} "
+                f"cold_fail_active={int(cold_fail_summary.get('active_count', 0))}\n"
             )
     else:
         print(json.dumps(directive, ensure_ascii=False, indent=2, sort_keys=True))

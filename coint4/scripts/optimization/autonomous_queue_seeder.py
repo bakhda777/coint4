@@ -76,6 +76,10 @@ def _load_args() -> argparse.Namespace:
             "AUTONOMOUS_QUEUE_SEEDER_GATE_SURROGATE_STATE_PATH",
             "artifacts/wfa/aggregate/.autonomous/gate_surrogate_state.json",
         ),
+        "yield_governor_state_path": os.getenv(
+            "AUTONOMOUS_QUEUE_SEEDER_YIELD_GOVERNOR_STATE_PATH",
+            "artifacts/wfa/aggregate/.autonomous/yield_governor_state.json",
+        ),
         "ready_buffer_state_path": os.getenv(
             "AUTONOMOUS_QUEUE_SEEDER_READY_BUFFER_STATE_PATH",
             "artifacts/wfa/aggregate/.autonomous/ready_queue_buffer.json",
@@ -141,6 +145,11 @@ def _load_args() -> argparse.Namespace:
         "--gate-surrogate-state-path",
         default=defaults["gate_surrogate_state_path"],
         help="Optional gate surrogate state JSON with hard_fail_risk_policy/queue decisions.",
+    )
+    parser.add_argument(
+        "--yield-governor-state-path",
+        default=defaults["yield_governor_state_path"],
+        help="Optional yield governor state JSON with preferred/cooldown search lanes.",
     )
     parser.add_argument(
         "--ready-buffer-state-path",
@@ -562,6 +571,63 @@ def _load_gate_surrogate_state(path: Path) -> dict[str, Any]:
     }
 
 
+def _load_yield_governor_state(path: Path) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "exists": False,
+        "status": "missing",
+        "reason": "missing",
+        "active": False,
+        "preferred_contains": [],
+        "cooldown_contains": [],
+        "preferred_operator_ids": [],
+        "cooldown_operator_ids": [],
+        "winner_proximate": {"enabled": False, "contains": [], "reason": ""},
+        "lane_weights": {},
+        "policy_overrides": {},
+    }
+    if not path.exists():
+        return state
+    state["exists"] = True
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        state.update({"status": "invalid_json", "reason": "invalid_json"})
+        return state
+    if not isinstance(payload, dict):
+        state.update({"status": "invalid_payload", "reason": "invalid_payload"})
+        return state
+
+    winner = payload.get("winner_proximate", {})
+    if not isinstance(winner, dict):
+        winner = {}
+    lane_weights = payload.get("lane_weights", {})
+    if not isinstance(lane_weights, dict):
+        lane_weights = {}
+    policy_overrides = payload.get("policy_overrides", {})
+    if not isinstance(policy_overrides, dict):
+        policy_overrides = {}
+
+    state.update(
+        {
+            "status": "ok",
+            "reason": "ok",
+            "active": bool(payload.get("active")),
+            "preferred_contains": _to_tokens(payload.get("preferred_contains", [])),
+            "cooldown_contains": _to_tokens(payload.get("cooldown_contains", [])),
+            "preferred_operator_ids": _to_tokens(payload.get("preferred_operator_ids", [])),
+            "cooldown_operator_ids": _to_tokens(payload.get("cooldown_operator_ids", [])),
+            "winner_proximate": {
+                "enabled": bool(winner.get("enabled")),
+                "contains": _to_tokens(winner.get("contains", [])),
+                "reason": str(winner.get("reason") or "").strip(),
+            },
+            "lane_weights": {str(k): (_as_int(v, default=0, min_value=0) or 0) for k, v in lane_weights.items()},
+            "policy_overrides": dict(policy_overrides),
+        }
+    )
+    return state
+
+
 def _entry_matches_controller(entry: dict[str, Any], controller_group: str) -> bool:
     wanted = str(controller_group or "").strip()
     if not wanted:
@@ -734,6 +800,8 @@ def main() -> int:
                     "ready_depth": ready_buffer_state.get("ready_depth"),
                     "seed_needed": bool(ready_buffer_state.get("seed_needed")),
                 },
+                "yield_governor_state_path": "",
+                "yield_governor": {},
                 "trigger": None,
                 "trigger_reasons": [],
             }
@@ -758,6 +826,8 @@ def main() -> int:
             impossibility_pruner = _load_impossibility_pruner(impossibility_pruner_path)
             gate_surrogate_path = _resolve_under_root(str(args.gate_surrogate_state_path), app_root)
             gate_surrogate = _load_gate_surrogate_state(gate_surrogate_path)
+            yield_governor_path = _resolve_under_root(str(args.yield_governor_state_path), app_root)
+            yield_governor = _load_yield_governor_state(yield_governor_path)
             hard_fail_risk_policy = gate_surrogate.get("hard_fail_risk_policy", {})
             if not isinstance(hard_fail_risk_policy, dict):
                 hard_fail_risk_policy = {}
@@ -765,6 +835,12 @@ def main() -> int:
             contains = [token.strip() for token in list(args.contains or []) if token.strip()]
             directive_contains = [str(token).strip() for token in list(directive.get("contains", []) or []) if str(token).strip()]
             contains = _merge_unique(directive_contains, contains)
+            directive_winner = directive.get("winner_proximate", {})
+            if not isinstance(directive_winner, dict):
+                directive_winner = {}
+            contains = _merge_unique(_to_tokens(directive_winner.get("contains", [])), contains)
+            contains = _merge_unique(_to_tokens((yield_governor.get("winner_proximate", {}) or {}).get("contains", [])), contains)
+            contains = _merge_unique(list(yield_governor.get("preferred_contains", []) or []), contains)
             if not contains:
                 contains = [controller_group]
 
@@ -801,6 +877,20 @@ def main() -> int:
             directive_policy = str(directive.get("policy_scale", "")).strip()
             if directive_policy in {"auto", "micro", "macro"}:
                 effective_policy_scale = directive_policy
+            yield_policy_overrides = yield_governor.get("policy_overrides", {})
+            if not isinstance(yield_policy_overrides, dict):
+                yield_policy_overrides = {}
+            y_policy_scale = str(yield_policy_overrides.get("policy_scale", "")).strip()
+            if y_policy_scale in {"auto", "micro", "macro"}:
+                effective_policy_scale = y_policy_scale
+            try:
+                if "num_variants_cap" in yield_policy_overrides:
+                    effective_num_variants = min(
+                        int(effective_num_variants),
+                        max(1, int(float(yield_policy_overrides.get("num_variants_cap")))),
+                    )
+            except Exception:
+                pass
 
             directive_pruner = directive.get("impossibility_pruner", {})
             if isinstance(directive_pruner, dict) and bool(directive_pruner.get("enabled")):
@@ -1054,6 +1144,17 @@ def main() -> int:
                 "repair_mode_effective": bool(effective_repair_mode),
                 "repair_max_neighbors_effective": int(effective_repair_max_neighbors),
                 "exclude_knobs_effective": list(effective_exclude_knobs),
+            }
+            snapshot["yield_governor_state_path"] = _safe_rel(yield_governor_path, app_root)
+            snapshot["yield_governor"] = {
+                "exists": bool(yield_governor.get("exists")),
+                "status": str(yield_governor.get("status") or ""),
+                "active": bool(yield_governor.get("active")),
+                "preferred_contains": list(yield_governor.get("preferred_contains", []) or [])[:8],
+                "cooldown_contains": list(yield_governor.get("cooldown_contains", []) or [])[:8],
+                "winner_proximate": dict(yield_governor.get("winner_proximate") or {}),
+                "lane_weights": dict(yield_governor.get("lane_weights") or {}),
+                "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
             }
 
             decision_dir = aggregate_dir / controller_group / "decisions"

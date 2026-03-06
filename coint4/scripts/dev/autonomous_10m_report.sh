@@ -555,10 +555,12 @@ def metric_value(name):
     return to_int(item)
 
 print(
-    "ready_buffer_depth={ready} cold_fail_active_count={cold} remote_active_queue_jobs={remote} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
+    "ready_buffer_depth={ready} cold_fail_active_count={cold} remote_child_process_count={child} remote_active_queue_jobs={remote} cpu_busy_without_queue_job={cpu_busy} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
         ready=metric_value("ready_buffer_depth"),
         cold=metric_value("cold_fail_active_count"),
+        child=metric_value("remote_child_process_count"),
         remote=metric_value("remote_active_queue_jobs"),
+        cpu_busy=metric_value("cpu_busy_without_queue_job"),
         idle=metric_value("surrogate_idle_override_count"),
         overlap=metric_value("overlap_dispatch_count"),
     )

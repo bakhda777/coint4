@@ -264,7 +264,10 @@ def test_runtime_metric_fields_contract() -> None:
             'stalled_share',
             'ready_buffer_depth',
             'cold_fail_active_count',
+            'remote_child_process_count',
+            'remote_queue_job_count',
             'remote_active_queue_jobs',
+            'cpu_busy_without_queue_job',
             'surrogate_idle_override_count',
             'overlap_dispatch_count',
         ],
@@ -304,7 +307,25 @@ def test_overlap_dispatch_and_idle_override_contract() -> None:
             'READY_BUFFER_OVERLAP_TAIL_PENDING',
             'READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES',
             'remote_active_queue_jobs()',
+            'remote_child_process_count()',
+            'remote_cpu_busy_without_queue_job()',
             'SURROGATE_IDLE_OVERRIDE',
             'cold_start_idle_slot',
+        ],
+    )
+
+
+def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'EARLY_ABORT_MIN_COMPLETED',
+            'EARLY_ABORT_ZERO_ACTIVITY_SHARE',
+            'EARLY_ABORT_ZERO_ACTIVITY_MIN',
+            'EARLY_ABORT_ZERO_ACTIVITY',
+            'EARLY_ABORT_LOW_INFORMATION_',
+            '"confirm_fastlane_" in queue_rel',
+            'zero_activity_fraction',
         ],
     )

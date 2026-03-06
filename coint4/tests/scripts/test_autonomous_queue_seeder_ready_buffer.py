@@ -101,3 +101,30 @@ def test_evaluate_seed_needed_includes_ready_buffer_reason_with_healthy_global_b
 
     assert seed_needed is True
     assert reasons == ["ready_buffer_below_refill_threshold"]
+
+
+def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "active": True,
+                "preferred_contains": ["rg_fast", "rg_broad"],
+                "cooldown_contains": ["rg_cold"],
+                "winner_proximate": {"enabled": True, "contains": ["rg_fast"], "reason": "strict_pass"},
+                "lane_weights": {"winner_proximate": 40, "broad_search": 45, "confirm_replay": 15},
+                "policy_overrides": {"policy_scale": "micro", "num_variants_cap": 64},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = autonomous_queue_seeder._load_yield_governor_state(state_path)
+
+    assert state["exists"] is True
+    assert state["status"] == "ok"
+    assert state["active"] is True
+    assert state["preferred_contains"] == ["rg_fast", "rg_broad"]
+    assert state["winner_proximate"]["contains"] == ["rg_fast"]
+    assert state["lane_weights"]["winner_proximate"] == 40
