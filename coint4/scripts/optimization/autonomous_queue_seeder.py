@@ -1788,6 +1788,7 @@ def main() -> int:
                 "num_variants_floor": int(effective_num_variants_floor),
                 "max_changed_keys": int(effective_max_changed_keys),
                 "dedupe_distance": float(effective_dedupe_distance),
+                "include_stress": bool(effective_include_stress),
                 "repair_mode": bool(effective_repair_mode),
                 "repair_max_neighbors": int(effective_repair_max_neighbors),
                 "exclude_knobs": list(effective_exclude_knobs),
@@ -1810,7 +1811,7 @@ def main() -> int:
                 "num_variants_floor": effective_num_variants_floor,
                 "max_changed_keys": effective_max_changed_keys,
                 "dedupe_distance": effective_dedupe_distance,
-                "include_stress": bool(args.include_stress),
+                "include_stress": bool(effective_include_stress),
                 "repair_mode": bool(effective_repair_mode),
                 "repair_max_neighbors": int(effective_repair_max_neighbors),
                 "exclude_knobs": list(effective_exclude_knobs),
@@ -1881,6 +1882,12 @@ def main() -> int:
                 "zeroish": int(zero_yield_signal.get("zeroish", 0) or 0),
                 "strict_binding": int(zero_yield_signal.get("strict_binding", 0) or 0),
                 "zeroish_ratio": float(zero_yield_signal.get("zeroish_ratio", 0.0) or 0.0),
+            }
+            snapshot["quality_governor"] = {
+                "actions": list(quality_actions),
+                "variant_cap": quality_variant_cap,
+                "include_stress_effective": bool(effective_include_stress),
+                "repair_mode_effective": bool(effective_repair_mode),
             }
             snapshot["lane_selection"] = {
                 "selected_lane": selected_lane,
@@ -2001,7 +2008,7 @@ def main() -> int:
                     if not raw:
                         continue
                     cmd.extend(["--window", raw])
-                cmd.append("--include-stress" if bool(args.include_stress) else "--no-include-stress")
+                cmd.append("--include-stress" if bool(effective_include_stress) else "--no-include-stress")
                 if bool(effective_repair_mode) and "--repair-mode" in supported_planner_args:
                     cmd.append("--repair-mode")
                 if bool(effective_repair_mode) and "--repair-max-neighbors" in supported_planner_args:
@@ -2119,7 +2126,7 @@ def main() -> int:
                     if not raw:
                         continue
                     emergency_cmd.extend(["--window", raw])
-                emergency_cmd.append("--include-stress" if bool(args.include_stress) else "--no-include-stress")
+                emergency_cmd.append("--include-stress" if bool(effective_include_stress) else "--no-include-stress")
                 if bool(effective_repair_mode) and "--repair-mode" in supported_planner_args:
                     emergency_cmd.append("--repair-mode")
                 if bool(effective_repair_mode) and "--repair-max-neighbors" in supported_planner_args:
