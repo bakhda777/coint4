@@ -619,24 +619,50 @@ def collect_runtime_observability_markers(
         note_records=decision_records,
     )
 
-    remote_active_queue_jobs = resolve_counter_metric(
-        field="remote_active_queue_jobs",
+    remote_queue_job_count = resolve_counter_metric(
+        field="remote_queue_job_count",
         data_candidates=[
-            ("runtime", data["runtime"], ("remote_active_queue_jobs",)),
             ("runtime", data["runtime"], ("remote_queue_job_count",)),
-            ("process_slo", data["process_slo"], ("runtime", "remote_active_queue_jobs")),
+            ("runtime", data["runtime"], ("remote_active_queue_jobs",)),
+            ("runtime", data["runtime"], ("watch_queue_count",)),
             ("process_slo", data["process_slo"], ("runtime", "remote_queue_job_count")),
-            ("process_slo", data["process_slo"], ("queue", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("runtime", "remote_active_queue_jobs")),
             ("process_slo", data["process_slo"], ("queue", "remote_queue_job_count")),
-            ("process_slo", data["process_slo"], ("kpi", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("queue", "remote_active_queue_jobs")),
             ("process_slo", data["process_slo"], ("kpi", "remote_queue_job_count")),
-            ("process_slo", data["process_slo"], ("remote_active_queue_jobs",)),
+            ("process_slo", data["process_slo"], ("kpi", "remote_active_queue_jobs")),
+            ("capacity", data["capacity"], ("remote", "remote_queue_job_count")),
             ("capacity", data["capacity"], ("remote", "remote_active_queue_jobs")),
+            ("capacity", data["capacity"], ("remote", "watch_queue_count")),
+            ("capacity", data["capacity"], ("runtime", "remote_queue_job_count")),
             ("capacity", data["capacity"], ("runtime", "remote_active_queue_jobs")),
+            ("capacity", data["capacity"], ("remote_queue_job_count",)),
             ("capacity", data["capacity"], ("remote_active_queue_jobs",)),
             ("directive", data["directive"], ("remote_active_queue_jobs",)),
+            ("directive", data["directive"], ("remote_queue_job_count",)),
         ],
-        log_keys=["remote_active_queue_jobs", "remote_queue_jobs_active", "remote_runner_count"],
+        log_keys=["remote_queue_job_count", "remote_active_queue_jobs", "remote_queue_jobs_active", "remote_runner_count"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    remote_active_queue_jobs = {
+        "value": parse_int(remote_queue_job_count.get("value"), 0),
+        "source": str(remote_queue_job_count.get("source") or ""),
+        "path": tuple(remote_queue_job_count.get("path") or ()),
+        "log_key": str(remote_queue_job_count.get("log_key") or ""),
+    }
+
+    watch_queue_count = resolve_counter_metric(
+        field="watch_queue_count",
+        data_candidates=[
+            ("runtime", data["runtime"], ("watch_queue_count",)),
+            ("process_slo", data["process_slo"], ("runtime", "watch_queue_count")),
+            ("process_slo", data["process_slo"], ("queue", "watch_queue_count")),
+            ("process_slo", data["process_slo"], ("kpi", "watch_queue_count")),
+            ("capacity", data["capacity"], ("remote", "watch_queue_count")),
+        ],
+        log_keys=["watch_queue_count", "watch_queue_jobs", "watcher_queue_count"],
         driver_log_path=driver_log_path,
         note_records=decision_records,
     )
@@ -706,6 +732,8 @@ def collect_runtime_observability_markers(
         "ready_buffer_depth": ready_buffer_depth,
         "cold_fail_active_count": cold_fail_active_count,
         "top_level_queue_jobs": top_level_queue_jobs,
+        "watch_queue_count": watch_queue_count,
+        "remote_queue_job_count": remote_queue_job_count,
         "remote_child_process_count": remote_child_process_count,
         "remote_active_queue_jobs": remote_active_queue_jobs,
         "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
@@ -1083,6 +1111,8 @@ def print_text(payload: dict[str, Any]) -> None:
     ready_buffer_depth = runtime_observability.get("ready_buffer_depth", {}) if isinstance(runtime_observability.get("ready_buffer_depth"), dict) else {}
     cold_fail_active_count = runtime_observability.get("cold_fail_active_count", {}) if isinstance(runtime_observability.get("cold_fail_active_count"), dict) else {}
     top_level_queue_jobs = runtime_observability.get("top_level_queue_jobs", {}) if isinstance(runtime_observability.get("top_level_queue_jobs"), dict) else {}
+    watch_queue_count = runtime_observability.get("watch_queue_count", {}) if isinstance(runtime_observability.get("watch_queue_count"), dict) else {}
+    remote_queue_job_count = runtime_observability.get("remote_queue_job_count", {}) if isinstance(runtime_observability.get("remote_queue_job_count"), dict) else {}
     remote_child_process_count = runtime_observability.get("remote_child_process_count", {}) if isinstance(runtime_observability.get("remote_child_process_count"), dict) else {}
     remote_active_queue_jobs = runtime_observability.get("remote_active_queue_jobs", {}) if isinstance(runtime_observability.get("remote_active_queue_jobs"), dict) else {}
     cpu_busy_without_queue_job = runtime_observability.get("cpu_busy_without_queue_job", {}) if isinstance(runtime_observability.get("cpu_busy_without_queue_job"), dict) else {}
@@ -1118,6 +1148,8 @@ def print_text(payload: dict[str, Any]) -> None:
     print(f"READY_BUFFER_DEPTH={parse_int(ready_buffer_depth.get('value'), 0)}")
     print(f"COLD_FAIL_ACTIVE_COUNT={parse_int(cold_fail_active_count.get('value'), 0)}")
     print(f"TOP_LEVEL_QUEUE_JOBS={parse_int(top_level_queue_jobs.get('value'), 0)}")
+    print(f"WATCH_QUEUE_COUNT={parse_int(watch_queue_count.get('value'), 0)}")
+    print(f"REMOTE_QUEUE_JOB_COUNT={parse_int(remote_queue_job_count.get('value'), 0)}")
     print(f"REMOTE_CHILD_PROCESS_COUNT={parse_int(remote_child_process_count.get('value'), 0)}")
     print(f"REMOTE_ACTIVE_QUEUE_JOBS={parse_int(remote_active_queue_jobs.get('value'), 0)}")
     print(f"CPU_BUSY_WITHOUT_QUEUE_JOB={parse_int(cpu_busy_without_queue_job.get('value'), 0)}")

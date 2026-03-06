@@ -4706,6 +4706,11 @@ remote_runner_count() {
 
 remote_active_queue_jobs() {
   ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "remote_queue_job_count" "0"
+}
+
+remote_top_level_queue_jobs() {
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
   remote_runtime_state_value "top_level_queue_jobs" "0"
 }
 
@@ -4727,21 +4732,23 @@ remote_cpu_busy_without_queue_job() {
 }
 
 refresh_remote_runtime_metrics() {
-  local queue_jobs child_count cpu_busy work_active snapshot_age
+  local queue_jobs top_level_jobs child_count cpu_busy work_active snapshot_age
   ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
   queue_jobs="$(remote_active_queue_jobs)"
+  top_level_jobs="$(remote_top_level_queue_jobs)"
   child_count="$(remote_child_process_count)"
   cpu_busy="$(remote_cpu_busy_without_queue_job)"
   work_active="$(remote_work_active)"
   snapshot_age="$(remote_runtime_state_age_sec)"
   [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
+  [[ "$top_level_jobs" =~ ^[0-9]+$ ]] || top_level_jobs=0
   [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
   [[ "$cpu_busy" =~ ^[0-9]+$ ]] || cpu_busy=0
   [[ "$work_active" =~ ^[0-9]+$ ]] || work_active=0
   [[ "$snapshot_age" =~ ^-?[0-9]+$ ]] || snapshot_age=-1
   fullspan_state_metric_set "remote_active_queue_jobs" "$queue_jobs"
   fullspan_state_metric_set "remote_queue_job_count" "$queue_jobs"
-  fullspan_state_metric_set "top_level_queue_jobs" "$queue_jobs"
+  fullspan_state_metric_set "top_level_queue_jobs" "$top_level_jobs"
   fullspan_state_metric_set "remote_child_process_count" "$child_count"
   fullspan_state_metric_set "cpu_busy_without_queue_job" "$cpu_busy"
   fullspan_state_metric_set "remote_work_active" "$work_active"
@@ -4764,7 +4771,7 @@ for pid in os.listdir('/proc'):
         continue
     if not cmd or 'python3 - <<' in cmd or 'pgrep -af' in cmd:
         continue
-    if needle in cmd:
+    if needle in cmd or f"watch_wfa_queue.sh --queue {queue_rel}" in cmd:
         count += 1
 print(count)
 PY" 2>/dev/null || echo 0)"

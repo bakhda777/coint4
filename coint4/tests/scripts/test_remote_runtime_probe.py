@@ -53,6 +53,44 @@ def test_probe_remote_runtime_reports_child_only_activity(tmp_path: Path, monkey
     assert result["cpu_busy_without_queue_job"] is True
 
 
+def test_probe_remote_runtime_treats_watcher_only_queue_as_active_work(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module(tmp_path)
+    payload = {
+        "reachable": True,
+        "load1": 0.1,
+        "top_level_queue_jobs": 0,
+        "queue_job_pids": [],
+        "queue_paths": [],
+        "watch_queue_count": 1,
+        "watch_queue_paths": ["artifacts/wfa/aggregate/group_a/run_queue.csv"],
+        "remote_queue_job_count": 1,
+        "remote_active_queue_jobs": 1,
+        "walk_forward_count": 0,
+        "heavy_guardrails_count": 0,
+        "run_wfa_fullcpu_count": 0,
+        "remote_child_process_count": 0,
+        "remote_runner_count": 1,
+        "remote_work_active": True,
+        "cpu_busy_without_queue_job": False,
+    }
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: _Proc(returncode=0, stdout=json.dumps(payload), stderr=""),
+    )
+
+    result = module.probe_remote_runtime(server_user="root", server_ip="85.198.90.128")
+    assert result["reachable"] is True
+    assert result["top_level_queue_jobs"] == 0
+    assert result["watch_queue_count"] == 1
+    assert result["watch_queue_paths"] == ["artifacts/wfa/aggregate/group_a/run_queue.csv"]
+    assert result["remote_queue_job_count"] == 1
+    assert result["remote_active_queue_jobs"] == 1
+    assert result["remote_work_active"] is True
+    assert result["cpu_busy_without_queue_job"] is False
+
+
 def test_probe_remote_runtime_handles_ssh_failure(tmp_path: Path, monkeypatch) -> None:
     module = _load_module(tmp_path)
     monkeypatch.setattr(

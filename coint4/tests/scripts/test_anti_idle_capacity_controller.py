@@ -35,12 +35,17 @@ def _write_remote_runtime_state(path: Path, **overrides) -> None:
         "reachable": True,
         "load1": 0.2,
         "top_level_queue_jobs": 0,
+        "watch_queue_count": 0,
         "remote_child_process_count": 0,
         "remote_runner_count": 0,
         "remote_work_active": False,
         "cpu_busy_without_queue_job": False,
     }
     payload.update(overrides)
+    if "remote_queue_job_count" not in overrides:
+        payload["remote_queue_job_count"] = int(payload.get("top_level_queue_jobs", 0) or 0)
+    if "remote_active_queue_jobs" not in overrides:
+        payload["remote_active_queue_jobs"] = int(payload.get("remote_queue_job_count", 0) or 0)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
@@ -148,6 +153,66 @@ def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypa
     assert process_state["queue"]["remote_work_active"] is True
     assert process_state["queue"]["remote_queue_job_count"] == 0
     assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
+    assert process_state["queue"]["idle_with_executable_pending"] is False
+
+
+def test_process_slo_treats_watcher_only_remote_queue_as_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps(
+            {
+                "remote": {
+                    "reachable": True,
+                    "runner_count": 1,
+                    "load1": 0.2,
+                    "remote_queue_job_count": 1,
+                    "remote_active_queue_jobs": 1,
+                    "top_level_queue_jobs": 0,
+                    "watch_queue_count": 1,
+                    "remote_child_process_count": 0,
+                    "remote_work_active": True,
+                    "cpu_busy_without_queue_job": False,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        load1=0.2,
+        remote_queue_job_count=1,
+        remote_active_queue_jobs=1,
+        top_level_queue_jobs=0,
+        watch_queue_count=1,
+        remote_child_process_count=0,
+        remote_runner_count=1,
+        remote_work_active=True,
+        cpu_busy_without_queue_job=False,
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["remote_queue_job_count"] == 1
+    assert process_state["queue"]["remote_active_queue_jobs"] == 1
+    assert process_state["queue"]["top_level_queue_jobs"] == 0
+    assert process_state["queue"]["watch_queue_count"] == 1
+    assert process_state["queue"]["remote_work_active"] is True
     assert process_state["queue"]["idle_with_executable_pending"] is False
 
 
@@ -315,3 +380,46 @@ def test_process_slo_treats_stale_runtime_snapshot_with_high_capacity_load_as_bu
     assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
     assert process_state["queue"]["remote_snapshot_age_sec"] == -1
     assert process_state["queue"]["idle_with_executable_pending"] is False
+
+
+def test_capacity_controller_preserves_watcher_only_queue_ownership(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+
+    capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
+    monkeypatch.setattr(
+        capacity_module,
+        "probe_remote_runtime_snapshot",
+        lambda *_args, **_kwargs: {
+            "reachable": True,
+            "load1": 0.2,
+            "remote_queue_job_count": 1,
+            "remote_active_queue_jobs": 1,
+            "top_level_queue_jobs": 0,
+            "watch_queue_count": 1,
+            "remote_child_process_count": 0,
+            "remote_runner_count": 1,
+            "remote_work_active": True,
+            "cpu_busy_without_queue_job": False,
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["vps_capacity_controller_agent.py", "--root", str(root)])
+    assert capacity_module.main() == 0
+
+    capacity_state = json.loads((state_dir / "capacity_controller_state.json").read_text(encoding="utf-8"))
+    assert capacity_state["remote"]["remote_queue_job_count"] == 1
+    assert capacity_state["remote"]["remote_active_queue_jobs"] == 1
+    assert capacity_state["remote"]["top_level_queue_jobs"] == 0
+    assert capacity_state["remote"]["watch_queue_count"] == 1
+    assert capacity_state["remote"]["remote_work_active"] is True
+    assert "anti_idle_executable_backlog" not in capacity_state["reasons"]

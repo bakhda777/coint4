@@ -96,6 +96,7 @@ top_level_queue_jobs = 0
 queue_job_pids = []
 queue_paths = []
 watch_queue_count = 0
+watch_queue_paths = []
 run_wfa_fullcpu_count = 0
 walk_forward_count = 0
 heavy_guardrails_count = 0
@@ -125,6 +126,13 @@ for pid in os.listdir('/proc'):
 
     if 'watch_wfa_queue.sh --queue' in cmd:
         watch_queue_count += 1
+        tokens = cmd.split()
+        try:
+            qidx = tokens.index('--queue')
+            if qidx + 1 < len(tokens):
+                watch_queue_paths.append(tokens[qidx + 1])
+        except Exception:
+            pass
     if 'run_wfa_fullcpu.sh' in cmd:
         run_wfa_fullcpu_count += 1
     if 'coint2 walk-forward' in cmd:
@@ -133,9 +141,13 @@ for pid in os.listdir('/proc'):
         heavy_guardrails_count += 1
 
 remote_child_process_count = walk_forward_count + heavy_guardrails_count + run_wfa_fullcpu_count
-remote_runner_count = max(top_level_queue_jobs + watch_queue_count, remote_child_process_count)
-remote_work_active = bool(top_level_queue_jobs > 0 or remote_child_process_count > 0 or load1 >= 1.5)
-cpu_busy_without_queue_job = bool(top_level_queue_jobs == 0 and (remote_child_process_count > 0 or load1 >= 1.5))
+owned_queue_paths = sorted(set([path for path in queue_paths if path] + [path for path in watch_queue_paths if path]))
+remote_queue_job_count = len(owned_queue_paths)
+if remote_queue_job_count <= 0 and (top_level_queue_jobs > 0 or watch_queue_count > 0):
+    remote_queue_job_count = top_level_queue_jobs + watch_queue_count
+remote_runner_count = max(remote_queue_job_count, top_level_queue_jobs + watch_queue_count, remote_child_process_count)
+remote_work_active = bool(remote_queue_job_count > 0 or remote_child_process_count > 0 or load1 >= 1.5)
+cpu_busy_without_queue_job = bool(remote_queue_job_count == 0 and (remote_child_process_count > 0 or load1 >= 1.5))
 
 payload = {
     'load1': load1,
@@ -143,6 +155,9 @@ payload = {
     'queue_job_pids': queue_job_pids,
     'queue_paths': queue_paths,
     'watch_queue_count': watch_queue_count,
+    'watch_queue_paths': watch_queue_paths,
+    'remote_queue_job_count': remote_queue_job_count,
+    'remote_active_queue_jobs': remote_queue_job_count,
     'run_wfa_fullcpu_count': run_wfa_fullcpu_count,
     'walk_forward_count': walk_forward_count,
     'heavy_guardrails_count': heavy_guardrails_count,
@@ -199,6 +214,9 @@ def build_remote_runtime_snapshot(
             "queue_job_pids": [],
             "queue_paths": [],
             "watch_queue_count": 0,
+            "watch_queue_paths": [],
+            "remote_queue_job_count": 0,
+            "remote_active_queue_jobs": 0,
             "run_wfa_fullcpu_count": 0,
             "walk_forward_count": 0,
             "heavy_guardrails_count": 0,
@@ -220,11 +238,18 @@ def build_remote_runtime_snapshot(
         "reachable": bool(remote.get("reachable")),
         "load1": parse_float(remote.get("load1"), -1.0),
         "top_level_queue_jobs": parse_int(remote.get("top_level_queue_jobs"), 0),
-        "remote_active_queue_jobs": parse_int(remote.get("top_level_queue_jobs"), 0),
-        "remote_queue_job_count": parse_int(remote.get("top_level_queue_jobs"), 0),
+        "remote_active_queue_jobs": parse_int(
+            remote.get("remote_active_queue_jobs"),
+            parse_int(remote.get("remote_queue_job_count"), parse_int(remote.get("top_level_queue_jobs"), 0)),
+        ),
+        "remote_queue_job_count": parse_int(
+            remote.get("remote_queue_job_count"),
+            parse_int(remote.get("remote_active_queue_jobs"), parse_int(remote.get("top_level_queue_jobs"), 0)),
+        ),
         "remote_child_process_count": parse_int(remote.get("remote_child_process_count"), 0),
         "remote_runner_count": parse_int(remote.get("remote_runner_count"), -1),
         "watch_queue_count": parse_int(remote.get("watch_queue_count"), 0),
+        "watch_queue_paths": list(remote.get("watch_queue_paths") or []),
         "run_wfa_fullcpu_count": parse_int(remote.get("run_wfa_fullcpu_count"), 0),
         "walk_forward_count": parse_int(remote.get("walk_forward_count"), 0),
         "heavy_guardrails_count": parse_int(remote.get("heavy_guardrails_count"), 0),

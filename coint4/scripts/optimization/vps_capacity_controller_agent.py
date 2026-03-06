@@ -96,7 +96,10 @@ def probe_remote_runtime_snapshot(root: Path, state_dir: Path, *, server_user: s
     default = {
         "reachable": False,
         "load1": -1.0,
+        "remote_queue_job_count": 0,
+        "remote_active_queue_jobs": 0,
         "top_level_queue_jobs": 0,
+        "watch_queue_count": 0,
         "remote_child_process_count": 0,
         "remote_runner_count": -1,
         "remote_work_active": False,
@@ -204,7 +207,16 @@ def main() -> int:
         reachable = bool(remote_snapshot.get("reachable"))
         load1 = parse_float(remote_snapshot.get("load1"), -1.0)
         runner_count = parse_int(remote_snapshot.get("remote_runner_count"), -1)
+        remote_queue_job_count = parse_int(
+            remote_snapshot.get("remote_queue_job_count"),
+            parse_int(remote_snapshot.get("remote_active_queue_jobs"), parse_int(remote_snapshot.get("top_level_queue_jobs"), 0)),
+        )
+        remote_active_queue_jobs = parse_int(
+            remote_snapshot.get("remote_active_queue_jobs"),
+            remote_queue_job_count,
+        )
         top_level_queue_jobs = parse_int(remote_snapshot.get("top_level_queue_jobs"), 0)
+        watch_queue_count = parse_int(remote_snapshot.get("watch_queue_count"), 0)
         remote_child_process_count = parse_int(remote_snapshot.get("remote_child_process_count"), 0)
         remote_work_active = bool(remote_snapshot.get("remote_work_active"))
         cpu_busy_without_queue_job = bool(remote_snapshot.get("cpu_busy_without_queue_job"))
@@ -311,8 +323,9 @@ def main() -> int:
                 "load1": load1,
                 "runner_count": runner_count,
                 "top_level_queue_jobs": int(top_level_queue_jobs),
-                "remote_active_queue_jobs": int(top_level_queue_jobs),
-                "remote_queue_job_count": int(top_level_queue_jobs),
+                "watch_queue_count": int(watch_queue_count),
+                "remote_active_queue_jobs": int(remote_active_queue_jobs),
+                "remote_queue_job_count": int(remote_queue_job_count),
                 "remote_child_process_count": int(remote_child_process_count),
                 "remote_work_active": bool(remote_work_active),
                 "cpu_busy_without_queue_job": bool(cpu_busy_without_queue_job),
@@ -335,7 +348,9 @@ def main() -> int:
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(
                 f"{utc_now_iso()} | reachable={int(reachable)} load1={load1:.3f} runners={runner_count} "
-                f"top_level_queue_jobs={top_level_queue_jobs} remote_child_process_count={remote_child_process_count} "
+                f"remote_queue_job_count={remote_queue_job_count} remote_active_queue_jobs={remote_active_queue_jobs} "
+                f"top_level_queue_jobs={top_level_queue_jobs} watch_queue_count={watch_queue_count} "
+                f"remote_child_process_count={remote_child_process_count} "
                 f"remote_work_active={int(remote_work_active)} cpu_busy_without_queue_job={int(cpu_busy_without_queue_job)} "
                 f"remote_snapshot_age_sec={remote_snapshot_age_sec} "
                 f"pending_confirm={pending_confirm} overdue_confirm={overdue_confirm} "

@@ -158,7 +158,16 @@ def read_remote_runner_snapshot(path: Path) -> dict[str, Any]:
         "reachable": parse_bool(remote.get("reachable"), False),
         "runner_count": parse_int(remote.get("runner_count"), -1),
         "load1": parse_float(remote.get("load1"), 0.0),
+        "remote_queue_job_count": parse_int(
+            remote.get("remote_queue_job_count"),
+            parse_int(remote.get("remote_active_queue_jobs"), parse_int(remote.get("top_level_queue_jobs"), 0)),
+        ),
+        "remote_active_queue_jobs": parse_int(
+            remote.get("remote_active_queue_jobs"),
+            parse_int(remote.get("remote_queue_job_count"), parse_int(remote.get("top_level_queue_jobs"), 0)),
+        ),
         "top_level_queue_jobs": parse_int(remote.get("top_level_queue_jobs"), 0),
+        "watch_queue_count": parse_int(remote.get("watch_queue_count"), 0),
         "remote_child_process_count": parse_int(remote.get("remote_child_process_count"), 0),
         "remote_work_active": parse_bool(remote.get("remote_work_active"), False),
         "cpu_busy_without_queue_job": parse_bool(remote.get("cpu_busy_without_queue_job"), False),
@@ -172,7 +181,10 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
         return {
             "reachable": False,
             "load1": -1.0,
+            "remote_queue_job_count": 0,
+            "remote_active_queue_jobs": 0,
             "top_level_queue_jobs": 0,
+            "watch_queue_count": 0,
             "remote_child_process_count": 0,
             "remote_runner_count": -1,
             "remote_work_active": False,
@@ -182,7 +194,16 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
     return {
         "reachable": parse_bool(data.get("reachable"), False),
         "load1": parse_float(data.get("load1"), -1.0),
+        "remote_queue_job_count": parse_int(
+            data.get("remote_queue_job_count"),
+            parse_int(data.get("remote_active_queue_jobs"), parse_int(data.get("top_level_queue_jobs"), 0)),
+        ),
+        "remote_active_queue_jobs": parse_int(
+            data.get("remote_active_queue_jobs"),
+            parse_int(data.get("remote_queue_job_count"), parse_int(data.get("top_level_queue_jobs"), 0)),
+        ),
         "top_level_queue_jobs": parse_int(data.get("top_level_queue_jobs"), 0),
+        "watch_queue_count": parse_int(data.get("watch_queue_count"), 0),
         "remote_child_process_count": parse_int(data.get("remote_child_process_count"), 0),
         "remote_runner_count": parse_int(data.get("remote_runner_count"), -1),
         "remote_work_active": parse_bool(data.get("remote_work_active"), False),
@@ -447,8 +468,19 @@ def main() -> int:
             remote_runner_count = parse_int(remote_runtime_snapshot.get("remote_runner_count"), -1)
             remote_load1 = parse_float(remote_runtime_snapshot.get("load1"), -1.0)
             remote_reachable = bool(remote_runtime_snapshot.get("reachable"))
-            remote_active_queue_jobs = parse_int(remote_runtime_snapshot.get("top_level_queue_jobs"), 0)
-            remote_queue_job_count = remote_active_queue_jobs
+            remote_queue_job_count = parse_int(
+                remote_runtime_snapshot.get("remote_queue_job_count"),
+                parse_int(
+                    remote_runtime_snapshot.get("remote_active_queue_jobs"),
+                    parse_int(remote_runtime_snapshot.get("top_level_queue_jobs"), 0),
+                ),
+            )
+            remote_active_queue_jobs = parse_int(
+                remote_runtime_snapshot.get("remote_active_queue_jobs"),
+                remote_queue_job_count,
+            )
+            top_level_queue_jobs = parse_int(remote_runtime_snapshot.get("top_level_queue_jobs"), 0)
+            watch_queue_count = parse_int(remote_runtime_snapshot.get("watch_queue_count"), 0)
             remote_child_process_count = parse_int(remote_runtime_snapshot.get("remote_child_process_count"), 0)
             remote_work_active = bool(remote_runtime_snapshot.get("remote_work_active"))
             cpu_busy_without_queue_job = bool(remote_runtime_snapshot.get("cpu_busy_without_queue_job"))
@@ -457,16 +489,27 @@ def main() -> int:
             remote_load1 = parse_float(remote_snapshot.get("load1"), 0.0)
             remote_reachable = bool(remote_snapshot.get("reachable"))
             remote_active_queue_jobs = parse_int(
-                remote_snapshot.get("top_level_queue_jobs"),
+                remote_snapshot.get("remote_active_queue_jobs"),
                 parse_int(
-                    runtime_metrics.get("top_level_queue_jobs"),
-                    parse_int(runtime_metrics.get("remote_active_queue_jobs"), 0),
+                    runtime_metrics.get("remote_active_queue_jobs"),
+                    parse_int(
+                        runtime_metrics.get("remote_queue_job_count"),
+                        parse_int(runtime_metrics.get("top_level_queue_jobs"), 0),
+                    ),
                 ),
             )
             remote_queue_job_count = parse_int(
-                remote_snapshot.get("top_level_queue_jobs"),
-                parse_int(runtime_metrics.get("remote_queue_job_count"), remote_active_queue_jobs),
+                remote_snapshot.get("remote_queue_job_count"),
+                parse_int(
+                    remote_snapshot.get("remote_active_queue_jobs"),
+                    parse_int(runtime_metrics.get("remote_active_queue_jobs"), 0),
+                ),
             )
+            top_level_queue_jobs = parse_int(
+                remote_snapshot.get("top_level_queue_jobs"),
+                parse_int(runtime_metrics.get("top_level_queue_jobs"), remote_active_queue_jobs),
+            )
+            watch_queue_count = parse_int(remote_snapshot.get("watch_queue_count"), 0)
             remote_child_process_count = parse_int(
                 remote_snapshot.get("remote_child_process_count"),
                 parse_int(runtime_metrics.get("remote_child_process_count"), remote_runner_count),
@@ -485,14 +528,14 @@ def main() -> int:
             cold_fail_active_count = count_active_cold_fail_entries(cold_fail_index_path, now=now)
         if not remote_work_active:
             remote_work_active = bool(
-                remote_active_queue_jobs > 0
+                remote_queue_job_count > 0
                 or remote_child_process_count > 0
                 or (remote_reachable and remote_load1 >= 1.5)
             )
         if not cpu_busy_without_queue_job:
             cpu_busy_without_queue_job = bool(
                 remote_reachable
-                and remote_active_queue_jobs <= 0
+                and remote_queue_job_count <= 0
                 and (remote_child_process_count > 0 or remote_load1 >= 1.5)
             )
         surrogate_idle_override_count = parse_int(runtime_metrics.get("surrogate_idle_override_count"), 0)
@@ -633,7 +676,8 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
-                "top_level_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": top_level_queue_jobs,
+                "watch_queue_count": watch_queue_count,
                 "remote_load1": round(remote_load1, 3),
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
@@ -659,7 +703,8 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
-                "top_level_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": top_level_queue_jobs,
+                "watch_queue_count": watch_queue_count,
                 "remote_load1": round(remote_load1, 3),
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
@@ -678,7 +723,8 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
-                "top_level_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": top_level_queue_jobs,
+                "watch_queue_count": watch_queue_count,
                 "remote_load1": round(remote_load1, 3),
                 "remote_work_active": remote_work_active,
                 "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,

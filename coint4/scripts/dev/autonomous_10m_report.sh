@@ -433,32 +433,40 @@ local_runners = to_int(queue.get('local_runner_count'))
 executable_pending = to_int(queue.get('executable_pending'))
 pending = to_int(queue.get('pending'))
 idle_flag = int(bool(queue.get('idle_with_executable_pending')))
-top_level_queue_jobs = to_int(queue.get('top_level_queue_jobs', queue.get('remote_active_queue_jobs')))
+remote_queue_job_count = to_int(queue.get('remote_queue_job_count', queue.get('remote_active_queue_jobs')))
+top_level_queue_jobs = to_int(queue.get('top_level_queue_jobs', remote_queue_job_count))
+watch_queue_count = to_int(queue.get('watch_queue_count'))
 remote_child_process_count = to_int(queue.get('remote_child_process_count'))
 remote_work_active = int(bool(queue.get('remote_work_active')))
 remote_snapshot_age_sec = to_int(queue.get('remote_snapshot_age_sec', -1))
 remote_load1 = to_float(queue.get('remote_load1'))
-if top_level_queue_jobs <= 0 and remote_child_process_count <= 0:
+if remote_queue_job_count <= 0 and remote_child_process_count <= 0:
+    remote_queue_job_count = to_int(remote_state.get('remote_queue_job_count', remote_state.get('remote_active_queue_jobs')))
     top_level_queue_jobs = to_int(remote_state.get('top_level_queue_jobs'))
+    watch_queue_count = to_int(remote_state.get('watch_queue_count'))
     remote_child_process_count = to_int(remote_state.get('remote_child_process_count'))
     remote_work_active = int(bool(remote_state.get('remote_work_active')))
     remote_load1 = to_float(remote_state.get('load1'))
 remote_mode = 'REMOTE_IDLE'
-if top_level_queue_jobs > 0:
+if remote_queue_job_count > 0 and top_level_queue_jobs <= 0 and remote_child_process_count <= 0:
+    remote_mode = 'REMOTE_QUEUE_WATCHER_ONLY'
+elif remote_queue_job_count > 0:
     remote_mode = 'REMOTE_QUEUE_ACTIVE'
 elif remote_child_process_count > 0:
     remote_mode = 'REMOTE_HEAVY_ACTIVE_CHILDREN'
 elif remote_work_active:
     remote_mode = 'REMOTE_WORK_ACTIVE_UNKNOWN'
 print(
-    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle} remote_mode={mode} remote_work_active={rwa} top_level_queue_jobs={topq} remote_child_process_count={child} remote_load1={load1:.2f} remote_snapshot_age_sec={age} fastlane_replay_pending={fastlane} hot_standby_active={standby} duty30m={duty:.2f} ready_buffer_policy_mismatch_count={mismatch} winner_parent_duplication_rate={dup:.2f} metrics_missing_abort_count_30m={mm_abort} winner_proximate_dispatch_count_30m={winner_dispatch}".format(
+    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle} remote_mode={mode} remote_work_active={rwa} remote_queue_job_count={queueq} top_level_queue_jobs={topq} watch_queue_count={watchq} remote_child_process_count={child} remote_load1={load1:.2f} remote_snapshot_age_sec={age} fastlane_replay_pending={fastlane} hot_standby_active={standby} duty30m={duty:.2f} ready_buffer_policy_mismatch_count={mismatch} winner_parent_duplication_rate={dup:.2f} metrics_missing_abort_count_30m={mm_abort} winner_proximate_dispatch_count_30m={winner_dispatch}".format(
         p=pending,
         ep=executable_pending,
         lr=local_runners,
         idle=idle_flag,
         mode=remote_mode,
         rwa=remote_work_active,
+        queueq=remote_queue_job_count,
         topq=top_level_queue_jobs,
+        watchq=watch_queue_count,
         child=remote_child_process_count,
         load1=remote_load1,
         age=remote_snapshot_age_sec,
@@ -595,9 +603,10 @@ def metric_value(name):
     return to_int(item)
 
 print(
-    "ready_buffer_depth={ready} cold_fail_active_count={cold} top_level_queue_jobs={topq} remote_child_process_count={child} remote_active_queue_jobs={remote} cpu_busy_without_queue_job={cpu_busy} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
+    "ready_buffer_depth={ready} cold_fail_active_count={cold} remote_queue_job_count={queueq} top_level_queue_jobs={topq} remote_child_process_count={child} remote_active_queue_jobs={remote} cpu_busy_without_queue_job={cpu_busy} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
         ready=metric_value("ready_buffer_depth"),
         cold=metric_value("cold_fail_active_count"),
+        queueq=metric_value("remote_queue_job_count"),
         topq=metric_value("top_level_queue_jobs"),
         child=metric_value("remote_child_process_count"),
         remote=metric_value("remote_active_queue_jobs"),

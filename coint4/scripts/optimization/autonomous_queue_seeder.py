@@ -528,6 +528,7 @@ def _select_seed_lane(
     winner_proximate_tokens: list[str],
     preferred_any_contains: list[str],
     generic_contains: list[str],
+    directive_replay_fastlane_tokens: list[str] | None = None,
     yield_governor: dict[str, Any],
     previous_state: dict[str, Any],
 ) -> dict[str, Any]:
@@ -548,11 +549,24 @@ def _select_seed_lane(
     winner_tokens = [str(token).strip() for token in list(winner_proximate_tokens or []) if str(token).strip()]
     preferred_tokens = [str(token).strip() for token in list(preferred_any_contains or []) if str(token).strip()]
     generic_tokens = [str(token).strip() for token in list(generic_contains or []) if str(token).strip()]
-    confirm_replay_tokens = _to_tokens((yield_governor.get("confirm_replay") or {}).get("contains", []))
+    confirm_replay_source = "winner_fallback"
+    confirm_replay_tokens = _to_tokens(directive_replay_fastlane_tokens or [])
+    if confirm_replay_tokens:
+        confirm_replay_source = "directive_replay_fastlane"
+    if not confirm_replay_tokens:
+        confirm_replay_tokens = _to_tokens((yield_governor.get("replay_fastlane") or {}).get("contains", []))
+        if confirm_replay_tokens:
+            confirm_replay_source = "yield_replay_fastlane"
+    if not confirm_replay_tokens:
+        confirm_replay_tokens = _to_tokens((yield_governor.get("confirm_replay") or {}).get("contains", []))
+        if confirm_replay_tokens:
+            confirm_replay_source = "legacy_confirm_replay"
     if not confirm_replay_tokens:
         confirm_replay_tokens = _to_tokens(yield_governor.get("confirm_replay_contains", []))
+        if confirm_replay_tokens:
+            confirm_replay_source = "legacy_confirm_replay_contains"
     if not confirm_replay_tokens:
-        # Groundwork: allow replay lane to piggyback on winner-proximate anchors.
+        # Compatibility fallback only when replay fastlane is genuinely empty.
         confirm_replay_tokens = list(winner_tokens)
 
     lane_tokens = {
@@ -623,6 +637,7 @@ def _select_seed_lane(
         "contains": contains_out,
         "winner_proximate_tokens": list(winner_tokens),
         "confirm_replay_hints": list(confirm_replay_hints),
+        "confirm_replay_source": str(confirm_replay_source),
         "parent_rotation_offset": int(parent_rotation_offset),
     }
 
@@ -830,6 +845,9 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "preferred_operator_ids": [],
         "cooldown_operator_ids": [],
         "winner_proximate": {"enabled": False, "contains": [], "reason": ""},
+        "replay_fastlane": {"enabled": False, "contains": [], "replay_ready_count": 0, "source": "missing"},
+        "confirm_replay": {"enabled": False, "contains": [], "replay_ready_count": 0, "source": "missing"},
+        "confirm_replay_contains": [],
         "lane_weights": {},
         "policy_overrides": {},
     }
@@ -848,12 +866,38 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
     winner = payload.get("winner_proximate", {})
     if not isinstance(winner, dict):
         winner = {}
+    replay_fastlane = payload.get("replay_fastlane", {})
+    if not isinstance(replay_fastlane, dict):
+        replay_fastlane = {}
+    legacy_confirm_replay = payload.get("confirm_replay", {})
+    if not isinstance(legacy_confirm_replay, dict):
+        legacy_confirm_replay = {}
     lane_weights = payload.get("lane_weights", {})
     if not isinstance(lane_weights, dict):
         lane_weights = {}
     policy_overrides = payload.get("policy_overrides", {})
     if not isinstance(policy_overrides, dict):
         policy_overrides = {}
+
+    replay_contains = _to_tokens(replay_fastlane.get("contains", []))
+    replay_source = "replay_fastlane"
+    if not replay_contains:
+        replay_contains = _to_tokens(legacy_confirm_replay.get("contains", []))
+        if replay_contains:
+            replay_source = "legacy_confirm_replay"
+    if not replay_contains:
+        replay_contains = _to_tokens(payload.get("confirm_replay_contains", []))
+        if replay_contains:
+            replay_source = "legacy_confirm_replay_contains"
+    replay_ready_count = _as_int(replay_fastlane.get("replay_ready_count"), default=None, min_value=0)
+    if replay_ready_count is None:
+        replay_ready_count = _as_int(legacy_confirm_replay.get("replay_ready_count"), default=0, min_value=0) or 0
+    replay_enabled = bool(
+        replay_fastlane.get("enabled")
+        or legacy_confirm_replay.get("enabled")
+        or replay_contains
+        or int(replay_ready_count) > 0
+    )
 
     state.update(
         {
@@ -869,6 +913,19 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
                 "contains": _to_tokens(winner.get("contains", [])),
                 "reason": str(winner.get("reason") or "").strip(),
             },
+            "replay_fastlane": {
+                "enabled": bool(replay_enabled),
+                "contains": list(replay_contains),
+                "replay_ready_count": int(replay_ready_count),
+                "source": str(replay_source),
+            },
+            "confirm_replay": {
+                "enabled": bool(replay_enabled),
+                "contains": list(replay_contains),
+                "replay_ready_count": int(replay_ready_count),
+                "source": str(replay_source),
+            },
+            "confirm_replay_contains": list(replay_contains),
             "lane_weights": {str(k): (_as_int(v, default=0, min_value=0) or 0) for k, v in lane_weights.items()},
             "policy_overrides": dict(policy_overrides),
         }
@@ -1410,6 +1467,7 @@ def main() -> int:
                 winner_proximate_tokens=list(winner_proximate_tokens),
                 preferred_any_contains=list(preferred_any_contains),
                 generic_contains=list(contains),
+                directive_replay_fastlane_tokens=_to_tokens((directive.get("replay_fastlane") or {}).get("contains", [])),
                 yield_governor=yield_governor,
                 previous_state=previous_state,
             )
@@ -1423,6 +1481,7 @@ def main() -> int:
                 lane_selection_payload.get("winner_proximate_tokens") or winner_proximate_tokens
             )
             confirm_replay_hints = list(lane_selection_payload.get("confirm_replay_hints") or [])
+            confirm_replay_source = str(lane_selection_payload.get("confirm_replay_source") or "").strip()
             if selected_lane == "winner_proximate":
                 parent_diversity_depth = 5
             elif selected_lane == "confirm_replay":
@@ -1437,6 +1496,7 @@ def main() -> int:
                 "contains": list(contains),
                 "winner_proximate_tokens": list(winner_proximate_tokens),
                 "confirm_replay_hints": list(confirm_replay_hints),
+                "confirm_replay_source": str(confirm_replay_source),
                 "policy_scale": str(effective_policy_scale),
                 "num_variants": int(effective_num_variants),
                 "num_variants_floor": int(effective_num_variants_floor),
@@ -1525,6 +1585,7 @@ def main() -> int:
                 "preferred_contains": list(yield_governor.get("preferred_contains", []) or [])[:8],
                 "cooldown_contains": list(yield_governor.get("cooldown_contains", []) or [])[:8],
                 "winner_proximate": dict(yield_governor.get("winner_proximate") or {}),
+                "replay_fastlane": dict(yield_governor.get("replay_fastlane") or {}),
                 "lane_weights": dict(yield_governor.get("lane_weights") or {}),
                 "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
             }
@@ -1538,11 +1599,13 @@ def main() -> int:
                 "exploit_first": bool(lane_selection_payload.get("exploit_first")),
                 "lane_weights": dict(lane_selection_payload.get("lane_weights") or {}),
                 "confirm_replay_hints": list(confirm_replay_hints),
+                "confirm_replay_source": str(confirm_replay_source),
             }
             snapshot["confirm_replay_materialization"] = {
                 "enabled": bool(confirm_replay_hints),
                 "status": "prepared" if confirm_replay_hints else "idle",
                 "hints": list(confirm_replay_hints)[:8],
+                "source": str(confirm_replay_source),
                 "mode": "planner_only_groundwork",
             }
             snapshot["policy_hash"] = planner_policy_hash

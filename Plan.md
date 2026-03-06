@@ -2,6 +2,36 @@
 
 Обновлено: 2026-03-06 05:18 America/New_York (snapshot: 2026-03-06T10:18:00Z)
 
+## Execution Update (2026-03-06, review regressions: watcher-only + replay-fastlane)
+- Закрыты оба интеграционных регресса из review без изменения winner-контракта.
+- `watcher-only` окно на VPS теперь считается ownership-aware активной работой:
+  - `remote_runtime_probe.py` публикует `watch_queue_paths`, `remote_queue_job_count`, `remote_active_queue_jobs`;
+  - `remote_work_active=true`, если слот всё ещё удерживается watcher-процессом, даже когда child-jobs временно отсутствуют;
+  - `cpu_busy_without_queue_job=true` теперь возможно только если queue-owner действительно отсутствует.
+- Consumers переведены на queue ownership, а не на raw top-level процесс:
+  - `vps_capacity_controller_agent.py`
+  - `process_slo_guard_agent.py`
+  - `probe_autonomous_markers.py`
+  - `autonomous_10m_report.sh`
+- В 10m-report добавлен явный режим `REMOTE_QUEUE_WATCHER_ONLY`, чтобы watcher-owned слот больше не выглядел как `idle`.
+- `autonomous_queue_seeder.py` нормализует `replay_fastlane` как канонический источник confirm backlog:
+  - loader читает `replay_fastlane.contains` / `replay_ready_count`;
+  - backfill-ит legacy `confirm_replay` и `confirm_replay_contains` для совместимости;
+  - lane selection берёт hints в порядке:
+    1. `directive.replay_fastlane.contains`
+    2. `yield_governor.replay_fastlane.contains`
+    3. legacy `confirm_replay.contains`
+    4. legacy `confirm_replay_contains`
+    5. `winner_fallback` только если replay fastlane реально пуст.
+- В seeder snapshot добавлен `confirm_replay_source`, чтобы было видно, откуда пришли replay hints.
+
+### Verification
+- `python3 -m py_compile` по изменённым Python-файлам: OK
+- `bash -n coint4/scripts/optimization/autonomous_wfa_driver.sh coint4/scripts/dev/autonomous_10m_report.sh`: OK
+- `coint4/.venv/bin/ruff check` по затронутым Python-файлам/тестам: `All checks passed!`
+- `coint4/.venv/bin/pytest -q coint4/tests/scripts/test_remote_runtime_probe.py coint4/tests/scripts/test_anti_idle_capacity_controller.py coint4/tests/scripts/test_autonomous_queue_seeder_ready_buffer.py coint4/tests/scripts/test_autonomous_wfa_driver_runtime_policy.py`
+  - итог: `39 passed, 1 deselected`
+
 ## Execution Update (2026-03-06, canonical remote runtime snapshot)
 - Закрыт источник ложного `idle` на VPS: введён канонический state-файл `.autonomous/remote_runtime_state.json`.
 - Новый probe `coint4/scripts/optimization/remote_runtime_probe.py` за один SSH-срез собирает:

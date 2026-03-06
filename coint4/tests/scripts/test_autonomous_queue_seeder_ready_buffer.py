@@ -112,6 +112,7 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
                 "preferred_contains": ["rg_fast", "rg_broad"],
                 "cooldown_contains": ["rg_cold"],
                 "winner_proximate": {"enabled": True, "contains": ["rg_fast"], "reason": "strict_pass"},
+                "replay_fastlane": {"enabled": True, "contains": ["confirm_rg"], "replay_ready_count": 2},
                 "lane_weights": {"winner_proximate": 40, "broad_search": 45, "confirm_replay": 15},
                 "policy_overrides": {"policy_scale": "micro", "num_variants_cap": 64},
             },
@@ -127,6 +128,10 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["active"] is True
     assert state["preferred_contains"] == ["rg_fast", "rg_broad"]
     assert state["winner_proximate"]["contains"] == ["rg_fast"]
+    assert state["replay_fastlane"]["contains"] == ["confirm_rg"]
+    assert state["replay_fastlane"]["replay_ready_count"] == 2
+    assert state["confirm_replay"]["contains"] == ["confirm_rg"]
+    assert state["confirm_replay_contains"] == ["confirm_rg"]
     assert state["lane_weights"]["winner_proximate"] == 40
 
 
@@ -168,6 +173,66 @@ def test_select_seed_lane_prefers_winner_then_rotates_after_streak() -> None:
     )
     assert second["selected_lane"] == "broad_search"
     assert second["contains"] == ["yield_rg"]
+
+
+def test_load_yield_governor_state_backfills_replay_fastlane_from_legacy_confirm_fields(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "active": True,
+                "confirm_replay": {"enabled": True, "contains": ["legacy_rg"], "replay_ready_count": 1},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = autonomous_queue_seeder._load_yield_governor_state(state_path)
+
+    assert state["replay_fastlane"]["enabled"] is True
+    assert state["replay_fastlane"]["contains"] == ["legacy_rg"]
+    assert state["replay_fastlane"]["replay_ready_count"] == 1
+    assert state["replay_fastlane"]["source"] == "legacy_confirm_replay"
+    assert state["confirm_replay_contains"] == ["legacy_rg"]
+
+
+def test_select_seed_lane_prefers_replay_fastlane_before_winner_fallback() -> None:
+    selection = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["winner_rg"],
+        preferred_any_contains=["yield_rg"],
+        generic_contains=["autonomous_queue_seeder"],
+        yield_governor={
+            "lane_weights": {"winner_proximate": 10, "broad_search": 5, "confirm_replay": 90},
+            "replay_fastlane": {"contains": ["confirm_rg"]},
+            "confirm_replay": {"contains": ["legacy_rg"]},
+            "confirm_replay_contains": ["legacy_contains_rg"],
+        },
+        previous_state={},
+    )
+
+    assert selection["selected_lane"] == "confirm_replay"
+    assert selection["confirm_replay_hints"] == ["confirm_rg"]
+    assert selection["confirm_replay_source"] == "yield_replay_fastlane"
+    assert selection["contains"] == ["confirm_rg"]
+
+
+def test_select_seed_lane_prefers_directive_replay_fastlane_over_yield_state() -> None:
+    selection = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["winner_rg"],
+        preferred_any_contains=["yield_rg"],
+        generic_contains=["autonomous_queue_seeder"],
+        directive_replay_fastlane_tokens=["directive_confirm_rg"],
+        yield_governor={
+            "lane_weights": {"winner_proximate": 10, "broad_search": 5, "confirm_replay": 90},
+            "replay_fastlane": {"contains": ["yield_confirm_rg"]},
+        },
+        previous_state={},
+    )
+
+    assert selection["selected_lane"] == "confirm_replay"
+    assert selection["confirm_replay_hints"] == ["directive_confirm_rg"]
+    assert selection["confirm_replay_source"] == "directive_replay_fastlane"
 
 
 def test_stable_hash_is_deterministic() -> None:
