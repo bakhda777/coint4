@@ -347,7 +347,7 @@ sync_up_path_is_included() {
       ;;
     code)
       case "$rel_path" in
-        coint4/artifacts/*|coint4/outputs/*|outputs/*|.ralph-tui/iterations/*|*.log|*.pid)
+        coint4/artifacts/*|coint4/outputs/*|outputs/*|.ralph-tui/*|coint4/.venv/*|.venv/*|coint4/.cache/*|.cache/*|coint4/.pytest_cache/*|.pytest_cache/*|coint4/.mypy_cache/*|.mypy_cache/*|coint4/.ruff_cache/*|.ruff_cache/*|coint4/.env|.env|*.log|*.pid|*.pyc|*.nbc|*.nbi|*/__pycache__/*)
           return 1
           ;;
       esac
@@ -413,9 +413,24 @@ def in_scope(rel_path: str) -> bool:
             rel_path.startswith('coint4/artifacts/')
             or rel_path.startswith('coint4/outputs/')
             or rel_path.startswith('outputs/')
-            or rel_path.startswith('.ralph-tui/iterations/')
+            or rel_path.startswith('.ralph-tui/')
+            or rel_path.startswith('coint4/.venv/')
+            or rel_path.startswith('.venv/')
+            or rel_path.startswith('coint4/.cache/')
+            or rel_path.startswith('.cache/')
+            or rel_path.startswith('coint4/.pytest_cache/')
+            or rel_path.startswith('.pytest_cache/')
+            or rel_path.startswith('coint4/.mypy_cache/')
+            or rel_path.startswith('.mypy_cache/')
+            or rel_path.startswith('coint4/.ruff_cache/')
+            or rel_path.startswith('.ruff_cache/')
+            or rel_path in {'coint4/.env', '.env'}
             or rel_path.endswith('.log')
             or rel_path.endswith('.pid')
+            or rel_path.endswith('.pyc')
+            or rel_path.endswith('.nbc')
+            or rel_path.endswith('.nbi')
+            or '/__pycache__/' in f'/{rel_path}/'
         )
         return not blocked
     raise SystemExit(f'Unsupported SYNC_UP_MODE={mode}')

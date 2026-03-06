@@ -228,6 +228,9 @@ def test_sync_up_code_cleans_only_in_scope_tracked_paths(tmp_path: Path) -> None
         ],
     )
     _write(remote_repo / "scripts/data/untracked_orphan.py", "print('orphan')\n")
+    _write(remote_repo / "coint4/.venv/bin/python", "#!/usr/bin/env python3\n")
+    _write(remote_repo / "coint4/.env", "SECRET=1\n")
+    _write(remote_repo / ".ralph-tui/prd.json", "{}\n")
     _write(remote_repo / "coint4/outputs/runtime.log", "runtime\n")
 
     proc = _run_sync_up(tmp_path, local_repo, remote_repo, "code")
@@ -237,5 +240,8 @@ def test_sync_up_code_cleans_only_in_scope_tracked_paths(tmp_path: Path) -> None
     assert not (remote_repo / "scripts/data/untracked_orphan.py").exists()
     assert (remote_repo / "scripts/data/current.py").exists()
     assert (remote_repo / "coint4/artifacts/keep/tracked.txt").exists()
+    assert (remote_repo / "coint4/.venv/bin/python").exists()
+    assert (remote_repo / "coint4/.env").exists()
+    assert (remote_repo / ".ralph-tui/prd.json").exists()
     assert (remote_repo / "coint4/outputs/runtime.log").exists()
     assert "sync_up cleanup removed 2 stale scope files (mode=code)" in proc.stdout
