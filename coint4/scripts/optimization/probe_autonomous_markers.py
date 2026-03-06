@@ -3,7 +3,7 @@
 
 Purpose:
 - Resolve coint4 app root/state dir without relying on a single hardcoded path.
-- Return strict/promote/fail-closed markers in deterministic form.
+- Return strict/promote/fail-closed and runtime observability markers in deterministic form.
 - Optionally materialize process_slo_state.json by running process_slo_guard_agent.py once.
 """
 
@@ -399,6 +399,274 @@ def count_fail_closed_in_log(path: Path, max_lines: int = 2000) -> int:
     return sum(1 for line in lines[-max_lines:] if "FAIL_CLOSED" in line)
 
 
+def parse_int_optional(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def dict_path_int(data: Any, path: tuple[str, ...]) -> int | None:
+    cur: Any = data
+    for key in path:
+        if not isinstance(cur, dict):
+            return None
+        if key not in cur:
+            return None
+        cur = cur.get(key)
+    return parse_int_optional(cur)
+
+
+def latest_counter_from_log(path: Path, keys: list[str], *, max_lines: int = 8000) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+
+    for line in reversed(lines[-max_lines:]):
+        for key in keys:
+            patterns = (
+                rf"\b{re.escape(key)}=([-+]?\d+)\b",
+                rf'"{re.escape(key)}"\s*:\s*([-+]?\d+)\b',
+            )
+            for pattern in patterns:
+                match = re.search(pattern, line)
+                if not match:
+                    continue
+                value = parse_int_optional(match.group(1))
+                if value is None:
+                    continue
+                return {
+                    "value": max(0, int(value)),
+                    "source": f"driver_log.{key}",
+                    "raw_line": line[-320:],
+                }
+    return None
+
+
+def count_token_mentions_in_decision_notes(records: list[dict[str, Any]], *, tokens: list[str]) -> int:
+    items = [str(t or "").strip().upper() for t in tokens if str(t or "").strip()]
+    if not items:
+        return 0
+    count = 0
+    for rec in records:
+        action = str(rec.get("action") or "")
+        details = str(rec.get("details") or rec.get("detail") or "")
+        reason = str(rec.get("reason") or rec.get("note") or "")
+        next_step = str(rec.get("next_step") or "")
+        hay = f"{action} {details} {reason} {next_step}".upper()
+        if any(token in hay for token in items):
+            count += 1
+    return count
+
+
+def count_token_mentions_in_log(path: Path, *, tokens: list[str], max_lines: int = 8000) -> int:
+    items = [str(t or "").strip().lower() for t in tokens if str(t or "").strip()]
+    if not items:
+        return 0
+    if not path.exists():
+        return 0
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return 0
+    count = 0
+    for line in lines[-max_lines:]:
+        low = line.lower()
+        if any(token in low for token in items):
+            count += 1
+    return count
+
+
+def resolve_counter_metric(
+    *,
+    field: str,
+    data_candidates: list[tuple[str, Any, tuple[str, ...]]],
+    log_keys: list[str],
+    driver_log_path: Path,
+    note_records: list[dict[str, Any]],
+    mention_tokens: list[str] | None = None,
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    for source_name, data_obj, path in data_candidates:
+        value = dict_path_int(data_obj, path)
+        if value is None:
+            continue
+        candidates.append(
+            {
+                "source": f"{source_name}.{'.'.join(path)}",
+                "value": max(0, int(value)),
+            }
+        )
+
+    latest_from_log = latest_counter_from_log(driver_log_path, log_keys)
+    if isinstance(latest_from_log, dict):
+        candidates.append(
+            {
+                "source": str(latest_from_log.get("source") or "driver_log"),
+                "value": max(0, parse_int(latest_from_log.get("value"), 0)),
+            }
+        )
+
+    best_value = 0
+    best_source = "default_zero"
+    if candidates:
+        best = max(candidates, key=lambda item: parse_int(item.get("value"), 0))
+        best_value = max(0, parse_int(best.get("value"), 0))
+        best_source = str(best.get("source") or "unknown")
+
+    mentions: dict[str, int] = {"decision_notes": 0, "driver_log": 0}
+    used_mentions_fallback = False
+    if mention_tokens:
+        note_hits = count_token_mentions_in_decision_notes(note_records, tokens=mention_tokens)
+        log_hits = count_token_mentions_in_log(driver_log_path, tokens=mention_tokens, max_lines=8000)
+        mentions = {
+            "decision_notes": int(note_hits),
+            "driver_log": int(log_hits),
+        }
+        if best_value <= 0:
+            mention_value = max(int(note_hits), int(log_hits))
+            if mention_value > 0:
+                best_value = mention_value
+                best_source = "evidence_mentions"
+                used_mentions_fallback = True
+
+    return {
+        "field": field,
+        "value": int(best_value),
+        "present": bool(best_value > 0),
+        "source": best_source,
+        "candidates": candidates,
+        "mentions": mentions,
+        "used_mentions_fallback": bool(used_mentions_fallback),
+    }
+
+
+def collect_runtime_observability_markers(
+    *,
+    runtime_metrics: dict[str, Any],
+    process_slo_state: dict[str, Any],
+    capacity_state: dict[str, Any],
+    directive_overlay: dict[str, Any],
+    decision_records: list[dict[str, Any]],
+    driver_log_path: Path,
+) -> dict[str, Any]:
+    data = {
+        "runtime": runtime_metrics if isinstance(runtime_metrics, dict) else {},
+        "process_slo": process_slo_state if isinstance(process_slo_state, dict) else {},
+        "capacity": capacity_state if isinstance(capacity_state, dict) else {},
+        "directive": directive_overlay if isinstance(directive_overlay, dict) else {},
+    }
+
+    ready_buffer_depth = resolve_counter_metric(
+        field="ready_buffer_depth",
+        data_candidates=[
+            ("runtime", data["runtime"], ("ready_buffer_depth",)),
+            ("process_slo", data["process_slo"], ("runtime", "ready_buffer_depth")),
+            ("process_slo", data["process_slo"], ("queue", "ready_buffer_depth")),
+            ("process_slo", data["process_slo"], ("kpi", "ready_buffer_depth")),
+            ("process_slo", data["process_slo"], ("ready_buffer_depth",)),
+            ("capacity", data["capacity"], ("backlog", "ready_buffer_depth")),
+            ("capacity", data["capacity"], ("runtime", "ready_buffer_depth")),
+            ("capacity", data["capacity"], ("ready_buffer_depth",)),
+            ("directive", data["directive"], ("ready_buffer_depth",)),
+            ("directive", data["directive"], ("contains", "ready_buffer_depth")),
+        ],
+        log_keys=["ready_buffer_depth", "ready_queue_depth", "ready_buffer"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    cold_fail_active_count = resolve_counter_metric(
+        field="cold_fail_active_count",
+        data_candidates=[
+            ("runtime", data["runtime"], ("cold_fail_active_count",)),
+            ("process_slo", data["process_slo"], ("runtime", "cold_fail_active_count")),
+            ("process_slo", data["process_slo"], ("queue", "cold_fail_active_count")),
+            ("process_slo", data["process_slo"], ("cold_fail_active_count",)),
+            ("capacity", data["capacity"], ("backlog", "cold_fail_active_count")),
+            ("capacity", data["capacity"], ("runtime", "cold_fail_active_count")),
+            ("capacity", data["capacity"], ("cold_fail_active_count",)),
+            ("directive", data["directive"], ("cold_fail_active_count",)),
+            ("directive", data["directive"], ("contains", "cold_fail_active_count")),
+        ],
+        log_keys=["cold_fail_active_count", "cold_tail_active_count", "cold_tail_fail_active_count"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    remote_active_queue_jobs = resolve_counter_metric(
+        field="remote_active_queue_jobs",
+        data_candidates=[
+            ("runtime", data["runtime"], ("remote_active_queue_jobs",)),
+            ("process_slo", data["process_slo"], ("runtime", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("queue", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("kpi", "remote_active_queue_jobs")),
+            ("process_slo", data["process_slo"], ("remote_active_queue_jobs",)),
+            ("capacity", data["capacity"], ("remote", "remote_active_queue_jobs")),
+            ("capacity", data["capacity"], ("runtime", "remote_active_queue_jobs")),
+            ("capacity", data["capacity"], ("remote_active_queue_jobs",)),
+            # Backward-compatible fallback: remote runner count is the closest operational proxy.
+            ("capacity", data["capacity"], ("remote", "runner_count")),
+            ("process_slo", data["process_slo"], ("queue", "remote_runner_count")),
+            ("process_slo", data["process_slo"], ("kpi", "remote_runner_count")),
+            ("directive", data["directive"], ("remote_active_queue_jobs",)),
+        ],
+        log_keys=["remote_active_queue_jobs", "remote_queue_jobs_active", "remote_runner_count"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+    )
+
+    surrogate_idle_override_count = resolve_counter_metric(
+        field="surrogate_idle_override_count",
+        data_candidates=[
+            ("runtime", data["runtime"], ("surrogate_idle_override_count",)),
+            ("process_slo", data["process_slo"], ("runtime", "surrogate_idle_override_count")),
+            ("process_slo", data["process_slo"], ("surrogate_idle_override_count",)),
+            ("capacity", data["capacity"], ("runtime", "surrogate_idle_override_count")),
+            ("capacity", data["capacity"], ("surrogate_idle_override_count",)),
+            ("directive", data["directive"], ("surrogate_idle_override_count",)),
+        ],
+        log_keys=["surrogate_idle_override_count", "surrogate_idle_overrides"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+        mention_tokens=["SURROGATE_IDLE_OVERRIDE", "surrogate_idle_override"],
+    )
+
+    overlap_dispatch_count = resolve_counter_metric(
+        field="overlap_dispatch_count",
+        data_candidates=[
+            ("runtime", data["runtime"], ("overlap_dispatch_count",)),
+            ("process_slo", data["process_slo"], ("runtime", "overlap_dispatch_count")),
+            ("process_slo", data["process_slo"], ("overlap_dispatch_count",)),
+            ("capacity", data["capacity"], ("runtime", "overlap_dispatch_count")),
+            ("capacity", data["capacity"], ("overlap_dispatch_count",)),
+            ("directive", data["directive"], ("overlap_dispatch_count",)),
+        ],
+        log_keys=["overlap_dispatch_count", "overlap_dispatches"],
+        driver_log_path=driver_log_path,
+        note_records=decision_records,
+        mention_tokens=["OVERLAP_DISPATCH", "overlap_dispatch"],
+    )
+
+    return {
+        "ready_buffer_depth": ready_buffer_depth,
+        "cold_fail_active_count": cold_fail_active_count,
+        "remote_active_queue_jobs": remote_active_queue_jobs,
+        "surrogate_idle_override_count": surrogate_idle_override_count,
+        "overlap_dispatch_count": overlap_dispatch_count,
+    }
+
+
 def ensure_process_slo_state(
     *,
     mode: str,
@@ -481,6 +749,7 @@ def collect_markers(
     *,
     fullspan_state_path: Path,
     process_slo_state_path: Path,
+    capacity_state_path: Path,
     decision_notes_path: Path,
     driver_log_path: Path,
     gate_surrogate_state_path: Path,
@@ -524,6 +793,10 @@ def collect_markers(
     funnel = process_slo.get("funnel", {})
     if not isinstance(funnel, dict):
         funnel = {}
+
+    capacity_state = read_json(capacity_state_path, {})
+    if not isinstance(capacity_state, dict):
+        capacity_state = {}
 
     strict_from_process_slo = parse_int(funnel.get("strict_pass"), 0)
     promote_from_process_slo = parse_int(funnel.get("promote_eligible"), 0)
@@ -609,6 +882,14 @@ def collect_markers(
     combined_surrogate_stats = _combine_surrogate_evidence(
         decision_surrogate_stats,
         log_surrogate_stats,
+    )
+    runtime_observability = collect_runtime_observability_markers(
+        runtime_metrics=runtime,
+        process_slo_state=process_slo,
+        capacity_state=capacity_state,
+        directive_overlay=directive,
+        decision_records=decision_records,
+        driver_log_path=driver_log_path,
     )
 
     runtime_surrogate_reject = _runtime_metric_int(runtime, "surrogate_reject_count")
@@ -707,6 +988,7 @@ def collect_markers(
                 "eligible_runtime_hits": int(eligible_runtime_hits),
             },
         },
+        "runtime_observability": runtime_observability,
     }
 
 
@@ -728,6 +1010,7 @@ def print_text(payload: dict[str, Any]) -> None:
     print(f"DECISION_NOTES_EXISTS={1 if bool(files.get('decision_notes_jsonl', {}).get('exists')) else 0}")
     print(f"FULLSPAN_STATE_EXISTS={1 if bool(files.get('fullspan_decision_state_json', {}).get('exists')) else 0}")
     print(f"PROCESS_SLO_STATE_EXISTS={1 if bool(files.get('process_slo_state_json', {}).get('exists')) else 0}")
+    print(f"CAPACITY_STATE_EXISTS={1 if bool(files.get('capacity_controller_state_json', {}).get('exists')) else 0}")
     print(f"GATE_SURROGATE_STATE_EXISTS={1 if bool(files.get('gate_surrogate_state_json', {}).get('exists')) else 0}")
     print(f"DIRECTIVE_OVERLAY_EXISTS={1 if bool(files.get('search_director_directive_json', {}).get('exists')) else 0}")
 
@@ -749,6 +1032,12 @@ def print_text(payload: dict[str, Any]) -> None:
     surrogate_combined = surrogate_evidence.get("combined", {}) if isinstance(surrogate_evidence.get("combined"), dict) else {}
     surrogate_counters = surrogate.get("fullspan_runtime_counters", {}) if isinstance(surrogate.get("fullspan_runtime_counters"), dict) else {}
     surrogate_branch = surrogate.get("branch_health", {}) if isinstance(surrogate.get("branch_health"), dict) else {}
+    runtime_observability = markers.get("runtime_observability", {}) if isinstance(markers.get("runtime_observability"), dict) else {}
+    ready_buffer_depth = runtime_observability.get("ready_buffer_depth", {}) if isinstance(runtime_observability.get("ready_buffer_depth"), dict) else {}
+    cold_fail_active_count = runtime_observability.get("cold_fail_active_count", {}) if isinstance(runtime_observability.get("cold_fail_active_count"), dict) else {}
+    remote_active_queue_jobs = runtime_observability.get("remote_active_queue_jobs", {}) if isinstance(runtime_observability.get("remote_active_queue_jobs"), dict) else {}
+    surrogate_idle_override_count = runtime_observability.get("surrogate_idle_override_count", {}) if isinstance(runtime_observability.get("surrogate_idle_override_count"), dict) else {}
+    overlap_dispatch_count = runtime_observability.get("overlap_dispatch_count", {}) if isinstance(runtime_observability.get("overlap_dispatch_count"), dict) else {}
 
     print(f"STRICT_PASS_COUNT={parse_int(strict.get('count'), 0)}")
     print(f"STRICT_PASS_PRESENT={1 if bool(strict.get('present')) else 0}")
@@ -776,6 +1065,11 @@ def print_text(payload: dict[str, Any]) -> None:
     print(f"SURROGATE_BRANCH_STATUS={str(surrogate_branch.get('status', ''))}")
     print(f"SURROGATE_BRANCH_BROKEN={1 if bool(surrogate_branch.get('broken_branch')) else 0}")
     print(f"SURROGATE_BRANCH_REASON={str(surrogate_branch.get('reason', ''))}")
+    print(f"READY_BUFFER_DEPTH={parse_int(ready_buffer_depth.get('value'), 0)}")
+    print(f"COLD_FAIL_ACTIVE_COUNT={parse_int(cold_fail_active_count.get('value'), 0)}")
+    print(f"REMOTE_ACTIVE_QUEUE_JOBS={parse_int(remote_active_queue_jobs.get('value'), 0)}")
+    print(f"SURROGATE_IDLE_OVERRIDE_COUNT={parse_int(surrogate_idle_override_count.get('value'), 0)}")
+    print(f"OVERLAP_DISPATCH_COUNT={parse_int(overlap_dispatch_count.get('value'), 0)}")
 
 
 
@@ -821,6 +1115,7 @@ def main() -> int:
     decision_notes_path = state_dir / "decision_notes.jsonl"
     fullspan_state_path = state_dir / "fullspan_decision_state.json"
     process_slo_state_path = state_dir / "process_slo_state.json"
+    capacity_state_path = state_dir / "capacity_controller_state.json"
     gate_surrogate_state_path = state_dir / "gate_surrogate_state.json"
     directive_overlay_path = state_dir / "search_director_directive.json"
 
@@ -834,6 +1129,7 @@ def main() -> int:
     markers = collect_markers(
         fullspan_state_path=fullspan_state_path,
         process_slo_state_path=process_slo_state_path,
+        capacity_state_path=capacity_state_path,
         decision_notes_path=decision_notes_path,
         driver_log_path=driver_log_path,
         gate_surrogate_state_path=gate_surrogate_state_path,
@@ -854,6 +1150,7 @@ def main() -> int:
                 "decision_notes_jsonl": file_meta(decision_notes_path),
                 "fullspan_decision_state_json": file_meta(fullspan_state_path),
                 "process_slo_state_json": file_meta(process_slo_state_path),
+                "capacity_controller_state_json": file_meta(capacity_state_path),
                 "gate_surrogate_state_json": file_meta(gate_surrogate_state_path),
                 "search_director_directive_json": file_meta(directive_overlay_path),
             },

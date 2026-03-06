@@ -478,6 +478,73 @@ def load_calibration_state(path: Path, *, default_reject: float, default_refine:
     }
 
 
+def has_idle_slot_fallback(queue_status_map: dict[str, tuple[int, dict[str, int]]] | None) -> bool:
+    if not isinstance(queue_status_map, dict) or not queue_status_map:
+        return False
+    pending_total = 0
+    running_total = 0
+    for item in queue_status_map.values():
+        if not isinstance(item, tuple) or len(item) != 2:
+            continue
+        status_map = item[1]
+        if not isinstance(status_map, dict):
+            continue
+        pending_total += sum(parse_int(status_map.get(status), 0) for status in PENDING_STATUSES)
+        running_total += parse_int(status_map.get("running"), 0)
+        running_total += parse_int(status_map.get("active"), 0)
+    return bool(pending_total > 0 and running_total <= 0)
+
+
+def resolve_idle_slot_signal(
+    process_slo_payload: Any,
+    *,
+    queue_status_map: dict[str, tuple[int, dict[str, int]]] | None = None,
+) -> dict[str, Any]:
+    signal = {
+        "available": isinstance(process_slo_payload, dict) and bool(process_slo_payload),
+        "valid": False,
+        "idle_slot_available": False,
+        "source": "process_slo_missing",
+    }
+
+    payload = process_slo_payload if isinstance(process_slo_payload, dict) else {}
+    queue_block = payload.get("queue", {}) if isinstance(payload, dict) else {}
+    kpi_block = payload.get("kpi", {}) if isinstance(payload, dict) else {}
+    queue_block = queue_block if isinstance(queue_block, dict) else {}
+    kpi_block = kpi_block if isinstance(kpi_block, dict) else {}
+
+    if signal["available"]:
+        signal["source"] = "process_slo_no_idle_slot"
+        signal["valid"] = bool(queue_block or kpi_block)
+
+        queue_idle = parse_bool(queue_block.get("idle_with_executable_pending"), False)
+        kpi_idle = parse_bool(kpi_block.get("idle_with_executable_pending"), False)
+        if queue_idle or kpi_idle:
+            signal["idle_slot_available"] = True
+            signal["source"] = "process_slo_idle_with_executable_pending"
+            return signal
+
+        local_runner = parse_int(
+            queue_block.get("local_runner_count", kpi_block.get("local_runner_count", -1)),
+            -1,
+        )
+        remote_runner = parse_int(
+            queue_block.get("remote_runner_count", kpi_block.get("remote_runner_count", -1)),
+            -1,
+        )
+        remote_reachable = parse_bool(queue_block.get("remote_reachable"), False)
+        if local_runner >= 0 and remote_runner >= 0 and remote_reachable and local_runner <= 0 and remote_runner == 0:
+            signal["idle_slot_available"] = True
+            signal["source"] = "process_slo_runner_counts"
+            return signal
+
+    if has_idle_slot_fallback(queue_status_map):
+        signal["idle_slot_available"] = True
+        signal["source"] = "fallback_queue_status_idle_slot"
+
+    return signal
+
+
 def queue_run_group(queue_key: str) -> str:
     if not queue_key:
         return ""
@@ -528,16 +595,27 @@ def decide_queue(
     quarantine_active: bool,
     reject_threshold: float,
     refine_threshold: float,
+    idle_slot_available: bool = False,
+    idle_slot_source: str = "",
 ) -> tuple[dict[str, Any], list[str], bool]:
     risk = 0.15
     contributions: list[dict[str, Any]] = []
     validation_error = False
     cold_start_exploration = False
+    cold_start_idle_slot_override = False
 
     queue_completed = int(queue_status.get("completed", 0))
     queue_pending = int(sum(queue_status.get(status, 0) for status in PENDING_STATUSES))
     queue_errors = int(sum(queue_status.get(status, 0) for status in ERROR_STATUSES))
     queue_skipped = int(queue_status.get("skipped", 0))
+    queue_pending_backlog = False
+    fresh_clean_queue = bool(
+        queue_rows > 0
+        and queue_completed == 0
+        and queue_pending > 0
+        and queue_errors == 0
+        and (queue_pending + queue_skipped) == queue_rows
+    )
 
     pending_ratio = 0.0
     error_ratio = 0.0
@@ -552,6 +630,7 @@ def decide_queue(
         skipped_ratio = float(queue_skipped) / float(queue_rows)
 
         if pending_ratio >= 0.80 and queue_completed == 0:
+            queue_pending_backlog = True
             apply_contribution(contributions, "queue_pending_backlog", 0.25)
             risk += 0.25
         elif pending_ratio >= 0.50:
@@ -745,6 +824,19 @@ def decide_queue(
         apply_contribution(contributions, "cold_start_clean_queue", -0.30)
         risk -= 0.30
 
+    if idle_slot_available and fresh_clean_queue and queue_pending_backlog:
+        critical_positive = [
+            item
+            for item in contributions
+            if float(item.get("delta", 0.0)) > 0
+            and str(item.get("key") or "")
+            not in {"queue_pending_backlog", "run_index_missing_group", "fullspan_missing", "no_completed_rows"}
+        ]
+        if not critical_positive:
+            cold_start_idle_slot_override = True
+            apply_contribution(contributions, "cold_start_idle_slot", -0.22)
+            risk -= 0.22
+
     risk = max(0.0, min(1.0, risk))
 
     if risk >= reject_threshold:
@@ -759,7 +851,9 @@ def decide_queue(
         reason = sorted(positive_contribs, key=lambda item: (-float(item["delta"]), str(item["key"])))[0]["key"]
     else:
         reason = "healthy_signal"
-    if decision == "allow" and cold_start_exploration:
+    if decision == "allow" and cold_start_idle_slot_override:
+        reason = "cold_start_idle_slot"
+    elif decision == "allow" and cold_start_exploration:
         reason = "cold_start_clean_queue"
 
     evidence = {
@@ -784,7 +878,11 @@ def decide_queue(
         "lineage_tokens": lineages,
         "lineage_uids": lineages,
         "legacy_evo_tokens": legacy_lineages,
+        "fresh_clean_queue": bool(fresh_clean_queue),
+        "idle_slot_available": bool(idle_slot_available),
+        "idle_slot_source": str(idle_slot_source or ""),
         "contributions": contributions,
+        "cold_start_idle_slot_override": bool(cold_start_idle_slot_override),
     }
 
     return (
@@ -864,6 +962,7 @@ def main() -> int:
     fullspan_path = state_dir / "fullspan_decision_state.json"
     quarantine_path = state_dir / "deterministic_quarantine.json"
     run_index_path = aggregate_dir / "rollup" / "run_index.csv"
+    process_slo_path = state_dir / "process_slo_state.json"
     calibration_path = state_dir / "surrogate_calibration_state.json"
     output_path = state_dir / "gate_surrogate_state.json"
     log_path = state_dir / "gate_surrogate.log"
@@ -903,6 +1002,11 @@ def main() -> int:
         for queue_path in queue_files:
             queue_key = safe_rel(queue_path, root)
             queue_status_map[queue_key] = load_queue_status(queue_path)
+
+        process_slo_signal = resolve_idle_slot_signal(
+            load_json(process_slo_path, {}),
+            queue_status_map=queue_status_map,
+        )
 
         all_queue_keys = set(queue_status_map.keys())
         all_queue_keys.update(fullspan.get("queues", {}).keys())
@@ -946,6 +1050,8 @@ def main() -> int:
                 quarantine_active=bool(quarantine.get("active")),
                 reject_threshold=reject_threshold,
                 refine_threshold=refine_threshold,
+                idle_slot_available=bool(process_slo_signal.get("idle_slot_available")),
+                idle_slot_source=str(process_slo_signal.get("source") or ""),
             )
             queues_payload[queue_key] = queue_payload
             decision_counts[queue_payload["decision"]] += 1
@@ -1022,6 +1128,13 @@ def main() -> int:
                     "valid": bool(run_index.get("valid")),
                     "rows": int(run_index.get("rows", 0) or 0),
                     "groups": int(run_index.get("groups", 0) or 0),
+                },
+                "process_slo_state": {
+                    "path": safe_rel(process_slo_path, root),
+                    "available": bool(process_slo_signal.get("available")),
+                    "valid": bool(process_slo_signal.get("valid")),
+                    "idle_slot_available": bool(process_slo_signal.get("idle_slot_available")),
+                    "idle_slot_source": str(process_slo_signal.get("source") or ""),
                 },
                 "queue_glob": {
                     "pattern": "artifacts/wfa/aggregate/*/run_queue.csv",

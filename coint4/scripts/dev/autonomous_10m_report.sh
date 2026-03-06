@@ -485,6 +485,7 @@ fi
 surrogate_gate_line="нет данных surrogate runtime"
 surrogate_evidence_line="нет данных surrogate runtime"
 surrogate_branch_line="нет данных surrogate runtime"
+runtime_observability_line="нет данных runtime observability"
 probe_json="$(python3 "$ROOT_DIR/scripts/optimization/probe_autonomous_markers.py" --root "$ROOT_DIR" --ensure-process-slo never --format json 2>/dev/null || true)"
 if [[ -n "$probe_json" ]]; then
   surrogate_payload="$(python3 - "$probe_json" <<'PY'
@@ -497,6 +498,7 @@ except Exception:
     print("нет данных surrogate runtime")
     print("нет данных surrogate runtime")
     print("нет данных surrogate runtime")
+    print("нет данных runtime observability")
     raise SystemExit(0)
 
 markers = data.get("markers", {}) if isinstance(data, dict) else {}
@@ -505,6 +507,7 @@ gate = sur.get("gate_surrogate", {}) if isinstance(sur, dict) else {}
 directive = sur.get("directive_overlay", {}) if isinstance(sur, dict) else {}
 combined = (sur.get("evidence", {}) or {}).get("combined", {}) if isinstance(sur, dict) else {}
 branch = sur.get("branch_health", {}) if isinstance(sur, dict) else {}
+runtime_obs = markers.get("runtime_observability", {}) if isinstance(markers, dict) else {}
 
 def to_int(v):
     try:
@@ -544,11 +547,28 @@ print(
         reason=str(branch.get("reason") or "-"),
     )
 )
+
+def metric_value(name):
+    item = runtime_obs.get(name, {}) if isinstance(runtime_obs, dict) else {}
+    if isinstance(item, dict):
+        return to_int(item.get("value"))
+    return to_int(item)
+
+print(
+    "ready_buffer_depth={ready} cold_fail_active_count={cold} remote_active_queue_jobs={remote} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
+        ready=metric_value("ready_buffer_depth"),
+        cold=metric_value("cold_fail_active_count"),
+        remote=metric_value("remote_active_queue_jobs"),
+        idle=metric_value("surrogate_idle_override_count"),
+        overlap=metric_value("overlap_dispatch_count"),
+    )
+)
 PY
 )"
   surrogate_gate_line="$(printf '%s\n' "$surrogate_payload" | sed -n '1p')"
   surrogate_evidence_line="$(printf '%s\n' "$surrogate_payload" | sed -n '2p')"
   surrogate_branch_line="$(printf '%s\n' "$surrogate_payload" | sed -n '3p')"
+  runtime_observability_line="$(printf '%s\n' "$surrogate_payload" | sed -n '4p')"
 fi
 
 printf '📌 10m human report\n'
@@ -562,6 +582,7 @@ printf 'Процесс (KPI): %s\n' "$process_kpi_line"
 printf 'Процесс (runtime): %s\n' "$process_runtime_line"
 printf 'Процесс (alerts): %s\n' "$process_alerts_line"
 printf 'Capacity policy: %s\n' "$capacity_line"
+printf 'Runtime observability: %s\n' "$runtime_observability_line"
 printf 'Surrogate gate: %s\n' "$surrogate_gate_line"
 printf 'Surrogate evidence: %s\n' "$surrogate_evidence_line"
 printf 'Surrogate branch: %s\n' "$surrogate_branch_line"

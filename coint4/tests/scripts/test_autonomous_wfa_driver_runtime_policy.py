@@ -172,6 +172,67 @@ def test_low_backlog_seed_trigger_contract() -> None:
     )
 
 
+def test_candidate_parse_empty_force_seed_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'candidate_parse_empty',
+            'candidate_parse_empty_after_reconcile',
+            'remote_count="$(remote_runner_count)"',
+            'force_seed=1',
+            'effective_seed_pending_threshold',
+            'force=$force_seed',
+            'ready_depth="$(ready_buffer_depth)"',
+            'READY_BUFFER_REFILL_THRESHOLD',
+        ],
+    )
+
+
+def test_surrogate_refresh_recomputes_when_queue_file_is_newer_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'queue_abs="${2:-$ROOT_DIR/$queue_rel}"',
+            'queue_mtime > state_mtime',
+            'surrogate_gate_state_needs_refresh "$queue_rel" "$ROOT_DIR/$queue_rel"',
+        ],
+    )
+
+
+def test_no_progress_phase_switch_respects_live_powered_queue_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'local_powered_queue_running()',
+            'no_progress_phase_switch_deferred',
+            'reason=local_powered_runner_active',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'remote_queue_running "$queue_rel" || local_powered_queue_running "$queue_rel"',
+        ],
+        label="live queue runner defer hook",
+    )
+
+
+def test_no_progress_phase_switch_grants_fresh_queue_grace_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC',
+            'queue_age_sec=$((current_epoch - mtime))',
+            'reason=fresh_queue_grace',
+            'pending == planned',
+        ],
+    )
+
+
 def test_no_progress_breaker_contract() -> None:
     src = _source()
     _assert_contains_all(
@@ -201,6 +262,11 @@ def test_runtime_metric_fields_contract() -> None:
             'queue_yield_score',
             'effective_planned_count',
             'stalled_share',
+            'ready_buffer_depth',
+            'cold_fail_active_count',
+            'remote_active_queue_jobs',
+            'surrogate_idle_override_count',
+            'overlap_dispatch_count',
         ],
     )
     _assert_contains_any(
@@ -210,4 +276,35 @@ def test_runtime_metric_fields_contract() -> None:
             'seed_trigger_reason',
         ],
         label='runtime policy metrics',
+    )
+
+
+def test_ready_buffer_and_cold_fail_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'READY_BUFFER_POOL_FILE',
+            'READY_BUFFER_STATE_FILE',
+            'COLD_FAIL_STATE_FILE',
+            'ready_buffer_refresh()',
+            'ready_buffer_emit_candidate()',
+            'cold_fail_state_add()',
+            'HARD_FAIL_COLD_TTL_SEC',
+        ],
+    )
+
+
+def test_overlap_dispatch_and_idle_override_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'maybe_dispatch_overlap_from_buffer()',
+            'READY_BUFFER_OVERLAP_TAIL_PENDING',
+            'READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES',
+            'remote_active_queue_jobs()',
+            'SURROGATE_IDLE_OVERRIDE',
+            'cold_start_idle_slot',
+        ],
     )

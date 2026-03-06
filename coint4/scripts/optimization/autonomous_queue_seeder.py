@@ -76,6 +76,10 @@ def _load_args() -> argparse.Namespace:
             "AUTONOMOUS_QUEUE_SEEDER_GATE_SURROGATE_STATE_PATH",
             "artifacts/wfa/aggregate/.autonomous/gate_surrogate_state.json",
         ),
+        "ready_buffer_state_path": os.getenv(
+            "AUTONOMOUS_QUEUE_SEEDER_READY_BUFFER_STATE_PATH",
+            "artifacts/wfa/aggregate/.autonomous/ready_queue_buffer.json",
+        ),
         "repair_mode": _parse_bool(os.getenv("AUTONOMOUS_QUEUE_SEEDER_REPAIR_MODE", "false"), default=False),
         "repair_max_neighbors": int(os.getenv("AUTONOMOUS_QUEUE_SEEDER_REPAIR_MAX_NEIGHBORS", "8")),
         "exclude_knobs": [
@@ -137,6 +141,11 @@ def _load_args() -> argparse.Namespace:
         "--gate-surrogate-state-path",
         default=defaults["gate_surrogate_state_path"],
         help="Optional gate surrogate state JSON with hard_fail_risk_policy/queue decisions.",
+    )
+    parser.add_argument(
+        "--ready-buffer-state-path",
+        default=defaults["ready_buffer_state_path"],
+        help="Optional ready-buffer state JSON for depth-aware seed triggers.",
     )
     parser.add_argument(
         "--repair-mode",
@@ -403,6 +412,75 @@ def _as_float(value: Any, *, default: float | None = None, min_value: float | No
     return parsed
 
 
+def _load_ready_queue_buffer(path: Path) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "exists": False,
+        "status": "missing",
+        "reason": "missing",
+        "target_depth": None,
+        "refill_threshold": None,
+        "effective_refill_threshold": None,
+        "ready_depth": 0,
+        "seed_needed": False,
+    }
+    if not path.exists():
+        return state
+
+    state["exists"] = True
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        state.update({"status": "invalid_json", "reason": "invalid_json"})
+        return state
+
+    if not isinstance(payload, dict):
+        state.update({"status": "invalid_payload", "reason": "invalid_payload"})
+        return state
+
+    entries = payload.get("entries", [])
+    if not isinstance(entries, list):
+        state.update({"status": "invalid_entries", "reason": "invalid_entries"})
+        return state
+
+    target_depth = _as_int(payload.get("target_depth"), default=None, min_value=0)
+    refill_threshold = _as_int(payload.get("refill_threshold"), default=None, min_value=0)
+    effective_refill_threshold = refill_threshold if refill_threshold is not None else target_depth
+    ready_depth = len(entries)
+
+    state.update(
+        {
+            "status": "ok",
+            "reason": "threshold_missing",
+            "target_depth": int(target_depth) if target_depth is not None else None,
+            "refill_threshold": int(refill_threshold) if refill_threshold is not None else None,
+            "effective_refill_threshold": int(effective_refill_threshold) if effective_refill_threshold is not None else None,
+            "ready_depth": int(ready_depth),
+        }
+    )
+    if effective_refill_threshold is None:
+        return state
+
+    seed_needed = int(ready_depth) < int(effective_refill_threshold)
+    state["seed_needed"] = bool(seed_needed)
+    state["reason"] = "below_refill_threshold" if seed_needed else "buffer_ok"
+    return state
+
+
+def _evaluate_seed_needed(
+    *,
+    executable_pending: int,
+    pending_threshold: int,
+    runnable_queue_count: int,
+    ready_buffer_state: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    if (int(executable_pending) < int(pending_threshold)) or (int(runnable_queue_count) == 0):
+        reasons.append("below_executable_threshold_or_no_runnable")
+    if bool(ready_buffer_state.get("seed_needed")):
+        reasons.append("ready_buffer_below_refill_threshold")
+    return bool(reasons), reasons
+
+
 def _normalize_decision_entries(raw: Any) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if isinstance(raw, list):
@@ -626,7 +704,14 @@ def main() -> int:
                 scanned,
                 queue_files,
             ) = _summarize_queues(aggregate_dir)
-            seed_needed = (executable_pending < int(args.pending_threshold)) or (runnable_queue_count == 0)
+            ready_buffer_state_path = _resolve_under_root(str(args.ready_buffer_state_path), app_root)
+            ready_buffer_state = _load_ready_queue_buffer(ready_buffer_state_path)
+            seed_needed, trigger_reasons = _evaluate_seed_needed(
+                executable_pending=executable_pending,
+                pending_threshold=int(args.pending_threshold),
+                runnable_queue_count=runnable_queue_count,
+                ready_buffer_state=ready_buffer_state,
+            )
             snapshot = {
                 "ts": _utc_now_iso(),
                 "status": "skipped" if not seed_needed else "active",
@@ -638,14 +723,27 @@ def main() -> int:
                 "queue_files_total": len(queue_files),
                 "queue_files_sample": [str(path) for path in queue_files[:120]],
                 "pending_threshold": int(args.pending_threshold),
+                "ready_buffer_state_path": _safe_rel(ready_buffer_state_path, app_root),
+                "ready_queue_buffer": {
+                    "exists": bool(ready_buffer_state.get("exists")),
+                    "status": str(ready_buffer_state.get("status") or ""),
+                    "reason": str(ready_buffer_state.get("reason") or ""),
+                    "target_depth": ready_buffer_state.get("target_depth"),
+                    "refill_threshold": ready_buffer_state.get("refill_threshold"),
+                    "effective_refill_threshold": ready_buffer_state.get("effective_refill_threshold"),
+                    "ready_depth": ready_buffer_state.get("ready_depth"),
+                    "seed_needed": bool(ready_buffer_state.get("seed_needed")),
+                },
                 "trigger": None,
+                "trigger_reasons": [],
             }
             if not seed_needed:
                 _emit_state(state_path, snapshot)
                 _append_log(log_path, snapshot)
                 return 0
 
-            snapshot["trigger"] = "below_executable_threshold_or_no_runnable"
+            snapshot["trigger_reasons"] = list(trigger_reasons)
+            snapshot["trigger"] = "+".join(trigger_reasons)
 
             controller_group = str(args.controller_group).strip() or "autonomous_queue_seeder"
             base_config = str(args.base_config).strip() or "configs/prod_final_budget1000.yaml"

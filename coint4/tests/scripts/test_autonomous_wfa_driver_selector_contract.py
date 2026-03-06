@@ -375,3 +375,98 @@ def test_trigger_confirm_fastlane_shortlist_excludes_stress_rows(tmp_path: Path)
     assert len(fallback_rows) == 1
     assert fallback_rows[0]["config_path"] == "configs/target.yaml"
     assert fallback_rows[0]["results_dir"] == "artifacts/wfa/runs/group/holdout_target"
+
+
+def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -> None:
+    app_root = tmp_path
+    (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
+    (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
+        FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    cold_queue = queue_root / "cold_group" / "run_queue.csv"
+    hot_queue = queue_root / "hot_group" / "run_queue.csv"
+    pool_csv = app_root / "candidate_pool.csv"
+    cold_state = app_root / "cold_fail_index.json"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "cold.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    (app_root / "configs" / "hot.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    _write_queue(
+        cold_queue,
+        [
+            {
+                "config_path": "configs/cold.yaml",
+                "results_dir": "artifacts/wfa/runs/cold_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    _write_queue(
+        hot_queue,
+        [
+            {
+                "config_path": "configs/hot.yaml",
+                "results_dir": "artifacts/wfa/runs/hot_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+
+    cold_mtime = int(cold_queue.stat().st_mtime)
+    cold_state.write_text(
+        json.dumps(
+            {
+                "policy_version": "fullspan_v1",
+                "entries": [
+                    {
+                        "queue": str(cold_queue.relative_to(app_root)),
+                        "gate_reason": "DD_FAIL",
+                        "inserted_ts": cold_mtime + 1,
+                        "until_ts": cold_mtime + 7200,
+                        "policy_version": "fullspan_v1",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    out_csv = app_root / "candidate.csv"
+    code = _extract_embedded_python("find_candidate") + "\nemit_scores()\n"
+    _run_embedded_python(
+        code,
+        [
+            str(queue_root),
+            str(out_csv),
+            "",
+            "",
+            "8",
+            "",
+            "0.70",
+            "2",
+            "2",
+            "0.20",
+            str(pool_csv),
+            str(cold_state),
+            "3",
+            "fullspan_v1",
+        ],
+        cwd=app_root,
+    )
+
+    with out_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows
+    assert rows[0]["queue"] == str(hot_queue.relative_to(app_root))
+
+    with pool_csv.open(newline="", encoding="utf-8") as handle:
+        pool_rows = list(csv.DictReader(handle))
+    assert pool_rows
+    assert all(row["queue"] != str(cold_queue.relative_to(app_root)) for row in pool_rows)
+    assert any(row["queue"] == str(hot_queue.relative_to(app_root)) for row in pool_rows)

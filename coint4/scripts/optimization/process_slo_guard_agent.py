@@ -294,6 +294,9 @@ def main() -> int:
         queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
         if not isinstance(queues, dict):
             queues = {}
+        runtime_metrics = fullspan_state.get("runtime_metrics", {}) if isinstance(fullspan_state, dict) else {}
+        if not isinstance(runtime_metrics, dict):
+            runtime_metrics = {}
 
         strict_pass_count = 0
         confirm_ready_count = 0
@@ -365,6 +368,11 @@ def main() -> int:
         remote_snapshot = read_remote_runner_snapshot(capacity_state_path)
         remote_runner_count = parse_int(remote_snapshot.get("runner_count"), -1)
         remote_reachable = bool(remote_snapshot.get("reachable"))
+        ready_buffer_depth = parse_int(runtime_metrics.get("ready_buffer_depth"), 0)
+        cold_fail_active_count = parse_int(runtime_metrics.get("cold_fail_active_count"), 0)
+        remote_active_queue_jobs = parse_int(runtime_metrics.get("remote_active_queue_jobs"), remote_runner_count)
+        surrogate_idle_override_count = parse_int(runtime_metrics.get("surrogate_idle_override_count"), 0)
+        overlap_dispatch_count = parse_int(runtime_metrics.get("overlap_dispatch_count"), 0)
         idle_with_executable_pending = bool(
             executable_pending_rows > 0
             and local_runner_count <= 0
@@ -485,8 +493,11 @@ def main() -> int:
                 "failed": failed_rows,
                 "local_runner_count": local_runner_count,
                 "remote_runner_count": remote_runner_count,
+                "remote_active_queue_jobs": remote_active_queue_jobs,
                 "remote_reachable": remote_reachable,
                 "idle_with_executable_pending": idle_with_executable_pending,
+                "ready_buffer_depth": ready_buffer_depth,
+                "cold_fail_active_count": cold_fail_active_count,
             },
             "kpi": {
                 "completed_rows": completed_rows,
@@ -499,7 +510,15 @@ def main() -> int:
                 "executable_pending_rows": executable_pending_rows,
                 "local_runner_count": local_runner_count,
                 "remote_runner_count": remote_runner_count,
+                "remote_active_queue_jobs": remote_active_queue_jobs,
                 "idle_with_executable_pending": idle_with_executable_pending,
+            },
+            "runtime": {
+                "ready_buffer_depth": ready_buffer_depth,
+                "cold_fail_active_count": cold_fail_active_count,
+                "remote_active_queue_jobs": remote_active_queue_jobs,
+                "surrogate_idle_override_count": surrogate_idle_override_count,
+                "overlap_dispatch_count": overlap_dispatch_count,
             },
             "wip": {
                 "search_max": wip_search_max,
@@ -532,7 +551,9 @@ def main() -> int:
                 "funnel generated={generated} executable={executable} completed={completed} "
                 "strict_pass={strict_pass} confirm_ready={confirm_ready} promote={promote_eligible} "
                 "pending={pending} stalled={stalled} local_runner={local_runner} remote_runner={remote_runner} "
-                "idle_with_executable_pending={idle_with_executable_pending} "
+                "remote_active_queue_jobs={remote_active_queue_jobs} ready_buffer_depth={ready_buffer_depth} "
+                "cold_fail_active_count={cold_fail_active_count} surrogate_idle_override_count={surrogate_idle_override_count} "
+                "overlap_dispatch_count={overlap_dispatch_count} idle_with_executable_pending={idle_with_executable_pending} "
                 "alerts={alerts} emitted={emitted}"
             ).format(
                 generated=summary["funnel"]["generated"],
@@ -545,6 +566,11 @@ def main() -> int:
                 stalled=summary["queue"]["stalled"],
                 local_runner=summary["queue"]["local_runner_count"],
                 remote_runner=summary["queue"]["remote_runner_count"],
+                remote_active_queue_jobs=summary["queue"]["remote_active_queue_jobs"],
+                ready_buffer_depth=summary["queue"]["ready_buffer_depth"],
+                cold_fail_active_count=summary["queue"]["cold_fail_active_count"],
+                surrogate_idle_override_count=summary["runtime"]["surrogate_idle_override_count"],
+                overlap_dispatch_count=summary["runtime"]["overlap_dispatch_count"],
                 idle_with_executable_pending=int(bool(summary["queue"]["idle_with_executable_pending"])),
                 alerts=summary["alerts_count"],
                 emitted=summary["events_emitted"],

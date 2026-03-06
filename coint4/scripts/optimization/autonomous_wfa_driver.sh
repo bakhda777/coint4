@@ -20,6 +20,9 @@ VPS_BATCH_SESSION_IDLE_GRACE_SEC="${VPS_BATCH_SESSION_IDLE_GRACE_SEC:-180}"
 VPS_BATCH_SESSION_STOP_COOLDOWN_SEC="${VPS_BATCH_SESSION_STOP_COOLDOWN_SEC:-180}"
 LOCK_FILE="$STATE_DIR/driver.lock"
 CANDIDATE_FILE="$STATE_DIR/candidate.csv"
+READY_BUFFER_POOL_FILE="$STATE_DIR/candidate_pool.csv"
+READY_BUFFER_STATE_FILE="$STATE_DIR/ready_queue_buffer.json"
+COLD_FAIL_STATE_FILE="$STATE_DIR/cold_fail_index.json"
 ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
 HEARTBEAT_STATE="$STATE_DIR/heartbeat_state.json"
 STALE_RUNNING_SEC="${STALE_RUNNING_SEC:-900}"
@@ -84,8 +87,14 @@ AUTO_SEED_COOLDOWN_SEC="${AUTO_SEED_COOLDOWN_SEC:-900}"
 AUTO_SEED_PENDING_THRESHOLD="${AUTO_SEED_PENDING_THRESHOLD:-96}"
 AUTO_SEED_NUM_VARIANTS="${AUTO_SEED_NUM_VARIANTS:-64}"
 AUTO_SEED_NUM_VARIANTS_FLOOR="${AUTO_SEED_NUM_VARIANTS_FLOOR:-24}"
+READY_BUFFER_TARGET_DEPTH="${READY_BUFFER_TARGET_DEPTH:-3}"
+READY_BUFFER_REFILL_THRESHOLD="${READY_BUFFER_REFILL_THRESHOLD:-2}"
+READY_BUFFER_OVERLAP_TAIL_PENDING="${READY_BUFFER_OVERLAP_TAIL_PENDING:-24}"
+READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES="${READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES:-2}"
+HARD_FAIL_COLD_TTL_SEC="${HARD_FAIL_COLD_TTL_SEC:-21600}"
 NO_PROGRESS_BREAKER_WINDOW_SEC="${NO_PROGRESS_BREAKER_WINDOW_SEC:-900}"
 NO_PROGRESS_BREAKER_STREAK="${NO_PROGRESS_BREAKER_STREAK:-2}"
+NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC="${NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC:-1800}"
 FORCE_SYNC_BEFORE_START="${FORCE_SYNC_BEFORE_START:-1}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
 DRIVER_MAX_LOCAL_SEARCH_RUNNERS="${DRIVER_MAX_LOCAL_SEARCH_RUNNERS:-3}"
@@ -335,7 +344,7 @@ find_candidate() {
     orphan_path="$ORPHAN_FILE"
   fi
 
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$SELECTOR_STALLED_BUDGET_RATIO" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$SELECTOR_STALLED_BUDGET_RATIO" "$READY_BUFFER_POOL_FILE" "$COLD_FAIL_STATE_FILE" "$READY_BUFFER_TARGET_DEPTH" "$FULLSPAN_POLICY_NAME" <<'PY'
 import csv
 import json
 import re
@@ -481,7 +490,37 @@ orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
 pre_rank_top_k = int(sys.argv[5]) if len(sys.argv) > 5 and str(sys.argv[5]).strip() else 8
 state_path = Path(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else None
+ready_pool_path = Path(sys.argv[11]) if len(sys.argv) > 11 and sys.argv[11] else None
+cold_fail_state_path = Path(sys.argv[12]) if len(sys.argv) > 12 and sys.argv[12] else None
+ready_buffer_target_depth = int(sys.argv[13]) if len(sys.argv) > 13 and str(sys.argv[13]).strip() else 3
+policy_version = str(sys.argv[14] if len(sys.argv) > 14 else "").strip() or "fullspan_v1"
 state_by_queue = load_state(state_path)
+
+
+def load_cold_fail_state(path: Path | None):
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    active = {}
+    entries = payload.get("entries", [])
+    if not isinstance(entries, list):
+        return {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get("queue") or "").strip()
+        if not queue:
+            continue
+        active[queue] = entry
+    return active
+
+
+cold_fail_state = load_cold_fail_state(cold_fail_state_path)
 
 now = time.time()
 
@@ -555,6 +594,21 @@ def emit_scores():
             queue_rel = str(p.relative_to(app_root))
         except Exception:
             queue_rel = queue_abs
+        mtime = float(p.stat().st_mtime)
+
+        cold_entry = cold_fail_state.get(queue_rel) or cold_fail_state.get(queue_abs) or cold_fail_state.get('/' + queue_rel.lstrip('/'))
+        if cold_entry:
+            try:
+                until_ts = float(cold_entry.get('until_ts') or 0.0)
+            except Exception:
+                until_ts = 0.0
+            try:
+                inserted_ts = float(cold_entry.get('inserted_ts') or 0.0)
+            except Exception:
+                inserted_ts = 0.0
+            entry_policy = str(cold_entry.get('policy_version') or '').strip() or policy_version
+            if entry_policy == policy_version and until_ts > now and inserted_ts > 0.0 and mtime <= inserted_ts:
+                continue
 
         orphan_until = None
         for k in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
@@ -568,7 +622,6 @@ def emit_scores():
             except Exception:
                 pass
 
-        mtime = float(p.stat().st_mtime)
         age_min = max(0.0, (now - mtime) / 60.0)
 
         by_base = defaultdict(lambda: {'holdout': None, 'stress': None, 'status': None})
@@ -801,9 +854,15 @@ def emit_scores():
             'executable_pending': executable_pending,
         })
 
+    header = 'queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n'
+    pool_header = header[:-1] + ',executable_pending\n'
     with out_csv.open('w', encoding='utf-8', newline='') as f:
-        f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n')
+        f.write(header)
         if not entries:
+            if ready_pool_path is not None:
+                ready_pool_path.parent.mkdir(parents=True, exist_ok=True)
+                with ready_pool_path.open('w', encoding='utf-8', newline='') as pool_handle:
+                    pool_handle.write(pool_header)
             raise SystemExit(0)
 
         has_effective_planned = any(int(item.get('effective_planned_count', 0)) > 0 for item in entries)
@@ -831,8 +890,9 @@ def emit_scores():
             ))
 
         ranked.sort()
-        ranked = ranked[:max(1, pre_rank_top_k)]
-        winner = ranked[0][-1]
+        ranked = ranked[:max(1, pre_rank_top_k, ready_buffer_target_depth)]
+        top_entries = [item[-1] for item in ranked]
+        winner = top_entries[0]
 
         f.write(
             '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f}\n'.format(
@@ -857,6 +917,36 @@ def emit_scores():
                 recent_yield=float(winner.get('recent_yield', 0.0)),
             )
         )
+
+    if ready_pool_path is not None:
+        ready_pool_path.parent.mkdir(parents=True, exist_ok=True)
+        with ready_pool_path.open('w', encoding='utf-8', newline='') as pool_handle:
+            pool_handle.write(pool_header)
+            for item in top_entries[:max(1, ready_buffer_target_depth)]:
+                pool_handle.write(
+                    '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{executable_pending}\n'.format(
+                        queue=item['queue_rel'],
+                        planned=int(item['planned']),
+                        running=int(item['running']),
+                        stalled=int(item['stalled']),
+                        failed=int(item['failed']),
+                        completed=int(item['completed']),
+                        total=int(item['total']),
+                        urgency=float(item['urgency']),
+                        mtime=int(item['mtime']),
+                        potential=str(item['promotion_potential']),
+                        gate_status=str(item['gate_status']),
+                        gate_reason=str(item['gate_reason']),
+                        pre_rank=float(item['pre_rank_score']),
+                        strict_status=str(item['strict_gate_status']),
+                        strict_reason=str(item['strict_gate_reason']),
+                        effective_planned=int(item['effective_planned_count']),
+                        stalled_share=float(item['stalled_share']),
+                        yield_score=float(item['queue_yield_score']),
+                        recent_yield=float(item.get('recent_yield', 0.0)),
+                        executable_pending=int(item.get('executable_pending', 0)),
+                    )
+                )
 
 
 emit_scores()
@@ -1010,6 +1100,463 @@ with out_csv.open('w', encoding='utf-8', newline='') as f:
     queue_yield_score = float(planned) * 4.0 - (stalled_share * 20.0)
     recent_yield = float(completed) / float(max((planned + running + stalled + failed + completed), 1))
     f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,,{int(planned)},{stalled_share:.6f},{queue_yield_score:.3f},{recent_yield:.3f}\n")
+PY
+}
+
+ready_buffer_depth() {
+  python3 - "$READY_BUFFER_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+entries = data.get("entries", []) if isinstance(data, dict) else []
+if not isinstance(entries, list):
+    print(0)
+    raise SystemExit(0)
+count = 0
+for entry in entries:
+    if isinstance(entry, dict) and not bool(entry.get("claimed")):
+        count += 1
+print(count)
+PY
+}
+
+cold_fail_active_count() {
+  python3 - "$COLD_FAIL_STATE_FILE" "$FULLSPAN_POLICY_NAME" <<'PY'
+import json
+import sys
+import time
+from pathlib import Path
+
+path = Path(sys.argv[1])
+policy = str(sys.argv[2] or "").strip()
+now = time.time()
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+entries = data.get("entries", []) if isinstance(data, dict) else []
+if not isinstance(entries, list):
+    print(0)
+    raise SystemExit(0)
+count = 0
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    entry_policy = str(entry.get("policy_version") or "").strip()
+    if entry_policy and entry_policy != policy:
+        continue
+    try:
+        until_ts = float(entry.get("until_ts") or 0.0)
+    except Exception:
+        until_ts = 0.0
+    if until_ts > now:
+        count += 1
+print(count)
+PY
+}
+
+cold_fail_state_add() {
+  local queue_rel="$1"
+  local gate_reason="$2"
+  local until_ts
+  local now_ts
+  now_ts="$(date +%s)"
+  until_ts="$(( now_ts + HARD_FAIL_COLD_TTL_SEC ))"
+  python3 - "$COLD_FAIL_STATE_FILE" "$queue_rel" "$gate_reason" "$now_ts" "$until_ts" "$FULLSPAN_POLICY_NAME" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = str(sys.argv[2] or "").strip()
+gate_reason = str(sys.argv[3] or "").strip()
+inserted_ts = float(sys.argv[4] or 0.0)
+until_ts = float(sys.argv[5] or 0.0)
+policy_version = str(sys.argv[6] or "").strip() or "fullspan_v1"
+
+payload = {"ts": "", "policy_version": policy_version, "entries": []}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        payload = {"ts": "", "policy_version": policy_version, "entries": []}
+if not isinstance(payload, dict):
+    payload = {"ts": "", "policy_version": policy_version, "entries": []}
+entries = payload.get("entries", [])
+if not isinstance(entries, list):
+    entries = []
+
+fresh = []
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    if str(entry.get("queue") or "").strip() == queue:
+        continue
+    fresh.append(entry)
+
+fresh.append(
+    {
+        "queue": queue,
+        "gate_reason": gate_reason,
+        "source_verdict": "REJECT",
+        "inserted_ts": inserted_ts,
+        "until_ts": until_ts,
+        "policy_version": policy_version,
+    }
+)
+payload["entries"] = fresh[-5000:]
+payload["policy_version"] = policy_version
+payload["ts"] = ""
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+ready_buffer_refresh() {
+  local exclude_queue="${1:-}"
+  local py_bin="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
+  if [[ -z "$py_bin" || ! -f "$READY_BUFFER_POOL_FILE" ]]; then
+    return 1
+  fi
+
+  local refresh_needed="1"
+  refresh_needed="$(python3 - "$GATE_SURROGATE_STATE_FILE" "$READY_BUFFER_POOL_FILE" <<'PY'
+import json
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+pool_path = Path(sys.argv[2])
+fresh_sec = 90
+if not pool_path.exists():
+    print("0")
+    raise SystemExit(0)
+if not state_path.exists():
+    print("1")
+    raise SystemExit(0)
+try:
+    data = json.loads(state_path.read_text(encoding='utf-8'))
+except Exception:
+    print("1")
+    raise SystemExit(0)
+ts = str(data.get("ts") or "").strip()
+age_sec = fresh_sec + 1
+if ts:
+    try:
+        parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        age_sec = max(0, int(time.time() - int(parsed.timestamp())))
+    except Exception:
+        age_sec = fresh_sec + 1
+state_mtime = state_path.stat().st_mtime if state_path.exists() else 0.0
+pool_mtime = pool_path.stat().st_mtime if pool_path.exists() else 0.0
+print("1" if age_sec > fresh_sec or pool_mtime > state_mtime else "0")
+PY
+)"
+  if [[ "$refresh_needed" == "1" ]]; then
+    if "$py_bin" "$ROOT_DIR/scripts/optimization/gate_surrogate_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1; then
+      "$py_bin" "$ROOT_DIR/scripts/optimization/search_director_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
+      log "surrogate_gate_refresh queue=global status=ok reason=ready_buffer"
+    else
+      log "surrogate_gate_refresh queue=global status=failed reason=ready_buffer"
+    fi
+  fi
+
+  python3 - "$READY_BUFFER_POOL_FILE" "$READY_BUFFER_STATE_FILE" "$GATE_SURROGATE_STATE_FILE" "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$exclude_queue" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$ROOT_DIR" "$FULLSPAN_POLICY_NAME" <<'PY'
+import csv
+import json
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+
+pool_path = Path(sys.argv[1])
+state_path = Path(sys.argv[2])
+surrogate_path = Path(sys.argv[3])
+orphan_path = Path(sys.argv[4])
+fullspan_path = Path(sys.argv[5])
+exclude_queue = str(sys.argv[6] or "").strip()
+target_depth = max(1, int(float(sys.argv[7] or 3)))
+refill_threshold = max(1, int(float(sys.argv[8] or 2)))
+root_dir = Path(sys.argv[9])
+policy_version = str(sys.argv[10] or "").strip() or "fullspan_v1"
+
+def load_json(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return default
+
+def queue_pending(queue_rel: str) -> int:
+    queue_path = root_dir / queue_rel
+    if not queue_path.exists():
+        return 0
+    try:
+        rows = list(csv.DictReader(queue_path.open(newline='', encoding='utf-8')))
+    except Exception:
+        return 0
+    pending = 0
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "running", "stalled", "failed", "error"}:
+            pending += 1
+    return pending
+
+rows = []
+if pool_path.exists():
+    try:
+        rows = list(csv.DictReader(pool_path.open(newline='', encoding='utf-8')))
+    except Exception:
+        rows = []
+
+surrogate = load_json(surrogate_path, {})
+surrogate_queues = surrogate.get("queues", {}) if isinstance(surrogate, dict) else {}
+orphans = {}
+if orphan_path.exists():
+    try:
+        for row in csv.DictReader(orphan_path.open(newline='', encoding='utf-8')):
+            queue = str(row.get("queue") or "").strip()
+            if not queue:
+                continue
+            try:
+                orphans[queue] = float(row.get("until_ts") or 0.0)
+            except Exception:
+                orphans[queue] = 0.0
+    except Exception:
+        orphans = {}
+fullspan = load_json(fullspan_path, {})
+fullspan_queues = fullspan.get("queues", {}) if isinstance(fullspan, dict) else {}
+now_ts = datetime.now(timezone.utc).timestamp()
+
+entries = []
+for row in rows:
+    queue = str(row.get("queue") or "").strip()
+    if not queue or queue == exclude_queue:
+        continue
+    if queue_pending(queue) <= 0:
+        continue
+    if queue in orphans and float(orphans.get(queue) or 0.0) > now_ts:
+        continue
+    state_entry = fullspan_queues.get(queue, {})
+    if isinstance(state_entry, dict):
+        verdict = str(state_entry.get("promotion_verdict") or "").strip().upper()
+        if verdict == "REJECT":
+            continue
+    surrogate_entry = surrogate_queues.get(queue, {})
+    if not surrogate_entry and (root_dir / queue).exists():
+        surrogate_entry = surrogate_queues.get(str((root_dir / queue).resolve()), {})
+    decision = str((surrogate_entry or {}).get("decision") or "").strip().lower()
+    reason = str((surrogate_entry or {}).get("reason") or "").strip()
+    if decision != "allow":
+        continue
+    entry = {
+        "queue": queue,
+        "planned": int(float(row.get("planned") or 0)),
+        "running": int(float(row.get("running") or 0)),
+        "stalled": int(float(row.get("stalled") or 0)),
+        "failed": int(float(row.get("failed") or 0)),
+        "completed": int(float(row.get("completed") or 0)),
+        "total": int(float(row.get("total") or 0)),
+        "urgency": float(row.get("urgency") or 0.0),
+        "mtime": int(float(row.get("mtime") or 0)),
+        "promotion_potential": str(row.get("promotion_potential") or "POSSIBLE"),
+        "gate_status": str(row.get("gate_status") or "OPEN"),
+        "gate_reason": str(row.get("gate_reason") or ""),
+        "pre_rank_score": float(row.get("pre_rank_score") or 0.0),
+        "strict_gate_status": str(row.get("strict_gate_status") or ""),
+        "strict_gate_reason": str(row.get("strict_gate_reason") or ""),
+        "effective_planned_count": int(float(row.get("effective_planned_count") or 0)),
+        "stalled_share": float(row.get("stalled_share") or 0.0),
+        "queue_yield_score": float(row.get("queue_yield_score") or 0.0),
+        "recent_yield": float(row.get("recent_yield") or 0.0),
+        "executable_pending": int(float(row.get("executable_pending") or 0)),
+        "surrogate_decision": decision,
+        "surrogate_reason": reason,
+        "claimed": False,
+        "claim_ts": 0,
+    }
+    entries.append(entry)
+    if len(entries) >= target_depth:
+        break
+
+payload = {
+    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "policy_version": policy_version,
+    "target_depth": target_depth,
+    "refill_threshold": refill_threshold,
+    "ready_count": len(entries),
+    "entries": entries,
+}
+state_path.parent.mkdir(parents=True, exist_ok=True)
+state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+
+  local depth
+  depth="$(ready_buffer_depth)"
+  fullspan_state_metric_set "ready_buffer_depth" "${depth:-0}"
+  fullspan_state_metric_set "ready_buffer_refill_threshold" "$READY_BUFFER_REFILL_THRESHOLD"
+  fullspan_state_metric_set "ready_buffer_target_depth" "$READY_BUFFER_TARGET_DEPTH"
+  log "ready_buffer_refresh depth=${depth:-0} exclude=${exclude_queue:-none}"
+  return 0
+}
+
+ready_buffer_emit_candidate() {
+  local exclude_queue="${1:-}"
+  python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" <<'PY'
+import csv
+import json
+import sys
+import time
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+candidate_path = Path(sys.argv[2])
+exclude_queue = str(sys.argv[3] or "").strip()
+
+header = [
+    "queue",
+    "planned",
+    "running",
+    "stalled",
+    "failed",
+    "completed",
+    "total",
+    "urgency",
+    "mtime",
+    "promotion_potential",
+    "gate_status",
+    "gate_reason",
+    "pre_rank_score",
+    "strict_gate_status",
+    "strict_gate_reason",
+    "effective_planned_count",
+    "stalled_share",
+    "queue_yield_score",
+    "recent_yield",
+]
+
+if not state_path.exists():
+    raise SystemExit(1)
+try:
+    data = json.loads(state_path.read_text(encoding='utf-8'))
+except Exception:
+    raise SystemExit(1)
+entries = data.get("entries", []) if isinstance(data, dict) else []
+if not isinstance(entries, list):
+    raise SystemExit(1)
+selected = None
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    queue = str(entry.get("queue") or "").strip()
+    if not queue or queue == exclude_queue or bool(entry.get("claimed")):
+        continue
+    selected = entry
+    break
+if selected is None:
+    raise SystemExit(1)
+selected["claimed"] = True
+selected["claim_ts"] = int(time.time())
+state_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+candidate_path.parent.mkdir(parents=True, exist_ok=True)
+with candidate_path.open("w", encoding="utf-8", newline="") as handle:
+    writer = csv.DictWriter(handle, fieldnames=header)
+    writer.writeheader()
+    writer.writerow(
+        {
+            "queue": selected.get("queue", ""),
+            "planned": selected.get("planned", 0),
+            "running": selected.get("running", 0),
+            "stalled": selected.get("stalled", 0),
+            "failed": selected.get("failed", 0),
+            "completed": selected.get("completed", 0),
+            "total": selected.get("total", 0),
+            "urgency": f"{float(selected.get('urgency', 0.0)):.3f}",
+            "mtime": selected.get("mtime", 0),
+            "promotion_potential": selected.get("promotion_potential", "POSSIBLE"),
+            "gate_status": selected.get("gate_status", "OPEN"),
+            "gate_reason": selected.get("gate_reason", ""),
+            "pre_rank_score": f"{float(selected.get('pre_rank_score', 0.0)):.3f}",
+            "strict_gate_status": selected.get("strict_gate_status", ""),
+            "strict_gate_reason": selected.get("strict_gate_reason", ""),
+            "effective_planned_count": selected.get("effective_planned_count", 0),
+            "stalled_share": f"{float(selected.get('stalled_share', 0.0)):.6f}",
+            "queue_yield_score": f"{float(selected.get('queue_yield_score', 0.0)):.3f}",
+            "recent_yield": f"{float(selected.get('recent_yield', 0.0)):.3f}",
+        }
+    )
+print(str(selected.get("queue") or "").strip())
+PY
+}
+
+ready_buffer_release_claim() {
+  local queue_rel="$1"
+  python3 - "$READY_BUFFER_STATE_FILE" "$queue_rel" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue = str(sys.argv[2] or "").strip()
+if not path.exists() or not queue:
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    raise SystemExit(0)
+entries = data.get("entries", []) if isinstance(data, dict) else []
+if not isinstance(entries, list):
+    raise SystemExit(0)
+changed = False
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    if str(entry.get("queue") or "").strip() != queue:
+        continue
+    entry["claimed"] = False
+    entry["claim_ts"] = 0
+    changed = True
+if changed:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+process_slo_idle_with_executable_pending() {
+  python3 - "$STATE_DIR/process_slo_state.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("0")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print("0")
+    raise SystemExit(0)
+queue = data.get("queue", {}) if isinstance(data, dict) else {}
+kpi = data.get("kpi", {}) if isinstance(data, dict) else {}
+idle = bool(queue.get("idle_with_executable_pending")) or bool(kpi.get("idle_with_executable_pending"))
+print("1" if idle else "0")
 PY
 }
 
@@ -1541,8 +2088,10 @@ PY
 
 surrogate_gate_state_needs_refresh() {
   local queue_rel="$1"
-  python3 - "$GATE_SURROGATE_STATE_FILE" "$queue_rel" <<'PY'
+  local queue_abs="${2:-$ROOT_DIR/$queue_rel}"
+  python3 - "$GATE_SURROGATE_STATE_FILE" "$queue_rel" "$queue_abs" <<'PY'
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -1550,6 +2099,7 @@ from pathlib import Path
 
 state_path = Path(sys.argv[1])
 queue_rel = str(sys.argv[2] or "").strip()
+queue_abs = Path(str(sys.argv[3] or "").strip())
 fresh_sec = 90
 
 if not state_path.exists():
@@ -1577,14 +2127,31 @@ if ts:
 
 queues = data.get("queues")
 has_queue = isinstance(queues, dict) and queue_rel in queues
-print("1" if age_sec > fresh_sec or not has_queue else "0")
+
+state_mtime = 0.0
+queue_mtime = 0.0
+try:
+    state_mtime = float(state_path.stat().st_mtime)
+except Exception:
+    state_mtime = 0.0
+try:
+    if queue_abs.exists():
+        queue_mtime = float(queue_abs.stat().st_mtime)
+except Exception:
+    queue_mtime = 0.0
+
+refresh_needed = age_sec > fresh_sec or not has_queue
+if not refresh_needed and queue_mtime > state_mtime:
+    refresh_needed = True
+
+print("1" if refresh_needed else "0")
 PY
 }
 
 refresh_gate_surrogate_state() {
   local queue_rel="$1"
   local refresh_needed="1"
-  refresh_needed="$(surrogate_gate_state_needs_refresh "$queue_rel" 2>/dev/null || printf '1')"
+  refresh_needed="$(surrogate_gate_state_needs_refresh "$queue_rel" "$ROOT_DIR/$queue_rel" 2>/dev/null || printf '1')"
   if [[ "$refresh_needed" != "1" ]]; then
     return 0
   fi
@@ -3250,6 +3817,28 @@ PY" || true)"
   echo "$remote_count"
 }
 
+remote_active_queue_jobs() {
+  local remote_count
+  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
+import os
+count = 0
+for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+        continue
+    try:
+        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
+    except Exception:
+        continue
+    if not cmd or 'python3 - <<' in cmd or 'pgrep -f' in cmd:
+        continue
+    if 'run_wfa_queue.py --queue' in cmd:
+        count += 1
+print(count)
+PY" || true)"
+  [[ -n "$remote_count" && "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+  echo "$remote_count"
+}
+
 remote_queue_running() {
   local queue_rel="$1"
   local cnt
@@ -3270,6 +3859,14 @@ for pid in os.listdir('/proc'):
         count += 1
 print(count)
 PY" 2>/dev/null || echo 0)"
+  [[ -n "$cnt" && "$cnt" =~ ^[0-9]+$ ]] || cnt=0
+  (( cnt > 0 ))
+}
+
+local_powered_queue_running() {
+  local queue_rel="$1"
+  local cnt
+  cnt="$(_count_match_running "run_wfa_queue_powered.py --queue ${queue_rel}")"
   [[ -n "$cnt" && "$cnt" =~ ^[0-9]+$ ]] || cnt=0
   (( cnt > 0 ))
 }
@@ -3532,6 +4129,10 @@ PY
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
   local now_epoch last_seed planned_exec pending_exec no_op_queues
+  local ready_depth
+  local remote_count=0
+  local force_seed=0
+  local effective_seed_pending_threshold
   now_epoch="$(date +%s)"
   last_seed="$(fullspan_state_metric_get last_seed_trigger_epoch 0)"
   [[ "$last_seed" =~ ^[0-9]+$ ]] || last_seed=0
@@ -3543,19 +4144,41 @@ maybe_trigger_auto_seed() {
   fullspan_state_metric_set "global_planned_exec" "$planned_exec"
   fullspan_state_metric_set "global_pending_exec" "$pending_exec"
   fullspan_state_metric_set "global_no_op_queue_count" "$no_op_queues"
+  ready_depth="$(ready_buffer_depth)"
+  [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
+  fullspan_state_metric_set "ready_buffer_depth" "$ready_depth"
 
-  if (( planned_exec >= AUTO_SEED_PENDING_THRESHOLD )); then
+  case "$reason" in
+    candidate_empty|candidate_parse_empty|candidate_empty_after_reconcile|candidate_parse_empty_after_reconcile)
+      remote_count="$(remote_runner_count)"
+      [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+      if (( remote_count == 0 )); then
+        force_seed=1
+      fi
+      ;;
+  esac
+  fullspan_state_metric_set "auto_seed_force_last_remote_count" "$remote_count"
+
+  if (( force_seed == 0 )) && (( planned_exec >= AUTO_SEED_PENDING_THRESHOLD )) && (( ready_depth >= READY_BUFFER_REFILL_THRESHOLD )); then
     return 0
   fi
   if (( now_epoch - last_seed < AUTO_SEED_COOLDOWN_SEC )); then
     return 0
   fi
 
+  effective_seed_pending_threshold="$AUTO_SEED_PENDING_THRESHOLD"
+  if (( force_seed == 1 )); then
+    effective_seed_pending_threshold=$(( pending_exec + 1 ))
+    if (( effective_seed_pending_threshold <= AUTO_SEED_PENDING_THRESHOLD )); then
+      effective_seed_pending_threshold=$(( AUTO_SEED_PENDING_THRESHOLD + 1 ))
+    fi
+  fi
+
   local rc=0
   (
     cd "$ROOT_DIR"
     PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_queue_seeder.py \
-      --pending-threshold "$AUTO_SEED_PENDING_THRESHOLD" \
+      --pending-threshold "$effective_seed_pending_threshold" \
       --num-variants "$AUTO_SEED_NUM_VARIANTS" \
       --num-variants-floor "$AUTO_SEED_NUM_VARIANTS_FLOOR" \
       --aggregate-dir artifacts/wfa/aggregate \
@@ -3566,11 +4189,12 @@ maybe_trigger_auto_seed() {
     fullspan_state_metric_set "last_seed_trigger_epoch" "$now_epoch"
     fullspan_state_metric_set "seed_trigger_reason" "$reason"
     fullspan_state_metric_inc "seed_trigger_count" 1
-    log "auto_seed_trigger reason=$reason planned_exec=$planned_exec pending_exec=$pending_exec no_op_queues=$no_op_queues threshold=$AUTO_SEED_PENDING_THRESHOLD num_variants=$AUTO_SEED_NUM_VARIANTS"
-    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason planned_exec=$planned_exec pending_exec=$pending_exec threshold=$AUTO_SEED_PENDING_THRESHOLD num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
+    fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
+    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth no_op_queues=$no_op_queues threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS"
+    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
   else
     fullspan_state_metric_inc "seed_trigger_fail_count" 1
-    log "auto_seed_failed reason=$reason rc=$rc planned_exec=$planned_exec"
+    log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc planned_exec=$planned_exec threshold=$effective_seed_pending_threshold"
   fi
 }
 
@@ -4232,6 +4856,58 @@ start_queue() {
   log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
 }
 
+maybe_dispatch_overlap_from_buffer() {
+  local active_queue_rel="$1"
+  local active_pending="$2"
+  local active_running="$3"
+  local active_stalled="$4"
+  local active_failed="$5"
+  local active_total="$6"
+
+  if (( active_pending <= 0 )); then
+    return 1
+  fi
+
+  local active_exec_pending active_completed_metrics active_planned
+  read -r _active_pending active_exec_pending active_completed_metrics active_planned _active_running _active_stalled _active_failed _active_completed <<< "$(queue_hygiene_snapshot "$active_queue_rel")"
+  [[ "$active_exec_pending" =~ ^[0-9]+$ ]] || active_exec_pending=0
+  if (( active_exec_pending > READY_BUFFER_OVERLAP_TAIL_PENDING )); then
+    return 1
+  fi
+
+  local remote_jobs
+  remote_jobs="$(remote_active_queue_jobs)"
+  [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
+  fullspan_state_metric_set "remote_active_queue_jobs" "$remote_jobs"
+  if (( remote_jobs >= READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES )); then
+    return 1
+  fi
+
+  ready_buffer_refresh "$active_queue_rel" || true
+  local next_queue=""
+  next_queue="$(ready_buffer_emit_candidate "$active_queue_rel" 2>/dev/null || true)"
+  if [[ -z "$next_queue" ]]; then
+    return 1
+  fi
+
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+    ready_buffer_release_claim "$next_queue"
+    return 1
+  fi
+
+  local overlap_cause="UNKNOWN"
+  if start_queue "$queue" "$overlap_cause" "${planned:-0}" "${running:-0}" "${stalled:-0}" "${total:-0}"; then
+    fullspan_state_metric_inc "overlap_dispatch_count" 1
+    log_decision_note "$active_queue_rel" "READY_BUFFER_DISPATCH" "next_queue=$queue tail_exec_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs" "dispatch_next_queue_overlap"
+    log "ready_buffer_dispatch source=$active_queue_rel next_queue=$queue tail_exec_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs"
+    return 0
+  fi
+
+  ready_buffer_release_claim "$queue"
+  return 1
+}
+
 # lightweight per-queue progress cache for stale detection in-shell
 declare -A last_pending_by_queue
 
@@ -4282,6 +4958,9 @@ fi
 
 while true; do
   maybe_trigger_auto_seed "low_planned_backlog" || true
+  fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
+  fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
+  fullspan_state_metric_set "remote_active_queue_jobs" "$(remote_active_queue_jobs)"
 
   current_epoch="$(date +%s)"
   global_completed_metrics_now="$(global_completed_metrics_count)"
@@ -4318,10 +4997,19 @@ while true; do
   fi
 
   find_candidate 1
+  ready_buffer_refresh "" || true
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
     cleanup_orphans
     find_candidate 0
+    ready_buffer_refresh "" || true
+  fi
+
+  if [[ ! -s "$CANDIDATE_FILE" ]]; then
+    if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+      log "ready_buffer_hit reason=no_candidate_file"
+      log_decision_note "global" "READY_BUFFER_HIT" "reason=no_candidate_file" "reuse_ready_buffer_candidate"
+    fi
   fi
 
   if [[ ! -s "$CANDIDATE_FILE" ]]; then
@@ -4353,18 +5041,25 @@ while true; do
   fi
 
 	  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+      ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+      if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+        log "ready_buffer_hit reason=candidate_parse_empty"
+        log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty" "reuse_ready_buffer_candidate"
+        IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+      else
 	    log_state "idle now=none completed=all"
 	    log "candidate_parse_empty"
 	    maybe_trigger_auto_seed "candidate_parse_empty" || true
 	    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
 	    fi
-    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-      adaptive_idle_sleep=300
-    fi
-    batch_session_maybe_stop "candidate_parse_empty"
-    sleep "$adaptive_idle_sleep"
-    continue
+        if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+          adaptive_idle_sleep=300
+        fi
+        batch_session_maybe_stop "candidate_parse_empty"
+        sleep "$adaptive_idle_sleep"
+        continue
+      fi
 	  fi
 
 	  queue_rel="${queue#$ROOT_DIR/}"
@@ -4440,6 +5135,12 @@ PY
 	      fi
 	    fi
 	    if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
+        ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+        if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+          log "ready_buffer_hit reason=candidate_parse_empty_after_reconcile"
+          log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty_after_reconcile" "reuse_ready_buffer_candidate"
+          IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+        else
 	      log_state "idle now=none completed=all"
 	      log "candidate_parse_empty_after_reconcile"
 	      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
@@ -4452,6 +5153,7 @@ PY
 	      batch_session_maybe_stop "candidate_parse_empty_after_reconcile"
 	      sleep "$adaptive_idle_sleep"
 	      continue
+        fi
 	    fi
 	    queue_rel="${queue#$ROOT_DIR/}"
 	    recent_yield="${recent_yield:-0}"
@@ -4461,6 +5163,22 @@ PY
 	  fi
 
 	  if (( phase_switch_required == 1 && pending > 0 && running == 0 )); then
+	    queue_age_sec=999999
+	    if [[ "${mtime:-}" =~ ^[0-9]+$ ]]; then
+	      queue_age_sec=$((current_epoch - mtime))
+	      if (( queue_age_sec < 0 )); then
+	        queue_age_sec=0
+	      fi
+	    fi
+	    if (( queue_age_sec < NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC && completed == 0 && failed == 0 && stalled == 0 && pending == planned )); then
+	      no_progress_breaker_streak_count=0
+	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=fresh_queue_grace age_sec=$queue_age_sec grace_sec=$NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC"
+	    elif remote_queue_running "$queue_rel" || local_powered_queue_running "$queue_rel"; then
+	      no_progress_breaker_streak_count=0
+	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=queue_runner_active"
+	    else
 	    no_progress_breaker_streak_count=0
 	    fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
 	    fullspan_state_metric_inc "no_progress_breaker_trigger_count" 1
@@ -4473,6 +5191,7 @@ PY
 	    : > "$CANDIDATE_FILE"
 	    sleep 2
 	    continue
+	    fi
 	  fi
 
 	  if (( planned > 0 )); then
@@ -4656,15 +5375,20 @@ PY
       vps_unreachable_streak_by_queue["$queue_rel"]=0
     fi
 
-    if remote_queue_running "$queue_rel"; then
+    if remote_queue_running "$queue_rel" || local_powered_queue_running "$queue_rel"; then
       no_progress_streak_by_queue["$queue_rel"]=0
-      log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
+      if remote_queue_running "$queue_rel"; then
+        log "no_progress_pause queue=$queue_rel reason=remote_runner_active_sync pending=$pending"
+      else
+        log "no_progress_pause queue=$queue_rel reason=local_powered_runner_active pending=$pending"
+      fi
       sync_queue_status "$queue_rel"
       if (( completed > 0 )); then
         fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
       else
         log "fullspan_rollup_sync_skip queue=$queue_rel reason=remote_runner_active_sync completed=0"
       fi
+      maybe_dispatch_overlap_from_buffer "$queue_rel" "$pending" "$running" "$stalled" "$failed" "$total" || true
       sleep 3
       continue
     fi
@@ -4705,9 +5429,12 @@ PY
   if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
     LAST_REJECTED_QUEUE="$queue_rel"
     mark_orphan "$queue_rel" "gated_reject_no_progress"
+    cold_fail_state_add "$queue_rel" "${gate_reason:-HARD_FAIL}"
+    fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
     : > "$CANDIDATE_FILE"
     log "candidate_gated_reject queue=$queue_rel promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
     log_decision_note "$queue_rel" "REJECT" "gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
+    log_decision_note "$queue_rel" "COLD_FAIL_INDEX_ADD" "gate_reason=${gate_reason:-HARD_FAIL} ttl_sec=$HARD_FAIL_COLD_TTL_SEC" "exclude_from_hot_selector"
     batch_session_maybe_stop "gated_reject"
     sleep 2
     continue
@@ -4828,6 +5555,21 @@ PY
   surrogate_decision="$(printf '%s' "${surrogate_decision:-allow}" | tr '[:upper:]' '[:lower:]')"
   if [[ -z "$surrogate_decision" ]]; then
     surrogate_decision="allow"
+  fi
+
+  remote_active_jobs="$(remote_active_queue_jobs)"
+  [[ "$remote_active_jobs" =~ ^[0-9]+$ ]] || remote_active_jobs=0
+  idle_with_pending="$(process_slo_idle_with_executable_pending)"
+  [[ "$idle_with_pending" =~ ^[0-9]+$ ]] || idle_with_pending=0
+  fullspan_state_metric_set "remote_active_queue_jobs" "$remote_active_jobs"
+  if [[ "$surrogate_decision" == "refine" && "${surrogate_reason:-}" == "queue_pending_backlog" && "$planned" -gt 0 && "$running" -eq 0 && "$stalled" -eq 0 && "$failed" -eq 0 && "$completed" -eq 0 ]]; then
+    if (( remote_active_jobs == 0 || idle_with_pending == 1 )); then
+      surrogate_decision="allow"
+      surrogate_reason="cold_start_idle_slot"
+      fullspan_state_metric_inc "surrogate_idle_override_count" 1
+      log "surrogate_gate queue=$queue_rel action=SURROGATE_IDLE_OVERRIDE reason=cold_start_idle_slot remote_active_queue_jobs=$remote_active_jobs idle_with_pending=$idle_with_pending"
+      log_decision_note "$queue_rel" "SURROGATE_IDLE_OVERRIDE" "reason=cold_start_idle_slot remote_active_queue_jobs=$remote_active_jobs idle_with_pending=$idle_with_pending" "continue_dispatch"
+    fi
   fi
 
   if [[ "$surrogate_decision" == "reject" ]]; then
