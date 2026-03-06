@@ -6126,7 +6126,14 @@ PY
 
   if (( pending <= 0 )); then
     : > "$CANDIDATE_FILE"
-    find_candidate 1
+    ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+    if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+      log "ready_buffer_hit reason=reconcile_pending_zero"
+      log_decision_note "global" "READY_BUFFER_HIT" "reason=reconcile_pending_zero" "reuse_ready_buffer_candidate"
+    fi
+    if [[ ! -s "$CANDIDATE_FILE" ]]; then
+      find_candidate 1
+    fi
     if [[ ! -s "$CANDIDATE_FILE" ]]; then
       cleanup_orphans
       find_candidate 0

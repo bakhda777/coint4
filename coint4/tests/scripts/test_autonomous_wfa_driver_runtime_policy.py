@@ -24,7 +24,13 @@ def _extract_reselect_after_reconcile_block(source: str) -> str:
     return 'if (( pending <= 0 )); then\n    : > "$CANDIDATE_FILE"' + match.group("body")
 
 
-def _run_reselect_block(tmp_path: Path, block: str, *, fallback_success: bool) -> subprocess.CompletedProcess[str]:
+def _run_reselect_block(
+    tmp_path: Path,
+    block: str,
+    *,
+    fallback_success: bool,
+    ready_buffer_success: bool = False,
+) -> subprocess.CompletedProcess[str]:
     candidate_file = tmp_path / "candidate.csv"
     header = (
         "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,"
@@ -67,6 +73,10 @@ find_candidate() {{
 {header}
 CSV
 }}
+ready_buffer_refresh() {{ :; }}
+ready_buffer_emit_candidate() {{
+{"  cat > \"$CANDIDATE_FILE\" <<'CSV'\n" + header + "\nartifacts/wfa/aggregate/ready/run_queue.csv,2,0,0,0,0,2,1.000,456,POSSIBLE,OPEN,ready_buffer,9.000,FULLSPAN_PREFILTER_PASSED,,2,0.000000,9.000,0.000\nCSV\n  return 0\n" if ready_buffer_success else "  return 1\n"}
+}}
 fallback_calls=0
 fallback_pending_candidate() {{
   fallback_calls=$((fallback_calls + 1))
@@ -76,6 +86,7 @@ log_state() {{ echo "STATE:$*"; }}
 maybe_trigger_auto_seed() {{ echo "SEED:$1"; return 0; }}
 batch_session_maybe_stop() {{ echo "STOP:$1"; }}
 fullspan_state_metric_set() {{ :; }}
+log_decision_note() {{ echo "NOTE:$*"; }}
 iter=0
 while true; do
   iter=$((iter + 1))
@@ -120,6 +131,17 @@ def test_candidate_reselect_after_reconcile_header_only_parse_can_recover_via_fa
     assert "BLOCK_DONE" in proc.stdout
     assert "LOG:candidate_parse_empty_after_reconcile" not in proc.stdout
     assert "FALLBACK_CALLS:1" in proc.stdout
+
+
+def test_candidate_reselect_after_reconcile_prefers_ready_buffer_before_hot_scan(tmp_path: Path) -> None:
+    block = _extract_reselect_after_reconcile_block(_source())
+    proc = _run_reselect_block(tmp_path, block, fallback_success=False, ready_buffer_success=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "LOG:ready_buffer_hit reason=reconcile_pending_zero" in proc.stdout
+    assert "NOTE:global READY_BUFFER_HIT reason=reconcile_pending_zero reuse_ready_buffer_candidate" in proc.stdout
+    assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/ready/run_queue.csv pending=2" in proc.stdout
+    assert "LOG:candidate_parse_empty_after_reconcile" not in proc.stdout
+    assert "FALLBACK_CALLS:0" in proc.stdout
 
 
 def test_queue_hygiene_noop_skip_contract() -> None:

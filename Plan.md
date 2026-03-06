@@ -46,6 +46,19 @@
     - preference of fresh canonical snapshot over stale runtime metrics
     - stale snapshot + high remote load => `busy`, not `idle`
 
+## Execution Update (2026-03-06, reconcile->ready-buffer dispatch fix)
+- Найдена и закрыта конкретная orchestration-дыра после завершения active queue:
+  - при `candidate_reconcile` и `pending<=0` driver сначала ресеlect-ил из общего hot scan (`find_candidate`), а `ready_buffer` использовал только как fallback на parse-empty;
+  - это позволяло старому `HARD_FAIL` хвосту вытеснить свежую `SURROGATE_ALLOW` queue из `ready_buffer`, даже если новый batch уже был materialized и готов к dispatch.
+- В `autonomous_wfa_driver.sh` при `pending<=0` после reconcile порядок теперь такой:
+  1. очистить `candidate.csv`;
+  2. `ready_buffer_refresh`;
+  3. `ready_buffer_emit_candidate`;
+  4. только если buffer пуст, идти в `find_candidate`.
+- Добавлена регрессия:
+  - `test_candidate_reselect_after_reconcile_prefers_ready_buffer_before_hot_scan`
+  - гарантирует, что completed queue передаёт слот ready-buffer candidate, а не уходит обратно в stale reject-scan.
+
 ## Winner definition (без двусмысленности)
 Winner достигается только при одновременном выполнении:
 - `strict_pass >= 1` по контракту `fullspan_v1`.
