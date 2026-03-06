@@ -210,7 +210,7 @@ def test_sync_up_tracked_removes_stale_remote_tracked_files(tmp_path: Path) -> N
     assert (remote_repo / "scripts/data/current.py").exists()
     assert (remote_repo / "coint4/outputs/runtime.log").exists()
     assert (remote_repo / "SYNCED_FROM_COMMIT.txt").read_text(encoding="utf-8").strip() == head_sha
-    assert "sync_up cleanup removed 1 stale tracked files (mode=tracked)" in proc.stdout
+    assert "sync_up cleanup removed 1 stale scope files (mode=tracked)" in proc.stdout
 
 
 def test_sync_up_code_cleans_only_in_scope_tracked_paths(tmp_path: Path) -> None:
@@ -227,13 +227,15 @@ def test_sync_up_code_cleans_only_in_scope_tracked_paths(tmp_path: Path) -> None
             "coint4/artifacts/keep/tracked.txt",
         ],
     )
+    _write(remote_repo / "scripts/data/untracked_orphan.py", "print('orphan')\n")
     _write(remote_repo / "coint4/outputs/runtime.log", "runtime\n")
 
     proc = _run_sync_up(tmp_path, local_repo, remote_repo, "code")
 
     assert proc.returncode == 0, proc.stderr
     assert not (remote_repo / "scripts/data/stale.py").exists()
+    assert not (remote_repo / "scripts/data/untracked_orphan.py").exists()
     assert (remote_repo / "scripts/data/current.py").exists()
     assert (remote_repo / "coint4/artifacts/keep/tracked.txt").exists()
     assert (remote_repo / "coint4/outputs/runtime.log").exists()
-    assert "sync_up cleanup removed 1 stale tracked files (mode=code)" in proc.stdout
+    assert "sync_up cleanup removed 2 stale scope files (mode=code)" in proc.stdout

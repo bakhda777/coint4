@@ -384,7 +384,6 @@ cleanup_remote_stale_tracked_files() {
   rsync -az -e "ssh ${SSH_OPTS[*]}" "${sync_manifest}" "${SERVER_USER}@${SERVER_IP}:${remote_manifest}"
 
   ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "python3 - ${quoted_repo_dir} ${quoted_manifest} ${quoted_mode} <<'PY'
-import subprocess
 import sys
 from pathlib import Path
 
@@ -405,19 +404,6 @@ local_paths = {
     for item in manifest_bytes.split(b'\\0')
     if item
 }
-try:
-    remote_output = subprocess.check_output(
-        ['git', '-C', str(repo_dir), 'ls-files', '-z'],
-        stderr=subprocess.DEVNULL,
-    )
-except (FileNotFoundError, subprocess.CalledProcessError):
-    print(f'[server] sync_up cleanup skipped: remote git index unavailable under {repo_dir}')
-    raise SystemExit(0)
-remote_paths = [
-    item.decode('utf-8', errors='surrogateescape')
-    for item in remote_output.split(b'\\0')
-    if item
-]
 
 def in_scope(rel_path: str) -> bool:
     if mode == 'tracked':
@@ -433,6 +419,26 @@ def in_scope(rel_path: str) -> bool:
         )
         return not blocked
     raise SystemExit(f'Unsupported SYNC_UP_MODE={mode}')
+
+scope_roots = {Path(rel_path).parts[0] for rel_path in local_paths if Path(rel_path).parts}
+remote_paths: list[str] = []
+for root_name in sorted(scope_roots):
+    root_path = (repo_dir / root_name).resolve()
+    try:
+        root_path.relative_to(repo_dir)
+    except ValueError:
+        continue
+    if not root_path.exists():
+        continue
+    if root_path.is_file():
+        rel_path = root_path.relative_to(repo_dir).as_posix()
+        if in_scope(rel_path):
+            remote_paths.append(rel_path)
+        continue
+    for candidate in sorted(path for path in root_path.rglob('*') if path.is_file()):
+        rel_path = candidate.relative_to(repo_dir).as_posix()
+        if in_scope(rel_path):
+            remote_paths.append(rel_path)
 
 stale_paths: list[Path] = []
 for rel_path in remote_paths:
@@ -456,7 +462,7 @@ for stale in stale_paths:
             break
         parent = parent.parent
 
-print(f'[server] sync_up cleanup removed {len(stale_paths)} stale tracked files (mode={mode})')
+print(f'[server] sync_up cleanup removed {len(stale_paths)} stale scope files (mode={mode})')
 for stale in stale_paths:
     print(f'[server] sync_up cleanup path={stale.relative_to(repo_dir)}')
 PY"
