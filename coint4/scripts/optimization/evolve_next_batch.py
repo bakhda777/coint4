@@ -516,6 +516,8 @@ def _resolve_parent_diagnostics(
     contains: Sequence[str],
     winner_proximate_tokens: Sequence[str],
     include_noncompleted: bool,
+    parent_diversity_depth: int = 1,
+    parent_rotation_offset: int = 0,
 ) -> ParentResolution:
     preferred_tokens = tuple(dict.fromkeys(str(token).strip() for token in winner_proximate_tokens if str(token).strip()))
     generic_diagnostics = tuple(
@@ -547,6 +549,12 @@ def _resolve_parent_diagnostics(
         )
     )
     preferred_top = preferred_diagnostics[0] if preferred_diagnostics else None
+    if preferred_diagnostics:
+        depth = max(1, int(parent_diversity_depth))
+        rotation = max(0, int(parent_rotation_offset))
+        candidate_window = list(preferred_diagnostics[:depth])
+        if candidate_window:
+            preferred_top = candidate_window[rotation % len(candidate_window)]
     if preferred_top is not None:
         return ParentResolution(
             diagnostics=preferred_diagnostics,
@@ -566,6 +574,73 @@ def _resolve_parent_diagnostics(
         preferred_parent_source="generic_contains_fallback" if generic_top else "base_config_fallback",
         winner_proximate_fallback_reason="no_matching_rows_for_any_winner_proximate_token",
     )
+
+
+def _build_parent_pool(
+    *,
+    diagnostics: Sequence[VariantDiagnostics],
+    app_root: Path,
+    base_config_path: Path,
+    knob_space: Sequence[KnobSpec],
+    depth: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    pool: list[dict[str, Any]] = []
+    metadata: list[dict[str, Any]] = []
+    seen_genomes: set[str] = set()
+
+    def _push(config_path: Path, *, source: str, run_group: str, variant_id: str) -> None:
+        if not config_path.exists():
+            return
+        try:
+            cfg = load_effective_yaml_config(config_path)
+            genome = genome_from_config(cfg, knob_space=knob_space)
+        except Exception:  # noqa: BLE001
+            return
+        fp = _genome_fingerprint(genome)
+        if fp in seen_genomes:
+            return
+        seen_genomes.add(fp)
+        parent_id = f"parent::{_relative_to_root(config_path, root=app_root)}"
+        pool.append(
+            {
+                "parent_id": parent_id,
+                "parent_config_path": config_path,
+                "parent_genome": genome,
+            }
+        )
+        metadata.append(
+            {
+                "parent_id": parent_id,
+                "parent_config_path": _relative_to_root(config_path, root=app_root),
+                "source": source,
+                "run_group": str(run_group or ""),
+                "variant_id": str(variant_id or ""),
+            }
+        )
+
+    cap = max(1, int(depth))
+    for diag in list(diagnostics or [])[:cap]:
+        sample = str(diag.sample_config_path or "").strip()
+        if not sample:
+            continue
+        try:
+            cfg_path = _resolve_under_root(sample, root=app_root)
+        except Exception:  # noqa: BLE001
+            continue
+        _push(
+            cfg_path,
+            source="diagnostics",
+            run_group=str(diag.run_group or ""),
+            variant_id=str(diag.variant_id or ""),
+        )
+
+    _push(
+        base_config_path,
+        source="base_config_fallback",
+        run_group="",
+        variant_id="",
+    )
+    return pool, metadata
 
 
 def _load_patch_zoo_from_decisions(decisions_dir: Path, *, max_items: int = 200) -> list[dict[str, Any]]:
@@ -708,6 +783,8 @@ def _generate_proposals(
     dedupe_distance: float,
     max_changed_keys: int,
     blocked_candidate_ids: set[str] | None = None,
+    parent_pool: Sequence[tuple[str, Genome]] | None = None,
+    parent_rotation_offset: int = 0,
 ) -> list[CandidateProposal]:
     _ = failure_assessment
     operator_kind = str(operator_plan.operator_kind or "").strip()
@@ -719,12 +796,31 @@ def _generate_proposals(
     blocked_ids = blocked_candidate_ids if blocked_candidate_ids is not None else set()
     max_attempts = max(128, num_variants * 64)
     attempts = 0
+    rotation_offset = max(0, int(parent_rotation_offset))
+
+    resolved_parent_pool: list[tuple[str, Genome]] = [(str(parent_id), dict(parent_genome))]
+    if parent_pool:
+        candidate_pool: list[tuple[str, Genome]] = []
+        for item in parent_pool:
+            if not isinstance(item, tuple) or len(item) != 2:
+                continue
+            p_id_raw, p_genome_raw = item
+            p_id = str(p_id_raw or "").strip()
+            if not p_id:
+                continue
+            if not isinstance(p_genome_raw, Mapping):
+                continue
+            candidate_pool.append((p_id, dict(p_genome_raw)))
+        if candidate_pool:
+            resolved_parent_pool = candidate_pool
 
     while len(proposals) < num_variants and attempts < max_attempts:
         attempts += 1
+        pool_idx = int((attempts + len(proposals) + rotation_offset) % len(resolved_parent_pool))
+        parent_id_cur, parent_genome_cur = resolved_parent_pool[pool_idx]
         parents = _parents_for_operator(
             operator_kind,
-            parent_genome=parent_genome,
+            parent_genome=parent_genome_cur,
             seen_pool=seen_pool,
             rng=rng,
         )
@@ -739,9 +835,9 @@ def _generate_proposals(
         for child in children:
             candidate = _build_candidate(
                 child=child,
-                parent_genome=parent_genome,
-                parent_id=parent_id,
-                parents=[parent_id],
+                parent_genome=parent_genome_cur,
+                parent_id=parent_id_cur,
+                parents=[parent_id_cur],
                 operator_id="op_targeted_primary",
                 generation=generation,
                 seen_pool=seen_pool,
@@ -768,9 +864,11 @@ def _generate_proposals(
         fallback_budget = max(1, min(int(max_changed_keys), 8))
         for fallback_kind in ("random_restart_v1", "mutate_step_v1", "coordinate_sweep_v1"):
             try:
+                fallback_pool_idx = int((len(proposals) + attempts + rotation_offset) % len(resolved_parent_pool))
+                parent_id_cur, parent_genome_cur = resolved_parent_pool[fallback_pool_idx]
                 fallback_children = apply_operator_v1(
                     fallback_kind,
-                    parents=[parent_genome],
+                    parents=[parent_genome_cur],
                     knob_space=knob_space,
                     rng=rng,
                     budget=fallback_budget,
@@ -781,9 +879,9 @@ def _generate_proposals(
             for child in fallback_children:
                 fallback_candidate = _build_candidate(
                     child=child,
-                    parent_genome=parent_genome,
-                    parent_id=parent_id,
-                    parents=[parent_id],
+                    parent_genome=parent_genome_cur,
+                    parent_id=parent_id_cur,
+                    parents=[parent_id_cur],
                     operator_id=f"op_emergency_{fallback_kind}",
                     generation=generation,
                     seen_pool=seen_pool,
@@ -2953,6 +3051,28 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Preferred lineage/run_group token for explicit winner-proximate parent resolution (OR semantics, repeatable).",
     )
+    parser.add_argument("--planner-policy-hash", default="", help="Opaque policy hash from autonomous scheduler.")
+    parser.add_argument("--planner-hash", default="", help="Opaque planner invocation hash for provenance.")
+    parser.add_argument("--seed-lane", default="broad_search", help="Scheduler lane label for provenance.")
+    parser.add_argument("--seed-lane-index", type=int, default=0, help="Lane ranking index for provenance.")
+    parser.add_argument(
+        "--parent-diversity-depth",
+        type=int,
+        default=1,
+        help="Top-k preferred parents considered for diversity rotation.",
+    )
+    parser.add_argument(
+        "--parent-rotation-offset",
+        type=int,
+        default=0,
+        help="Rotation offset inside the preferred parent diversity window.",
+    )
+    parser.add_argument(
+        "--confirm-replay-hint",
+        action="append",
+        default=[],
+        help="Confirm/fullspan replay lineage hints forwarded by the scheduler.",
+    )
     parser.add_argument("--window", action="append", default=[], help="OOS window format: YYYY-MM-DD,YYYY-MM-DD (repeatable).")
     parser.add_argument(
         "--include-stress",
@@ -3063,6 +3183,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("--patch-max-attempts must be >= 1")
     if int(args.repair_max_neighbors) < 1:
         raise SystemExit("--repair-max-neighbors must be >= 1")
+    if int(args.parent_diversity_depth) < 1:
+        raise SystemExit("--parent-diversity-depth must be >= 1")
 
     app_root = _resolve_app_root()
     repo_root = app_root.parent
@@ -3089,6 +3211,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     winner_proximate_tokens = [
         str(token).strip() for token in list(args.winner_proximate_token or []) if str(token).strip()
     ]
+    planner_policy_hash = str(args.planner_policy_hash or "").strip()
+    planner_hash = str(args.planner_hash or "").strip()
+    seed_lane = str(args.seed_lane or "").strip()
+    seed_lane_index = int(args.seed_lane_index or 0)
+    confirm_replay_hints = [
+        str(token).strip() for token in list(args.confirm_replay_hint or []) if str(token).strip()
+    ]
 
     run_group = str(args.run_group or "").strip()
     controller_group = str(args.controller_group or "").strip()
@@ -3103,6 +3232,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         contains=contains,
         winner_proximate_tokens=winner_proximate_tokens,
         include_noncompleted=bool(args.include_noncompleted),
+        parent_diversity_depth=int(args.parent_diversity_depth),
+        parent_rotation_offset=int(args.parent_rotation_offset),
     )
     diagnostics = list(parent_resolution.diagnostics)
     top_diag = parent_resolution.top_diag
@@ -3142,16 +3273,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     state_payload = _load_state(state_path)
     generation = int(state_payload.get("generation") or -1) + 1
     seed = int(state_payload.get("seed") or int(args.seed))
-
-    parent_config_path = base_config_path
-    if top_diag and top_diag.sample_config_path:
-        sample = _resolve_under_root(top_diag.sample_config_path, root=app_root)
-        if sample.exists():
-            parent_config_path = sample
+    parent_diversity_depth = max(1, int(args.parent_diversity_depth))
+    parent_rotation_offset = max(0, int(args.parent_rotation_offset))
+    parent_pool_entries, parent_pool_metadata = _build_parent_pool(
+        diagnostics=diagnostics,
+        app_root=app_root,
+        base_config_path=base_config_path,
+        knob_space=knob_space,
+        depth=parent_diversity_depth,
+    )
+    if not parent_pool_entries:
+        raise SystemExit("unable to resolve parent pool from diagnostics/base config")
+    primary_parent_index = int(parent_rotation_offset % len(parent_pool_entries))
+    primary_parent = parent_pool_entries[primary_parent_index]
+    parent_config_path = Path(primary_parent["parent_config_path"])
     parent_cfg = load_effective_yaml_config(parent_config_path)
-    parent_genome = genome_from_config(parent_cfg, knob_space=knob_space)
-    parent_id = f"parent::{_relative_to_root(parent_config_path, root=app_root)}"
+    parent_genome = dict(primary_parent["parent_genome"])
+    parent_id = str(primary_parent["parent_id"])
     parent_cfg_ref = _relative_to_root(parent_config_path, root=app_root)
+    parent_pool_for_generation: list[tuple[str, Genome]] = [
+        (str(item["parent_id"]), dict(item["parent_genome"])) for item in parent_pool_entries
+    ]
 
     seen_pool = _collect_seen_genomes(
         rows=rows,
@@ -3249,6 +3391,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 seen_pool=seen_pool,
                 dedupe_distance=float(args.dedupe_distance),
                 max_changed_keys=int(args.max_changed_keys),
+                parent_pool=parent_pool_for_generation,
+                parent_rotation_offset=int(parent_rotation_offset),
             )
         if len(proposals) < target_variants:
             missing = target_variants - len(proposals)
@@ -3293,6 +3437,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             seen_pool=seen_pool,
             dedupe_distance=float(args.dedupe_distance),
             max_changed_keys=int(args.max_changed_keys),
+            parent_pool=parent_pool_for_generation,
+            parent_rotation_offset=int(parent_rotation_offset),
         )
 
     repair_summary: dict[str, int] = {
@@ -3414,6 +3560,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "window_end": window_end,
                         "profile": "holdout",
                         "ir_mode": str(args.ir_mode),
+                        "planner_policy_hash": planner_policy_hash,
+                        "planner_hash": planner_hash,
+                        "seed_lane": seed_lane,
+                        "seed_lane_index": int(seed_lane_index),
+                        "parent_rotation_offset": int(parent_rotation_offset),
+                        "parent_diversity_depth": int(parent_diversity_depth),
+                        "confirm_replay_hints": list(confirm_replay_hints),
                     },
                 }
             )
@@ -3448,6 +3601,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "window_end": window_end,
                             "profile": "stress",
                             "ir_mode": str(args.ir_mode),
+                            "planner_policy_hash": planner_policy_hash,
+                            "planner_hash": planner_hash,
+                            "seed_lane": seed_lane,
+                            "seed_lane_index": int(seed_lane_index),
+                            "parent_rotation_offset": int(parent_rotation_offset),
+                            "parent_diversity_depth": int(parent_diversity_depth),
+                            "confirm_replay_hints": list(confirm_replay_hints),
                         },
                     }
                 )
@@ -3564,6 +3724,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             "payload": llm_policy.payload,
         },
         "policy_scale": str(args.policy_scale),
+        "planner_hashes": {
+            "policy_hash": planner_policy_hash,
+            "planner_hash": planner_hash,
+        },
+        "lane_selection": {
+            "seed_lane": seed_lane,
+            "seed_lane_index": int(seed_lane_index),
+            "confirm_replay_hints": list(confirm_replay_hints),
+        },
+        "parent_diversification": {
+            "depth": int(parent_diversity_depth),
+            "rotation_offset": int(parent_rotation_offset),
+            "pool_size": int(len(parent_pool_entries)),
+            "primary_parent_index": int(primary_parent_index),
+            "primary_parent_id": parent_id,
+            "pool": list(parent_pool_metadata),
+        },
+        "fastlane_materialization": {
+            "confirm_replay_hints": list(confirm_replay_hints),
+            "prepared": bool(confirm_replay_hints),
+            "mode": "planner_only_groundwork",
+        },
         "parent_resolution": {
             "winner_proximate_requested": parent_resolution.winner_proximate_requested,
             "winner_proximate_tokens": list(parent_resolution.winner_proximate_tokens),
@@ -3614,6 +3796,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             "llm_used": llm_policy.used,
             "llm_source": llm_policy.source,
             "queue_path": _relative_to_root(queue_path, root=app_root),
+            "planner_hashes": {
+                "policy_hash": planner_policy_hash,
+                "planner_hash": planner_hash,
+            },
+            "seed_lane": seed_lane,
+            "seed_lane_index": int(seed_lane_index),
+            "parent_diversification": {
+                "depth": int(parent_diversity_depth),
+                "rotation_offset": int(parent_rotation_offset),
+                "pool_size": int(len(parent_pool_entries)),
+                "primary_parent_index": int(primary_parent_index),
+            },
             "parent_resolution": {
                 "winner_proximate_requested": parent_resolution.winner_proximate_requested,
                 "winner_proximate_resolved": parent_resolution.winner_proximate_resolved,
@@ -3636,6 +3830,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "last_run_group": run_group,
         "last_failure_mode": failure.failure_mode,
         "last_decision_id": decision_id,
+        "planner_hashes": {
+            "policy_hash": planner_policy_hash,
+            "planner_hash": planner_hash,
+        },
+        "seed_lane": seed_lane,
+        "seed_lane_index": int(seed_lane_index),
+        "parent_diversification": {
+            "depth": int(parent_diversity_depth),
+            "rotation_offset": int(parent_rotation_offset),
+            "pool_size": int(len(parent_pool_entries)),
+            "primary_parent_index": int(primary_parent_index),
+        },
         "history": state_history[-50:],
     }
 

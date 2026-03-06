@@ -290,8 +290,13 @@ def test_ready_buffer_and_cold_fail_contract() -> None:
             'READY_BUFFER_POOL_FILE',
             'READY_BUFFER_STATE_FILE',
             'COLD_FAIL_STATE_FILE',
+            'READY_BUFFER_MAX_AGE_SEC',
+            'ready_buffer_policy_hash()',
             'ready_buffer_refresh()',
             'ready_buffer_emit_candidate()',
+            'policy_hash',
+            'queue_file_mtime',
+            'ready_buffer_policy_mismatch_count',
             'cold_fail_state_add()',
             'HARD_FAIL_COLD_TTL_SEC',
         ],
@@ -315,6 +320,27 @@ def test_overlap_dispatch_and_idle_override_contract() -> None:
     )
 
 
+def test_hot_standby_and_replay_fastlane_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'VPS_HOT_STANDBY_ENABLE',
+            'VPS_HOT_STANDBY_GRACE_SEC',
+            'REPLAY_FASTLANE_SCAN_LIMIT',
+            'is_hot_standby_enabled()',
+            'hot_standby_needed()',
+            'maybe_prepare_hot_standby()',
+            'dispatch_replay_fastlane_hooks()',
+            'fastlane_replay_pending',
+            'winner_parent_duplication_rate',
+            'vps_duty_cycle_30m',
+            'metrics_missing_abort_count_30m',
+            'winner_proximate_dispatch_count_30m',
+        ],
+    )
+
+
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
     src = _source()
     _assert_contains_all(
@@ -327,5 +353,6 @@ def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
             'EARLY_ABORT_LOW_INFORMATION_',
             '"confirm_fastlane_" in queue_rel',
             'zero_activity_fraction',
+            'runtime_observability_record_event "metrics_missing_abort"',
         ],
     )

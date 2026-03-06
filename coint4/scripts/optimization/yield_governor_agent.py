@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -37,6 +38,17 @@ def parse_float(value: Any, default: float = 0.0) -> float:
         return default
     try:
         return float(value)
+    except Exception:
+        return default
+
+
+def parse_int(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, str) and not value.strip():
+        return default
+    try:
+        return int(float(value))
     except Exception:
         return default
 
@@ -127,6 +139,96 @@ def _classify_yield(*, completed: int, metrics_present: int, zero_activity: int,
     if completed >= 8 and metrics_rate >= 0.60 and zero_rate <= 0.25 and hard_fail_rate <= 0.40:
         return "boost", round(score, 6)
     return "neutral", round(score, 6)
+
+
+EXPLOIT_FIRST_LANE_WEIGHTS = {
+    "winner_proximate": 65,
+    "confirm_replay": 20,
+    "broad_search": 15,
+}
+
+
+def _stable_policy_hash(payload: Mapping[str, Any]) -> str:
+    body = json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _normalize_lane_weights(weights: Mapping[str, Any] | None = None) -> dict[str, int]:
+    raw = weights if isinstance(weights, Mapping) else {}
+    winner = max(0, parse_int(raw.get("winner_proximate"), EXPLOIT_FIRST_LANE_WEIGHTS["winner_proximate"]))
+    confirm = max(0, parse_int(raw.get("confirm_replay"), EXPLOIT_FIRST_LANE_WEIGHTS["confirm_replay"]))
+    broad = max(0, parse_int(raw.get("broad_search"), EXPLOIT_FIRST_LANE_WEIGHTS["broad_search"]))
+    return {
+        "winner_proximate": winner,
+        "confirm_replay": confirm,
+        "broad_search": broad,
+    }
+
+
+def _collect_replay_fastlane(queues_state: Mapping[str, Any]) -> dict[str, Any]:
+    contains: list[str] = []
+    pending_confirm_queues: list[str] = []
+    strict_pass_queues: list[str] = []
+    replay_ready = 0
+
+    for queue_rel, raw_entry in queues_state.items():
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+        strict_pass = max(0, parse_int(entry.get("strict_pass_count"), 0))
+        strict_groups = max(0, parse_int(entry.get("strict_run_group_count"), 0))
+        confirm_count = max(0, parse_int(entry.get("confirm_count"), 0))
+        token = str(entry.get("top_run_group") or "").strip() or Path(str(queue_rel)).parent.name
+        if token and token not in contains:
+            contains.append(token)
+        if strict_pass > 0 and str(queue_rel) not in strict_pass_queues:
+            strict_pass_queues.append(str(queue_rel))
+        is_confirm_pending = verdict in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}
+        if is_confirm_pending and str(queue_rel) not in pending_confirm_queues:
+            pending_confirm_queues.append(str(queue_rel))
+        if is_confirm_pending and strict_groups >= 2 and confirm_count < 2:
+            replay_ready += 1
+    return {
+        "enabled": bool(pending_confirm_queues or replay_ready > 0),
+        "contains": contains[:8],
+        "pending_confirm_queues": pending_confirm_queues[:16],
+        "strict_pass_queues": strict_pass_queues[:16],
+        "replay_ready_count": int(replay_ready),
+        "source": "fullspan_decision_state",
+    }
+
+
+def _build_planner_policy_inputs(
+    *,
+    lane_weights: Mapping[str, Any],
+    preferred_contains: list[str],
+    cooldown_contains: list[str],
+    preferred_operator_ids: list[str],
+    cooldown_operator_ids: list[str],
+    winner_proximate: Mapping[str, Any],
+    replay_fastlane: Mapping[str, Any],
+    sample_size: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "v2",
+        "policy_family": "exploit_first",
+        "lane_weights": _normalize_lane_weights(lane_weights),
+        "winner_proximate": {
+            "enabled": bool(winner_proximate.get("enabled")),
+            "contains": [str(token).strip() for token in list(winner_proximate.get("contains", []) or []) if str(token).strip()][:8],
+        },
+        "replay_fastlane": {
+            "enabled": bool(replay_fastlane.get("enabled")),
+            "contains": [str(token).strip() for token in list(replay_fastlane.get("contains", []) or []) if str(token).strip()][:8],
+            "replay_ready_count": max(0, parse_int(replay_fastlane.get("replay_ready_count"), 0)),
+        },
+        "preferred_contains": [str(token).strip() for token in preferred_contains if str(token).strip()][:12],
+        "cooldown_contains": [str(token).strip() for token in cooldown_contains if str(token).strip()][:12],
+        "preferred_operator_ids": [str(token).strip() for token in preferred_operator_ids if str(token).strip()][:8],
+        "cooldown_operator_ids": [str(token).strip() for token in cooldown_operator_ids if str(token).strip()][:8],
+        "sample_size": {str(k): max(0, parse_int(v, 0)) for k, v in dict(sample_size).items()},
+    }
 
 
 def build_yield_governor_state(
@@ -293,17 +395,34 @@ def build_yield_governor_state(
 
     preferred_operator_ids = [str(entry["operator_id"]) for entry in operators if str(entry.get("status")) == "boost"][:6]
     cooldown_operator_ids = [str(entry["operator_id"]) for entry in operators if str(entry.get("status")) == "cooldown"][:6]
+    replay_fastlane = _collect_replay_fastlane(queues_state)
+    lane_weights = _normalize_lane_weights()
+    sample_size = {
+        "queue_files": len(queue_paths),
+        "completed_rows": completed_rows_total,
+        "lineages": len(lineages),
+        "operators": len(operators),
+    }
+    planner_policy_inputs = _build_planner_policy_inputs(
+        lane_weights=lane_weights,
+        preferred_contains=preferred_contains,
+        cooldown_contains=cooldown_contains,
+        preferred_operator_ids=preferred_operator_ids,
+        cooldown_operator_ids=cooldown_operator_ids,
+        winner_proximate={
+            "enabled": bool(preferred_contains),
+            "contains": preferred_contains,
+        },
+        replay_fastlane=replay_fastlane,
+        sample_size=sample_size,
+    )
+    policy_hash = _stable_policy_hash(planner_policy_inputs)
 
     return {
         "ts": utc_now_iso(),
-        "schema_version": "v1",
+        "schema_version": "v2",
         "active": True,
-        "sample_size": {
-            "queue_files": len(queue_paths),
-            "completed_rows": completed_rows_total,
-            "lineages": len(lineages),
-            "operators": len(operators),
-        },
+        "sample_size": sample_size,
         "preferred_contains": preferred_contains,
         "cooldown_contains": cooldown_contains,
         "preferred_operator_ids": preferred_operator_ids,
@@ -313,11 +432,8 @@ def build_yield_governor_state(
             "contains": preferred_contains,
             "reason": "strict_pass_or_high_yield_lineage",
         },
-        "lane_weights": {
-            "winner_proximate": 40,
-            "broad_search": 45,
-            "confirm_replay": 15,
-        },
+        "replay_fastlane": replay_fastlane,
+        "lane_weights": lane_weights,
         "policy_overrides": {
             "num_variants_cap": 64,
             "policy_scale": "micro" if cooldown_operator_ids else "auto",
@@ -326,6 +442,10 @@ def build_yield_governor_state(
         "operators": operators[:24],
         "run_index_path": safe_rel(run_index_path, root),
         "fullspan_state_path": safe_rel(fullspan_state_path, root),
+        "planner-policy-inputs": planner_policy_inputs,
+        "policy-hash": policy_hash,
+        "planner_policy_inputs": planner_policy_inputs,
+        "policy_hash": policy_hash,
     }
 
 

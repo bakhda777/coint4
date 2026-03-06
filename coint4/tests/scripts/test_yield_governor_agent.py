@@ -73,3 +73,15 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["active"] is True
     assert payload["winner_proximate"]["contains"][0] == "strict_rg"
     assert "strict_rg" in payload["preferred_contains"]
+    assert payload["replay_fastlane"]["enabled"] is True
+    assert "strict_rg" in payload["replay_fastlane"]["contains"]
+    assert payload["lane_weights"] == {
+        "winner_proximate": 65,
+        "confirm_replay": 20,
+        "broad_search": 15,
+    }
+    assert len(str(payload["policy-hash"])) == 64
+    assert payload["policy-hash"] == payload["policy_hash"]
+    assert payload["planner-policy-inputs"]["policy_family"] == "exploit_first"
+    assert payload["planner-policy-inputs"]["lane_weights"]["winner_proximate"] == 65
+    assert payload["planner-policy-inputs"] == payload["planner_policy_inputs"]

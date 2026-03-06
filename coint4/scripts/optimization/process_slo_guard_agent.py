@@ -406,6 +406,19 @@ def main() -> int:
             cpu_busy_without_queue_job = True
         surrogate_idle_override_count = parse_int(runtime_metrics.get("surrogate_idle_override_count"), 0)
         overlap_dispatch_count = parse_int(runtime_metrics.get("overlap_dispatch_count"), 0)
+        vps_duty_cycle_30m = parse_float(runtime_metrics.get("vps_duty_cycle_30m"), 0.0)
+        ready_buffer_policy_mismatch_count = parse_int(
+            runtime_metrics.get("ready_buffer_policy_mismatch_count"),
+            0,
+        )
+        winner_parent_duplication_rate = parse_float(runtime_metrics.get("winner_parent_duplication_rate"), 0.0)
+        fastlane_replay_pending = parse_int(runtime_metrics.get("fastlane_replay_pending"), 0)
+        metrics_missing_abort_count_30m = parse_int(runtime_metrics.get("metrics_missing_abort_count_30m"), 0)
+        winner_proximate_dispatch_count_30m = parse_int(
+            runtime_metrics.get("winner_proximate_dispatch_count_30m"),
+            0,
+        )
+        hot_standby_active = parse_bool(runtime_metrics.get("hot_standby_active"), False)
         idle_with_executable_pending = bool(
             executable_pending_rows > 0
             and local_runner_count <= 0
@@ -536,6 +549,8 @@ def main() -> int:
                 "idle_with_executable_pending": idle_with_executable_pending,
                 "ready_buffer_depth": ready_buffer_depth,
                 "cold_fail_active_count": cold_fail_active_count,
+                "fastlane_replay_pending": fastlane_replay_pending,
+                "hot_standby_active": hot_standby_active,
             },
             "kpi": {
                 "completed_rows": completed_rows,
@@ -554,6 +569,12 @@ def main() -> int:
                 "remote_load1": round(remote_load1, 3),
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
                 "idle_with_executable_pending": idle_with_executable_pending,
+                "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
+                "ready_buffer_policy_mismatch_count": ready_buffer_policy_mismatch_count,
+                "winner_parent_duplication_rate": round(winner_parent_duplication_rate, 6),
+                "fastlane_replay_pending": fastlane_replay_pending,
+                "metrics_missing_abort_count_30m": metrics_missing_abort_count_30m,
+                "winner_proximate_dispatch_count_30m": winner_proximate_dispatch_count_30m,
             },
             "runtime": {
                 "ready_buffer_depth": ready_buffer_depth,
@@ -565,6 +586,13 @@ def main() -> int:
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
                 "surrogate_idle_override_count": surrogate_idle_override_count,
                 "overlap_dispatch_count": overlap_dispatch_count,
+                "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
+                "ready_buffer_policy_mismatch_count": ready_buffer_policy_mismatch_count,
+                "winner_parent_duplication_rate": round(winner_parent_duplication_rate, 6),
+                "fastlane_replay_pending": fastlane_replay_pending,
+                "metrics_missing_abort_count_30m": metrics_missing_abort_count_30m,
+                "winner_proximate_dispatch_count_30m": winner_proximate_dispatch_count_30m,
+                "hot_standby_active": hot_standby_active,
             },
             "wip": {
                 "search_max": wip_search_max,
@@ -601,6 +629,10 @@ def main() -> int:
                 "remote_active_queue_jobs={remote_active_queue_jobs} ready_buffer_depth={ready_buffer_depth} "
                 "cold_fail_active_count={cold_fail_active_count} surrogate_idle_override_count={surrogate_idle_override_count} "
                 "overlap_dispatch_count={overlap_dispatch_count} cpu_busy_without_queue_job={cpu_busy_without_queue_job} "
+                "vps_duty_cycle_30m={vps_duty_cycle_30m:.3f} ready_buffer_policy_mismatch_count={ready_buffer_policy_mismatch_count} "
+                "winner_parent_duplication_rate={winner_parent_duplication_rate:.3f} fastlane_replay_pending={fastlane_replay_pending} "
+                "metrics_missing_abort_count_30m={metrics_missing_abort_count_30m} winner_proximate_dispatch_count_30m={winner_proximate_dispatch_count_30m} "
+                "hot_standby_active={hot_standby_active} "
                 "idle_with_executable_pending={idle_with_executable_pending} "
                 "alerts={alerts} emitted={emitted}"
             ).format(
@@ -622,6 +654,13 @@ def main() -> int:
                 surrogate_idle_override_count=summary["runtime"]["surrogate_idle_override_count"],
                 overlap_dispatch_count=summary["runtime"]["overlap_dispatch_count"],
                 cpu_busy_without_queue_job=int(bool(summary["runtime"]["cpu_busy_without_queue_job"])),
+                vps_duty_cycle_30m=summary["runtime"]["vps_duty_cycle_30m"],
+                ready_buffer_policy_mismatch_count=summary["runtime"]["ready_buffer_policy_mismatch_count"],
+                winner_parent_duplication_rate=summary["runtime"]["winner_parent_duplication_rate"],
+                fastlane_replay_pending=summary["runtime"]["fastlane_replay_pending"],
+                metrics_missing_abort_count_30m=summary["runtime"]["metrics_missing_abort_count_30m"],
+                winner_proximate_dispatch_count_30m=summary["runtime"]["winner_proximate_dispatch_count_30m"],
+                hot_standby_active=int(bool(summary["runtime"]["hot_standby_active"])),
                 idle_with_executable_pending=int(bool(summary["queue"]["idle_with_executable_pending"])),
                 alerts=summary["alerts_count"],
                 emitted=summary["events_emitted"],

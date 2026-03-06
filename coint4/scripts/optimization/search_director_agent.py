@@ -8,6 +8,7 @@ autonomous_queue_seeder.py to bias next batch generation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -63,6 +64,13 @@ def parse_int(value: Any, default: int = 0) -> int:
         return default
 
 
+EXPLOIT_FIRST_LANE_WEIGHTS = {
+    "winner_proximate": 65,
+    "confirm_replay": 20,
+    "broad_search": 15,
+}
+
+
 def canonical_reason(entry: dict[str, Any]) -> str:
     strict_reason = str(entry.get("strict_gate_reason") or "").strip().upper()
     reject_reason = str(entry.get("rejection_reason") or "").strip().upper()
@@ -94,6 +102,133 @@ def _merge_unique(tokens: list[str], extra: list[str], limit: int = 8) -> list[s
         if len(out) >= limit:
             break
     return out
+
+
+def _normalize_lane_weights(raw: Any) -> dict[str, int]:
+    source = raw if isinstance(raw, dict) else {}
+    winner = max(0, parse_int(source.get("winner_proximate"), EXPLOIT_FIRST_LANE_WEIGHTS["winner_proximate"]))
+    confirm = max(0, parse_int(source.get("confirm_replay"), EXPLOIT_FIRST_LANE_WEIGHTS["confirm_replay"]))
+    broad = max(0, parse_int(source.get("broad_search"), EXPLOIT_FIRST_LANE_WEIGHTS["broad_search"]))
+    return {
+        "winner_proximate": winner,
+        "confirm_replay": confirm,
+        "broad_search": broad,
+    }
+
+
+def _stable_policy_hash(payload: dict[str, Any]) -> str:
+    body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _collect_replay_fastlane(queues: dict[str, Any], *, yield_state: dict[str, Any]) -> dict[str, Any]:
+    contains: list[str] = []
+    pending_confirm_queues: list[str] = []
+    replay_ready_count = 0
+
+    for queue, raw_entry in queues.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        entry = dict(raw_entry)
+        verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+        strict_pass = max(0, parse_int(entry.get("strict_pass_count"), 0))
+        strict_groups = max(0, parse_int(entry.get("strict_run_group_count"), 0))
+        confirm_count = max(0, parse_int(entry.get("confirm_count"), 0))
+        token = str(entry.get("top_run_group") or "").strip() or Path(str(queue)).parent.name
+        if verdict in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}:
+            pending_confirm_queues.append(str(queue))
+            if token:
+                contains.append(token)
+        if strict_pass > 0 and strict_groups >= 2 and confirm_count < 2:
+            replay_ready_count += 1
+            if token:
+                contains.append(token)
+
+    yield_replay = yield_state.get("replay_fastlane", {}) if isinstance(yield_state, dict) else {}
+    if not isinstance(yield_replay, dict):
+        yield_replay = {}
+    yield_contains = [str(token).strip() for token in list(yield_replay.get("contains", []) or []) if str(token).strip()]
+    yield_pending = [str(queue).strip() for queue in list(yield_replay.get("pending_confirm_queues", []) or []) if str(queue).strip()]
+    replay_ready_count = max(replay_ready_count, max(0, parse_int(yield_replay.get("replay_ready_count"), 0)))
+
+    return {
+        "enabled": bool(pending_confirm_queues or yield_pending or replay_ready_count > 0),
+        "contains": _merge_unique(contains, yield_contains, limit=8),
+        "pending_confirm_queues": _merge_unique(pending_confirm_queues, yield_pending, limit=16),
+        "replay_ready_count": replay_ready_count,
+        "reason": "strict_pass_pending_confirm_replay",
+        "min_confirm_run_groups": 2,
+        "min_confirm_replays": 2,
+    }
+
+
+def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
+    winner = directive.get("winner_proximate", {})
+    if not isinstance(winner, dict):
+        winner = {}
+    replay = directive.get("replay_fastlane", {})
+    if not isinstance(replay, dict):
+        replay = {}
+    yield_governor = directive.get("yield_governor", {})
+    if not isinstance(yield_governor, dict):
+        yield_governor = {}
+    risk_policy = directive.get("hard_fail_risk_policy", {})
+    if not isinstance(risk_policy, dict):
+        risk_policy = {}
+    repair_mode = directive.get("repair_mode", {})
+    if not isinstance(repair_mode, dict):
+        repair_mode = {}
+    return {
+        "version": max(1, parse_int(directive.get("version"), 1)),
+        "policy_family": "exploit_first",
+        "mode": str(directive.get("mode") or ""),
+        "dominant_reason": str(directive.get("dominant_reason") or ""),
+        "contains": [str(token).strip() for token in list(directive.get("contains", []) or []) if str(token).strip()][:12],
+        "policy_scale": str(directive.get("policy_scale") or "auto"),
+        "num_variants": max(1, parse_int(directive.get("num_variants"), 24)),
+        "max_changed_keys": max(1, parse_int(directive.get("max_changed_keys"), 4)),
+        "dedupe_distance": round(max(0.0, parse_float(directive.get("dedupe_distance"), 0.03)), 6),
+        "lane_weights": _normalize_lane_weights(directive.get("lane_weights")),
+        "winner_proximate": {
+            "enabled": bool(winner.get("enabled")),
+            "contains": [str(token).strip() for token in list(winner.get("contains", []) or []) if str(token).strip()][:8],
+        },
+        "replay_fastlane": {
+            "enabled": bool(replay.get("enabled")),
+            "contains": [str(token).strip() for token in list(replay.get("contains", []) or []) if str(token).strip()][:8],
+            "pending_confirm_queues": [str(queue).strip() for queue in list(replay.get("pending_confirm_queues", []) or []) if str(queue).strip()][:16],
+            "replay_ready_count": max(0, parse_int(replay.get("replay_ready_count"), 0)),
+        },
+        "yield_governor": {
+            "active": bool(yield_governor.get("active")),
+            "preferred_contains": [str(token).strip() for token in list(yield_governor.get("preferred_contains", []) or []) if str(token).strip()][:12],
+            "cooldown_contains": [str(token).strip() for token in list(yield_governor.get("cooldown_contains", []) or []) if str(token).strip()][:12],
+            "preferred_operator_ids": [str(token).strip() for token in list(yield_governor.get("preferred_operator_ids", []) or []) if str(token).strip()][:8],
+            "cooldown_operator_ids": [str(token).strip() for token in list(yield_governor.get("cooldown_operator_ids", []) or []) if str(token).strip()][:8],
+        },
+        "hard_fail_risk_policy": {
+            "enabled": bool(risk_policy.get("enabled")),
+            "reject_threshold": round(max(0.0, parse_float(risk_policy.get("reject_threshold"), 0.75)), 4),
+            "refine_threshold": round(max(0.0, parse_float(risk_policy.get("refine_threshold"), 0.45)), 4),
+        },
+        "lineage_priority": [str(token).strip() for token in list(directive.get("lineage_priority", []) or []) if str(token).strip()][:12],
+        "repair_mode": {
+            "enabled": bool(repair_mode.get("enabled")),
+            "validation_neighbor": max(0, parse_int(repair_mode.get("validation_neighbor"), 0)),
+            "max_neighbor_attempts": max(0, parse_int(repair_mode.get("max_neighbor_attempts"), 0)),
+        },
+    }
+
+
+def _attach_policy_metadata(directive: dict[str, Any]) -> dict[str, Any]:
+    policy_inputs = _build_planner_policy_inputs(directive)
+    policy_hash = _stable_policy_hash(policy_inputs)
+    directive["planner-policy-inputs"] = policy_inputs
+    directive["policy-hash"] = policy_hash
+    # Keep underscore aliases for backward-compatible consumers.
+    directive["planner_policy_inputs"] = policy_inputs
+    directive["policy_hash"] = policy_hash
+    return directive
 
 
 def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -146,9 +281,8 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
     yield_winner_contains = [
         str(token).strip() for token in list(winner_proximate.get("contains", []) or []) if str(token).strip()
     ]
-    lane_weights = yield_state.get("lane_weights", {})
-    if not isinstance(lane_weights, dict):
-        lane_weights = {}
+    lane_weights = _normalize_lane_weights(yield_state.get("lane_weights", {}))
+    replay_fastlane = _collect_replay_fastlane(queues, yield_state=yield_state)
     contains = _merge_unique(proximate_tokens, _merge_unique(yield_winner_contains, yield_preferred_contains), limit=8) or contains
 
     directive: dict[str, Any] = {
@@ -181,11 +315,8 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
             "preferred_operator_ids": [str(token).strip() for token in list(yield_state.get("preferred_operator_ids", []) or []) if str(token).strip()][:8],
             "cooldown_operator_ids": [str(token).strip() for token in list(yield_state.get("cooldown_operator_ids", []) or []) if str(token).strip()][:8],
         },
-        "lane_weights": {
-            "winner_proximate": max(0, parse_int(lane_weights.get("winner_proximate"), 40)),
-            "broad_search": max(0, parse_int(lane_weights.get("broad_search"), 45)),
-            "confirm_replay": max(0, parse_int(lane_weights.get("confirm_replay"), 15)),
-        },
+        "replay_fastlane": replay_fastlane,
+        "lane_weights": lane_weights,
     }
 
     if dominant_reason == "DD_FAIL":
@@ -271,7 +402,7 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
             }
         )
 
-    return directive
+    return _attach_policy_metadata(directive)
 
 
 def materialize_cold_fail_index(
@@ -455,6 +586,7 @@ def main() -> int:
     directive["cold_fail_index_path"] = str(cold_fail_state_path)
     cold_fail_summary = materialize_cold_fail_index(queues=queues, path=cold_fail_state_path)
     directive["cold_fail_active_count"] = int(cold_fail_summary.get("active_count", 0))
+    directive = _attach_policy_metadata(directive)
 
     if not args.dry_run:
         dump_yield_json(yield_state_path, yield_state)

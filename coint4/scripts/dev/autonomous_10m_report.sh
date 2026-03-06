@@ -424,11 +424,18 @@ executable_pending = to_int(queue.get('executable_pending'))
 pending = to_int(queue.get('pending'))
 idle_flag = 1 if pending > 0 and executable_pending > 0 and local_runners <= 0 else 0
 print(
-    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle}".format(
+    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle} fastlane_replay_pending={fastlane} hot_standby_active={standby} duty30m={duty:.2f} ready_buffer_policy_mismatch_count={mismatch} winner_parent_duplication_rate={dup:.2f} metrics_missing_abort_count_30m={mm_abort} winner_proximate_dispatch_count_30m={winner_dispatch}".format(
         p=pending,
         ep=executable_pending,
         lr=local_runners,
         idle=idle_flag,
+        fastlane=to_int((data.get('runtime', {}) or {}).get('fastlane_replay_pending')),
+        standby=int(bool((data.get('runtime', {}) or {}).get('hot_standby_active'))),
+        duty=to_float((data.get('runtime', {}) or {}).get('vps_duty_cycle_30m')),
+        mismatch=to_int((data.get('runtime', {}) or {}).get('ready_buffer_policy_mismatch_count')),
+        dup=to_float((data.get('runtime', {}) or {}).get('winner_parent_duplication_rate')),
+        mm_abort=to_int((data.get('runtime', {}) or {}).get('metrics_missing_abort_count_30m')),
+        winner_dispatch=to_int((data.get('runtime', {}) or {}).get('winner_proximate_dispatch_count_30m')),
     )
 )
 if not isinstance(alerts, list) or not alerts:

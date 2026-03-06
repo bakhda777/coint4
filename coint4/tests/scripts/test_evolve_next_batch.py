@@ -235,6 +235,108 @@ def test_evolve_next_batch_writes_queue_and_decision(tmp_path: Path) -> None:
     assert state_path.exists()
 
 
+def test_evolve_next_batch_persists_planner_lane_and_parent_diversification_metadata(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_planner_meta")
+    base_cfg = tmp_path / "base.yaml"
+    preferred_a_cfg = tmp_path / "preferred_a.yaml"
+    preferred_b_cfg = tmp_path / "preferred_b.yaml"
+    _write_base_config(base_cfg)
+    _write_base_config(preferred_a_cfg)
+    _write_base_config(preferred_b_cfg)
+    preferred_a_cfg.write_text(
+        preferred_a_cfg.read_text(encoding="utf-8").replace("max_active_positions: 16", "max_active_positions: 20"),
+        encoding="utf-8",
+    )
+    preferred_b_cfg.write_text(
+        preferred_b_cfg.read_text(encoding="utf-8").replace("max_active_positions: 16", "max_active_positions: 11"),
+        encoding="utf-8",
+    )
+
+    run_index = tmp_path / "run_index.csv"
+    _write_run_index(run_index, cfg_path=base_cfg, run_group="seed_rg")
+    _append_run_index_row(run_index, cfg_path=preferred_a_cfg, run_group="strict_rg_a", variant="a", sharpe="2.5")
+    _append_run_index_row(run_index, cfg_path=preferred_b_cfg, run_group="strict_rg_b", variant="b", sharpe="2.1")
+
+    queue_root = tmp_path / "queue"
+    configs_root = tmp_path / "configs"
+    runs_root = tmp_path / "runs"
+    decision_dir = tmp_path / "decisions"
+    rc = module.main(
+        [
+            "--base-config",
+            str(base_cfg),
+            "--controller-group",
+            "ctrl_planner_meta",
+            "--run-group",
+            "rg_planner_meta_next",
+            "--run-index",
+            str(run_index),
+            "--contains",
+            "strict_rg",
+            "--winner-proximate-token",
+            "strict_rg",
+            "--planner-policy-hash",
+            "policy_meta_hash",
+            "--planner-hash",
+            "planner_meta_hash",
+            "--seed-lane",
+            "winner_proximate",
+            "--seed-lane-index",
+            "2",
+            "--parent-diversity-depth",
+            "2",
+            "--parent-rotation-offset",
+            "1",
+            "--confirm-replay-hint",
+            "strict_rg_b",
+            "--num-variants",
+            "2",
+            "--dedupe-distance",
+            "0.0",
+            "--min-windows",
+            "1",
+            "--window",
+            "2022-01-01,2022-12-31",
+            "--queue-dir",
+            str(queue_root),
+            "--configs-dir",
+            str(configs_root),
+            "--runs-dir",
+            str(runs_root),
+            "--decision-dir",
+            str(decision_dir),
+        ]
+    )
+    assert rc == 0
+
+    queue_path = queue_root / "rg_planner_meta_next" / "run_queue.csv"
+    with queue_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows
+    metadata = json.loads(str(rows[0]["metadata_json"]))
+    assert metadata["planner_policy_hash"] == "policy_meta_hash"
+    assert metadata["planner_hash"] == "planner_meta_hash"
+    assert metadata["seed_lane"] == "winner_proximate"
+    assert metadata["seed_lane_index"] == 2
+    assert metadata["parent_diversity_depth"] == 2
+    assert metadata["parent_rotation_offset"] == 1
+    assert metadata["confirm_replay_hints"] == ["strict_rg_b"]
+
+    decisions = sorted(decision_dir.glob("*.json"))
+    payload = json.loads(decisions[-1].read_text(encoding="utf-8"))
+    assert payload["planner_hashes"]["policy_hash"] == "policy_meta_hash"
+    assert payload["planner_hashes"]["planner_hash"] == "planner_meta_hash"
+    assert payload["lane_selection"]["seed_lane"] == "winner_proximate"
+    assert payload["lane_selection"]["seed_lane_index"] == 2
+    assert payload["lane_selection"]["confirm_replay_hints"] == ["strict_rg_b"]
+    assert payload["parent_diversification"]["depth"] == 2
+    assert payload["parent_diversification"]["rotation_offset"] == 1
+    assert payload["parent_diversification"]["primary_parent_index"] == 1
+    assert payload["parent_diversification"]["primary_parent_id"].endswith("preferred_b.yaml")
+    assert payload["fastlane_materialization"]["prepared"] is True
+    assert payload["fastlane_materialization"]["confirm_replay_hints"] == ["strict_rg_b"]
+
+
 def test_evolve_next_batch_prefers_winner_parent_when_contains_disjoint_tokens(tmp_path: Path) -> None:
     module = _load_script(f"{tmp_path.name}_winner")
     base_cfg = tmp_path / "base.yaml"

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -272,6 +273,117 @@ def _safe_rel(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _write_queue_policy_sidecar(
+    *,
+    queue_path: Path,
+    app_root: Path,
+    planner_policy_hash: str,
+    selected_lane: str,
+    selected_lane_index: int,
+    token_rotation: int,
+    parent_rotation_offset: int,
+    parent_diversity_depth: int,
+    confirm_replay_hints: list[str],
+    decision_payload: dict[str, Any],
+) -> Path:
+    queue_dir = queue_path.parent
+    sidecar_path = queue_dir / "queue_policy.json"
+    planner_hashes = decision_payload.get("planner_hashes", {}) if isinstance(decision_payload, dict) else {}
+    if not isinstance(planner_hashes, dict):
+        planner_hashes = {}
+    lane_selection = decision_payload.get("lane_selection", {}) if isinstance(decision_payload, dict) else {}
+    if not isinstance(lane_selection, dict):
+        lane_selection = {}
+    parent_diversification = decision_payload.get("parent_diversification", {}) if isinstance(decision_payload, dict) else {}
+    if not isinstance(parent_diversification, dict):
+        parent_diversification = {}
+    parent_resolution = decision_payload.get("parent_resolution", {}) if isinstance(decision_payload, dict) else {}
+    if not isinstance(parent_resolution, dict):
+        parent_resolution = {}
+
+    parent_pool = list(parent_diversification.get("pool") or [])
+    primary_parent_index = int(parent_diversification.get("primary_parent_index") or 0)
+    primary_parent: dict[str, Any] = {}
+    if 0 <= primary_parent_index < len(parent_pool):
+        raw_parent = parent_pool[primary_parent_index]
+        if isinstance(raw_parent, dict):
+            primary_parent = dict(raw_parent)
+
+    payload = {
+        "ts": _utc_now_iso(),
+        "queue_path": _safe_rel(queue_path, app_root),
+        "planner_policy_hash": planner_policy_hash,
+        "buffer_policy_version": planner_policy_hash,
+        "planner_hash": str(planner_hashes.get("planner_hash") or "").strip(),
+        "seed_lane": str(lane_selection.get("seed_lane") or selected_lane).strip(),
+        "seed_lane_index": int(lane_selection.get("seed_lane_index") or selected_lane_index),
+        "token_rotation": int(token_rotation),
+        "parent_rotation_offset": int(parent_diversification.get("rotation_offset") or parent_rotation_offset),
+        "parent_diversity_depth": int(parent_diversification.get("depth") or parent_diversity_depth),
+        "winner_proximate_tokens": [
+            str(token).strip()
+            for token in list(parent_resolution.get("winner_proximate_tokens", []) or [])
+            if str(token).strip()
+        ][:8],
+        "confirm_replay_hints": [
+            str(token).strip()
+            for token in list(lane_selection.get("confirm_replay_hints", confirm_replay_hints) or [])
+            if str(token).strip()
+        ][:8],
+        "parent_resolution": parent_resolution,
+        "parent_diversification": parent_diversification,
+        "primary_parent": {
+            "parent_id": str(primary_parent.get("parent_id") or parent_diversification.get("primary_parent_id") or "").strip(),
+            "parent_config_path": str(primary_parent.get("parent_config_path") or "").strip(),
+            "run_group": str(primary_parent.get("run_group") or "").strip(),
+            "lineage_uid": str(primary_parent.get("lineage_uid") or "").strip(),
+        },
+    }
+    sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    return sidecar_path
+
+
+def _decorate_queue_metadata(
+    *,
+    queue_path: Path,
+    planner_policy_hash: str,
+    queue_policy_path: Path,
+    app_root: Path,
+) -> None:
+    if not queue_path.exists():
+        return
+    with queue_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        fieldnames = list(reader.fieldnames or [])
+    if not rows:
+        return
+    if "metadata_json" not in fieldnames:
+        fieldnames.append("metadata_json")
+    queue_policy_rel = _safe_rel(queue_policy_path, app_root)
+    queue_rel = _safe_rel(queue_path, app_root)
+    for row in rows:
+        meta: dict[str, Any] = {}
+        raw_meta = str(row.get("metadata_json") or "").strip()
+        if raw_meta:
+            try:
+                parsed = json.loads(raw_meta)
+            except Exception:
+                parsed = {}
+            if isinstance(parsed, dict):
+                meta = dict(parsed)
+        meta["planner_policy_hash"] = planner_policy_hash
+        meta["buffer_policy_version"] = planner_policy_hash
+        meta["queue_policy_path"] = queue_policy_rel
+        meta["queue_path"] = queue_rel
+        row["metadata_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    with queue_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
 def _load_directive(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -377,6 +489,142 @@ def _merge_unique(left: list[str], right: list[str]) -> list[str]:
         seen.add(norm)
         out.append(norm)
     return out
+
+
+def _stable_hash(payload: Any, *, prefix: str, size: int = 16) -> str:
+    """Compact deterministic hash for state/metadata provenance fields."""
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        encoded = str(payload)
+    digest = hashlib.sha1(encoded.encode("utf-8")).hexdigest()[: max(6, int(size))]
+    return f"{prefix}_{digest}"
+
+
+def _rotate_tokens(tokens: list[str], offset: int) -> list[str]:
+    if not tokens:
+        return []
+    n = len(tokens)
+    if n <= 1:
+        return list(tokens)
+    idx = int(offset) % n
+    if idx == 0:
+        return list(tokens)
+    return list(tokens[idx:]) + list(tokens[:idx])
+
+
+def _load_previous_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _select_seed_lane(
+    *,
+    winner_proximate_tokens: list[str],
+    preferred_any_contains: list[str],
+    generic_contains: list[str],
+    yield_governor: dict[str, Any],
+    previous_state: dict[str, Any],
+) -> dict[str, Any]:
+    lane_weights_defaults = {
+        "winner_proximate": 65,
+        "broad_search": 15,
+        "confirm_replay": 20,
+    }
+    lane_weights = dict(lane_weights_defaults)
+    raw_weights = yield_governor.get("lane_weights", {}) if isinstance(yield_governor, dict) else {}
+    if isinstance(raw_weights, dict):
+        for key in lane_weights_defaults:
+            try:
+                lane_weights[key] = max(0, int(float(raw_weights.get(key, lane_weights[key]))))
+            except Exception:
+                continue
+
+    winner_tokens = [str(token).strip() for token in list(winner_proximate_tokens or []) if str(token).strip()]
+    preferred_tokens = [str(token).strip() for token in list(preferred_any_contains or []) if str(token).strip()]
+    generic_tokens = [str(token).strip() for token in list(generic_contains or []) if str(token).strip()]
+    confirm_replay_tokens = _to_tokens((yield_governor.get("confirm_replay") or {}).get("contains", []))
+    if not confirm_replay_tokens:
+        confirm_replay_tokens = _to_tokens(yield_governor.get("confirm_replay_contains", []))
+    if not confirm_replay_tokens:
+        # Groundwork: allow replay lane to piggyback on winner-proximate anchors.
+        confirm_replay_tokens = list(winner_tokens)
+
+    lane_tokens = {
+        "winner_proximate": winner_tokens,
+        "broad_search": preferred_tokens or generic_tokens,
+        "confirm_replay": confirm_replay_tokens,
+    }
+    available_lanes = [lane for lane in ("winner_proximate", "broad_search", "confirm_replay") if lane_tokens.get(lane)]
+    if not available_lanes:
+        fallback = generic_tokens or ["autonomous_queue_seeder"]
+        lane_tokens["broad_search"] = fallback
+        available_lanes = ["broad_search"]
+
+    ranked = sorted(
+        available_lanes,
+        key=lambda lane: (-int(lane_weights.get(lane, 0)), 0 if lane == "winner_proximate" else 1, lane),
+    )
+    selected_lane = ranked[0]
+
+    prev_lane = str(
+        previous_state.get("selected_lane")
+        or (previous_state.get("lane_selection") or {}).get("selected_lane")
+        or ""
+    ).strip()
+    try:
+        prev_streak = int(
+            previous_state.get("lane_streak")
+            or (previous_state.get("lane_selection") or {}).get("lane_streak")
+            or 0
+        )
+    except Exception:
+        prev_streak = 0
+    if len(ranked) > 1 and prev_lane == selected_lane and prev_streak >= 2:
+        selected_lane = ranked[1]
+
+    selected_index = ranked.index(selected_lane) if selected_lane in ranked else 0
+    try:
+        prev_token_rotation = int(
+            previous_state.get("token_rotation")
+            or (previous_state.get("lane_selection") or {}).get("token_rotation")
+            or 0
+        )
+    except Exception:
+        prev_token_rotation = 0
+    selected_tokens = list(lane_tokens.get(selected_lane) or [])
+    token_rotation = prev_token_rotation + 1 if prev_lane == selected_lane else 0
+    selected_tokens = _rotate_tokens(selected_tokens, token_rotation)
+
+    selected_anchor = selected_tokens[0] if selected_tokens else ""
+    contains_out = [selected_anchor] if selected_anchor else []
+    if not contains_out:
+        contains_out = list(generic_tokens or preferred_tokens or winner_tokens or ["autonomous_queue_seeder"])
+
+    lane_streak = prev_streak + 1 if prev_lane == selected_lane else 1
+    exploit_first = bool(winner_tokens)
+    parent_rotation_offset = int(token_rotation + selected_index)
+    confirm_replay_hints = selected_tokens if selected_lane == "confirm_replay" else []
+
+    return {
+        "selected_lane": selected_lane,
+        "available_lanes": available_lanes,
+        "ranked_lanes": ranked,
+        "selected_index": int(selected_index),
+        "lane_streak": int(lane_streak),
+        "token_rotation": int(token_rotation),
+        "exploit_first": bool(exploit_first),
+        "lane_weights": lane_weights,
+        "contains": contains_out,
+        "winner_proximate_tokens": list(winner_tokens),
+        "confirm_replay_hints": list(confirm_replay_hints),
+        "parent_rotation_offset": int(parent_rotation_offset),
+    }
 
 
 def _to_tokens(value: Any) -> list[str]:
@@ -699,7 +947,19 @@ def _extract_lineage_tokens(entry: dict[str, Any]) -> list[str]:
 
 
 def _detect_supported_planner_args(*, python_bin: str, app_root: Path) -> set[str]:
-    wanted = {"--repair-mode", "--repair-max-neighbors", "--exclude-knob", "--winner-proximate-token"}
+    wanted = {
+        "--repair-mode",
+        "--repair-max-neighbors",
+        "--exclude-knob",
+        "--winner-proximate-token",
+        "--planner-policy-hash",
+        "--planner-hash",
+        "--seed-lane",
+        "--seed-lane-index",
+        "--parent-diversity-depth",
+        "--parent-rotation-offset",
+        "--confirm-replay-hint",
+    }
     cmd = [
         str(Path(str(python_bin)).expanduser()),
         "scripts/optimization/evolve_next_batch.py",
@@ -803,6 +1063,7 @@ def main() -> int:
 
         try:
             before_mtime = datetime.now().timestamp()
+            previous_state = _load_previous_state(state_path)
             (
                 total_pending_like,
                 dispatchable_pending,
@@ -899,6 +1160,14 @@ def main() -> int:
             extra_cli_args = directive.get("extra_cli_args", {})
             if not isinstance(extra_cli_args, dict):
                 extra_cli_args = {}
+            selected_lane = "broad_search"
+            selected_lane_index = 0
+            lane_streak = 1
+            token_rotation = 0
+            parent_rotation_offset = 0
+            confirm_replay_hints: list[str] = []
+            lane_selection_payload: dict[str, Any] = {}
+            parent_diversity_depth = 4
 
             try:
                 if "num_variants" in directive:
@@ -1137,6 +1406,50 @@ def main() -> int:
             effective_exclude_knobs = _merge_unique(effective_exclude_knobs, surrogate_exclude_knobs)
             effective_num_variants = max(int(effective_num_variants), int(effective_num_variants_floor))
 
+            lane_selection_payload = _select_seed_lane(
+                winner_proximate_tokens=list(winner_proximate_tokens),
+                preferred_any_contains=list(preferred_any_contains),
+                generic_contains=list(contains),
+                yield_governor=yield_governor,
+                previous_state=previous_state,
+            )
+            selected_lane = str(lane_selection_payload.get("selected_lane") or "broad_search").strip() or "broad_search"
+            selected_lane_index = int(lane_selection_payload.get("selected_index") or 0)
+            lane_streak = int(lane_selection_payload.get("lane_streak") or 1)
+            token_rotation = int(lane_selection_payload.get("token_rotation") or 0)
+            parent_rotation_offset = int(lane_selection_payload.get("parent_rotation_offset") or 0)
+            contains = list(lane_selection_payload.get("contains") or contains)
+            winner_proximate_tokens = list(
+                lane_selection_payload.get("winner_proximate_tokens") or winner_proximate_tokens
+            )
+            confirm_replay_hints = list(lane_selection_payload.get("confirm_replay_hints") or [])
+            if selected_lane == "winner_proximate":
+                parent_diversity_depth = 5
+            elif selected_lane == "confirm_replay":
+                parent_diversity_depth = 6
+            if confirm_replay_hints and selected_lane != "confirm_replay":
+                confirm_replay_hints = confirm_replay_hints[:2]
+
+            policy_fingerprint_payload = {
+                "controller_group": controller_group,
+                "seed_lane": selected_lane,
+                "seed_lane_index": int(selected_lane_index),
+                "contains": list(contains),
+                "winner_proximate_tokens": list(winner_proximate_tokens),
+                "confirm_replay_hints": list(confirm_replay_hints),
+                "policy_scale": str(effective_policy_scale),
+                "num_variants": int(effective_num_variants),
+                "num_variants_floor": int(effective_num_variants_floor),
+                "max_changed_keys": int(effective_max_changed_keys),
+                "dedupe_distance": float(effective_dedupe_distance),
+                "repair_mode": bool(effective_repair_mode),
+                "repair_max_neighbors": int(effective_repair_max_neighbors),
+                "exclude_knobs": list(effective_exclude_knobs),
+                "parent_rotation_offset": int(parent_rotation_offset),
+                "parent_diversity_depth": int(parent_diversity_depth),
+            }
+            planner_policy_hash = _stable_hash(policy_fingerprint_payload, prefix="policy")
+
             snapshot["directive"] = {
                 "path": _safe_rel(directive_path, app_root),
                 "exists": directive_path.exists(),
@@ -1215,6 +1528,25 @@ def main() -> int:
                 "lane_weights": dict(yield_governor.get("lane_weights") or {}),
                 "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
             }
+            snapshot["lane_selection"] = {
+                "selected_lane": selected_lane,
+                "selected_index": int(selected_lane_index),
+                "lane_streak": int(lane_streak),
+                "token_rotation": int(token_rotation),
+                "available_lanes": list(lane_selection_payload.get("available_lanes") or []),
+                "ranked_lanes": list(lane_selection_payload.get("ranked_lanes") or []),
+                "exploit_first": bool(lane_selection_payload.get("exploit_first")),
+                "lane_weights": dict(lane_selection_payload.get("lane_weights") or {}),
+                "confirm_replay_hints": list(confirm_replay_hints),
+            }
+            snapshot["confirm_replay_materialization"] = {
+                "enabled": bool(confirm_replay_hints),
+                "status": "prepared" if confirm_replay_hints else "idle",
+                "hints": list(confirm_replay_hints)[:8],
+                "mode": "planner_only_groundwork",
+            }
+            snapshot["policy_hash"] = planner_policy_hash
+            snapshot["policy_fingerprint"] = policy_fingerprint_payload
 
             decision_dir = aggregate_dir / controller_group / "decisions"
 
@@ -1239,6 +1571,18 @@ def main() -> int:
                 requested_planner_args.append("--exclude-knob")
             if winner_proximate_tokens:
                 requested_planner_args.append("--winner-proximate-token")
+            requested_planner_args.extend(
+                [
+                    "--planner-policy-hash",
+                    "--planner-hash",
+                    "--seed-lane",
+                    "--seed-lane-index",
+                    "--parent-diversity-depth",
+                    "--parent-rotation-offset",
+                ]
+            )
+            if confirm_replay_hints:
+                requested_planner_args.append("--confirm-replay-hint")
             snapshot["planner_arg_support"] = {
                 "supported": sorted(supported_planner_args),
                 "requested": requested_planner_args,
@@ -1277,10 +1621,26 @@ def main() -> int:
                     "--policy-scale",
                     str(effective_policy_scale),
                 ]
+                planner_hash = _stable_hash({"cmd_base": cmd, "run_group": run_group_try}, prefix="planner")
                 for token in contains:
                     cmd.extend(["--contains", token])
                 for token in winner_proximate_tokens:
                     cmd.extend(["--winner-proximate-token", token])
+                if "--planner-policy-hash" in supported_planner_args:
+                    cmd.extend(["--planner-policy-hash", planner_policy_hash])
+                if "--planner-hash" in supported_planner_args:
+                    cmd.extend(["--planner-hash", planner_hash])
+                if "--seed-lane" in supported_planner_args:
+                    cmd.extend(["--seed-lane", selected_lane])
+                if "--seed-lane-index" in supported_planner_args:
+                    cmd.extend(["--seed-lane-index", str(int(selected_lane_index))])
+                if "--parent-diversity-depth" in supported_planner_args:
+                    cmd.extend(["--parent-diversity-depth", str(int(parent_diversity_depth))])
+                if "--parent-rotation-offset" in supported_planner_args:
+                    cmd.extend(["--parent-rotation-offset", str(int(parent_rotation_offset))])
+                if "--confirm-replay-hint" in supported_planner_args:
+                    for hint in confirm_replay_hints[:8]:
+                        cmd.extend(["--confirm-replay-hint", str(hint)])
                 for raw in args.window:
                     if not raw:
                         continue
@@ -1328,6 +1688,10 @@ def main() -> int:
                         "base_config": cfg,
                         "run_group": run_group_try,
                         "returncode": int(result.returncode),
+                        "policy_hash": planner_policy_hash,
+                        "planner_hash": planner_hash,
+                        "seed_lane": selected_lane,
+                        "parent_rotation_offset": int(parent_rotation_offset),
                         "stdout_tail": (result.stdout or "")[-800:],
                         "stderr_tail": (result.stderr or "")[-800:],
                     }
@@ -1375,7 +1739,26 @@ def main() -> int:
                     "--policy-scale",
                     "macro",
                 ]
+                emergency_planner_hash = _stable_hash(
+                    {"cmd_base": emergency_cmd, "run_group": emergency_run_group},
+                    prefix="planner",
+                )
                 emergency_cmd.extend(["--contains", controller_group])
+                if "--planner-policy-hash" in supported_planner_args:
+                    emergency_cmd.extend(["--planner-policy-hash", planner_policy_hash])
+                if "--planner-hash" in supported_planner_args:
+                    emergency_cmd.extend(["--planner-hash", emergency_planner_hash])
+                if "--seed-lane" in supported_planner_args:
+                    emergency_cmd.extend(["--seed-lane", selected_lane])
+                if "--seed-lane-index" in supported_planner_args:
+                    emergency_cmd.extend(["--seed-lane-index", str(int(selected_lane_index))])
+                if "--parent-diversity-depth" in supported_planner_args:
+                    emergency_cmd.extend(["--parent-diversity-depth", str(int(parent_diversity_depth))])
+                if "--parent-rotation-offset" in supported_planner_args:
+                    emergency_cmd.extend(["--parent-rotation-offset", str(int(parent_rotation_offset))])
+                if "--confirm-replay-hint" in supported_planner_args:
+                    for hint in confirm_replay_hints[:8]:
+                        emergency_cmd.extend(["--confirm-replay-hint", str(hint)])
                 for raw in args.window:
                     if not raw:
                         continue
@@ -1403,6 +1786,10 @@ def main() -> int:
                         "base_config": base_config,
                         "run_group": emergency_run_group,
                         "returncode": int(emergency_result.returncode),
+                        "policy_hash": planner_policy_hash,
+                        "planner_hash": emergency_planner_hash,
+                        "seed_lane": selected_lane,
+                        "parent_rotation_offset": int(parent_rotation_offset),
                         "stdout_tail": (emergency_result.stdout or "")[-800:],
                         "stderr_tail": (emergency_result.stderr or "")[-800:],
                         "fallback_mode": "emergency_knob_relaxed",
@@ -1429,6 +1816,11 @@ def main() -> int:
                 snapshot["planner_stdout_tail"] = (final_result.stdout or "")[-2000:]
                 snapshot["planner_stderr_tail"] = (final_result.stderr or "")[-2000:]
                 snapshot["selected_base_config"] = selected_base
+                snapshot["selected_lane"] = selected_lane
+                snapshot["lane_streak"] = int(lane_streak)
+                snapshot["token_rotation"] = int(token_rotation)
+                snapshot["parent_rotation_offset"] = int(parent_rotation_offset)
+                snapshot["parent_diversity_depth"] = int(parent_diversity_depth)
 
             if decision is None:
                 snapshot.update({"status": "failed", "reason": "all_planners_failed", "human": "Queue seeder failed: all planner inputs invalid/failed; waiting for fallback fix."})
@@ -1453,6 +1845,24 @@ def main() -> int:
             decision_payload = decision.get("decision_payload", {})
             if not isinstance(decision_payload, dict):
                 decision_payload = {}
+            queue_policy_path = _write_queue_policy_sidecar(
+                queue_path=queue_path,
+                app_root=app_root,
+                planner_policy_hash=planner_policy_hash,
+                selected_lane=selected_lane,
+                selected_lane_index=selected_lane_index,
+                token_rotation=token_rotation,
+                parent_rotation_offset=parent_rotation_offset,
+                parent_diversity_depth=parent_diversity_depth,
+                confirm_replay_hints=confirm_replay_hints,
+                decision_payload=decision_payload,
+            )
+            _decorate_queue_metadata(
+                queue_path=queue_path,
+                planner_policy_hash=planner_policy_hash,
+                queue_policy_path=queue_policy_path,
+                app_root=app_root,
+            )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(
                 {
@@ -1462,6 +1872,7 @@ def main() -> int:
                     "controller_group": controller_group,
                     "decision_path": _safe_rel(decision["decision_path"], app_root),
                     "queue_path": _safe_rel(queue_path, app_root),
+                    "queue_policy_path": _safe_rel(queue_policy_path, app_root),
                     "queue_rows_generated": len(queue_payload),
                     "parent_resolution": dict(decision_payload.get("parent_resolution") or {}),
                     "reason": None,

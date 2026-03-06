@@ -30,7 +30,7 @@ def test_build_directive_prefers_winner_proximate_and_yield_tokens() -> None:
         "active": True,
         "preferred_contains": ["yield_rg"],
         "winner_proximate": {"enabled": True, "contains": ["yield_strict_rg"], "reason": "strict_pass_or_high_yield_lineage"},
-        "lane_weights": {"winner_proximate": 40, "broad_search": 45, "confirm_replay": 15},
+        "lane_weights": {"winner_proximate": 65, "broad_search": 15, "confirm_replay": 20},
         "cooldown_contains": ["cold_rg"],
         "preferred_operator_ids": ["op_good"],
         "cooldown_operator_ids": ["op_bad"],
@@ -40,8 +40,17 @@ def test_build_directive_prefers_winner_proximate_and_yield_tokens() -> None:
 
     assert directive["contains"][:3] == ["strict_rg", "yield_strict_rg", "yield_rg"]
     assert directive["winner_proximate"]["enabled"] is True
+    assert directive["replay_fastlane"]["enabled"] is True
     assert directive["yield_governor"]["active"] is True
-    assert directive["lane_weights"]["winner_proximate"] == 40
+    assert directive["lane_weights"] == {
+        "winner_proximate": 65,
+        "confirm_replay": 20,
+        "broad_search": 15,
+    }
+    assert len(str(directive["policy-hash"])) == 64
+    assert directive["policy-hash"] == directive["policy_hash"]
+    assert directive["planner-policy-inputs"]["lane_weights"]["winner_proximate"] == 65
+    assert directive["planner-policy-inputs"] == directive["planner_policy_inputs"]
 
 
 def test_materialize_cold_fail_index_backfills_rejects(tmp_path: Path) -> None:

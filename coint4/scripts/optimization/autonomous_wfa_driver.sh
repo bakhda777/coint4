@@ -38,6 +38,8 @@ DECISION_NOTES_FILE="$STATE_DIR/decision_notes.jsonl"
 DECISION_MEMO_DIR="$STATE_DIR/decision_memos"
 DETERMINISTIC_QUARANTINE_FILE="$STATE_DIR/deterministic_quarantine.json"
 GATE_SURROGATE_STATE_FILE="$STATE_DIR/gate_surrogate_state.json"
+SEARCH_DIRECTOR_DIRECTIVE_FILE="$STATE_DIR/search_director_directive.json"
+YIELD_GOVERNOR_STATE_FILE="$STATE_DIR/yield_governor_state.json"
 
 
 FULLSPAN_CYCLE_STATE_FILE="$STATE_DIR/mini_cycle_state.txt"
@@ -52,7 +54,9 @@ FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
 CAPACITY_CONTROLLER_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
 CONFIRM_SLA_ESCALATION_STATE_FILE="$STATE_DIR/confirm_sla_escalation_state.json"
 BATCH_SESSION_STATE_FILE="$STATE_DIR/batch_session_state.json"
-DRIVER_CONFIRM_FASTLANE_ENABLE="${DRIVER_CONFIRM_FASTLANE_ENABLE:-0}"
+DRIVER_CONFIRM_FASTLANE_ENABLE="${DRIVER_CONFIRM_FASTLANE_ENABLE:-1}"
+VPS_HOT_STANDBY_ENABLE="${VPS_HOT_STANDBY_ENABLE:-1}"
+VPS_HOT_STANDBY_TTL_SEC="${VPS_HOT_STANDBY_TTL_SEC:-2700}"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 SAME_REASON_REPAIR_CAP="${SAME_REASON_REPAIR_CAP:-3}"
 ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
@@ -92,6 +96,7 @@ AUTO_SEED_NUM_VARIANTS="${AUTO_SEED_NUM_VARIANTS:-64}"
 AUTO_SEED_NUM_VARIANTS_FLOOR="${AUTO_SEED_NUM_VARIANTS_FLOOR:-24}"
 READY_BUFFER_TARGET_DEPTH="${READY_BUFFER_TARGET_DEPTH:-3}"
 READY_BUFFER_REFILL_THRESHOLD="${READY_BUFFER_REFILL_THRESHOLD:-2}"
+READY_BUFFER_MAX_AGE_SEC="${READY_BUFFER_MAX_AGE_SEC:-900}"
 READY_BUFFER_OVERLAP_TAIL_PENDING="${READY_BUFFER_OVERLAP_TAIL_PENDING:-24}"
 READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES="${READY_BUFFER_MAX_ACTIVE_REMOTE_QUEUES:-2}"
 HARD_FAIL_COLD_TTL_SEC="${HARD_FAIL_COLD_TTL_SEC:-21600}"
@@ -102,6 +107,10 @@ FORCE_SYNC_BEFORE_START="${FORCE_SYNC_BEFORE_START:-1}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
 DRIVER_MAX_LOCAL_SEARCH_RUNNERS="${DRIVER_MAX_LOCAL_SEARCH_RUNNERS:-3}"
 DRIVER_MAX_REMOTE_RUNNERS="${DRIVER_MAX_REMOTE_RUNNERS:-64}"
+VPS_HOT_STANDBY_GRACE_SEC="${VPS_HOT_STANDBY_GRACE_SEC:-900}"
+RUNTIME_OBSERVABILITY_WINDOW_SEC="${RUNTIME_OBSERVABILITY_WINDOW_SEC:-1800}"
+REPLAY_FASTLANE_SCAN_LIMIT="${REPLAY_FASTLANE_SCAN_LIMIT:-2}"
+RUNTIME_OBSERVABILITY_STATE_FILE="$STATE_DIR/runtime_observability_state.json"
 
 mkdir -p "$STATE_DIR"
 
@@ -321,12 +330,27 @@ batch_session_maybe_stop() {
     pending_total=0
   fi
 
+  local ready_depth replay_pending standby_ttl
+  ready_depth="$(ready_buffer_depth)"
+  replay_pending="$(confirm_fastlane_pending_count)"
+  standby_ttl="${VPS_HOT_STANDBY_GRACE_SEC:-${VPS_HOT_STANDBY_TTL_SEC:-2700}}"
+  [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
+  [[ "$replay_pending" =~ ^[0-9]+$ ]] || replay_pending=0
+  [[ "$standby_ttl" =~ ^[0-9]+$ ]] || standby_ttl=2700
+
   local age_sec=$((now_epoch - batch_session_start_epoch))
   local idle_sec=$((now_epoch - batch_session_last_dispatch_epoch))
 
   if (( pending_total == 0 )); then
     batch_session_stop "all_queues_done:${reason}"
     return 0
+  fi
+
+  if is_hot_standby_enabled; then
+    if (( ready_depth > 0 || replay_pending > 0 || idle_sec < standby_ttl )); then
+      log "batch_session_hot_standby reason=$reason pending_total=$pending_total ready_depth=$ready_depth replay_pending=$replay_pending idle_sec=$idle_sec standby_ttl=$standby_ttl"
+      return 0
+    fi
   fi
 
   if (( batch_session_runs_started >= VPS_BATCH_SESSION_MAX_JOBS && idle_sec >= VPS_BATCH_SESSION_IDLE_GRACE_SEC )); then
@@ -1133,6 +1157,170 @@ print(count)
 PY
 }
 
+ready_buffer_state_value() {
+  local key="$1"
+  python3 - "$READY_BUFFER_STATE_FILE" "$key" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = str(sys.argv[2] or "").strip()
+if not path.exists() or not key:
+    print("")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print("")
+    raise SystemExit(0)
+value = data.get(key) if isinstance(data, dict) else ""
+if isinstance(value, bool):
+    print("1" if value else "0")
+elif isinstance(value, (int, float)):
+    print(value)
+elif isinstance(value, str):
+    print(value)
+else:
+    print("")
+PY
+}
+
+current_planner_policy_hash() {
+  python3 - "$SEARCH_DIRECTOR_DIRECTIVE_FILE" "$YIELD_GOVERNOR_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+for candidate in sys.argv[1:]:
+    path = Path(candidate)
+    if not path.exists():
+        continue
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        continue
+    if not isinstance(payload, dict):
+        continue
+    for key in ("policy_hash", "policy-hash"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            print(value)
+            raise SystemExit(0)
+print("")
+PY
+}
+
+is_hot_standby_enabled() {
+  is_truthy "$VPS_HOT_STANDBY_ENABLE"
+}
+
+confirm_fastlane_pending_count() {
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" <<'PY'
+import csv
+import json
+import sys
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+root_dir = Path(sys.argv[2])
+if not state_path.exists():
+    print(0)
+    raise SystemExit(0)
+try:
+    payload = json.loads(state_path.read_text(encoding='utf-8'))
+except Exception:
+    print(0)
+    raise SystemExit(0)
+queues = payload.get("queues", {}) if isinstance(payload, dict) else {}
+if not isinstance(queues, dict):
+    print(0)
+    raise SystemExit(0)
+pending = 0
+for entry in queues.values():
+    if not isinstance(entry, dict):
+        continue
+    queue_rel = str(entry.get("confirm_fastlane_queue_rel") or "").strip()
+    if not queue_rel:
+        continue
+    queue_path = root_dir / queue_rel
+    if not queue_path.exists():
+        continue
+    try:
+        rows = list(csv.DictReader(queue_path.open(newline='', encoding='utf-8')))
+    except Exception:
+        continue
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "running", "stalled", "failed", "error"}:
+            pending += 1
+            break
+print(pending)
+PY
+}
+
+ready_buffer_policy_hash() {
+  local planner_policy_hash
+  planner_policy_hash="$(current_planner_policy_hash)"
+  python3 - "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$FULLSPAN_POLICY_NAME" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$planner_policy_hash" <<'PY'
+import csv
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+pool_path = Path(sys.argv[1])
+surrogate_path = Path(sys.argv[2])
+fullspan_path = Path(sys.argv[3])
+policy_version = str(sys.argv[4] or "").strip() or "fullspan_v1"
+try:
+    target_depth = max(1, int(float(sys.argv[5] or 3)))
+except Exception:
+    target_depth = 3
+try:
+    refill_threshold = max(1, int(float(sys.argv[6] or 2)))
+except Exception:
+    refill_threshold = 2
+planner_policy_hash = str(sys.argv[7] or "").strip()
+
+pool_rows = []
+if pool_path.exists():
+    try:
+        for row in csv.DictReader(pool_path.open(newline="", encoding="utf-8")):
+            if len(pool_rows) >= max(8, target_depth):
+                break
+            queue = str(row.get("queue") or "").strip()
+            if not queue:
+                continue
+            pool_rows.append(
+                {
+                    "queue": queue,
+                    "mtime": int(float(row.get("mtime") or 0)),
+                    "promotion_potential": str(row.get("promotion_potential") or "").strip(),
+                    "gate_status": str(row.get("gate_status") or "").strip(),
+                    "strict_gate_status": str(row.get("strict_gate_status") or "").strip(),
+                    "pre_rank_score": str(row.get("pre_rank_score") or "").strip(),
+                    "executable_pending": int(float(row.get("executable_pending") or 0)),
+                }
+            )
+    except Exception:
+        pool_rows = []
+
+payload = {
+    "policy_version": policy_version,
+    "target_depth": target_depth,
+    "refill_threshold": refill_threshold,
+    "planner_policy_hash": planner_policy_hash,
+    "pool_rows": pool_rows,
+    "pool_mtime": int(pool_path.stat().st_mtime) if pool_path.exists() else 0,
+    "surrogate_mtime": int(surrogate_path.stat().st_mtime) if surrogate_path.exists() else 0,
+    "fullspan_mtime": int(fullspan_path.stat().st_mtime) if fullspan_path.exists() else 0,
+}
+body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+print(hashlib.sha256(body.encode("utf-8")).hexdigest())
+PY
+}
+
 cold_fail_active_count() {
   python3 - "$COLD_FAIL_STATE_FILE" "$FULLSPAN_POLICY_NAME" <<'PY'
 import json
@@ -1232,10 +1420,12 @@ PY
 ready_buffer_refresh() {
   local exclude_queue="${1:-}"
   local py_bin="$ROOT_DIR/.venv/bin/python"
+  local policy_hash
   [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
   if [[ -z "$py_bin" || ! -f "$READY_BUFFER_POOL_FILE" ]]; then
     return 1
   fi
+  policy_hash="$(ready_buffer_policy_hash)"
 
   local refresh_needed="1"
   refresh_needed="$(python3 - "$GATE_SURROGATE_STATE_FILE" "$READY_BUFFER_POOL_FILE" <<'PY'
@@ -1281,7 +1471,7 @@ PY
     fi
   fi
 
-  python3 - "$READY_BUFFER_POOL_FILE" "$READY_BUFFER_STATE_FILE" "$GATE_SURROGATE_STATE_FILE" "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$exclude_queue" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$ROOT_DIR" "$FULLSPAN_POLICY_NAME" <<'PY'
+  python3 - "$READY_BUFFER_POOL_FILE" "$READY_BUFFER_STATE_FILE" "$GATE_SURROGATE_STATE_FILE" "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$exclude_queue" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$ROOT_DIR" "$FULLSPAN_POLICY_NAME" "$policy_hash" <<'PY'
 import csv
 import json
 import sys
@@ -1298,6 +1488,7 @@ target_depth = max(1, int(float(sys.argv[7] or 3)))
 refill_threshold = max(1, int(float(sys.argv[8] or 2)))
 root_dir = Path(sys.argv[9])
 policy_version = str(sys.argv[10] or "").strip() or "fullspan_v1"
+policy_hash = str(sys.argv[11] or "").strip()
 
 def load_json(path: Path, default):
     if not path.exists():
@@ -1369,6 +1560,13 @@ for row in rows:
     reason = str((surrogate_entry or {}).get("reason") or "").strip()
     if decision != "allow":
         continue
+    queue_path = root_dir / queue
+    if not queue_path.exists():
+        continue
+    queue_file_mtime = int(queue_path.stat().st_mtime)
+    row_mtime = int(float(row.get("mtime") or 0))
+    if row_mtime > 0 and queue_file_mtime > row_mtime:
+        continue
     entry = {
         "queue": queue,
         "planned": int(float(row.get("planned") or 0)),
@@ -1392,6 +1590,7 @@ for row in rows:
         "executable_pending": int(float(row.get("executable_pending") or 0)),
         "surrogate_decision": decision,
         "surrogate_reason": reason,
+        "queue_file_mtime": queue_file_mtime,
         "claimed": False,
         "claim_ts": 0,
     }
@@ -1401,10 +1600,15 @@ for row in rows:
 
 payload = {
     "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "built_epoch": int(datetime.now(timezone.utc).timestamp()),
     "policy_version": policy_version,
+    "policy_hash": policy_hash,
     "target_depth": target_depth,
     "refill_threshold": refill_threshold,
     "ready_count": len(entries),
+    "source_pool_mtime": int(pool_path.stat().st_mtime) if pool_path.exists() else 0,
+    "source_surrogate_mtime": int(surrogate_path.stat().st_mtime) if surrogate_path.exists() else 0,
+    "source_fullspan_mtime": int(fullspan_path.stat().st_mtime) if fullspan_path.exists() else 0,
     "entries": entries,
 }
 state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1422,7 +1626,10 @@ PY
 
 ready_buffer_emit_candidate() {
   local exclude_queue="${1:-}"
-  python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" <<'PY'
+  local rc=0
+  local policy_hash
+  policy_hash="$(ready_buffer_policy_hash)"
+  python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$policy_hash" <<'PY'
 import csv
 import json
 import sys
@@ -1432,6 +1639,15 @@ from pathlib import Path
 state_path = Path(sys.argv[1])
 candidate_path = Path(sys.argv[2])
 exclude_queue = str(sys.argv[3] or "").strip()
+pool_path = Path(sys.argv[4])
+surrogate_path = Path(sys.argv[5])
+fullspan_path = Path(sys.argv[6])
+root_dir = Path(sys.argv[7])
+try:
+    max_age_sec = max(30, int(float(sys.argv[8] or 900)))
+except Exception:
+    max_age_sec = 900
+expected_hash = str(sys.argv[9] or "").strip()
 
 header = [
     "queue",
@@ -1461,15 +1677,160 @@ try:
     data = json.loads(state_path.read_text(encoding='utf-8'))
 except Exception:
     raise SystemExit(1)
+policy_hash = str(data.get("policy_hash") or "").strip()
+if expected_hash and policy_hash and policy_hash != expected_hash:
+    raise SystemExit(23)
+try:
+    built_epoch = int(float(data.get("built_epoch") or 0))
+except Exception:
+    built_epoch = 0
+if built_epoch > 0 and int(time.time()) - built_epoch > max_age_sec:
+    raise SystemExit(24)
 entries = data.get("entries", []) if isinstance(data, dict) else []
 if not isinstance(entries, list):
     raise SystemExit(1)
+selected = None
+stale_skips = 0
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    queue = str(entry.get("queue") or "").strip()
+    if not queue or queue == exclude_queue or bool(entry.get("claimed")):
+        continue
+    queue_path = root_dir / queue
+    if not queue_path.exists():
+        stale_skips += 1
+        continue
+    try:
+        queue_mtime = int(queue_path.stat().st_mtime)
+    except Exception:
+        queue_mtime = 0
+    try:
+        state_queue_mtime = int(float(entry.get("queue_file_mtime") or 0))
+    except Exception:
+        state_queue_mtime = 0
+    if state_queue_mtime > 0 and queue_mtime > state_queue_mtime:
+        stale_skips += 1
+        continue
+    pending = 0
+    try:
+        for row in csv.DictReader(queue_path.open(newline="", encoding="utf-8")):
+            status = str(row.get("status") or "").strip().lower()
+            if status in {"planned", "running", "stalled", "failed", "error"}:
+                pending += 1
+    except Exception:
+        pending = 0
+    if pending <= 0:
+        stale_skips += 1
+        continue
+    selected = entry
+    break
+if selected is None:
+    raise SystemExit(24 if stale_skips > 0 else 1)
+selected["claimed"] = True
+selected["claim_ts"] = int(time.time())
+state_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+candidate_path.parent.mkdir(parents=True, exist_ok=True)
+with candidate_path.open("w", encoding="utf-8", newline="") as handle:
+    writer = csv.DictWriter(handle, fieldnames=header)
+    writer.writeheader()
+    writer.writerow(
+        {
+            "queue": selected.get("queue", ""),
+            "planned": selected.get("planned", 0),
+            "running": selected.get("running", 0),
+            "stalled": selected.get("stalled", 0),
+            "failed": selected.get("failed", 0),
+            "completed": selected.get("completed", 0),
+            "total": selected.get("total", 0),
+            "urgency": f"{float(selected.get('urgency', 0.0)):.3f}",
+            "mtime": selected.get("mtime", 0),
+            "promotion_potential": selected.get("promotion_potential", "POSSIBLE"),
+            "gate_status": selected.get("gate_status", "OPEN"),
+            "gate_reason": selected.get("gate_reason", ""),
+            "pre_rank_score": f"{float(selected.get('pre_rank_score', 0.0)):.3f}",
+            "strict_gate_status": selected.get("strict_gate_status", ""),
+            "strict_gate_reason": selected.get("strict_gate_reason", ""),
+            "effective_planned_count": selected.get("effective_planned_count", 0),
+            "stalled_share": f"{float(selected.get('stalled_share', 0.0)):.6f}",
+            "queue_yield_score": f"{float(selected.get('queue_yield_score', 0.0)):.3f}",
+            "recent_yield": f"{float(selected.get('recent_yield', 0.0)):.3f}",
+        }
+)
+print(str(selected.get("queue") or "").strip())
+PY
+  rc=$?
+  if (( rc == 23 )); then
+    fullspan_state_metric_inc "ready_buffer_policy_mismatch_count" 1
+    log "ready_buffer_policy_mismatch expected=$policy_hash"
+    ready_buffer_refresh "$exclude_queue" || true
+    python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$policy_hash" <<'PY'
+import csv
+import json
+import sys
+import time
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+candidate_path = Path(sys.argv[2])
+exclude_queue = str(sys.argv[3] or "").strip()
+root_dir = Path(sys.argv[7])
+try:
+    max_age_sec = max(30, int(float(sys.argv[8] or 900)))
+except Exception:
+    max_age_sec = 900
+expected_hash = str(sys.argv[9] or "").strip()
+
+header = [
+    "queue",
+    "planned",
+    "running",
+    "stalled",
+    "failed",
+    "completed",
+    "total",
+    "urgency",
+    "mtime",
+    "promotion_potential",
+    "gate_status",
+    "gate_reason",
+    "pre_rank_score",
+    "strict_gate_status",
+    "strict_gate_reason",
+    "effective_planned_count",
+    "stalled_share",
+    "queue_yield_score",
+    "recent_yield",
+]
+
+if not state_path.exists():
+    raise SystemExit(1)
+data = json.loads(state_path.read_text(encoding='utf-8'))
+if expected_hash and str(data.get("policy_hash") or "").strip() != expected_hash:
+    raise SystemExit(23)
+try:
+    built_epoch = int(float(data.get("built_epoch") or 0))
+except Exception:
+    built_epoch = 0
+if built_epoch > 0 and int(time.time()) - built_epoch > max_age_sec:
+    raise SystemExit(24)
+entries = data.get("entries", []) if isinstance(data, dict) else []
 selected = None
 for entry in entries:
     if not isinstance(entry, dict):
         continue
     queue = str(entry.get("queue") or "").strip()
     if not queue or queue == exclude_queue or bool(entry.get("claimed")):
+        continue
+    queue_path = root_dir / queue
+    if not queue_path.exists():
+        continue
+    pending = 0
+    for row in csv.DictReader(queue_path.open(newline="", encoding="utf-8")):
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "running", "stalled", "failed", "error"}:
+            pending += 1
+    if pending <= 0:
         continue
     selected = entry
     break
@@ -1507,6 +1868,13 @@ with candidate_path.open("w", encoding="utf-8", newline="") as handle:
     )
 print(str(selected.get("queue") or "").strip())
 PY
+    rc=$?
+  elif (( rc == 24 )); then
+    log "ready_buffer_stale_state action=refresh exclude=${exclude_queue:-none}"
+    ready_buffer_refresh "$exclude_queue" || true
+    return 1
+  fi
+  return "$rc"
 }
 
 ready_buffer_release_claim() {
@@ -1561,6 +1929,313 @@ kpi = data.get("kpi", {}) if isinstance(data, dict) else {}
 idle = bool(queue.get("idle_with_executable_pending")) or bool(kpi.get("idle_with_executable_pending"))
 print("1" if idle else "0")
 PY
+}
+
+runtime_observability_record_event() {
+  local event_name="$1"
+  local now_epoch="${2:-$(date +%s)}"
+  python3 - "$RUNTIME_OBSERVABILITY_STATE_FILE" "$event_name" "$now_epoch" "$RUNTIME_OBSERVABILITY_WINDOW_SEC" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+event_name = str(sys.argv[2] or "").strip()
+try:
+    now_epoch = int(float(sys.argv[3] or 0))
+except Exception:
+    now_epoch = 0
+try:
+    window_sec = max(60, int(float(sys.argv[4] or 1800)))
+except Exception:
+    window_sec = 1800
+if not event_name or now_epoch <= 0:
+    raise SystemExit(0)
+
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+events = payload.get("events", {})
+if not isinstance(events, dict):
+    events = {}
+series = [int(float(item or 0)) for item in list(events.get(event_name, []) or []) if str(item or "").strip()]
+cutoff = now_epoch - window_sec
+series = [ts for ts in series if ts >= cutoff]
+series.append(now_epoch)
+events[event_name] = series[-2048:]
+payload["events"] = events
+payload["ts_epoch"] = now_epoch
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+refresh_runtime_observability_metrics() {
+  local queue_jobs child_count cpu_busy busy_now
+  local vps_duty_cycle_30m metrics_missing_abort_count_30m winner_proximate_dispatch_count_30m
+  local fastlane_replay_pending winner_parent_duplication_rate hot_standby_candidate_count
+  queue_jobs="$(remote_active_queue_jobs)"
+  child_count="$(remote_child_process_count)"
+  cpu_busy="$(remote_cpu_busy_without_queue_job)"
+  [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
+  [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
+  [[ "$cpu_busy" =~ ^[0-9]+$ ]] || cpu_busy=0
+  busy_now=0
+  if (( queue_jobs > 0 || cpu_busy == 1 || child_count > 0 )); then
+    busy_now=1
+  fi
+
+  read -r vps_duty_cycle_30m metrics_missing_abort_count_30m winner_proximate_dispatch_count_30m fastlane_replay_pending winner_parent_duplication_rate hot_standby_candidate_count < <(
+    python3 - "$RUNTIME_OBSERVABILITY_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$READY_BUFFER_STATE_FILE" "$READY_BUFFER_POOL_FILE" "$busy_now" "$RUNTIME_OBSERVABILITY_WINDOW_SEC" <<'PY'
+import csv
+import json
+import sys
+import time
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+fullspan_path = Path(sys.argv[2])
+ready_state_path = Path(sys.argv[3])
+ready_pool_path = Path(sys.argv[4])
+try:
+    busy_now = 1 if int(float(sys.argv[5] or 0)) > 0 else 0
+except Exception:
+    busy_now = 0
+try:
+    window_sec = max(60, int(float(sys.argv[6] or 1800)))
+except Exception:
+    window_sec = 1800
+now_epoch = int(time.time())
+cutoff = now_epoch - window_sec
+
+payload = {}
+if state_path.exists():
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+events = payload.get("events", {})
+if not isinstance(events, dict):
+    events = {}
+samples = payload.get("vps_busy_samples", [])
+if not isinstance(samples, list):
+    samples = []
+fresh_samples = []
+for sample in samples:
+    if not isinstance(sample, dict):
+        continue
+    try:
+        ts = int(float(sample.get("ts") or 0))
+    except Exception:
+        ts = 0
+    if ts < cutoff:
+        continue
+    fresh_samples.append({"ts": ts, "busy": 1 if int(float(sample.get("busy") or 0)) > 0 else 0})
+fresh_samples.append({"ts": now_epoch, "busy": busy_now})
+payload["vps_busy_samples"] = fresh_samples[-4096:]
+
+def event_count(name: str) -> int:
+    series = []
+    for item in list(events.get(name, []) or []):
+        try:
+            ts = int(float(item or 0))
+        except Exception:
+            ts = 0
+        if ts >= cutoff:
+            series.append(ts)
+    events[name] = series[-2048:]
+    return len(series)
+
+fullspan = {}
+if fullspan_path.exists():
+    try:
+        fullspan = json.loads(fullspan_path.read_text(encoding="utf-8"))
+    except Exception:
+        fullspan = {}
+queues = fullspan.get("queues", {}) if isinstance(fullspan, dict) else {}
+if not isinstance(queues, dict):
+    queues = {}
+
+fastlane_pending = 0
+winner_tokens = []
+seen_tokens = set()
+for queue_rel, entry in queues.items():
+    if not isinstance(entry, dict):
+        continue
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    try:
+        strict_pass = int(float(entry.get("strict_pass_count", 0) or 0))
+    except Exception:
+        strict_pass = 0
+    try:
+        strict_groups = int(float(entry.get("strict_run_group_count", 0) or 0))
+    except Exception:
+        strict_groups = 0
+    try:
+        confirm_count = int(float(entry.get("confirm_count", 0) or 0))
+    except Exception:
+        confirm_count = 0
+    token = str(entry.get("top_run_group") or Path(str(queue_rel)).parent.name).strip()
+    if token and (strict_pass > 0 or verdict in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM", "PROMOTE_ELIGIBLE"}):
+        if token not in seen_tokens:
+            seen_tokens.add(token)
+            winner_tokens.append(token)
+    if verdict in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"} and strict_pass > 0 and strict_groups >= 2 and confirm_count < 2:
+        fastlane_pending += 1
+
+ready_payload = {}
+if ready_state_path.exists():
+    try:
+        ready_payload = json.loads(ready_state_path.read_text(encoding="utf-8"))
+    except Exception:
+        ready_payload = {}
+entries = ready_payload.get("entries", []) if isinstance(ready_payload, dict) else []
+if not isinstance(entries, list):
+    entries = []
+if not entries and ready_pool_path.exists():
+    try:
+        entries = list(csv.DictReader(ready_pool_path.open(newline="", encoding="utf-8")))
+    except Exception:
+        entries = []
+
+parents = []
+hot_standby_candidates = 0
+winner_token_set = set(token for token in winner_tokens if token)
+for entry in entries:
+    if not isinstance(entry, dict):
+        continue
+    queue_rel = str(entry.get("queue") or "").strip()
+    if not queue_rel:
+        continue
+    state_entry = queues.get(queue_rel, {})
+    parent = str((state_entry or {}).get("top_run_group") or Path(queue_rel).parent.name).strip()
+    if parent:
+        parents.append(parent)
+        if parent in winner_token_set:
+            hot_standby_candidates += 1
+
+unique_parents = len(set(parents))
+dup_rate = 0.0
+if parents:
+    dup_rate = max(0.0, float(len(parents) - unique_parents) / float(len(parents)))
+
+duty = 0.0
+if payload["vps_busy_samples"]:
+    duty = float(sum(int(sample.get("busy", 0)) for sample in payload["vps_busy_samples"])) / float(len(payload["vps_busy_samples"]))
+
+payload["events"] = events
+payload["ts_epoch"] = now_epoch
+state_path.parent.mkdir(parents=True, exist_ok=True)
+state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+print(
+    "{duty:.6f} {metrics_missing_abort} {winner_dispatch} {fastlane_pending} {dup_rate:.6f} {hot_ready}".format(
+        duty=duty,
+        metrics_missing_abort=event_count("metrics_missing_abort"),
+        winner_dispatch=event_count("winner_proximate_dispatch"),
+        fastlane_pending=fastlane_pending,
+        dup_rate=dup_rate,
+        hot_ready=hot_standby_candidates,
+    )
+)
+PY
+  )
+
+  fullspan_state_metric_set "vps_duty_cycle_30m" "${vps_duty_cycle_30m:-0}"
+  fullspan_state_metric_set "metrics_missing_abort_count_30m" "${metrics_missing_abort_count_30m:-0}"
+  fullspan_state_metric_set "winner_proximate_dispatch_count_30m" "${winner_proximate_dispatch_count_30m:-0}"
+  fullspan_state_metric_set "fastlane_replay_pending" "${fastlane_replay_pending:-0}"
+  fullspan_state_metric_set "winner_parent_duplication_rate" "${winner_parent_duplication_rate:-0}"
+  fullspan_state_metric_set "hot_standby_candidate_count" "${hot_standby_candidate_count:-0}"
+}
+
+queue_is_winner_proximate() {
+  local queue_rel="$1"
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" "$queue_rel" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+if not path.exists() or not queue_rel:
+    print("0")
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0")
+    raise SystemExit(0)
+queues = payload.get("queues", {}) if isinstance(payload, dict) else {}
+if not isinstance(queues, dict):
+    print("0")
+    raise SystemExit(0)
+tokens = set()
+for _, entry in queues.items():
+    if not isinstance(entry, dict):
+        continue
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    try:
+        strict_pass = int(float(entry.get("strict_pass_count", 0) or 0))
+    except Exception:
+        strict_pass = 0
+    if strict_pass <= 0 and verdict not in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM", "PROMOTE_ELIGIBLE"}:
+        continue
+    token = str(entry.get("top_run_group") or "").strip()
+    if token:
+        tokens.add(token)
+queue_group = Path(queue_rel).parent.name
+state_entry = queues.get(queue_rel, {})
+queue_token = str((state_entry or {}).get("top_run_group") or queue_group).strip()
+print("1" if queue_token and queue_token in tokens else "0")
+PY
+}
+
+hot_standby_needed() {
+  if ! is_truthy "$VPS_HOT_STANDBY_ENABLE"; then
+    echo 0
+    return 0
+  fi
+  local fastlane_pending ready_depth idle_pending
+  fastlane_pending="$(fullspan_state_metric_get fastlane_replay_pending 0)"
+  ready_depth="$(ready_buffer_depth)"
+  idle_pending="$(process_slo_idle_with_executable_pending)"
+  [[ "$fastlane_pending" =~ ^[0-9]+$ ]] || fastlane_pending=0
+  [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
+  [[ "$idle_pending" =~ ^[0-9]+$ ]] || idle_pending=0
+  if (( fastlane_pending > 0 || (ready_depth > 0 && idle_pending == 1) )); then
+    echo 1
+  else
+    echo 0
+  fi
+}
+
+maybe_prepare_hot_standby() {
+  local standby_required pending_total
+  standby_required="$(hot_standby_needed)"
+  [[ "$standby_required" =~ ^[0-9]+$ ]] || standby_required=0
+  fullspan_state_metric_set "hot_standby_active" "$standby_required"
+  if (( standby_required == 0 )); then
+    return 0
+  fi
+  pending_total="$(global_pending_count)"
+  [[ "$pending_total" =~ ^[0-9]+$ ]] || pending_total=0
+  if (( pending_total <= 0 )); then
+    return 0
+  fi
+  if ! vps_is_reachable; then
+    if ensure_vps_ready "hot_standby"; then
+      log "hot_standby_ready pending_total=$pending_total"
+    else
+      log "hot_standby_deferred pending_total=$pending_total"
+    fi
+  fi
 }
 
 
@@ -4853,8 +5528,93 @@ PY
   batch_session_note_dispatch
 
   fullspan_state_metric_inc "confirm_fastlane_trigger_count" 1
+  runtime_observability_record_event "winner_proximate_dispatch" "$now_epoch"
   log_decision_note "$source_queue_rel" "CONFIRM_FASTLANE_TRIGGER" "confirm_queue=$confirm_queue_rel variant=$top_variant candidate_uid=$candidate_uid dispatch_id=$dispatch_id" "await_confirm_replay"
   log "confirm_fastlane_trigger source=$source_queue_rel confirm_queue=$confirm_queue_rel variant=$top_variant candidate_uid=$candidate_uid dispatch_id=$dispatch_id"
+}
+
+dispatch_replay_fastlane_hooks() {
+  if [[ "$DRIVER_CONFIRM_FASTLANE_ENABLE" != "1" && "$DRIVER_CONFIRM_FASTLANE_ENABLE" != "true" ]]; then
+    return 0
+  fi
+
+  local dispatched=0
+  while IFS=$'\t' read -r queue_rel queue_name top_variant strict_pass_count strict_run_groups confirm_count candidate_uid; do
+    if [[ -z "$queue_rel" || -z "$top_variant" ]]; then
+      continue
+    fi
+    trigger_confirm_fastlane "$queue_rel" "$queue_name" "$top_variant" "$strict_pass_count" "$strict_run_groups" "$confirm_count" "$candidate_uid"
+    dispatched=$((dispatched + 1))
+    if (( dispatched >= REPLAY_FASTLANE_SCAN_LIMIT )); then
+      break
+    fi
+  done < <(
+    python3 - "$FULLSPAN_DECISION_STATE_FILE" "$REPLAY_FASTLANE_SCAN_LIMIT" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$FULLSPAN_CONFIRM_MIN_REPLIES" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+state_path = Path(sys.argv[1])
+try:
+    limit = max(1, int(float(sys.argv[2] or 2)))
+except Exception:
+    limit = 2
+try:
+    min_groups = max(1, int(float(sys.argv[3] or 2)))
+except Exception:
+    min_groups = 2
+try:
+    min_replies = max(1, int(float(sys.argv[4] or 2)))
+except Exception:
+    min_replies = 2
+if not state_path.exists():
+    raise SystemExit(0)
+try:
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+queues = payload.get("queues", {}) if isinstance(payload, dict) else {}
+if not isinstance(queues, dict):
+    raise SystemExit(0)
+ranked = []
+for queue_rel, entry in queues.items():
+    if not isinstance(entry, dict):
+        continue
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    if verdict not in {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}:
+        continue
+    try:
+        strict_pass_count = int(float(entry.get("strict_pass_count", 0) or 0))
+    except Exception:
+        strict_pass_count = 0
+    try:
+        strict_run_groups = int(float(entry.get("strict_run_group_count", 0) or 0))
+    except Exception:
+        strict_run_groups = 0
+    try:
+        confirm_count = int(float(entry.get("confirm_count", 0) or 0))
+    except Exception:
+        confirm_count = 0
+    if strict_pass_count <= 0 or strict_run_groups < min_groups or confirm_count >= min_replies:
+        continue
+    top_variant = str(entry.get("top_variant") or "").strip()
+    if not top_variant:
+        continue
+    queue_name = Path(str(queue_rel)).parent.name
+    candidate_uid = str(entry.get("candidate_uid") or "").strip()
+    try:
+        pending_since = int(float(entry.get("confirm_pending_since_epoch", 0) or 0))
+    except Exception:
+        pending_since = 0
+    ranked.append((pending_since if pending_since > 0 else 0, -strict_pass_count, str(queue_rel), queue_name, top_variant, strict_pass_count, strict_run_groups, confirm_count, candidate_uid))
+
+for _, _, queue_rel, queue_name, top_variant, strict_pass_count, strict_run_groups, confirm_count, candidate_uid in sorted(ranked)[:limit]:
+    print(f"{queue_rel}\t{queue_name}\t{top_variant}\t{strict_pass_count}\t{strict_run_groups}\t{confirm_count}\t{candidate_uid}")
+PY
+  )
+  if (( dispatched > 0 )); then
+    log "replay_fastlane_scan dispatched=$dispatched"
+  fi
 }
 
 start_queue() {
@@ -4942,6 +5702,10 @@ start_queue() {
     return "$rc"
   fi
   log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
+  if [[ "$(queue_is_winner_proximate "$queue_rel")" == "1" ]]; then
+    runtime_observability_record_event "winner_proximate_dispatch" "$stamp"
+    fullspan_state_metric_inc "winner_proximate_dispatch_total" 1
+  fi
   log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
 }
 
@@ -5050,6 +5814,9 @@ while true; do
   fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
   fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
   refresh_remote_runtime_metrics
+  refresh_runtime_observability_metrics
+  dispatch_replay_fastlane_hooks || true
+  maybe_prepare_hot_standby || true
 
   current_epoch="$(date +%s)"
   global_completed_metrics_now="$(global_completed_metrics_count)"
@@ -5327,6 +6094,9 @@ PY
         fullspan_state_metric_inc "early_abort_zero_activity_count" 1
       else
         fullspan_state_metric_inc "early_abort_low_information_count" 1
+      fi
+      if [[ "$early_stop_reason" == "EARLY_ABORT_ZERO_ACTIVITY" || "$early_stop_reason" == *"METRICS_MISSING"* ]]; then
+        runtime_observability_record_event "metrics_missing_abort"
       fi
       log_decision_note "$queue_rel" "${early_stop_reason}" "reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction zero_activity_fraction=$early_stop_zero_activity_fraction" "skip_remaining_and_continue_search"
       log "early_abort queue=$queue_rel reason=$early_stop_reason changed=$early_stop_changed fail_fraction=$early_stop_fail_fraction zero_activity_fraction=$early_stop_zero_activity_fraction"

@@ -104,3 +104,55 @@ def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypa
     assert process_state["queue"]["remote_queue_job_count"] == 0
     assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
     assert process_state["queue"]["idle_with_executable_pending"] is False
+
+
+def test_process_slo_exposes_runtime_orchestration_observability(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.3}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps(
+            {
+                "runtime_metrics": {
+                    "vps_duty_cycle_30m": "0.625",
+                    "ready_buffer_policy_mismatch_count": 3,
+                    "winner_parent_duplication_rate": "0.333333",
+                    "fastlane_replay_pending": 2,
+                    "metrics_missing_abort_count_30m": 4,
+                    "winner_proximate_dispatch_count_30m": 5,
+                    "hot_standby_active": 1,
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["fastlane_replay_pending"] == 2
+    assert process_state["queue"]["hot_standby_active"] is True
+    assert process_state["runtime"]["ready_buffer_policy_mismatch_count"] == 3
+    assert process_state["runtime"]["fastlane_replay_pending"] == 2
+    assert process_state["runtime"]["metrics_missing_abort_count_30m"] == 4
+    assert process_state["runtime"]["winner_proximate_dispatch_count_30m"] == 5
+    assert process_state["runtime"]["hot_standby_active"] is True
+    assert abs(float(process_state["runtime"]["vps_duty_cycle_30m"]) - 0.625) < 1e-9
+    assert abs(float(process_state["runtime"]["winner_parent_duplication_rate"]) - 0.333333) < 1e-9

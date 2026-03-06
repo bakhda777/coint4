@@ -197,6 +197,20 @@ def test_patch_ast_topup_fills_target_variants(tmp_path: Path, monkeypatch) -> N
             str(run_index),
             "--contains",
             "rgpatch_topup",
+            "--planner-policy-hash",
+            "policy_patch_hash",
+            "--planner-hash",
+            "planner_patch_hash",
+            "--seed-lane",
+            "confirm_replay",
+            "--seed-lane-index",
+            "3",
+            "--parent-diversity-depth",
+            "3",
+            "--parent-rotation-offset",
+            "2",
+            "--confirm-replay-hint",
+            "rgpatch_topup",
             "--ir-mode",
             "patch_ast",
             "--num-variants",
@@ -226,11 +240,25 @@ def test_patch_ast_topup_fills_target_variants(tmp_path: Path, monkeypatch) -> N
     with queue_path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 8  # 4 variants * paired holdout+stress for one OOS window
+    row_meta = json.loads(str(rows[0]["metadata_json"]))
+    assert row_meta["planner_policy_hash"] == "policy_patch_hash"
+    assert row_meta["planner_hash"] == "planner_patch_hash"
+    assert row_meta["seed_lane"] == "confirm_replay"
+    assert row_meta["seed_lane_index"] == 3
+    assert row_meta["parent_diversity_depth"] == 3
+    assert row_meta["parent_rotation_offset"] == 2
+    assert row_meta["confirm_replay_hints"] == ["rgpatch_topup"]
 
     decisions = sorted(decision_dir.glob("*.json"))
     assert decisions
     payload = json.loads(decisions[-1].read_text(encoding="utf-8"))
     assert len(payload.get("proposals") or []) == 4
+    assert payload["planner_hashes"]["policy_hash"] == "policy_patch_hash"
+    assert payload["planner_hashes"]["planner_hash"] == "planner_patch_hash"
+    assert payload["lane_selection"]["seed_lane"] == "confirm_replay"
+    assert payload["lane_selection"]["seed_lane_index"] == 3
+    assert payload["lane_selection"]["confirm_replay_hints"] == ["rgpatch_topup"]
+    assert payload["fastlane_materialization"]["prepared"] is True
 
 
 def test_segment_mutation_candidate_rewrites_only_one_root_segment(tmp_path: Path) -> None:

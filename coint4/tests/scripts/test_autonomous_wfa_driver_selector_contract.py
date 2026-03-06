@@ -470,3 +470,20 @@ def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -
     assert pool_rows
     assert all(row["queue"] != str(cold_queue.relative_to(app_root)) for row in pool_rows)
     assert any(row["queue"] == str(hot_queue.relative_to(app_root)) for row in pool_rows)
+
+
+def test_ready_buffer_policy_hash_and_replay_fastlane_hooks_contract() -> None:
+    src = SCRIPT_PATH.read_text(encoding="utf-8")
+    required = [
+        "current_planner_policy_hash()",
+        "ready_buffer_policy_hash()",
+        "planner_policy_hash",
+        "queue_file_mtime",
+        "ready_buffer_policy_mismatch_count",
+        "dispatch_replay_fastlane_hooks()",
+        "REPLAY_FASTLANE_SCAN_LIMIT",
+        "fastlane_replay_pending",
+        "winner_parent_duplication_rate",
+    ]
+    missing = [snippet for snippet in required if snippet not in src]
+    assert not missing, f"missing runtime selector hooks: {missing}"

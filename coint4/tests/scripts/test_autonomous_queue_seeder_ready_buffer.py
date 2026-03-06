@@ -146,3 +146,32 @@ def test_derive_planner_focus_separates_winner_tokens_from_generic_anchor() -> N
     assert focus["winner_proximate_tokens"] == ["strict_rg", "strict_rg_alt"]
     assert focus["preferred_any_contains"] == ["strict_rg", "strict_rg_alt", "yield_rg", "broad_rg"]
     assert focus["anchor_source"] == "winner_proximate_anchor"
+
+
+def test_select_seed_lane_prefers_winner_then_rotates_after_streak() -> None:
+    first = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["strict_rg", "strict_alt"],
+        preferred_any_contains=["yield_rg"],
+        generic_contains=["autonomous_queue_seeder"],
+        yield_governor={"lane_weights": {"winner_proximate": 60, "broad_search": 30, "confirm_replay": 10}},
+        previous_state={},
+    )
+    assert first["selected_lane"] == "winner_proximate"
+    assert first["contains"] == ["strict_rg"]
+
+    second = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["strict_rg", "strict_alt"],
+        preferred_any_contains=["yield_rg"],
+        generic_contains=["autonomous_queue_seeder"],
+        yield_governor={"lane_weights": {"winner_proximate": 60, "broad_search": 30, "confirm_replay": 10}},
+        previous_state={"lane_selection": {"selected_lane": "winner_proximate", "lane_streak": 2, "token_rotation": 0}},
+    )
+    assert second["selected_lane"] == "broad_search"
+    assert second["contains"] == ["yield_rg"]
+
+
+def test_stable_hash_is_deterministic() -> None:
+    left = autonomous_queue_seeder._stable_hash({"a": 1, "b": ["x", "y"]}, prefix="policy", size=12)
+    right = autonomous_queue_seeder._stable_hash({"b": ["x", "y"], "a": 1}, prefix="policy", size=12)
+    assert left == right
+    assert left.startswith("policy_")
