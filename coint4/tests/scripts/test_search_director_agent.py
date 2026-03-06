@@ -71,20 +71,34 @@ def test_build_directive_disables_broad_search_when_positive_winner_lineage_exis
             "positive_lineage_count": 2,
             "zero_evidence_lineage_count": 3,
             "winner_proximate_positive_lineage_count": 1,
+            "winner_proximate_positive_contains": ["strict_rg"],
             "broad_search_allowed": False,
             "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": True,
+            "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+            "controlled_recovery_attempts_remaining": 2,
+            "controlled_recovery_variants_cap": 8,
         },
         "lane_weights": {"winner_proximate": 65, "broad_search": 15, "confirm_replay": 20},
+        "hard_block_active": True,
+        "hard_block_reason": "zero_coverage_seed_streak",
     }
 
     directive = module.build_directive(queues, yield_state=yield_state)
 
     assert directive["search_quality"]["positive_lineage_count"] == 2
     assert directive["search_quality"]["winner_proximate_positive_lineage_count"] == 1
+    assert directive["search_quality"]["winner_proximate_positive_contains"] == ["strict_rg"]
     assert directive["broad_search_allowed"] is False
     assert directive["seed_generation_mode"] == "winner_proximate_only"
+    assert directive["mode"] == "controlled_recovery"
+    assert directive["contains"] == ["strict_rg"]
+    assert directive["num_variants"] == 8
+    assert directive["repair_mode"]["enabled"] is True
     assert directive["lane_weights"]["broad_search"] == 0
+    assert directive["lane_weights"]["confirm_replay"] == 0
     assert directive["planner-policy-inputs"]["search_quality"]["broad_search_allowed"] is False
+    assert directive["planner-policy-inputs"]["search_quality"]["controlled_recovery_active"] is True
 
 
 def test_materialize_cold_fail_index_backfills_rejects(tmp_path: Path) -> None:

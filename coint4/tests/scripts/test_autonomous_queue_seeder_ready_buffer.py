@@ -143,11 +143,18 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
                     "positive_lineage_count": 3,
                     "zero_evidence_lineage_count": 4,
                     "winner_proximate_positive_lineage_count": 1,
+                    "winner_proximate_positive_contains": ["rg_fast"],
                     "broad_search_allowed": False,
                     "seed_generation_mode": "winner_proximate_only",
+                    "controlled_recovery_active": True,
+                    "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                    "controlled_recovery_attempts_remaining": 2,
+                    "controlled_recovery_variants_cap": 8,
                 },
                 "lane_weights": {"winner_proximate": 40, "broad_search": 45, "confirm_replay": 15},
                 "policy_overrides": {"policy_scale": "micro", "num_variants_cap": 64},
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
             },
             ensure_ascii=False,
         ),
@@ -159,7 +166,7 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["exists"] is True
     assert state["status"] == "ok"
     assert state["active"] is True
-    assert state["hard_block_active"] is False
+    assert state["hard_block_active"] is True
     assert state["hard_block_until_epoch"] == 0
     assert state["zero_coverage_seed_streak"] == 0
     assert state["preferred_contains"] == ["rg_fast", "rg_broad"]
@@ -171,8 +178,13 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["search_quality"]["positive_lineage_count"] == 3
     assert state["search_quality"]["zero_evidence_lineage_count"] == 4
     assert state["search_quality"]["winner_proximate_positive_lineage_count"] == 1
+    assert state["winner_proximate_positive_contains"] == ["rg_fast"]
     assert state["broad_search_allowed"] is False
     assert state["seed_generation_mode"] == "winner_proximate_only"
+    assert state["controlled_recovery_active"] is True
+    assert state["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
+    assert state["controlled_recovery_attempts_remaining"] == 2
+    assert state["controlled_recovery_variants_cap"] == 8
     assert state["lane_weights"]["winner_proximate"] == 40
 
 
@@ -237,6 +249,133 @@ def test_select_seed_lane_keeps_broad_search_blocked_when_positive_winner_exists
     assert selection["selected_lane"] == "winner_proximate"
     assert selection["search_quality"]["broad_search_allowed"] is False
     assert selection["search_quality"]["seed_generation_mode"] == "winner_proximate_only"
+
+
+def test_select_seed_lane_rotates_controlled_recovery_winner_anchor() -> None:
+    first = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["strict_rg", "strict_alt"],
+        preferred_any_contains=["strict_rg", "strict_alt"],
+        generic_contains=["strict_rg", "strict_alt"],
+        yield_governor={
+            "search_quality": {
+                "positive_lineage_count": 2,
+                "zero_evidence_lineage_count": 5,
+                "winner_proximate_positive_lineage_count": 2,
+                "winner_proximate_positive_contains": ["strict_rg", "strict_alt"],
+                "broad_search_allowed": False,
+                "seed_generation_mode": "winner_proximate_only",
+                "controlled_recovery_active": True,
+                "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                "controlled_recovery_attempts_remaining": 2,
+                "controlled_recovery_variants_cap": 8,
+            },
+            "lane_weights": {"winner_proximate": 100, "broad_search": 0, "confirm_replay": 0},
+            "replay_fastlane": {"contains": []},
+            "confirm_replay": {"contains": []},
+            "confirm_replay_contains": [],
+            "hard_block_active": True,
+            "hard_block_reason": "zero_coverage_seed_streak",
+        },
+        previous_state={},
+    )
+
+    second = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=["strict_rg", "strict_alt"],
+        preferred_any_contains=["strict_rg", "strict_alt"],
+        generic_contains=["strict_rg", "strict_alt"],
+        yield_governor={
+            "search_quality": {
+                "positive_lineage_count": 2,
+                "zero_evidence_lineage_count": 5,
+                "winner_proximate_positive_lineage_count": 2,
+                "winner_proximate_positive_contains": ["strict_rg", "strict_alt"],
+                "broad_search_allowed": False,
+                "seed_generation_mode": "winner_proximate_only",
+                "controlled_recovery_active": True,
+                "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                "controlled_recovery_attempts_remaining": 2,
+                "controlled_recovery_variants_cap": 8,
+            },
+            "lane_weights": {"winner_proximate": 100, "broad_search": 0, "confirm_replay": 0},
+            "replay_fastlane": {"contains": []},
+            "confirm_replay": {"contains": []},
+            "confirm_replay_contains": [],
+            "hard_block_active": True,
+            "hard_block_reason": "zero_coverage_seed_streak",
+        },
+        previous_state={"lane_selection": {"selected_lane": "winner_proximate", "lane_streak": 1, "token_rotation": 0}},
+    )
+
+    assert first["selected_lane"] == "winner_proximate"
+    assert first["contains"] == ["strict_rg"]
+    assert first["search_quality"]["controlled_recovery_active"] is True
+    assert second["selected_lane"] == "winner_proximate"
+    assert second["contains"] == ["strict_alt"]
+
+
+def test_queue_policy_sidecar_and_metadata_include_controlled_recovery_fields(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "autonomous_seed_demo" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "valid,configs/valid_holdout.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    queue_policy_path = autonomous_queue_seeder._write_queue_policy_sidecar(
+        queue_path=queue_path,
+        app_root=app_root,
+        planner_policy_hash="policy_deadbeef",
+        selected_lane="winner_proximate",
+        selected_lane_index=0,
+        token_rotation=1,
+        parent_rotation_offset=1,
+        parent_diversity_depth=5,
+        confirm_replay_hints=[],
+        decision_payload={},
+        coverage_verified=True,
+        coverage_reason="coverage_verified",
+        ready_buffer_excluded=False,
+        seed_feasibility_status="ok",
+        seed_feasibility_reason="",
+        lineage_positive_evidence=True,
+        recovery_mode="controlled",
+        recovery_reason="zero_coverage_seed_streak",
+        recovery_lineage_anchor="strict_rg",
+    )
+
+    autonomous_queue_seeder._decorate_queue_metadata(
+        queue_path=queue_path,
+        planner_policy_hash="policy_deadbeef",
+        queue_policy_path=queue_policy_path,
+        app_root=app_root,
+        coverage_verified=True,
+        coverage_reason="coverage_verified",
+        ready_buffer_excluded=False,
+        seed_feasibility_status="ok",
+        seed_feasibility_reason="",
+        lineage_positive_evidence=True,
+        recovery_mode="controlled",
+        recovery_reason="zero_coverage_seed_streak",
+        recovery_lineage_anchor="strict_rg",
+    )
+
+    queue_policy = json.loads(queue_policy_path.read_text(encoding="utf-8"))
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+    metadata = json.loads(rows[0]["metadata_json"])
+
+    assert queue_policy["recovery_mode"] == "controlled"
+    assert queue_policy["recovery_reason"] == "zero_coverage_seed_streak"
+    assert queue_policy["recovery_lineage_anchor"] == "strict_rg"
+    assert metadata["recovery_mode"] == "controlled"
+    assert metadata["recovery_reason"] == "zero_coverage_seed_streak"
+    assert metadata["recovery_lineage_anchor"] == "strict_rg"
 
 
 def test_load_yield_governor_state_backfills_replay_fastlane_from_legacy_confirm_fields(tmp_path: Path) -> None:

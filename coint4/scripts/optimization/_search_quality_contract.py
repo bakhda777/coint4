@@ -11,6 +11,11 @@ MICRO_BROAD_SEARCH_CAPS = {
     "policy_scale": "micro",
 }
 
+CONTROLLED_RECOVERY_REASON = "zero_coverage_seed_streak_with_positive_lineage"
+CONTROLLED_RECOVERY_HARD_BLOCK_REASON = "zero_coverage_seed_streak"
+CONTROLLED_RECOVERY_VARIANTS_CAP = 8
+CONTROLLED_RECOVERY_MAX_BATCHES = 2
+
 CANONICAL_ZERO_EVIDENCE_REASONS = (
     "ZERO_OBSERVED_TEST_DAYS",
     "ZERO_COVERAGE",
@@ -65,6 +70,67 @@ def _lookup_metric(row: Mapping[str, Any], *keys: str) -> float | None:
 
 def micro_broad_search_caps() -> dict[str, Any]:
     return dict(MICRO_BROAD_SEARCH_CAPS)
+
+
+def _normalize_tokens(value: Iterable[Any] | Any, *, limit: int = 8) -> list[str]:
+    items: list[Any]
+    if isinstance(value, str):
+        text = str(value).strip()
+        if not text:
+            return []
+        items = [part.strip() for part in text.split(",")] if "," in text else [text]
+    elif isinstance(value, Iterable):
+        items = list(value)
+    else:
+        return []
+    out: list[str] = []
+    seen = set()
+    for item in items:
+        token = str(item or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
+def build_controlled_recovery_state(
+    *,
+    hard_block_active: bool,
+    hard_block_reason: str,
+    winner_proximate_positive_contains: Iterable[Any] | None = None,
+    existing_state: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
+    existing = existing_state if isinstance(existing_state, Mapping) else {}
+    eligible = (
+        bool(hard_block_active)
+        and str(hard_block_reason or "").strip() == CONTROLLED_RECOVERY_HARD_BLOCK_REASON
+        and bool(contains)
+    )
+    attempts_key_present = "controlled_recovery_attempts_remaining" in existing
+    attempts_remaining = _to_int(
+        existing.get("controlled_recovery_attempts_remaining"),
+        CONTROLLED_RECOVERY_MAX_BATCHES,
+    )
+    if not attempts_key_present:
+        attempts_remaining = CONTROLLED_RECOVERY_MAX_BATCHES
+    attempts_remaining = max(0, attempts_remaining)
+    variants_cap = max(
+        1,
+        _to_int(existing.get("controlled_recovery_variants_cap"), CONTROLLED_RECOVERY_VARIANTS_CAP),
+    )
+    reason = str(existing.get("controlled_recovery_reason") or CONTROLLED_RECOVERY_REASON).strip() or CONTROLLED_RECOVERY_REASON
+    active = bool(eligible and attempts_remaining > 0)
+    return {
+        "winner_proximate_positive_contains": contains,
+        "controlled_recovery_active": bool(active),
+        "controlled_recovery_reason": reason if eligible else "",
+        "controlled_recovery_attempts_remaining": int(attempts_remaining if eligible else 0),
+        "controlled_recovery_variants_cap": int(variants_cap),
+    }
 
 
 def canonical_zero_evidence_reason(
@@ -150,22 +216,38 @@ def build_search_quality_state(
     positive_lineage_count: int,
     zero_evidence_lineage_count: int,
     winner_proximate_positive_lineage_count: int = 0,
+    winner_proximate_positive_contains: Iterable[Any] | None = None,
     broad_search_allowed: bool | None = None,
     seed_generation_mode: str = "",
+    hard_block_active: bool = False,
+    hard_block_reason: str = "",
+    existing_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     positive = max(0, int(positive_lineage_count))
     zero_evidence = max(0, int(zero_evidence_lineage_count))
     winner_positive = max(0, int(winner_proximate_positive_lineage_count))
+    winner_positive_contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
     broad_allowed = bool(broad_search_allowed) if broad_search_allowed is not None else winner_positive <= 0
     mode = str(seed_generation_mode or "").strip().lower()
     if mode not in {"winner_proximate_only", "broad_search_micro"}:
         mode = "broad_search_micro" if broad_allowed else "winner_proximate_only"
+    controlled_recovery = build_controlled_recovery_state(
+        hard_block_active=hard_block_active,
+        hard_block_reason=hard_block_reason,
+        winner_proximate_positive_contains=winner_positive_contains,
+        existing_state=existing_state,
+    )
     return {
         "positive_lineage_count": positive,
         "zero_evidence_lineage_count": zero_evidence,
         "winner_proximate_positive_lineage_count": winner_positive,
+        "winner_proximate_positive_contains": winner_positive_contains,
         "broad_search_allowed": bool(broad_allowed),
         "seed_generation_mode": mode,
+        "controlled_recovery_active": bool(controlled_recovery["controlled_recovery_active"]),
+        "controlled_recovery_reason": str(controlled_recovery["controlled_recovery_reason"]),
+        "controlled_recovery_attempts_remaining": int(controlled_recovery["controlled_recovery_attempts_remaining"]),
+        "controlled_recovery_variants_cap": int(controlled_recovery["controlled_recovery_variants_cap"]),
     }
 
 
@@ -212,6 +294,13 @@ def normalize_search_quality_state(
             default_winner_positive,
         ),
     )
+    winner_positive_contains = _normalize_tokens(
+        nested.get(
+            "winner_proximate_positive_contains",
+            source.get("winner_proximate_positive_contains", []),
+        ),
+        limit=8,
+    )
     broad_raw = nested.get("broad_search_allowed")
     if broad_raw is None:
         broad_raw = source.get("broad_search_allowed")
@@ -221,6 +310,10 @@ def normalize_search_quality_state(
         positive_lineage_count=positive,
         zero_evidence_lineage_count=zero_evidence,
         winner_proximate_positive_lineage_count=winner_positive,
+        winner_proximate_positive_contains=winner_positive_contains,
         broad_search_allowed=broad_allowed,
         seed_generation_mode=mode,
+        hard_block_active=_to_bool(source.get("hard_block_active")),
+        hard_block_reason=str(source.get("hard_block_reason") or "").strip(),
+        existing_state=source,
     )

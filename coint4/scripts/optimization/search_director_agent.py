@@ -68,6 +68,10 @@ def parse_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def parse_bool(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
 EXPLOIT_FIRST_LANE_WEIGHTS = {
     "winner_proximate": 65,
     "confirm_replay": 20,
@@ -216,8 +220,23 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
                 0,
                 parse_int(search_quality.get("winner_proximate_positive_lineage_count"), 0),
             ),
+            "winner_proximate_positive_contains": [
+                str(token).strip()
+                for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+                if str(token).strip()
+            ][:8],
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
             "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
+            "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
+            "controlled_recovery_reason": str(search_quality.get("controlled_recovery_reason") or "").strip(),
+            "controlled_recovery_attempts_remaining": max(
+                0,
+                parse_int(search_quality.get("controlled_recovery_attempts_remaining"), 0),
+            ),
+            "controlled_recovery_variants_cap": max(
+                1,
+                parse_int(search_quality.get("controlled_recovery_variants_cap"), 8),
+            ),
         },
         "yield_governor": {
             "active": bool(yield_governor.get("active")),
@@ -343,8 +362,18 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
         "search_quality": search_quality,
         "positive_lineage_count": int(search_quality.get("positive_lineage_count", 0) or 0),
         "zero_evidence_lineage_count": int(search_quality.get("zero_evidence_lineage_count", 0) or 0),
+        "winner_proximate_positive_lineage_count": int(
+            search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
+        ),
+        "winner_proximate_positive_contains": list(search_quality.get("winner_proximate_positive_contains", []) or []),
         "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
         "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
+        "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
+        "controlled_recovery_reason": str(search_quality.get("controlled_recovery_reason") or ""),
+        "controlled_recovery_attempts_remaining": int(
+            search_quality.get("controlled_recovery_attempts_remaining", 0) or 0
+        ),
+        "controlled_recovery_variants_cap": int(search_quality.get("controlled_recovery_variants_cap", 0) or 0),
         "lane_weights": lane_weights,
     }
 
@@ -439,6 +468,46 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
         directive["dedupe_distance"] = max(
             float(micro_caps["dedupe_distance_floor"]),
             parse_float(directive.get("dedupe_distance"), float(micro_caps["dedupe_distance_floor"])),
+        )
+
+    if bool(search_quality.get("controlled_recovery_active")):
+        controlled_contains = [
+            str(token).strip()
+            for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+            if str(token).strip()
+        ][:8]
+        controlled_variants_cap = max(1, parse_int(search_quality.get("controlled_recovery_variants_cap"), 8))
+        lane_weights = _normalize_lane_weights(directive.get("lane_weights"))
+        lane_weights["winner_proximate"] = max(int(lane_weights.get("winner_proximate", 0)), 100)
+        lane_weights["confirm_replay"] = 0
+        lane_weights["broad_search"] = 0
+        directive.update(
+            {
+                "mode": "controlled_recovery",
+                "contains": controlled_contains,
+                "policy_scale": "micro",
+                "num_variants": controlled_variants_cap,
+                "max_changed_keys": min(
+                    max(1, parse_int(directive.get("max_changed_keys"), int(micro_caps["max_changed_keys_cap"]))),
+                    int(micro_caps["max_changed_keys_cap"]),
+                ),
+                "dedupe_distance": max(
+                    0.08,
+                    parse_float(directive.get("dedupe_distance"), 0.08),
+                ),
+                "winner_proximate": {
+                    "enabled": bool(controlled_contains),
+                    "contains": controlled_contains,
+                    "reason": "controlled_recovery_positive_winner_lineage",
+                },
+                "repair_mode": {
+                    "enabled": True,
+                    "validation_neighbor": 1,
+                    "max_neighbor_attempts": min(controlled_variants_cap, 8),
+                },
+                "lineage_priority": controlled_contains,
+                "lane_weights": lane_weights,
+            }
         )
 
     return _attach_policy_metadata(directive)
@@ -617,6 +686,9 @@ def main() -> int:
         run_index_path=run_index_path,
         fullspan_state_path=fullspan_state_path,
         recent_queue_limit=200,
+        hard_block_active=parse_bool(existing_yield_state.get("hard_block_active"), False),
+        hard_block_reason=str(existing_yield_state.get("hard_block_reason") or ""),
+        existing_state=existing_yield_state,
     )
     for key in (
         "hard_block_active",
@@ -624,9 +696,25 @@ def main() -> int:
         "hard_block_until_epoch",
         "zero_coverage_seed_streak",
         "zero_coverage_seed_streak_reason",
+        "controlled_recovery_active",
+        "controlled_recovery_reason",
+        "controlled_recovery_attempts_remaining",
+        "controlled_recovery_variants_cap",
     ):
         if key in existing_yield_state:
             yield_state[key] = existing_yield_state[key]
+    if "winner_proximate_positive_contains" in existing_yield_state and not yield_state.get("winner_proximate_positive_contains"):
+        yield_state["winner_proximate_positive_contains"] = list(existing_yield_state.get("winner_proximate_positive_contains") or [])
+    if isinstance(yield_state.get("search_quality"), dict):
+        for key in (
+            "winner_proximate_positive_contains",
+            "controlled_recovery_active",
+            "controlled_recovery_reason",
+            "controlled_recovery_attempts_remaining",
+            "controlled_recovery_variants_cap",
+        ):
+            if key in yield_state:
+                yield_state["search_quality"][key] = yield_state[key]
 
     directive = build_directive(queues, yield_state=yield_state)
     directive.update(build_gate_surrogate_overlay(gate_state))

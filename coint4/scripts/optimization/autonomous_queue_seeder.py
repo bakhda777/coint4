@@ -32,7 +32,10 @@ from _queue_status_contract import (
 )
 from _search_quality_contract import (
     CANONICAL_ZERO_EVIDENCE_REASONS,
+    CONTROLLED_RECOVERY_REASON,
+    CONTROLLED_RECOVERY_VARIANTS_CAP,
     DETERMINISTIC_QUARANTINE_CODES,
+    build_controlled_recovery_state,
     canonical_zero_evidence_reason,
     has_positive_coverage_trade_evidence,
     micro_broad_search_caps,
@@ -1189,6 +1192,9 @@ def _write_queue_policy_sidecar(
     seed_feasibility_status: str = "unknown",
     seed_feasibility_reason: str = "",
     lineage_positive_evidence: bool = False,
+    recovery_mode: str = "",
+    recovery_reason: str = "",
+    recovery_lineage_anchor: str = "",
 ) -> Path:
     queue_dir = queue_path.parent
     sidecar_path = queue_dir / "queue_policy.json"
@@ -1250,6 +1256,9 @@ def _write_queue_policy_sidecar(
         "seed_feasibility_status": str(seed_feasibility_status or "unknown").strip(),
         "seed_feasibility_reason": str(seed_feasibility_reason or "").strip(),
         "lineage_positive_evidence": bool(lineage_positive_evidence),
+        "recovery_mode": str(recovery_mode or "").strip(),
+        "recovery_reason": str(recovery_reason or "").strip(),
+        "recovery_lineage_anchor": str(recovery_lineage_anchor or "").strip(),
         **selector_evidence,
     }
     sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
@@ -1268,6 +1277,9 @@ def _decorate_queue_metadata(
     seed_feasibility_status: str = "unknown",
     seed_feasibility_reason: str = "",
     lineage_positive_evidence: bool = False,
+    recovery_mode: str = "",
+    recovery_reason: str = "",
+    recovery_lineage_anchor: str = "",
 ) -> None:
     if not queue_path.exists():
         return
@@ -1312,6 +1324,9 @@ def _decorate_queue_metadata(
         meta["seed_feasibility_status"] = str(seed_feasibility_status or "unknown").strip()
         meta["seed_feasibility_reason"] = str(seed_feasibility_reason or "").strip()
         meta["lineage_positive_evidence"] = bool(lineage_positive_evidence)
+        meta["recovery_mode"] = str(recovery_mode or "").strip()
+        meta["recovery_reason"] = str(recovery_reason or "").strip()
+        meta["recovery_lineage_anchor"] = str(recovery_lineage_anchor or "").strip()
         for key, default_value in selector_evidence.items():
             if key in {"promotion_potential", "pre_rank_score"}:
                 try:
@@ -1815,14 +1830,24 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "positive_lineage_count": 0,
             "zero_evidence_lineage_count": 0,
             "winner_proximate_positive_lineage_count": 0,
+            "winner_proximate_positive_contains": [],
             "broad_search_allowed": True,
             "seed_generation_mode": "broad_search_micro",
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
         },
         "positive_lineage_count": 0,
         "zero_evidence_lineage_count": 0,
         "winner_proximate_positive_lineage_count": 0,
+        "winner_proximate_positive_contains": [],
         "broad_search_allowed": True,
         "seed_generation_mode": "broad_search_micro",
+        "controlled_recovery_active": False,
+        "controlled_recovery_reason": "",
+        "controlled_recovery_attempts_remaining": 0,
+        "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
         "lane_weights": {},
         "policy_overrides": {},
     }
@@ -1914,8 +1939,24 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "winner_proximate_positive_lineage_count": int(
                 search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
             ),
+            "winner_proximate_positive_contains": _to_tokens(
+                search_quality.get("winner_proximate_positive_contains", payload.get("winner_proximate_positive_contains", []))
+            ),
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
             "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
+            "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
+            "controlled_recovery_reason": str(search_quality.get("controlled_recovery_reason") or ""),
+            "controlled_recovery_attempts_remaining": int(
+                _as_int(search_quality.get("controlled_recovery_attempts_remaining"), default=0, min_value=0) or 0
+            ),
+            "controlled_recovery_variants_cap": int(
+                _as_int(
+                    search_quality.get("controlled_recovery_variants_cap"),
+                    default=CONTROLLED_RECOVERY_VARIANTS_CAP,
+                    min_value=1,
+                )
+                or CONTROLLED_RECOVERY_VARIANTS_CAP
+            ),
             "lane_weights": {str(k): (_as_int(v, default=0, min_value=0) or 0) for k, v in lane_weights.items()},
             "policy_overrides": dict(policy_overrides),
         }
@@ -2246,12 +2287,63 @@ def main() -> int:
                         "hard_block_until_epoch": current_epoch + 21600,
                     }
                 )
+            elif existing_hard_block_reason == "zero_coverage_seed_streak":
+                yield_updates.update(
+                    {
+                        "hard_block_active": False,
+                        "hard_block_reason": "",
+                        "hard_block_until_epoch": 0,
+                        "controlled_recovery_active": False,
+                        "controlled_recovery_reason": "",
+                        "controlled_recovery_attempts_remaining": 0,
+                        "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
+                    }
+                )
             _persist_yield_governor_state(yield_governor_path, yield_updates)
             yield_governor = _load_yield_governor_state(yield_governor_path)
             hard_block_until_epoch = int(yield_governor.get("hard_block_until_epoch") or 0)
             hard_block_active = bool(yield_governor.get("hard_block_active")) and (
                 hard_block_until_epoch <= 0 or hard_block_until_epoch > current_epoch
             )
+            controlled_recovery_state = build_controlled_recovery_state(
+                hard_block_active=hard_block_active,
+                hard_block_reason=str(yield_governor.get("hard_block_reason") or ""),
+                winner_proximate_positive_contains=yield_governor.get("winner_proximate_positive_contains", []),
+                existing_state=yield_governor,
+            )
+            controlled_recovery_updates = {
+                "winner_proximate_positive_contains": list(
+                    controlled_recovery_state.get("winner_proximate_positive_contains", []) or []
+                ),
+                "controlled_recovery_active": bool(controlled_recovery_state.get("controlled_recovery_active")),
+                "controlled_recovery_reason": str(controlled_recovery_state.get("controlled_recovery_reason") or ""),
+                "controlled_recovery_attempts_remaining": int(
+                    controlled_recovery_state.get("controlled_recovery_attempts_remaining", 0) or 0
+                ),
+                "controlled_recovery_variants_cap": int(
+                    controlled_recovery_state.get("controlled_recovery_variants_cap", CONTROLLED_RECOVERY_VARIANTS_CAP)
+                    or CONTROLLED_RECOVERY_VARIANTS_CAP
+                ),
+            }
+            if any(yield_governor.get(key) != value for key, value in controlled_recovery_updates.items()):
+                _persist_yield_governor_state(yield_governor_path, controlled_recovery_updates)
+                yield_governor = _load_yield_governor_state(yield_governor_path)
+                controlled_recovery_state = dict(controlled_recovery_updates)
+            controlled_recovery_active = bool(controlled_recovery_state.get("controlled_recovery_active"))
+            controlled_recovery_attempts_remaining = int(
+                controlled_recovery_state.get("controlled_recovery_attempts_remaining", 0) or 0
+            )
+            controlled_recovery_variants_cap = int(
+                controlled_recovery_state.get("controlled_recovery_variants_cap", CONTROLLED_RECOVERY_VARIANTS_CAP)
+                or CONTROLLED_RECOVERY_VARIANTS_CAP
+            )
+            controlled_recovery_reason = str(controlled_recovery_state.get("controlled_recovery_reason") or "")
+            controlled_recovery_tokens = _to_tokens(
+                controlled_recovery_state.get("winner_proximate_positive_contains", [])
+            )
+            controlled_recovery_triggered = False
+            controlled_recovery_lineage_anchor = ""
+            controlled_recovery_queue_reason = ""
             zero_yield_signal = _recent_zero_yield_signal(app_root / "artifacts" / "optimization_state" / "rank_results")
             hard_fail_risk_policy = gate_surrogate.get("hard_fail_risk_policy", {})
             if not isinstance(hard_fail_risk_policy, dict):
@@ -2562,12 +2654,35 @@ def main() -> int:
             if quality_variant_cap is not None:
                 effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
 
+            lane_selection_yield_governor = dict(yield_governor)
+            lane_selection_winner_tokens = list(winner_proximate_tokens)
+            lane_selection_preferred_tokens = list(preferred_any_contains)
+            lane_selection_generic_tokens = list(contains)
+            lane_selection_replay_tokens = _to_tokens((directive.get("replay_fastlane") or {}).get("contains", []))
+            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0:
+                lane_selection_winner_tokens = list(controlled_recovery_tokens)
+                lane_selection_preferred_tokens = list(controlled_recovery_tokens)
+                lane_selection_generic_tokens = list(controlled_recovery_tokens or contains)
+                lane_selection_replay_tokens = []
+                lane_selection_yield_governor["replay_fastlane"] = {"enabled": False, "contains": [], "replay_ready_count": 0}
+                lane_selection_yield_governor["confirm_replay"] = {"enabled": False, "contains": [], "replay_ready_count": 0}
+                lane_selection_yield_governor["confirm_replay_contains"] = []
+                lane_selection_yield_governor["lane_weights"] = {
+                    "winner_proximate": 100,
+                    "confirm_replay": 0,
+                    "broad_search": 0,
+                }
+                lane_selection_yield_governor["search_quality"] = {
+                    **dict(yield_governor.get("search_quality") or {}),
+                    "broad_search_allowed": False,
+                    "seed_generation_mode": "winner_proximate_only",
+                }
             lane_selection_payload = _select_seed_lane(
-                winner_proximate_tokens=list(winner_proximate_tokens),
-                preferred_any_contains=list(preferred_any_contains),
-                generic_contains=list(contains),
-                directive_replay_fastlane_tokens=_to_tokens((directive.get("replay_fastlane") or {}).get("contains", [])),
-                yield_governor=yield_governor,
+                winner_proximate_tokens=list(lane_selection_winner_tokens),
+                preferred_any_contains=list(lane_selection_preferred_tokens),
+                generic_contains=list(lane_selection_generic_tokens),
+                directive_replay_fastlane_tokens=lane_selection_replay_tokens,
+                yield_governor=lane_selection_yield_governor,
                 previous_state=previous_state,
             )
             selected_lane = str(lane_selection_payload.get("selected_lane") or "broad_search").strip() or "broad_search"
@@ -2582,6 +2697,36 @@ def main() -> int:
             confirm_replay_hints = list(lane_selection_payload.get("confirm_replay_hints") or [])
             confirm_replay_source = str(lane_selection_payload.get("confirm_replay_source") or "").strip()
             search_quality_state = dict(lane_selection_payload.get("search_quality") or {})
+            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0:
+                selected_lane = "winner_proximate"
+                selected_lane_index = 0
+                contains = list(contains[:1] or lane_selection_winner_tokens[:1] or ["autonomous_queue_seeder"])
+                controlled_recovery_lineage_anchor = str((contains or [""])[0] or "").strip()
+                controlled_recovery_queue_reason = str(yield_governor.get("hard_block_reason") or "zero_coverage_seed_streak")
+                winner_proximate_tokens = [controlled_recovery_lineage_anchor] if controlled_recovery_lineage_anchor else []
+                confirm_replay_hints = []
+                confirm_replay_source = ""
+                controlled_recovery_triggered = bool(controlled_recovery_lineage_anchor)
+                effective_policy_scale = "micro"
+                effective_num_variants_floor = int(controlled_recovery_variants_cap)
+                effective_num_variants = int(controlled_recovery_variants_cap)
+                effective_max_changed_keys = min(int(effective_max_changed_keys), 3)
+                effective_dedupe_distance = max(float(effective_dedupe_distance), 0.08)
+                effective_repair_mode = True
+                effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), 8)
+                effective_include_stress = False
+                quality_variant_cap = int(controlled_recovery_variants_cap)
+                quality_actions.append("controlled_recovery")
+                search_quality_state = {
+                    **dict(search_quality_state),
+                    "controlled_recovery_active": True,
+                    "controlled_recovery_reason": str(controlled_recovery_reason or CONTROLLED_RECOVERY_REASON),
+                    "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
+                    "controlled_recovery_variants_cap": int(controlled_recovery_variants_cap),
+                    "winner_proximate_positive_contains": list(controlled_recovery_tokens),
+                    "broad_search_allowed": False,
+                    "seed_generation_mode": "winner_proximate_only",
+                }
             if selected_lane == "broad_search":
                 effective_policy_scale = "micro"
                 effective_max_changed_keys = min(
@@ -2602,6 +2747,8 @@ def main() -> int:
                 parent_diversity_depth = 6
             if confirm_replay_hints and selected_lane != "confirm_replay":
                 confirm_replay_hints = confirm_replay_hints[:2]
+            snapshot["controlled_recovery_triggered"] = bool(controlled_recovery_triggered)
+            snapshot["controlled_recovery_lineage_anchor"] = str(controlled_recovery_lineage_anchor or "")
 
             policy_fingerprint_payload = {
                 "controller_group": controller_group,
@@ -2625,6 +2772,9 @@ def main() -> int:
                 "search_quality": dict(search_quality_state),
                 "broad_search_allowed": bool(search_quality_state.get("broad_search_allowed")),
                 "seed_generation_mode": str(search_quality_state.get("seed_generation_mode") or ""),
+                "controlled_recovery_active": bool(controlled_recovery_triggered),
+                "controlled_recovery_reason": str(controlled_recovery_reason or ""),
+                "controlled_recovery_lineage_anchor": str(controlled_recovery_lineage_anchor or ""),
             }
             planner_policy_hash = _stable_hash(policy_fingerprint_payload, prefix="policy")
 
@@ -2647,6 +2797,9 @@ def main() -> int:
                 "repair_max_neighbors": int(effective_repair_max_neighbors),
                 "exclude_knobs": list(effective_exclude_knobs),
                 "extra_cli_args": extra_cli_args,
+                "controlled_recovery_active": bool(controlled_recovery_triggered),
+                "controlled_recovery_reason": str(controlled_recovery_reason or ""),
+                "controlled_recovery_lineage_anchor": str(controlled_recovery_lineage_anchor or ""),
             }
             snapshot["impossibility_pruner"] = {
                 "path": _safe_rel(impossibility_pruner_path, app_root),
@@ -2708,6 +2861,13 @@ def main() -> int:
                 "preferred_contains": list(yield_governor.get("preferred_contains", []) or [])[:8],
                 "cooldown_contains": list(yield_governor.get("cooldown_contains", []) or [])[:8],
                 "winner_proximate": dict(yield_governor.get("winner_proximate") or {}),
+                "winner_proximate_positive_contains": list(
+                    yield_governor.get("winner_proximate_positive_contains", []) or []
+                )[:8],
+                "controlled_recovery_active": bool(controlled_recovery_active),
+                "controlled_recovery_reason": str(controlled_recovery_reason or ""),
+                "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
+                "controlled_recovery_variants_cap": int(controlled_recovery_variants_cap),
                 "replay_fastlane": dict(yield_governor.get("replay_fastlane") or {}),
                 "lane_weights": dict(yield_governor.get("lane_weights") or {}),
                 "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
@@ -2735,8 +2895,18 @@ def main() -> int:
                 "zero_evidence_lineage_count": int(search_quality_state.get("zero_evidence_lineage_count", 0) or 0),
                 "broad_search_allowed": bool(search_quality_state.get("broad_search_allowed")),
                 "seed_generation_mode": str(search_quality_state.get("seed_generation_mode") or "broad_search_micro"),
+                "controlled_recovery_active": bool(controlled_recovery_active),
+                "controlled_recovery_reason": str(controlled_recovery_reason or ""),
+                "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
+                "winner_proximate_positive_contains": list(controlled_recovery_tokens),
             }
-            if hard_block_active:
+            snapshot["controlled_recovery_active"] = bool(controlled_recovery_active)
+            snapshot["controlled_recovery_reason"] = str(controlled_recovery_reason or "")
+            snapshot["controlled_recovery_attempts_remaining"] = int(controlled_recovery_attempts_remaining)
+            snapshot["controlled_recovery_variants_cap"] = int(controlled_recovery_variants_cap)
+            snapshot["controlled_recovery_triggered"] = bool(controlled_recovery_triggered)
+            snapshot["controlled_recovery_lineage_anchor"] = str(controlled_recovery_lineage_anchor or "")
+            if hard_block_active and not (controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0):
                 snapshot.update(
                     {
                         "status": "skipped",
@@ -2937,7 +3107,7 @@ def main() -> int:
                 run_group = run_group_try
                 break
 
-            if decision is None:
+            if decision is None and not controlled_recovery_triggered:
                 emergency_run_group = f"{run_group}_fallback_emergency"
                 emergency_cmd: list[str] = [
                     str(Path(str(args.python_bin)).expanduser()),
@@ -3098,6 +3268,9 @@ def main() -> int:
                     seed_feasibility_status="blocked",
                     seed_feasibility_reason=block_reason,
                     lineage_positive_evidence=lineage_positive_evidence,
+                    recovery_mode="controlled" if controlled_recovery_triggered else "",
+                    recovery_reason=str(controlled_recovery_queue_reason or "") if controlled_recovery_triggered else "",
+                    recovery_lineage_anchor=str(controlled_recovery_lineage_anchor or ""),
                 )
                 _decorate_queue_metadata(
                     queue_path=queue_path,
@@ -3110,6 +3283,9 @@ def main() -> int:
                     seed_feasibility_status="blocked",
                     seed_feasibility_reason=block_reason,
                     lineage_positive_evidence=lineage_positive_evidence,
+                    recovery_mode="controlled" if controlled_recovery_triggered else "",
+                    recovery_reason=str(controlled_recovery_queue_reason or "") if controlled_recovery_triggered else "",
+                    recovery_lineage_anchor=str(controlled_recovery_lineage_anchor or ""),
                 )
                 _upsert_orphan_queue(
                     orphan_path=orphan_path,
@@ -3160,6 +3336,9 @@ def main() -> int:
                 lineage_positive_evidence=bool(
                     dict(queue_prune.get("lineage_recent_summary") or {}).get("has_positive_coverage_trade_evidence")
                 ),
+                recovery_mode="controlled" if controlled_recovery_triggered else "",
+                recovery_reason=str(controlled_recovery_queue_reason or "") if controlled_recovery_triggered else "",
+                recovery_lineage_anchor=str(controlled_recovery_lineage_anchor or ""),
             )
             _decorate_queue_metadata(
                 queue_path=queue_path,
@@ -3174,7 +3353,27 @@ def main() -> int:
                 lineage_positive_evidence=bool(
                     dict(queue_prune.get("lineage_recent_summary") or {}).get("has_positive_coverage_trade_evidence")
                 ),
+                recovery_mode="controlled" if controlled_recovery_triggered else "",
+                recovery_reason=str(controlled_recovery_queue_reason or "") if controlled_recovery_triggered else "",
+                recovery_lineage_anchor=str(controlled_recovery_lineage_anchor or ""),
             )
+            controlled_recovery_attempts_after = controlled_recovery_attempts_remaining
+            if controlled_recovery_triggered:
+                controlled_recovery_attempts_after = max(0, int(controlled_recovery_attempts_remaining) - 1)
+                _persist_yield_governor_state(
+                    yield_governor_path,
+                    {
+                        "controlled_recovery_active": bool(controlled_recovery_attempts_after > 0),
+                        "controlled_recovery_reason": (
+                            str(controlled_recovery_reason or CONTROLLED_RECOVERY_REASON)
+                            if controlled_recovery_attempts_after > 0
+                            else ""
+                        ),
+                        "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_after),
+                        "controlled_recovery_variants_cap": int(controlled_recovery_variants_cap),
+                        "winner_proximate_positive_contains": list(controlled_recovery_tokens),
+                    },
+                )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(
                 {
@@ -3188,6 +3387,14 @@ def main() -> int:
                     "queue_rows_generated": len(queue_payload),
                     "parent_resolution": dict(decision_payload.get("parent_resolution") or {}),
                     "reason": None,
+                    "controlled_recovery": {
+                        "active": bool(controlled_recovery_triggered),
+                        "reason": str(controlled_recovery_reason or ""),
+                        "lineage_anchor": str(controlled_recovery_lineage_anchor or ""),
+                        "attempts_before": int(controlled_recovery_attempts_remaining),
+                        "attempts_after": int(controlled_recovery_attempts_after),
+                        "variants_cap": int(controlled_recovery_variants_cap),
+                    },
                 }
             )
             _emit_state(state_path, snapshot)

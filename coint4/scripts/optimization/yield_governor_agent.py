@@ -18,6 +18,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _search_quality_contract import (
+    build_controlled_recovery_state,
     build_search_quality_state,
     canonical_zero_evidence_reason,
     has_positive_coverage_trade_evidence,
@@ -243,8 +244,23 @@ def _build_planner_policy_inputs(
                 0,
                 parse_int(search_quality.get("winner_proximate_positive_lineage_count"), 0),
             ),
+            "winner_proximate_positive_contains": [
+                str(token).strip()
+                for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+                if str(token).strip()
+            ][:8],
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
             "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
+            "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
+            "controlled_recovery_reason": str(search_quality.get("controlled_recovery_reason") or "").strip(),
+            "controlled_recovery_attempts_remaining": max(
+                0,
+                parse_int(search_quality.get("controlled_recovery_attempts_remaining"), 0),
+            ),
+            "controlled_recovery_variants_cap": max(
+                1,
+                parse_int(search_quality.get("controlled_recovery_variants_cap"), 8),
+            ),
         },
         "preferred_contains": [str(token).strip() for token in preferred_contains if str(token).strip()][:12],
         "cooldown_contains": [str(token).strip() for token in cooldown_contains if str(token).strip()][:12],
@@ -261,6 +277,9 @@ def build_yield_governor_state(
     run_index_path: Path,
     fullspan_state_path: Path,
     recent_queue_limit: int = 200,
+    hard_block_active: bool = False,
+    hard_block_reason: str = "",
+    existing_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_index_map: dict[str, dict[str, str]] = {}
     if run_index_path.exists():
@@ -470,12 +489,28 @@ def build_yield_governor_state(
         if bool(entry.get("has_positive_evidence"))
         and any(token in preferred_contains_set for token in list(entry.get("tokens") or []))
     )
+    winner_proximate_positive_contains: list[str] = []
+    for token in preferred_contains:
+        token_text = str(token or "").strip()
+        if not token_text:
+            continue
+        if any(
+            bool(entry.get("has_positive_evidence")) and token_text in list(entry.get("tokens") or [])
+            for entry in lineages
+        ):
+            winner_proximate_positive_contains.append(token_text)
+        if len(winner_proximate_positive_contains) >= 8:
+            break
     if winner_tokens and winner_proximate_positive_lineage_count <= 0:
         winner_proximate_positive_lineage_count = 1
     search_quality = build_search_quality_state(
         positive_lineage_count=sum(1 for entry in lineages if bool(entry.get("has_positive_evidence"))),
         zero_evidence_lineage_count=sum(1 for entry in lineages if bool(entry.get("zero_evidence"))),
         winner_proximate_positive_lineage_count=winner_proximate_positive_lineage_count,
+        winner_proximate_positive_contains=winner_proximate_positive_contains,
+        hard_block_active=bool(hard_block_active),
+        hard_block_reason=str(hard_block_reason or ""),
+        existing_state=existing_state,
     )
     planner_policy_inputs = _build_planner_policy_inputs(
         lane_weights=lane_weights,
@@ -493,6 +528,12 @@ def build_yield_governor_state(
     )
     policy_hash = _stable_policy_hash(planner_policy_inputs)
     search_quality = dict(planner_policy_inputs.get("search_quality") or search_quality)
+    controlled_recovery = build_controlled_recovery_state(
+        hard_block_active=bool(hard_block_active),
+        hard_block_reason=str(hard_block_reason or ""),
+        winner_proximate_positive_contains=winner_proximate_positive_contains,
+        existing_state=existing_state,
+    )
 
     micro_caps = micro_broad_search_caps()
     return {
@@ -516,8 +557,15 @@ def build_yield_governor_state(
         "winner_proximate_positive_lineage_count": int(
             search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
         ),
+        "winner_proximate_positive_contains": list(search_quality.get("winner_proximate_positive_contains", []) or []),
         "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
         "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
+        "controlled_recovery_active": bool(controlled_recovery.get("controlled_recovery_active")),
+        "controlled_recovery_reason": str(controlled_recovery.get("controlled_recovery_reason") or ""),
+        "controlled_recovery_attempts_remaining": int(
+            controlled_recovery.get("controlled_recovery_attempts_remaining", 0) or 0
+        ),
+        "controlled_recovery_variants_cap": int(controlled_recovery.get("controlled_recovery_variants_cap", 0) or 0),
         "lane_weights": lane_weights,
         "policy_overrides": {
             "num_variants_cap": int(micro_caps["num_variants_cap"]),
@@ -553,6 +601,9 @@ def main() -> int:
     run_index_path = Path(args.run_index) if Path(args.run_index).is_absolute() else root / str(args.run_index)
     fullspan_state_path = Path(args.fullspan_state) if Path(args.fullspan_state).is_absolute() else root / str(args.fullspan_state)
     output_path = Path(args.output) if Path(args.output).is_absolute() else root / str(args.output)
+    existing_state = load_json(output_path, {})
+    if not isinstance(existing_state, dict):
+        existing_state = {}
 
     payload = build_yield_governor_state(
         root=root,
@@ -560,6 +611,9 @@ def main() -> int:
         run_index_path=run_index_path,
         fullspan_state_path=fullspan_state_path,
         recent_queue_limit=int(args.recent_queue_limit),
+        hard_block_active=parse_bool(existing_state.get("hard_block_active")),
+        hard_block_reason=str(existing_state.get("hard_block_reason") or ""),
+        existing_state=existing_state,
     )
     if args.dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))

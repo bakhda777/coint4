@@ -83,3 +83,38 @@ def test_normalize_search_quality_state_infers_winner_positive_from_counts_and_t
     assert payload["winner_proximate_positive_lineage_count"] == 1
     assert payload["broad_search_allowed"] is False
     assert payload["seed_generation_mode"] == "winner_proximate_only"
+
+
+def test_build_search_quality_state_enables_controlled_recovery_for_positive_zero_coverage_block() -> None:
+    payload = module.build_search_quality_state(
+        positive_lineage_count=3,
+        zero_evidence_lineage_count=5,
+        winner_proximate_positive_lineage_count=1,
+        winner_proximate_positive_contains=["strict_rg"],
+        hard_block_active=True,
+        hard_block_reason="zero_coverage_seed_streak",
+    )
+
+    assert payload["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["controlled_recovery_active"] is True
+    assert payload["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
+    assert payload["controlled_recovery_attempts_remaining"] == 2
+    assert payload["controlled_recovery_variants_cap"] == 8
+
+
+def test_normalize_search_quality_state_does_not_activate_controlled_recovery_without_explicit_positive_tokens() -> None:
+    payload = module.normalize_search_quality_state(
+        {
+            "positive_lineage_count": 1,
+            "zero_evidence_lineage_count": 4,
+            "winner_proximate_positive_lineage_count": 1,
+            "hard_block_active": True,
+            "hard_block_reason": "zero_coverage_seed_streak",
+        },
+        winner_proximate_contains=["strict_rg"],
+    )
+
+    assert payload["winner_proximate_positive_lineage_count"] == 1
+    assert payload["winner_proximate_positive_contains"] == []
+    assert payload["controlled_recovery_active"] is False
+    assert payload["controlled_recovery_attempts_remaining"] == 0

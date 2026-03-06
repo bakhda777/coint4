@@ -46,7 +46,7 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
         [
             {
                 "run_id": "holdout_autonomous_seed_demo_v001",
-                "run_group": "autonomous_seed_demo",
+                "run_group": "strict_rg",
                 "metrics_present": "true",
                 "observed_test_days": "75",
                 "coverage_ratio": "1.0",
@@ -70,6 +70,9 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
         run_index_path=run_index_path,
         fullspan_state_path=fullspan_state_path,
         recent_queue_limit=20,
+        hard_block_active=True,
+        hard_block_reason="zero_coverage_seed_streak",
+        existing_state={"controlled_recovery_attempts_remaining": 2},
     )
 
     assert payload["active"] is True
@@ -80,8 +83,13 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["positive_lineage_count"] == 1
     assert payload["zero_evidence_lineage_count"] == 0
     assert payload["winner_proximate_positive_lineage_count"] == 1
+    assert payload["winner_proximate_positive_contains"] == ["strict_rg"]
     assert payload["broad_search_allowed"] is False
     assert payload["seed_generation_mode"] == "winner_proximate_only"
+    assert payload["controlled_recovery_active"] is True
+    assert payload["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
+    assert payload["controlled_recovery_attempts_remaining"] == 2
+    assert payload["controlled_recovery_variants_cap"] == 8
     assert payload["lane_weights"] == {
         "winner_proximate": 65,
         "confirm_replay": 20,
@@ -93,4 +101,6 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["planner-policy-inputs"]["lane_weights"]["winner_proximate"] == 65
     assert payload["planner-policy-inputs"]["search_quality"]["positive_lineage_count"] == 1
     assert payload["planner-policy-inputs"]["search_quality"]["broad_search_allowed"] is False
+    assert payload["planner-policy-inputs"]["search_quality"]["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["planner-policy-inputs"]["search_quality"]["controlled_recovery_active"] is True
     assert payload["planner-policy-inputs"] == payload["planner_policy_inputs"]
