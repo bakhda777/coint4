@@ -109,6 +109,9 @@ NO_PROGRESS_BREAKER_WINDOW_SEC="${NO_PROGRESS_BREAKER_WINDOW_SEC:-900}"
 NO_PROGRESS_BREAKER_STREAK="${NO_PROGRESS_BREAKER_STREAK:-2}"
 NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC="${NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC:-1800}"
 FORCE_SYNC_BEFORE_START="${FORCE_SYNC_BEFORE_START:-1}"
+START_QUEUE_SSH_READY_TIMEOUT_SEC="${START_QUEUE_SSH_READY_TIMEOUT_SEC:-180}"
+START_QUEUE_SYNC_TIMEOUT_SEC="${START_QUEUE_SYNC_TIMEOUT_SEC:-120}"
+START_QUEUE_STARTUP_BUDGET_SEC="${START_QUEUE_STARTUP_BUDGET_SEC:-420}"
 START_QUEUE_CONFIRM_TIMEOUT_SEC="${START_QUEUE_CONFIRM_TIMEOUT_SEC:-120}"
 START_QUEUE_CONFIRM_POLL_SEC="${START_QUEUE_CONFIRM_POLL_SEC:-5}"
 AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC="${AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC:-1800}"
@@ -4975,10 +4978,40 @@ set_infra_gate_state() {
   fullspan_state_metric_set "auto_seed_block_reason" "$auto_seed_block_reason"
 }
 
+record_infra_fail_closed() {
+  local queue_rel="$1"
+  local startup_code="${2:-START_CONFIRM_FAILED}"
+  local startup_reason="${3:-startup_fail_closed}"
+  local qlog="${4:-}"
+  local action="${5:-orphan_and_continue_search}"
+  local fail_epoch
+  fail_epoch="$(date +%s)"
+
+  LAST_REJECTED_QUEUE="$queue_rel"
+  mark_orphan "$queue_rel" "infra_fail_closed_${startup_code:-START_CONFIRM_FAILED}"
+  fullspan_state_metric_set "auto_seed_hard_block" 1
+  fullspan_state_metric_set "auto_seed_block_reason" "${startup_reason:-startup_fail_closed}"
+  set_infra_gate_state "fail_closed" "${startup_reason:-startup_fail_closed}" "${startup_code:-START_CONFIRM_FAILED}" "1" "${startup_reason:-startup_fail_closed}"
+  fullspan_state_queue_set "$queue_rel" \
+    "startup_state" "fail_closed" \
+    "startup_log" "$qlog" \
+    "startup_failure_code" "${startup_code:-START_CONFIRM_FAILED}" \
+    "startup_failure_reason" "${startup_reason:-startup_fail_closed}" \
+    "startup_failed_epoch" "$fail_epoch"
+  log_decision_note "$queue_rel" "INFRA_FAIL_CLOSED" "reason=${startup_reason:-startup_fail_closed} startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog" "$action"
+  log "start_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} startup_reason=${startup_reason:-startup_fail_closed} log=$qlog"
+  ready_buffer_release_claim "$queue_rel"
+  log_state "idle now=none reason=infra_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog"
+}
+
 queue_start_confirmation_status() {
   local queue_rel="$1"
   local qlog="$2"
-  python3 - "$ROOT_DIR" "$queue_rel" "$qlog" <<'PY'
+  local now_epoch="${3:-$(date +%s)}"
+  local ssh_timeout_sec="${4:-$START_QUEUE_SSH_READY_TIMEOUT_SEC}"
+  local sync_timeout_sec="${5:-$START_QUEUE_SYNC_TIMEOUT_SEC}"
+  local startup_budget_sec="${6:-$START_QUEUE_STARTUP_BUDGET_SEC}"
+  python3 - "$ROOT_DIR" "$queue_rel" "$qlog" "$now_epoch" "$ssh_timeout_sec" "$sync_timeout_sec" "$startup_budget_sec" <<'PY'
 import csv
 import sys
 from pathlib import Path
@@ -4986,29 +5019,98 @@ from pathlib import Path
 root = Path(sys.argv[1])
 queue_rel = str(sys.argv[2] or "").strip()
 log_path = Path(sys.argv[3])
+try:
+    now_epoch = int(float(sys.argv[4] or 0))
+except Exception:
+    now_epoch = 0
+try:
+    ssh_timeout_sec = int(float(sys.argv[5] or 0))
+except Exception:
+    ssh_timeout_sec = 0
+try:
+    sync_timeout_sec = int(float(sys.argv[6] or 0))
+except Exception:
+    sync_timeout_sec = 0
+try:
+    startup_budget_sec = int(float(sys.argv[7] or 0))
+except Exception:
+    startup_budget_sec = 0
 queue_path = root / queue_rel
 status = "pending"
 code = ""
 reason = ""
 
 text = ""
+log_age_sec = -1
 if log_path.exists():
     try:
         text = log_path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         text = ""
+    try:
+        if now_epoch > 0:
+            log_age_sec = max(0, int(now_epoch - int(log_path.stat().st_mtime)))
+    except Exception:
+        log_age_sec = -1
+
+last_waiting_ssh = text.rfind("waiting for SSH on")
+last_ssh_ready = text.rfind("SSH ready")
+waiting_for_ssh = last_waiting_ssh >= 0 and last_waiting_ssh > last_ssh_ready
+last_sync_start = text.rfind("powered: sync_code stream_start")
+last_sync_ok = max(text.rfind("powered: sync_code ok"), text.rfind("powered: sync_code skipped"))
+last_sync_fail = text.rfind("powered: sync_code failed")
+waiting_for_sync = last_sync_start >= 0 and last_sync_start > max(last_sync_ok, last_sync_fail)
+lowered_text = text.lower()
+manifest_mismatch_detected = (
+    "drift_reason=manifest_mismatch" in lowered_text
+    or "remote manifest mismatch" in lowered_text
+    or "sync_code failed with remote code drift detected" in lowered_text
+    or "powered: fail reason=manifest_mismatch" in lowered_text
+)
+
+if manifest_mismatch_detected:
+    status = "fail"
+    code = "MANIFEST_MISMATCH"
+    reason = "manifest_mismatch"
 
 for line in reversed(text.splitlines()):
+    if status == "fail":
+        break
+    lowered = line.lower()
+    if (
+        "drift_reason=manifest_mismatch" in line
+        or "remote manifest mismatch" in lowered
+        or "sync_code failed with remote code drift detected" in lowered
+        or "powered: FAIL reason=MANIFEST_MISMATCH" in line
+    ):
+        status = "fail"
+        code = "MANIFEST_MISMATCH"
+        reason = "manifest_mismatch"
+        break
     if "powered: FAIL reason=" in line:
         status = "fail"
         code = line.split("powered: FAIL reason=", 1)[1].strip().split()[0]
         reason = "powered_fail"
         break
-    if "sync_code failed with remote code drift detected" in line:
+    if "sync_code failed with remote code drift detected" in lowered:
         status = "fail"
         code = "REMOTE_SYNC_FAILED"
         reason = "remote_code_drift"
         break
+
+if status == "pending" and log_age_sec >= 0:
+    if waiting_for_ssh and ssh_timeout_sec > 0 and log_age_sec >= ssh_timeout_sec:
+        status = "fail"
+        code = "SSH_WAIT_TIMEOUT"
+        reason = "waiting_for_ssh_timeout"
+    elif waiting_for_sync and sync_timeout_sec > 0 and log_age_sec >= sync_timeout_sec:
+        status = "fail"
+        code = "SYNC_WAIT_TIMEOUT"
+        reason = "waiting_for_sync_timeout"
+    elif startup_budget_sec > 0 and log_age_sec >= startup_budget_sec:
+        status = "fail"
+        code = "STARTUP_TIMEOUT"
+        reason = "startup_budget_exhausted"
 
 if status == "pending":
     if "powered: remote run start queue=" in text:
@@ -5028,6 +5130,12 @@ if status == "pending":
                 code = "QUEUE_STATUS_PROGRESS"
                 reason = queue_status
                 break
+        if status == "pending" and waiting_for_ssh:
+            code = "WAITING_FOR_SSH"
+            reason = "waiting_for_ssh"
+        elif status == "pending" and waiting_for_sync:
+            code = "WAITING_FOR_SYNC"
+            reason = "waiting_for_sync"
 
 print("\t".join([status, code, reason]))
 PY
@@ -5036,12 +5144,19 @@ PY
 wait_for_queue_start_confirmation() {
   local queue_rel="$1"
   local qlog="$2"
-  local timeout_sec="${3:-$START_QUEUE_CONFIRM_TIMEOUT_SEC}"
+  local timeout_sec="${3:-$START_QUEUE_STARTUP_BUDGET_SEC}"
   local poll_sec="${4:-$START_QUEUE_CONFIRM_POLL_SEC}"
-  local deadline now_epoch status code reason
+  local ssh_timeout_sec="${5:-$START_QUEUE_SSH_READY_TIMEOUT_SEC}"
+  local sync_timeout_sec="${6:-$START_QUEUE_SYNC_TIMEOUT_SEC}"
+  local startup_budget_sec="${7:-$START_QUEUE_STARTUP_BUDGET_SEC}"
+  local deadline budget_deadline now_epoch status code reason
+  local ssh_wait_started_epoch=0
+  local sync_wait_started_epoch=0
   deadline=$(( $(date +%s) + timeout_sec ))
+  budget_deadline=$(( $(date +%s) + startup_budget_sec ))
   while true; do
-    IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog")"
+    now_epoch="$(date +%s)"
+    IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog" "$now_epoch" "$ssh_timeout_sec" "$sync_timeout_sec" "$startup_budget_sec")"
     case "$status" in
       confirmed)
         echo "${code:-REMOTE_RUN_STARTED}"$'\t'"${reason:-confirmed}"
@@ -5052,8 +5167,30 @@ wait_for_queue_start_confirmation() {
         return 1
         ;;
     esac
+    if [[ "$status" == "pending" && "$code" == "WAITING_FOR_SSH" ]]; then
+      if (( ssh_wait_started_epoch <= 0 )); then
+        ssh_wait_started_epoch="$now_epoch"
+      fi
+      if (( ssh_timeout_sec > 0 && now_epoch - ssh_wait_started_epoch >= ssh_timeout_sec )); then
+        echo "SSH_WAIT_TIMEOUT"$'\t'"waiting_for_ssh_timeout"
+        return 1
+      fi
+    else
+      ssh_wait_started_epoch=0
+    fi
+    if [[ "$status" == "pending" && "$code" == "WAITING_FOR_SYNC" ]]; then
+      if (( sync_wait_started_epoch <= 0 )); then
+        sync_wait_started_epoch="$now_epoch"
+      fi
+      if (( sync_timeout_sec > 0 && now_epoch - sync_wait_started_epoch >= sync_timeout_sec )); then
+        echo "SYNC_WAIT_TIMEOUT"$'\t'"waiting_for_sync_timeout"
+        return 1
+      fi
+    else
+      sync_wait_started_epoch=0
+    fi
     if ! local_powered_queue_running "$queue_rel"; then
-      IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog")"
+      IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog" "$now_epoch" "$ssh_timeout_sec" "$sync_timeout_sec" "$startup_budget_sec")"
       if [[ "$status" == "fail" ]]; then
         echo "${code:-START_CONFIRM_FAILED}"$'\t'"${reason:-startup_fail}"
         return 1
@@ -5061,7 +5198,10 @@ wait_for_queue_start_confirmation() {
       echo "START_PROCESS_EXIT"$'\t'"local_powered_runner_exited_before_confirmation"
       return 1
     fi
-    now_epoch="$(date +%s)"
+    if (( now_epoch >= budget_deadline )); then
+      echo "STARTUP_TIMEOUT"$'\t'"startup_budget_exhausted"
+      return 2
+    fi
     if (( now_epoch >= deadline )); then
       echo "START_CONFIRM_TIMEOUT"$'\t'"start_confirmation_timeout"
       return 2
@@ -5365,6 +5505,8 @@ maybe_trigger_auto_seed() {
   local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
   local runtime_block_active runtime_block_reason
+  local infra_gate_status startup_failure_code
+  local gate_block_status="hard_block"
   local prev_blocked prev_block_reason
   local remote_count=0
   local force_seed=0
@@ -5391,10 +5533,20 @@ maybe_trigger_auto_seed() {
   runtime_block_active="$(fullspan_state_metric_get auto_seed_hard_block 0)"
   runtime_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
   [[ "$runtime_block_active" =~ ^[0-9]+$ ]] || runtime_block_active=0
+  infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
+  startup_failure_code="$(fullspan_state_metric_get startup_failure_code "")"
   if [[ "$(fullspan_state_metric_get vps_infra_fail_closed 0)" == "1" ]]; then
     runtime_block_active=1
     if [[ -z "$runtime_block_reason" ]]; then
       runtime_block_reason="vps_infra_fail_closed"
+    fi
+  fi
+  if [[ "$infra_gate_status" == "fail_closed" && -n "$startup_failure_code" ]]; then
+    runtime_block_active=1
+    if [[ -z "$runtime_block_reason" ]]; then
+      runtime_block_reason="infra_fail_closed:${startup_failure_code}"
+    else
+      runtime_block_reason="${runtime_block_reason},infra_fail_closed:${startup_failure_code}"
     fi
   fi
   hard_block_active=0
@@ -5416,9 +5568,12 @@ maybe_trigger_auto_seed() {
     fi
   fi
   if (( hard_block_active > 0 )); then
+    if [[ "$infra_gate_status" == "fail_closed" && -n "$startup_failure_code" ]]; then
+      gate_block_status="fail_closed"
+    fi
     prev_blocked="$(fullspan_state_metric_get auto_seed_blocked 0)"
     prev_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
-    set_infra_gate_state "hard_block" "${hard_block_reason:-auto_seed_hard_block}" "$(fullspan_state_metric_get startup_failure_code "")" "1" "${hard_block_reason:-auto_seed_hard_block}"
+    set_infra_gate_state "$gate_block_status" "${hard_block_reason:-auto_seed_hard_block}" "$(fullspan_state_metric_get startup_failure_code "")" "1" "${hard_block_reason:-auto_seed_hard_block}"
     if [[ "$prev_blocked" != "1" || "$prev_block_reason" != "${hard_block_reason:-auto_seed_hard_block}" ]]; then
       log "auto_seed_hard_block reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}"
       log_decision_note "global" "AUTO_SEED_HARD_BLOCK" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}" "skip_seed_generation"
@@ -6173,8 +6328,12 @@ start_queue() {
   local startup_reason=""
   local startup_payload=""
   local startup_rc=0
-  local startup_timeout="$START_QUEUE_CONFIRM_TIMEOUT_SEC"
+  local startup_timeout="$START_QUEUE_STARTUP_BUDGET_SEC"
   local startup_poll="$START_QUEUE_CONFIRM_POLL_SEC"
+  local startup_epoch=0
+  local preflight_started_epoch=0
+  local preflight_finished_epoch=0
+  local preflight_wait_sec=0
 
   if is_truthy "$FORCE_SYNC_BEFORE_START"; then
     sync_queue_status "$queue_rel"
@@ -6224,18 +6383,38 @@ start_queue() {
   local softpass_reason=""
 
   log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries"
+  preflight_started_epoch="$(date +%s)"
   if ! ensure_vps_ready "start_queue:$queue_rel"; then
+    preflight_finished_epoch="$(date +%s)"
+    preflight_wait_sec=$((preflight_finished_epoch - preflight_started_epoch))
+    if (( preflight_wait_sec < 0 )); then
+      preflight_wait_sec=0
+    fi
     softpass_reason="$(start_queue_softpass_reason)"
+    if (( preflight_wait_sec >= START_QUEUE_STARTUP_BUDGET_SEC )); then
+      startup_code="STARTUP_TIMEOUT"
+      startup_reason="startup_budget_exhausted"
+      softpass_reason=""
+    elif (( preflight_wait_sec >= START_QUEUE_SSH_READY_TIMEOUT_SEC )); then
+      startup_code="SSH_WAIT_TIMEOUT"
+      startup_reason="waiting_for_ssh_timeout"
+      softpass_reason=""
+    fi
+    if [[ -z "$startup_code" ]]; then
+      startup_code="VPS_UNREACHABLE"
+      startup_reason="vps_unreachable"
+    fi
     if [[ -z "$softpass_reason" ]]; then
-      set_infra_gate_state "hard_block" "vps_unreachable" "VPS_UNREACHABLE" "1" "vps_unreachable"
-      fullspan_state_metric_set "auto_seed_hard_block" 1
-      fullspan_state_metric_set "auto_seed_block_reason" "vps_unreachable"
-      log "start_blocked queue=$queue_rel reason=vps_unreachable"
+      fullspan_state_metric_set "vps_infra_fail_closed" 1
+      record_infra_fail_closed "$queue_rel" "$startup_code" "$startup_reason" "$qlog" "orphan_and_continue_search"
       return 1
     fi
     fullspan_state_metric_inc "vps_start_softpass_count" 1
-    log "start_softpass queue=$queue_rel reason=$softpass_reason"
-    log_decision_note "$queue_rel" "START_VPS_SOFTPASS" "reason=$softpass_reason" "continue_dispatch"
+    set_infra_gate_state "starting" "${softpass_reason:-startup_softpass}" "" "0" ""
+    log "start_softpass queue=$queue_rel reason=$softpass_reason startup_failure_code=$startup_code preflight_wait_sec=$preflight_wait_sec"
+    log_decision_note "$queue_rel" "START_VPS_SOFTPASS" "reason=$softpass_reason startup_failure_code=$startup_code preflight_wait_sec=$preflight_wait_sec" "continue_dispatch"
+  else
+    fullspan_state_metric_set "vps_infra_fail_closed" 0
   fi
   (
     cd "$ROOT_DIR"
@@ -6259,14 +6438,20 @@ start_queue() {
   batch_session_note_dispatch
   local rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    set_infra_gate_state "hard_block" "failed_to_start" "START_PROCESS_SPAWN_FAILED" "1" "failed_to_start"
-    fullspan_state_metric_set "auto_seed_hard_block" 1
-    fullspan_state_metric_set "auto_seed_block_reason" "failed_to_start"
-    log "failed_to_start queue=$queue_rel rc=$rc"
+    record_infra_fail_closed "$queue_rel" "START_PROCESS_SPAWN_FAILED" "failed_to_start" "$qlog" "orphan_and_continue_search"
+    log "failed_to_start queue=$queue_rel rc=$rc log=$qlog"
     return "$rc"
   fi
+  startup_epoch="$(date +%s)"
+  set_infra_gate_state "starting" "startup_confirmation_pending" "" "0" ""
+  fullspan_state_queue_set "$queue_rel" \
+    "startup_state" "starting" \
+    "startup_log" "$qlog" \
+    "startup_started_epoch" "$startup_epoch" \
+    "startup_failure_code" "" \
+    "startup_failure_reason" ""
   log_state "starting queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
-  if startup_payload="$(wait_for_queue_start_confirmation "$queue_rel" "$qlog" "$startup_timeout" "$startup_poll")"; then
+  if startup_payload="$(wait_for_queue_start_confirmation "$queue_rel" "$qlog" "$startup_timeout" "$startup_poll" "$START_QUEUE_SSH_READY_TIMEOUT_SEC" "$START_QUEUE_SYNC_TIMEOUT_SEC" "$START_QUEUE_STARTUP_BUDGET_SEC")"; then
     startup_rc=0
   else
     startup_rc=$?
@@ -6276,18 +6461,16 @@ start_queue() {
     set_infra_gate_state "ok" "" "" "0" ""
     fullspan_state_metric_set "auto_seed_hard_block" 0
     fullspan_state_metric_set "auto_seed_block_reason" ""
+    fullspan_state_queue_set "$queue_rel" \
+      "startup_state" "confirmed" \
+      "startup_log" "$qlog" \
+      "startup_confirmed_epoch" "$(date +%s)" \
+      "startup_failure_code" "" \
+      "startup_failure_reason" ""
     log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0} startup_code=${startup_code:-REMOTE_RUN_STARTED}"
     log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict startup_code=${startup_code:-REMOTE_RUN_STARTED}"
   else
-    LAST_REJECTED_QUEUE="$queue_rel"
-    mark_orphan "$queue_rel" "infra_fail_closed_${startup_code:-START_CONFIRM_FAILED}"
-    fullspan_state_metric_set "auto_seed_hard_block" 1
-    fullspan_state_metric_set "auto_seed_block_reason" "${startup_reason:-startup_fail_closed}"
-    set_infra_gate_state "hard_block" "${startup_reason:-startup_fail_closed}" "${startup_code:-START_CONFIRM_FAILED}" "1" "${startup_reason:-startup_fail_closed}"
-    log_decision_note "$queue_rel" "INFRA_FAIL_CLOSED" "reason=${startup_reason:-startup_fail_closed} startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog" "orphan_and_continue_search"
-    log "start_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} startup_reason=${startup_reason:-startup_fail_closed} log=$qlog"
-    ready_buffer_release_claim "$queue_rel"
-    log_state "idle now=none reason=infra_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog"
+    record_infra_fail_closed "$queue_rel" "${startup_code:-START_CONFIRM_FAILED}" "${startup_reason:-startup_fail_closed}" "$qlog" "orphan_and_continue_search"
     return 1
   fi
   if [[ "$(queue_is_winner_proximate "$queue_rel")" == "1" ]]; then

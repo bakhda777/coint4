@@ -13,6 +13,13 @@ def _source() -> str:
     return SCRIPT_PATH.read_text(encoding="utf-8")
 
 
+def _extract_shell_function(source: str, function_name: str) -> str:
+    pattern = rf"^{re.escape(function_name)}\(\)\s*\{{\n(?P<body>.*?)^}}"
+    match = re.search(pattern, source, flags=re.DOTALL | re.MULTILINE)
+    assert match is not None, f"shell function {function_name} not found"
+    return f"{function_name}() {{\n{match.group('body')}}}"
+
+
 def _extract_reselect_after_reconcile_block(source: str) -> str:
     pattern = (
         r'if \(\( pending <= 0 \)\); then\s*\n'
@@ -414,15 +421,24 @@ def test_start_queue_requires_confirmed_start_contract() -> None:
     _assert_contains_all(
         src,
         [
+            'START_QUEUE_SSH_READY_TIMEOUT_SEC',
+            'START_QUEUE_SYNC_TIMEOUT_SEC',
+            'START_QUEUE_STARTUP_BUDGET_SEC',
             'START_QUEUE_CONFIRM_TIMEOUT_SEC',
             'START_QUEUE_CONFIRM_POLL_SEC',
+            'record_infra_fail_closed()',
             'queue_start_confirmation_status()',
             'wait_for_queue_start_confirmation()',
+            'set_infra_gate_state "starting"',
             'log_state "starting queue=$queue_rel',
             'log_state "running queue=$queue_rel',
             'start_fail_closed queue=$queue_rel',
             'startup_failure_code',
             'INFRA_FAIL_CLOSED',
+            'startup_state',
+            'SSH_WAIT_TIMEOUT',
+            'MANIFEST_MISMATCH',
+            'STARTUP_TIMEOUT',
         ],
     )
     _assert_contains_any(
@@ -447,9 +463,110 @@ def test_auto_seed_hard_block_and_coverage_policy_contract() -> None:
             'COVERAGE_FAIL_CLOSED',
             'auto_seed_hard_block',
             'coverage_verified',
-            'set_infra_gate_state "hard_block"',
+            'infra_gate_status',
+            'startup_failure_code',
         ],
     )
+    _assert_contains_any(
+        src,
+        [
+            'set_infra_gate_state "$gate_block_status"',
+            'set_infra_gate_state "hard_block"',
+            'set_infra_gate_state "fail_closed"',
+        ],
+        label='auto-seed hard block infra gate update',
+    )
+
+
+def test_wait_for_queue_start_confirmation_fails_closed_on_waiting_for_ssh_timeout(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "wait_for_queue_start_confirmation")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+START_QUEUE_CONFIRM_TIMEOUT_SEC=10
+START_QUEUE_CONFIRM_POLL_SEC=0.2
+START_QUEUE_SSH_READY_TIMEOUT_SEC=1
+START_QUEUE_SYNC_TIMEOUT_SEC=5
+START_QUEUE_STARTUP_BUDGET_SEC=5
+{fn}
+queue_start_confirmation_status() {{
+  printf 'pending\\tWAITING_FOR_SSH\\twaiting_for_ssh\\n'
+}}
+local_powered_queue_running() {{
+  return 0
+}}
+if out="$(wait_for_queue_start_confirmation queue_rel startup.log "$START_QUEUE_STARTUP_BUDGET_SEC" "$START_QUEUE_CONFIRM_POLL_SEC" "$START_QUEUE_SSH_READY_TIMEOUT_SEC" "$START_QUEUE_SYNC_TIMEOUT_SEC" "$START_QUEUE_STARTUP_BUDGET_SEC")"; then
+  rc=0
+else
+  rc=$?
+fi
+printf 'RC:%s\\n' "$rc"
+printf 'OUT:%s\\n' "$out"
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "RC:1" in proc.stdout
+    assert "OUT:SSH_WAIT_TIMEOUT" in proc.stdout
+    assert "waiting_for_ssh_timeout" in proc.stdout
+
+
+def test_maybe_trigger_auto_seed_respects_infra_fail_closed_runtime_block(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+AUTO_SEED_PENDING_THRESHOLD=96
+READY_BUFFER_REFILL_THRESHOLD=2
+AUTO_SEED_COOLDOWN_SEC=0
+AUTO_SEED_NUM_VARIANTS=64
+AUTO_SEED_NUM_VARIANTS_FLOOR=24
+{fn}
+global_backlog_snapshot() {{
+  echo "0 0 0"
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+yield_governor_hard_block_snapshot() {{
+  printf '0\\t\\t0\\t0\\n'
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    last_seed_trigger_epoch) echo "0" ;;
+    auto_seed_hard_block) echo "0" ;;
+    auto_seed_block_reason) echo "" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "fail_closed" ;;
+    startup_failure_code) echo "SSH_WAIT_TIMEOUT" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+set_infra_gate_state() {{
+  printf 'INFRA:%s|%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}" "${{5:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+maybe_trigger_auto_seed candidate_empty
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "INFRA:fail_closed|" in proc.stdout
+    assert "infra_fail_closed:SSH_WAIT_TIMEOUT" in proc.stdout
+    assert "NOTE:global|AUTO_SEED_HARD_BLOCK|" in proc.stdout
+    assert "AUTO_SEED_TRIGGER" not in proc.stdout
 
 
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:

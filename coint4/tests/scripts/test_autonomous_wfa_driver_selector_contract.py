@@ -314,6 +314,53 @@ def test_log_decision_note_writes_contract_fields_and_keeps_compat(tmp_path: Pat
     assert compat["ranking_primary_key"] == ""
 
 
+def test_queue_start_confirmation_status_classifies_manifest_mismatch(tmp_path: Path) -> None:
+    app_root = tmp_path
+    queue_rel = "artifacts/wfa/aggregate/demo/run_queue.csv"
+    queue_path = app_root / queue_rel
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/demo.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    qlog = app_root / "startup.log"
+    qlog.write_text(
+        "\n".join(
+            [
+                "powered: sync_code failed error_class=REMOTE_SYNC_FAILED fatal=true msg=sync_code verification failed: remote manifest mismatch drift_detected=true drift_reason=manifest_mismatch",
+                "powered: FAIL reason=REMOTE_SYNC_FAILED",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    code = _extract_embedded_python("queue_start_confirmation_status")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(app_root),
+            queue_rel,
+            str(qlog),
+            str(int(time.time())),
+            "180",
+            "120",
+            "420",
+        ],
+        cwd=app_root,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert proc.stdout.strip() == "fail\tMANIFEST_MISMATCH\tmanifest_mismatch"
+
+
 def test_trigger_confirm_fastlane_shortlist_excludes_stress_rows(tmp_path: Path) -> None:
     source_queue = tmp_path / "source_run_queue.csv"
     shortlist = tmp_path / "shortlist.csv"

@@ -438,6 +438,41 @@ def test_hygiene_seed_queues_orphans_zero_coverage_history(tmp_path: Path) -> No
     assert hygiene["covered_window_count"] == 0
     assert hygiene["queues"][0]["orphan_reason"] == "zero_coverage_fail_closed"
 
+    queue_policy = json.loads((queue_dir / "queue_policy.json").read_text(encoding="utf-8"))
+    assert queue_policy["coverage_verified"] is False
+    assert queue_policy["coverage_reason"] == "zero_coverage_fail_closed"
+    assert queue_policy["ready_buffer_excluded"] is True
+
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+    metadata = json.loads(rows[0]["metadata_json"])
+    assert metadata["coverage_verified"] is False
+    assert metadata["coverage_reason"] == "zero_coverage_fail_closed"
+    assert metadata["ready_buffer_excluded"] is True
+
+
+def test_persist_yield_governor_state_merges_hard_block_fields(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(json.dumps({"active": True, "preferred_contains": ["rg_fast"]}, ensure_ascii=False), encoding="utf-8")
+
+    autonomous_queue_seeder._persist_yield_governor_state(
+        state_path,
+        {
+            "zero_coverage_seed_streak": 2,
+            "hard_block_active": True,
+            "hard_block_reason": "zero_coverage_seed_streak",
+            "hard_block_until_epoch": 1772809999,
+        },
+    )
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["active"] is True
+    assert payload["preferred_contains"] == ["rg_fast"]
+    assert payload["zero_coverage_seed_streak"] == 2
+    assert payload["hard_block_active"] is True
+    assert payload["hard_block_reason"] == "zero_coverage_seed_streak"
+    assert payload["hard_block_until_epoch"] == 1772809999
+    assert isinstance(payload["ts"], str) and payload["ts"]
+
 
 def test_recent_zero_yield_signal_activates_on_zero_activity_streak(tmp_path: Path) -> None:
     rank_results_dir = tmp_path / "artifacts" / "optimization_state" / "rank_results"

@@ -724,6 +724,7 @@ def _hygiene_seed_queues(
         if reason:
             _upsert_orphan_queue(orphan_path=orphan_path, queue_rel=queue_rel, reason=reason, cooldown_sec=cooldown_sec)
             orphaned += 1
+        coverage_verified = bool(rows_after > 0) and not bool(reason)
         queue_policy_path = _write_queue_policy_sidecar(
             queue_path=queue_path,
             app_root=app_root,
@@ -735,7 +736,7 @@ def _hygiene_seed_queues(
             parent_diversity_depth=0,
             confirm_replay_hints=[],
             decision_payload={},
-            coverage_verified=bool(rows_after > 0),
+            coverage_verified=coverage_verified,
             coverage_reason=str(reason or "coverage_verified"),
             ready_buffer_excluded=bool(reason),
         )
@@ -744,7 +745,9 @@ def _hygiene_seed_queues(
             planner_policy_hash="coverage_hygiene",
             queue_policy_path=queue_policy_path,
             app_root=app_root,
-            coverage_verified=bool(rows_after > 0),
+            coverage_verified=coverage_verified,
+            coverage_reason=str(reason or "coverage_verified"),
+            ready_buffer_excluded=bool(reason),
         )
         queue_results.append(
             {
@@ -916,6 +919,8 @@ def _decorate_queue_metadata(
     queue_policy_path: Path,
     app_root: Path,
     coverage_verified: bool = True,
+    coverage_reason: str = "",
+    ready_buffer_excluded: bool = False,
 ) -> None:
     if not queue_path.exists():
         return
@@ -944,6 +949,10 @@ def _decorate_queue_metadata(
         meta["queue_policy_path"] = queue_policy_rel
         meta["queue_path"] = queue_rel
         meta["coverage_verified"] = bool(coverage_verified)
+        meta["coverage_reason"] = str(
+            coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")
+        ).strip()
+        meta["ready_buffer_excluded"] = bool(ready_buffer_excluded)
         row["metadata_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with queue_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -2684,6 +2693,8 @@ def main() -> int:
                 queue_policy_path=queue_policy_path,
                 app_root=app_root,
                 coverage_verified=True,
+                coverage_reason="coverage_verified",
+                ready_buffer_excluded=False,
             )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(
