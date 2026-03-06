@@ -16,12 +16,16 @@ import csv
 import fcntl
 import json
 import os
+import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 PENDING_STATUSES = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
 CONFIRM_PENDING_VERDICTS = {"PROMOTE_PENDING_CONFIRM", "PROMOTE_DEFER_CONFIRM"}
@@ -88,6 +92,20 @@ def parse_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def parse_ts_epoch(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except Exception:
+        pass
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    try:
+        return int(datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+    except Exception:
+        return 0
+
+
 def resolve_under_root(path_text: str, root: Path) -> Path:
     path = Path(str(path_text or "").strip())
     if path.is_absolute():
@@ -140,6 +158,36 @@ def read_remote_runner_snapshot(path: Path) -> dict[str, Any]:
         "reachable": parse_bool(remote.get("reachable"), False),
         "runner_count": parse_int(remote.get("runner_count"), -1),
         "load1": parse_float(remote.get("load1"), 0.0),
+        "top_level_queue_jobs": parse_int(remote.get("top_level_queue_jobs"), 0),
+        "remote_child_process_count": parse_int(remote.get("remote_child_process_count"), 0),
+        "remote_work_active": parse_bool(remote.get("remote_work_active"), False),
+        "cpu_busy_without_queue_job": parse_bool(remote.get("cpu_busy_without_queue_job"), False),
+        "ts_epoch": parse_ts_epoch(data.get("ts_epoch") or data.get("ts")),
+    }
+
+
+def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {
+            "reachable": False,
+            "load1": -1.0,
+            "top_level_queue_jobs": 0,
+            "remote_child_process_count": 0,
+            "remote_runner_count": -1,
+            "remote_work_active": False,
+            "cpu_busy_without_queue_job": False,
+            "ts_epoch": 0,
+        }
+    return {
+        "reachable": parse_bool(data.get("reachable"), False),
+        "load1": parse_float(data.get("load1"), -1.0),
+        "top_level_queue_jobs": parse_int(data.get("top_level_queue_jobs"), 0),
+        "remote_child_process_count": parse_int(data.get("remote_child_process_count"), 0),
+        "remote_runner_count": parse_int(data.get("remote_runner_count"), -1),
+        "remote_work_active": parse_bool(data.get("remote_work_active"), False),
+        "cpu_busy_without_queue_job": parse_bool(data.get("cpu_busy_without_queue_job"), False),
+        "ts_epoch": parse_ts_epoch(data.get("ts_epoch") or data.get("ts")),
     }
 
 
@@ -263,6 +311,7 @@ def main() -> int:
     log_path = state_dir / "process_slo_guard.log"
     fullspan_state_path = state_dir / "fullspan_decision_state.json"
     capacity_state_path = state_dir / "capacity_controller_state.json"
+    remote_runtime_state_path = state_dir / "remote_runtime_state.json"
     cold_fail_index_path = state_dir / "cold_fail_index.json"
 
     now = now_epoch()
@@ -280,6 +329,7 @@ def main() -> int:
     event_cooldown_sec = parse_int(os.environ.get("PROCESS_SLO_EVENT_COOLDOWN_SEC", "1800"), 1800)
     min_groups = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_GROUPS", "2"), 2)
     min_replies = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_REPLIES", "2"), 2)
+    remote_runtime_max_age_sec = parse_int(os.environ.get("REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC", "90"), 90)
 
     state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -384,26 +434,67 @@ def main() -> int:
             lead_time_to_promote_min = round((first_promote_epoch - first_strict_pass_epoch) / 60.0, 2)
 
         local_runner_count = detect_local_runner_count()
+        remote_runtime_snapshot = read_remote_runtime_snapshot(remote_runtime_state_path)
         remote_snapshot = read_remote_runner_snapshot(capacity_state_path)
-        remote_runner_count = parse_int(remote_snapshot.get("runner_count"), -1)
-        remote_load1 = parse_float(remote_snapshot.get("load1"), 0.0)
-        remote_reachable = bool(remote_snapshot.get("reachable"))
+        remote_snapshot_age_sec = -1
+        remote_runtime_ts = parse_int(remote_runtime_snapshot.get("ts_epoch"), 0)
+        if remote_runtime_ts > 0:
+            remote_snapshot_age_sec = max(0, now - remote_runtime_ts)
+        remote_runtime_fresh = bool(
+            remote_snapshot_age_sec >= 0 and remote_snapshot_age_sec <= max(0, int(remote_runtime_max_age_sec))
+        )
+        if remote_runtime_fresh:
+            remote_runner_count = parse_int(remote_runtime_snapshot.get("remote_runner_count"), -1)
+            remote_load1 = parse_float(remote_runtime_snapshot.get("load1"), -1.0)
+            remote_reachable = bool(remote_runtime_snapshot.get("reachable"))
+            remote_active_queue_jobs = parse_int(remote_runtime_snapshot.get("top_level_queue_jobs"), 0)
+            remote_queue_job_count = remote_active_queue_jobs
+            remote_child_process_count = parse_int(remote_runtime_snapshot.get("remote_child_process_count"), 0)
+            remote_work_active = bool(remote_runtime_snapshot.get("remote_work_active"))
+            cpu_busy_without_queue_job = bool(remote_runtime_snapshot.get("cpu_busy_without_queue_job"))
+        else:
+            remote_runner_count = parse_int(remote_snapshot.get("runner_count"), -1)
+            remote_load1 = parse_float(remote_snapshot.get("load1"), 0.0)
+            remote_reachable = bool(remote_snapshot.get("reachable"))
+            remote_active_queue_jobs = parse_int(
+                remote_snapshot.get("top_level_queue_jobs"),
+                parse_int(
+                    runtime_metrics.get("top_level_queue_jobs"),
+                    parse_int(runtime_metrics.get("remote_active_queue_jobs"), 0),
+                ),
+            )
+            remote_queue_job_count = parse_int(
+                remote_snapshot.get("top_level_queue_jobs"),
+                parse_int(runtime_metrics.get("remote_queue_job_count"), remote_active_queue_jobs),
+            )
+            remote_child_process_count = parse_int(
+                remote_snapshot.get("remote_child_process_count"),
+                parse_int(runtime_metrics.get("remote_child_process_count"), remote_runner_count),
+            )
+            remote_work_active = parse_bool(
+                remote_snapshot.get("remote_work_active"),
+                parse_bool(runtime_metrics.get("remote_work_active"), False),
+            )
+            cpu_busy_without_queue_job = parse_bool(
+                remote_snapshot.get("cpu_busy_without_queue_job"),
+                parse_bool(runtime_metrics.get("cpu_busy_without_queue_job"), False),
+            )
         ready_buffer_depth = parse_int(runtime_metrics.get("ready_buffer_depth"), 0)
         cold_fail_active_count = parse_int(runtime_metrics.get("cold_fail_active_count"), 0)
         if cold_fail_active_count <= 0:
             cold_fail_active_count = count_active_cold_fail_entries(cold_fail_index_path, now=now)
-        remote_active_queue_jobs = parse_int(runtime_metrics.get("remote_active_queue_jobs"), remote_runner_count)
-        remote_queue_job_count = parse_int(runtime_metrics.get("remote_queue_job_count"), remote_active_queue_jobs)
-        remote_child_process_count = parse_int(runtime_metrics.get("remote_child_process_count"), remote_runner_count)
-        cpu_busy_without_queue_job = parse_bool(runtime_metrics.get("cpu_busy_without_queue_job"), False)
-        if (
-            not cpu_busy_without_queue_job
-            and remote_reachable
-            and remote_queue_job_count <= 0
-            and remote_child_process_count > 0
-            and remote_load1 >= 1.5
-        ):
-            cpu_busy_without_queue_job = True
+        if not remote_work_active:
+            remote_work_active = bool(
+                remote_active_queue_jobs > 0
+                or remote_child_process_count > 0
+                or (remote_reachable and remote_load1 >= 1.5)
+            )
+        if not cpu_busy_without_queue_job:
+            cpu_busy_without_queue_job = bool(
+                remote_reachable
+                and remote_active_queue_jobs <= 0
+                and (remote_child_process_count > 0 or remote_load1 >= 1.5)
+            )
         surrogate_idle_override_count = parse_int(runtime_metrics.get("surrogate_idle_override_count"), 0)
         overlap_dispatch_count = parse_int(runtime_metrics.get("overlap_dispatch_count"), 0)
         vps_duty_cycle_30m = parse_float(runtime_metrics.get("vps_duty_cycle_30m"), 0.0)
@@ -423,8 +514,7 @@ def main() -> int:
             executable_pending_rows > 0
             and local_runner_count <= 0
             and remote_reachable
-            and remote_queue_job_count == 0
-            and not cpu_busy_without_queue_job
+            and not remote_work_active
         )
 
         no_runner_since_epoch = parse_int(prev_state.get("no_runner_since_epoch"), 0)
@@ -543,7 +633,10 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": remote_active_queue_jobs,
                 "remote_load1": round(remote_load1, 3),
+                "remote_work_active": remote_work_active,
+                "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
                 "remote_reachable": remote_reachable,
                 "idle_with_executable_pending": idle_with_executable_pending,
@@ -566,7 +659,10 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": remote_active_queue_jobs,
                 "remote_load1": round(remote_load1, 3),
+                "remote_work_active": remote_work_active,
+                "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
                 "idle_with_executable_pending": idle_with_executable_pending,
                 "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
@@ -582,7 +678,10 @@ def main() -> int:
                 "remote_child_process_count": remote_child_process_count,
                 "remote_queue_job_count": remote_queue_job_count,
                 "remote_active_queue_jobs": remote_active_queue_jobs,
+                "top_level_queue_jobs": remote_active_queue_jobs,
                 "remote_load1": round(remote_load1, 3),
+                "remote_work_active": remote_work_active,
+                "remote_snapshot_age_sec": remote_snapshot_age_sec if remote_runtime_fresh else -1,
                 "cpu_busy_without_queue_job": cpu_busy_without_queue_job,
                 "surrogate_idle_override_count": surrogate_idle_override_count,
                 "overlap_dispatch_count": overlap_dispatch_count,
@@ -626,7 +725,8 @@ def main() -> int:
                 "strict_pass={strict_pass} confirm_ready={confirm_ready} promote={promote_eligible} "
                 "pending={pending} stalled={stalled} local_runner={local_runner} remote_runner={remote_runner} "
                 "remote_child_process_count={remote_child_process_count} remote_queue_job_count={remote_queue_job_count} "
-                "remote_active_queue_jobs={remote_active_queue_jobs} ready_buffer_depth={ready_buffer_depth} "
+                "remote_active_queue_jobs={remote_active_queue_jobs} remote_work_active={remote_work_active} "
+                "remote_snapshot_age_sec={remote_snapshot_age_sec} ready_buffer_depth={ready_buffer_depth} "
                 "cold_fail_active_count={cold_fail_active_count} surrogate_idle_override_count={surrogate_idle_override_count} "
                 "overlap_dispatch_count={overlap_dispatch_count} cpu_busy_without_queue_job={cpu_busy_without_queue_job} "
                 "vps_duty_cycle_30m={vps_duty_cycle_30m:.3f} ready_buffer_policy_mismatch_count={ready_buffer_policy_mismatch_count} "
@@ -649,6 +749,8 @@ def main() -> int:
                 remote_child_process_count=summary["queue"]["remote_child_process_count"],
                 remote_queue_job_count=summary["queue"]["remote_queue_job_count"],
                 remote_active_queue_jobs=summary["queue"]["remote_active_queue_jobs"],
+                remote_work_active=int(bool(summary["queue"]["remote_work_active"])),
+                remote_snapshot_age_sec=summary["queue"]["remote_snapshot_age_sec"],
                 ready_buffer_depth=summary["queue"]["ready_buffer_depth"],
                 cold_fail_active_count=summary["queue"]["cold_fail_active_count"],
                 surrogate_idle_override_count=summary["runtime"]["surrogate_idle_override_count"],

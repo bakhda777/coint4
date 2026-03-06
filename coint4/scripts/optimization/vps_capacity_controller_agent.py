@@ -13,11 +13,18 @@ import csv
 import fcntl
 import json
 import os
-import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from remote_runtime_probe import dump_json as dump_remote_runtime_json
+from remote_runtime_probe import probe_remote_runtime
 
 
 PENDING_STATUSES = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
@@ -85,62 +92,22 @@ def count_executable_pending_rows(*, aggregate_root: Path, app_root: Path) -> in
     return executable_pending
 
 
-def detect_remote_load(server_user: str, server_ip: str) -> float:
-    cmd = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "ConnectTimeout=6",
-        f"{server_user}@{server_ip}",
-        "cat /proc/loadavg 2>/dev/null | awk '{print $1}'",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        return -1.0
-    try:
-        return float((proc.stdout or "").strip().splitlines()[-1])
-    except Exception:
-        return -1.0
-
-
-def detect_remote_runner_count(server_user: str, server_ip: str) -> int:
-    cmd = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "ConnectTimeout=6",
-        f"{server_user}@{server_ip}",
-        "python3 - <<'PY'\n"
-        "import os\n"
-        "patterns=('watch_wfa_queue.sh','run_wfa_queue.py','run_wfa_fullcpu.sh','walk_forward')\n"
-        "count=0\n"
-        "for pid in os.listdir('/proc'):\n"
-        "    if not pid.isdigit():\n"
-        "        continue\n"
-        "    try:\n"
-        "        cmd=open(f'/proc/{pid}/cmdline','rb').read().replace(b'\\x00',b' ').decode('utf-8','ignore').strip()\n"
-        "    except Exception:\n"
-        "        continue\n"
-        "    if not cmd or 'python3 - <<' in cmd or 'pgrep -f' in cmd:\n"
-        "        continue\n"
-        "    if any(p in cmd for p in patterns):\n"
-        "        count += 1\n"
-        "print(count)\n"
-        "PY",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        return -1
-    try:
-        return int(float((proc.stdout or "").strip().splitlines()[-1]))
-    except Exception:
-        return -1
+def probe_remote_runtime_snapshot(root: Path, state_dir: Path, *, server_user: str, server_ip: str) -> dict[str, Any]:
+    default = {
+        "reachable": False,
+        "load1": -1.0,
+        "top_level_queue_jobs": 0,
+        "remote_child_process_count": 0,
+        "remote_runner_count": -1,
+        "remote_work_active": False,
+        "cpu_busy_without_queue_job": False,
+    }
+    state_path = state_dir / "remote_runtime_state.json"
+    snapshot = probe_remote_runtime(server_user=server_user, server_ip=server_ip)
+    if not isinstance(snapshot, dict):
+        return dict(default)
+    dump_remote_runtime_json(state_path, snapshot)
+    return snapshot
 
 
 def count_confirm_backlog(state: dict, *, min_groups: int, min_replies: int, sla_confirm_sec: int) -> tuple[int, int]:
@@ -195,6 +162,7 @@ def main() -> int:
     lock_path = state_dir / "vps_capacity_controller.lock"
     log_path = state_dir / "vps_capacity_controller.log"
     output_path = state_dir / "capacity_controller_state.json"
+    remote_runtime_state_path = state_dir / "remote_runtime_state.json"
     fullspan_state_path = state_dir / "fullspan_decision_state.json"
     sla_state_path = state_dir / "confirm_sla_escalation_state.json"
     aggregate_root = root / "artifacts" / "wfa" / "aggregate"
@@ -232,9 +200,16 @@ def main() -> int:
         )
         executable_pending = count_executable_pending_rows(aggregate_root=aggregate_root, app_root=root)
 
-        load1 = detect_remote_load(server_user, server_ip)
-        runner_count = detect_remote_runner_count(server_user, server_ip)
-        reachable = bool(load1 >= 0.0 and runner_count >= 0)
+        remote_snapshot = probe_remote_runtime_snapshot(root, state_dir, server_user=server_user, server_ip=server_ip)
+        reachable = bool(remote_snapshot.get("reachable"))
+        load1 = parse_float(remote_snapshot.get("load1"), -1.0)
+        runner_count = parse_int(remote_snapshot.get("remote_runner_count"), -1)
+        top_level_queue_jobs = parse_int(remote_snapshot.get("top_level_queue_jobs"), 0)
+        remote_child_process_count = parse_int(remote_snapshot.get("remote_child_process_count"), 0)
+        remote_work_active = bool(remote_snapshot.get("remote_work_active"))
+        cpu_busy_without_queue_job = bool(remote_snapshot.get("cpu_busy_without_queue_job"))
+        remote_snapshot_ts_epoch = parse_int(remote_snapshot.get("ts_epoch"), 0)
+        remote_snapshot_age_sec = max(0, int(time.time()) - remote_snapshot_ts_epoch) if remote_snapshot_ts_epoch > 0 else -1
 
         policy = {
             "search_parallel_min": 2,
@@ -274,6 +249,7 @@ def main() -> int:
             reachable
             and overdue_confirm <= 0
             and executable_pending > 0
+            and not remote_work_active
             and load1 >= 0.0
             and load1 <= anti_idle_load_max
             and runner_count <= anti_idle_runner_max
@@ -334,6 +310,13 @@ def main() -> int:
                 "reachable": reachable,
                 "load1": load1,
                 "runner_count": runner_count,
+                "top_level_queue_jobs": int(top_level_queue_jobs),
+                "remote_active_queue_jobs": int(top_level_queue_jobs),
+                "remote_queue_job_count": int(top_level_queue_jobs),
+                "remote_child_process_count": int(remote_child_process_count),
+                "remote_work_active": bool(remote_work_active),
+                "cpu_busy_without_queue_job": bool(cpu_busy_without_queue_job),
+                "remote_snapshot_age_sec": int(remote_snapshot_age_sec),
             },
             "backlog": {
                 "pending_confirm": int(pending_confirm),
@@ -341,6 +324,7 @@ def main() -> int:
                 "executable_pending": int(executable_pending),
                 "sla_confirm_sec": int(sla_confirm_sec),
             },
+            "remote_runtime_state_file": str(remote_runtime_state_path),
             "policy": policy,
             "reasons": reasons,
         }
@@ -351,6 +335,9 @@ def main() -> int:
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(
                 f"{utc_now_iso()} | reachable={int(reachable)} load1={load1:.3f} runners={runner_count} "
+                f"top_level_queue_jobs={top_level_queue_jobs} remote_child_process_count={remote_child_process_count} "
+                f"remote_work_active={int(remote_work_active)} cpu_busy_without_queue_job={int(cpu_busy_without_queue_job)} "
+                f"remote_snapshot_age_sec={remote_snapshot_age_sec} "
                 f"pending_confirm={pending_confirm} overdue_confirm={overdue_confirm} "
                 f"executable_pending={executable_pending} "
                 f"search_max={policy['search_parallel_max']} confirm_min={policy['confirm_parallel_min']} "

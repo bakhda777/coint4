@@ -15,6 +15,7 @@ ORPHAN_FILE="$STATE_DIR/orphan_queues.csv"
 REPORT_STATE_FILE="$STATE_DIR/10m_human_report_state.json"
 PROCESS_SLO_STATE_FILE="$STATE_DIR/process_slo_state.json"
 CAPACITY_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
+REMOTE_RUNTIME_STATE_FILE="$STATE_DIR/remote_runtime_state.json"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 
@@ -365,12 +366,13 @@ process_kpi_line="нет данных process_slo_guard"
 process_runtime_line="нет данных process_slo_guard"
 process_alerts_line="нет"
 if [[ -f "$PROCESS_SLO_STATE_FILE" ]]; then
-  process_payload="$(python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
+  process_payload="$(python3 - "$PROCESS_SLO_STATE_FILE" "$REMOTE_RUNTIME_STATE_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
+remote_state_path = Path(sys.argv[2])
 try:
     data = json.loads(path.read_text(encoding='utf-8'))
 except Exception:
@@ -384,6 +386,14 @@ funnel = data.get('funnel', {}) if isinstance(data, dict) else {}
 kpi = data.get('kpi', {}) if isinstance(data, dict) else {}
 alerts = data.get('alerts', []) if isinstance(data, dict) else []
 queue = data.get('queue', {}) if isinstance(data, dict) else {}
+remote_state = {}
+if remote_state_path.exists():
+    try:
+        remote_state = json.loads(remote_state_path.read_text(encoding='utf-8'))
+    except Exception:
+        remote_state = {}
+if not isinstance(remote_state, dict):
+    remote_state = {}
 
 def to_int(v):
     try:
@@ -422,13 +432,36 @@ print(
 local_runners = to_int(queue.get('local_runner_count'))
 executable_pending = to_int(queue.get('executable_pending'))
 pending = to_int(queue.get('pending'))
-idle_flag = 1 if pending > 0 and executable_pending > 0 and local_runners <= 0 else 0
+idle_flag = int(bool(queue.get('idle_with_executable_pending')))
+top_level_queue_jobs = to_int(queue.get('top_level_queue_jobs', queue.get('remote_active_queue_jobs')))
+remote_child_process_count = to_int(queue.get('remote_child_process_count'))
+remote_work_active = int(bool(queue.get('remote_work_active')))
+remote_snapshot_age_sec = to_int(queue.get('remote_snapshot_age_sec', -1))
+remote_load1 = to_float(queue.get('remote_load1'))
+if top_level_queue_jobs <= 0 and remote_child_process_count <= 0:
+    top_level_queue_jobs = to_int(remote_state.get('top_level_queue_jobs'))
+    remote_child_process_count = to_int(remote_state.get('remote_child_process_count'))
+    remote_work_active = int(bool(remote_state.get('remote_work_active')))
+    remote_load1 = to_float(remote_state.get('load1'))
+remote_mode = 'REMOTE_IDLE'
+if top_level_queue_jobs > 0:
+    remote_mode = 'REMOTE_QUEUE_ACTIVE'
+elif remote_child_process_count > 0:
+    remote_mode = 'REMOTE_HEAVY_ACTIVE_CHILDREN'
+elif remote_work_active:
+    remote_mode = 'REMOTE_WORK_ACTIVE_UNKNOWN'
 print(
-    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle} fastlane_replay_pending={fastlane} hot_standby_active={standby} duty30m={duty:.2f} ready_buffer_policy_mismatch_count={mismatch} winner_parent_duplication_rate={dup:.2f} metrics_missing_abort_count_30m={mm_abort} winner_proximate_dispatch_count_30m={winner_dispatch}".format(
+    "runtime pending={p} executable_pending={ep} local_runners={lr} idle_with_executable_pending={idle} remote_mode={mode} remote_work_active={rwa} top_level_queue_jobs={topq} remote_child_process_count={child} remote_load1={load1:.2f} remote_snapshot_age_sec={age} fastlane_replay_pending={fastlane} hot_standby_active={standby} duty30m={duty:.2f} ready_buffer_policy_mismatch_count={mismatch} winner_parent_duplication_rate={dup:.2f} metrics_missing_abort_count_30m={mm_abort} winner_proximate_dispatch_count_30m={winner_dispatch}".format(
         p=pending,
         ep=executable_pending,
         lr=local_runners,
         idle=idle_flag,
+        mode=remote_mode,
+        rwa=remote_work_active,
+        topq=top_level_queue_jobs,
+        child=remote_child_process_count,
+        load1=remote_load1,
+        age=remote_snapshot_age_sec,
         fastlane=to_int((data.get('runtime', {}) or {}).get('fastlane_replay_pending')),
         standby=int(bool((data.get('runtime', {}) or {}).get('hot_standby_active'))),
         duty=to_float((data.get('runtime', {}) or {}).get('vps_duty_cycle_30m')),
@@ -562,9 +595,10 @@ def metric_value(name):
     return to_int(item)
 
 print(
-    "ready_buffer_depth={ready} cold_fail_active_count={cold} remote_child_process_count={child} remote_active_queue_jobs={remote} cpu_busy_without_queue_job={cpu_busy} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
+    "ready_buffer_depth={ready} cold_fail_active_count={cold} top_level_queue_jobs={topq} remote_child_process_count={child} remote_active_queue_jobs={remote} cpu_busy_without_queue_job={cpu_busy} surrogate_idle_override_count={idle} overlap_dispatch_count={overlap}".format(
         ready=metric_value("ready_buffer_depth"),
         cold=metric_value("cold_fail_active_count"),
+        topq=metric_value("top_level_queue_jobs"),
         child=metric_value("remote_child_process_count"),
         remote=metric_value("remote_active_queue_jobs"),
         cpu_busy=metric_value("cpu_busy_without_queue_job"),

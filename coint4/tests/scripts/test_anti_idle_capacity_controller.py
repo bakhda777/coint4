@@ -4,6 +4,7 @@ import csv
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,22 @@ def _write_queue(path: Path, *, config_path: str, status: str) -> None:
         writer.writerow([config_path, status])
 
 
+def _write_remote_runtime_state(path: Path, **overrides) -> None:
+    payload = {
+        "ts": "2026-03-06T09:00:00Z",
+        "ts_epoch": int(time.time()),
+        "reachable": True,
+        "load1": 0.2,
+        "top_level_queue_jobs": 0,
+        "remote_child_process_count": 0,
+        "remote_runner_count": 0,
+        "remote_work_active": False,
+        "cpu_busy_without_queue_job": False,
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
 def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "app"
     aggregate_root = root / "artifacts" / "wfa" / "aggregate"
@@ -44,6 +61,7 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
         json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
         encoding="utf-8",
     )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json")
 
     process_module = _load_module("process_slo_guard_agent.py", tmp_path)
     monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
@@ -56,17 +74,33 @@ def test_anti_idle_policy_and_process_slo_kpi(tmp_path: Path, monkeypatch: pytes
     assert process_state["kpi"]["remote_runner_count"] == 0
     assert process_state["kpi"]["remote_child_process_count"] == 0
     assert process_state["kpi"]["remote_queue_job_count"] == 0
+    assert process_state["kpi"]["remote_work_active"] is False
     assert process_state["kpi"]["cpu_busy_without_queue_job"] is False
     assert process_state["kpi"]["idle_with_executable_pending"] is True
 
     capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
-    monkeypatch.setattr(capacity_module, "detect_remote_load", lambda *_args, **_kwargs: 3.0)
-    monkeypatch.setattr(capacity_module, "detect_remote_runner_count", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        capacity_module,
+        "probe_remote_runtime_snapshot",
+        lambda *_args, **_kwargs: {
+            "reachable": True,
+            "load1": 3.0,
+            "top_level_queue_jobs": 0,
+            "remote_child_process_count": 0,
+            "remote_runner_count": 0,
+            "remote_work_active": False,
+            "cpu_busy_without_queue_job": False,
+        },
+    )
     monkeypatch.setattr(sys, "argv", ["vps_capacity_controller_agent.py", "--root", str(root)])
     assert capacity_module.main() == 0
 
     capacity_state = json.loads((state_dir / "capacity_controller_state.json").read_text(encoding="utf-8"))
     assert capacity_state["backlog"]["executable_pending"] == 1
+    assert capacity_state["remote"]["top_level_queue_jobs"] == 0
+    assert capacity_state["remote"]["remote_active_queue_jobs"] == 0
+    assert capacity_state["remote"]["remote_queue_job_count"] == 0
+    assert capacity_state["remote"]["remote_work_active"] is False
     assert "anti_idle_executable_backlog" in capacity_state["reasons"]
     assert int(capacity_state["policy"]["search_parallel_min"]) >= 16
     assert int(capacity_state["policy"]["search_parallel_max"]) >= 48
@@ -89,6 +123,15 @@ def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypa
         json.dumps({"remote": {"reachable": True, "runner_count": 12, "load1": 8.5}}, ensure_ascii=False),
         encoding="utf-8",
     )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        load1=8.5,
+        top_level_queue_jobs=0,
+        remote_child_process_count=12,
+        remote_runner_count=12,
+        remote_work_active=True,
+        cpu_busy_without_queue_job=True,
+    )
     (state_dir / "fullspan_decision_state.json").write_text(
         json.dumps({"runtime_metrics": {"remote_active_queue_jobs": 0, "remote_child_process_count": 12}}, ensure_ascii=False),
         encoding="utf-8",
@@ -100,7 +143,9 @@ def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypa
     assert process_module.main() == 0
 
     process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["top_level_queue_jobs"] == 0
     assert process_state["queue"]["remote_child_process_count"] == 12
+    assert process_state["queue"]["remote_work_active"] is True
     assert process_state["queue"]["remote_queue_job_count"] == 0
     assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
     assert process_state["queue"]["idle_with_executable_pending"] is False
@@ -123,6 +168,7 @@ def test_process_slo_exposes_runtime_orchestration_observability(tmp_path: Path,
         json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.3}}, ensure_ascii=False),
         encoding="utf-8",
     )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json", load1=0.3)
     (state_dir / "fullspan_decision_state.json").write_text(
         json.dumps(
             {
@@ -149,6 +195,8 @@ def test_process_slo_exposes_runtime_orchestration_observability(tmp_path: Path,
     process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
     assert process_state["queue"]["fastlane_replay_pending"] == 2
     assert process_state["queue"]["hot_standby_active"] is True
+    assert process_state["queue"]["top_level_queue_jobs"] == 0
+    assert process_state["queue"]["remote_work_active"] is False
     assert process_state["runtime"]["ready_buffer_policy_mismatch_count"] == 3
     assert process_state["runtime"]["fastlane_replay_pending"] == 2
     assert process_state["runtime"]["metrics_missing_abort_count_30m"] == 4
@@ -156,3 +204,114 @@ def test_process_slo_exposes_runtime_orchestration_observability(tmp_path: Path,
     assert process_state["runtime"]["hot_standby_active"] is True
     assert abs(float(process_state["runtime"]["vps_duty_cycle_30m"]) - 0.625) < 1e-9
     assert abs(float(process_state["runtime"]["winner_parent_duplication_rate"]) - 0.333333) < 1e-9
+
+
+def test_process_slo_prefers_remote_runtime_snapshot_over_stale_runtime_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 31, "load1": 18.0}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        load1=18.0,
+        top_level_queue_jobs=1,
+        remote_child_process_count=30,
+        remote_runner_count=30,
+        remote_work_active=True,
+        cpu_busy_without_queue_job=False,
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps({"runtime_metrics": {"remote_active_queue_jobs": 0, "remote_child_process_count": 0}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["remote_active_queue_jobs"] == 1
+    assert process_state["queue"]["top_level_queue_jobs"] == 1
+    assert process_state["queue"]["remote_child_process_count"] == 30
+    assert process_state["queue"]["remote_work_active"] is True
+    assert process_state["queue"]["idle_with_executable_pending"] is False
+
+
+def test_process_slo_treats_stale_runtime_snapshot_with_high_capacity_load_as_busy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    old_ts = int(time.time()) - 600
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps(
+            {
+                "ts": "2026-03-06T09:10:00Z",
+                "remote": {
+                    "reachable": True,
+                    "runner_count": 28,
+                    "load1": 11.2,
+                    "top_level_queue_jobs": 0,
+                    "remote_child_process_count": 28,
+                    "remote_work_active": True,
+                    "cpu_busy_without_queue_job": True,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        ts_epoch=old_ts,
+        load1=0.0,
+        top_level_queue_jobs=0,
+        remote_child_process_count=0,
+        remote_runner_count=0,
+        remote_work_active=False,
+        cpu_busy_without_queue_job=False,
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps({"runtime_metrics": {"remote_active_queue_jobs": 0, "remote_child_process_count": 0}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["remote_active_queue_jobs"] == 0
+    assert process_state["queue"]["remote_child_process_count"] == 28
+    assert process_state["queue"]["remote_work_active"] is True
+    assert process_state["runtime"]["cpu_busy_without_queue_job"] is True
+    assert process_state["queue"]["remote_snapshot_age_sec"] == -1
+    assert process_state["queue"]["idle_with_executable_pending"] is False

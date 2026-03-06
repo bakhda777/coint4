@@ -52,11 +52,14 @@ FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
 FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-300}"
 FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
 CAPACITY_CONTROLLER_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
+REMOTE_RUNTIME_STATE_FILE="$STATE_DIR/remote_runtime_state.json"
 CONFIRM_SLA_ESCALATION_STATE_FILE="$STATE_DIR/confirm_sla_escalation_state.json"
 BATCH_SESSION_STATE_FILE="$STATE_DIR/batch_session_state.json"
 DRIVER_CONFIRM_FASTLANE_ENABLE="${DRIVER_CONFIRM_FASTLANE_ENABLE:-1}"
 VPS_HOT_STANDBY_ENABLE="${VPS_HOT_STANDBY_ENABLE:-1}"
 VPS_HOT_STANDBY_TTL_SEC="${VPS_HOT_STANDBY_TTL_SEC:-2700}"
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC="${REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC:-90}"
+REMOTE_RUNTIME_BUSY_LOAD_THRESHOLD="${REMOTE_RUNTIME_BUSY_LOAD_THRESHOLD:-1.5}"
 NO_PROGRESS_STALE_CYCLES="${NO_PROGRESS_STALE_CYCLES:-6}"
 SAME_REASON_REPAIR_CAP="${SAME_REASON_REPAIR_CAP:-3}"
 ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
@@ -2368,13 +2371,113 @@ PY
 }
 
 get_vps_load() {
-  local load1=""
-  load1="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "cat /proc/loadavg 2>/dev/null | awk '{print \$1}'" || true)"
-  if [[ -z "$load1" ]]; then
-    echo 0
-    return
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "load1" "0"
+}
+
+remote_runtime_state_value() {
+  local key="$1"
+  local default_value="${2:-0}"
+  python3 - "$REMOTE_RUNTIME_STATE_FILE" "$key" "$default_value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = str(sys.argv[2] or "").strip()
+default_value = sys.argv[3]
+if not path.exists() or not key:
+    print(default_value)
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print(default_value)
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print(default_value)
+    raise SystemExit(0)
+value = payload.get(key, default_value)
+if isinstance(value, bool):
+    print("1" if value else "0")
+elif isinstance(value, (int, float)):
+    print(value)
+elif isinstance(value, str):
+    print(value)
+else:
+    print(default_value)
+PY
+}
+
+remote_runtime_state_age_sec() {
+  python3 - "$REMOTE_RUNTIME_STATE_FILE" <<'PY'
+import json
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(-1)
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print(-1)
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print(-1)
+    raise SystemExit(0)
+ts_epoch = payload.get("ts_epoch")
+try:
+    ts_epoch = int(float(ts_epoch))
+except Exception:
+    ts_epoch = 0
+if ts_epoch <= 0:
+    ts_raw = str(payload.get("ts") or "").strip()
+    if ts_raw:
+        try:
+            ts_epoch = int(datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+        except Exception:
+            ts_epoch = 0
+if ts_epoch <= 0:
+    print(-1)
+    raise SystemExit(0)
+print(max(0, int(time.time()) - ts_epoch))
+PY
+}
+
+remote_runtime_snapshot_is_fresh() {
+  local max_age="${1:-$REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC}"
+  local age_sec
+  [[ "$max_age" =~ ^[0-9]+$ ]] || max_age=90
+  age_sec="$(remote_runtime_state_age_sec)"
+  [[ "$age_sec" =~ ^-?[0-9]+$ ]] || age_sec=-1
+  if (( age_sec >= 0 && age_sec <= max_age )); then
+    echo 1
+    return 0
   fi
-  echo "$load1"
+  echo 0
+}
+
+refresh_remote_runtime_snapshot() {
+  local py="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$py" ]] || py="python3"
+  "$py" "$ROOT_DIR/scripts/optimization/remote_runtime_probe.py" \
+    --server-user "$SERVER_USER" \
+    --server-ip "$SERVER_IP" \
+    --state-file "$REMOTE_RUNTIME_STATE_FILE" >/dev/null 2>&1
+}
+
+ensure_remote_runtime_snapshot() {
+  local max_age="${1:-$REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC}"
+  local fresh
+  fresh="$(remote_runtime_snapshot_is_fresh "$max_age")"
+  if [[ "$fresh" == "1" ]]; then
+    return 0
+  fi
+  refresh_remote_runtime_snapshot
 }
 
 capacity_search_parallel_bounds() {
@@ -4597,88 +4700,52 @@ repair_stalled_state_reset() {
 }
 
 remote_runner_count() {
-  local remote_count
-  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
-import os
-patterns = ('watch_wfa_queue.sh', 'run_wfa_queue.py', 'run_wfa_fullcpu.sh', 'walk_forward')
-count = 0
-for pid in os.listdir('/proc'):
-    if not pid.isdigit():
-        continue
-    try:
-        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
-    except Exception:
-        continue
-    if not cmd:
-        continue
-    if 'python3 - <<' in cmd or 'pgrep -f' in cmd:
-        continue
-    if any(p in cmd for p in patterns):
-        count += 1
-print(count)
-PY" || true)"
-  if [[ -z "$remote_count" ]]; then
-    echo 0
-    return
-  fi
-  echo "$remote_count"
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "remote_runner_count" "0"
 }
 
 remote_active_queue_jobs() {
-  local remote_count
-  remote_count="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" "python3 - <<'PY'
-import os
-count = 0
-for pid in os.listdir('/proc'):
-    if not pid.isdigit():
-        continue
-    try:
-        cmd = open(f'/proc/{pid}/cmdline', 'rb').read().replace(b'\\x00', b' ').decode('utf-8', 'ignore').strip()
-    except Exception:
-        continue
-    if not cmd or 'python3 - <<' in cmd or 'pgrep -f' in cmd:
-        continue
-    if 'run_wfa_queue.py --queue' in cmd:
-        count += 1
-print(count)
-PY" || true)"
-  [[ -n "$remote_count" && "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
-  echo "$remote_count"
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "top_level_queue_jobs" "0"
 }
 
 remote_child_process_count() {
-  remote_runner_count
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "remote_child_process_count" "0"
+}
+
+remote_work_active() {
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_state_value "remote_work_active" "0"
 }
 
 remote_cpu_busy_without_queue_job() {
-  local child_count queue_jobs load1
-  child_count="$(remote_child_process_count)"
-  queue_jobs="$(remote_active_queue_jobs)"
-  load1="$(get_vps_load)"
-  [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
-  [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
-  if [[ -z "$load1" ]]; then
-    load1=0
-  fi
-  if (( queue_jobs == 0 && child_count > 0 )) && awk -v v="$load1" 'BEGIN { exit (v + 0.0 >= 1.5) ? 0 : 1 }'; then
-    echo 1
-    return
-  fi
-  echo 0
+  local value
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  value="$(remote_runtime_state_value "cpu_busy_without_queue_job" "0")"
+  [[ "$value" == "1" ]] && echo 1 || echo 0
 }
 
 refresh_remote_runtime_metrics() {
-  local queue_jobs child_count cpu_busy
+  local queue_jobs child_count cpu_busy work_active snapshot_age
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
   queue_jobs="$(remote_active_queue_jobs)"
   child_count="$(remote_child_process_count)"
   cpu_busy="$(remote_cpu_busy_without_queue_job)"
+  work_active="$(remote_work_active)"
+  snapshot_age="$(remote_runtime_state_age_sec)"
   [[ "$queue_jobs" =~ ^[0-9]+$ ]] || queue_jobs=0
   [[ "$child_count" =~ ^[0-9]+$ ]] || child_count=0
   [[ "$cpu_busy" =~ ^[0-9]+$ ]] || cpu_busy=0
+  [[ "$work_active" =~ ^[0-9]+$ ]] || work_active=0
+  [[ "$snapshot_age" =~ ^-?[0-9]+$ ]] || snapshot_age=-1
   fullspan_state_metric_set "remote_active_queue_jobs" "$queue_jobs"
   fullspan_state_metric_set "remote_queue_job_count" "$queue_jobs"
+  fullspan_state_metric_set "top_level_queue_jobs" "$queue_jobs"
   fullspan_state_metric_set "remote_child_process_count" "$child_count"
   fullspan_state_metric_set "cpu_busy_without_queue_job" "$cpu_busy"
+  fullspan_state_metric_set "remote_work_active" "$work_active"
+  fullspan_state_metric_set "remote_runtime_snapshot_age_sec" "$snapshot_age"
 }
 
 remote_queue_running() {
@@ -5067,6 +5134,17 @@ fullspan_rollup_sync() {
 }
 
 vps_is_reachable() {
+  local fresh reachable
+  fresh="$(remote_runtime_snapshot_is_fresh 15)"
+  if [[ "$fresh" != "1" ]]; then
+    ensure_remote_runtime_snapshot 15 >/dev/null 2>&1 || true
+    fresh="$(remote_runtime_snapshot_is_fresh 15)"
+  fi
+  if [[ "$fresh" == "1" ]]; then
+    reachable="$(remote_runtime_state_value "reachable" "0")"
+    [[ "$reachable" == "1" ]]
+    return
+  fi
   ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=6 "$SERVER_USER@$SERVER_IP" 'echo ok' >/dev/null 2>&1
 }
 

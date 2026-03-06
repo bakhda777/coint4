@@ -359,6 +359,25 @@ def test_vps_start_softpass_contract() -> None:
     )
 
 
+def test_remote_runtime_snapshot_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'REMOTE_RUNTIME_STATE_FILE',
+            'REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC',
+            'remote_runtime_state_value()',
+            'remote_runtime_state_age_sec()',
+            'remote_runtime_snapshot_is_fresh()',
+            'refresh_remote_runtime_snapshot()',
+            'scripts/optimization/remote_runtime_probe.py',
+            'top_level_queue_jobs',
+            'remote_work_active',
+            'remote_runtime_snapshot_age_sec',
+        ],
+    )
+
+
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
     src = _source()
     _assert_contains_all(

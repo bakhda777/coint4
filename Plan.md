@@ -1,6 +1,50 @@
 # Plan: strict fullspan winner closure
 
-Обновлено: 2026-03-06 03:41 America/New_York (snapshot: 2026-03-06T03:41:32Z)
+Обновлено: 2026-03-06 05:18 America/New_York (snapshot: 2026-03-06T10:18:00Z)
+
+## Execution Update (2026-03-06, canonical remote runtime snapshot)
+- Закрыт источник ложного `idle` на VPS: введён канонический state-файл `.autonomous/remote_runtime_state.json`.
+- Новый probe `coint4/scripts/optimization/remote_runtime_probe.py` за один SSH-срез собирает:
+  - `reachable`
+  - `load1`
+  - `top_level_queue_jobs`
+  - `remote_child_process_count`
+  - `remote_runner_count` (legacy alias)
+  - `remote_work_active`
+  - `cpu_busy_without_queue_job`
+- `autonomous_wfa_driver.sh` теперь обновляет runtime metrics из этого snapshot и пишет в `fullspan_decision_state.json`:
+  - `remote_active_queue_jobs`
+  - `remote_queue_job_count`
+  - `top_level_queue_jobs`
+  - `remote_child_process_count`
+  - `remote_work_active`
+  - `cpu_busy_without_queue_job`
+  - `remote_runtime_snapshot_age_sec`
+- `vps_capacity_controller_agent.py` переведён на этот же источник истины:
+  - пишет `capacity_controller_state.json` с `top_level_queue_jobs`, `remote_active_queue_jobs`, `remote_queue_job_count`, `remote_child_process_count`, `remote_work_active`, `cpu_busy_without_queue_job`, `remote_snapshot_age_sec`;
+  - anti-idle больше не раскрывает search policy, если на VPS уже есть child-process activity без top-level queue job.
+- `process_slo_guard_agent.py` теперь использует приоритет источников:
+  1. `remote_runtime_state.json`
+  2. `capacity_controller_state.json`
+  3. `fullspan_decision_state.runtime_metrics`
+- `idle_with_executable_pending=true` теперь возможно только если snapshot свежий и `remote_work_active=false`; stale snapshot + высокий `load1`/child-process activity больше не объявляется idle.
+- `autonomous_10m_report.sh` теперь показывает:
+  - `remote_mode={REMOTE_QUEUE_ACTIVE|REMOTE_HEAVY_ACTIVE_CHILDREN|REMOTE_WORK_ACTIVE_UNKNOWN|REMOTE_IDLE}`
+  - `remote_work_active`
+  - `top_level_queue_jobs`
+  - `remote_child_process_count`
+  - `remote_snapshot_age_sec`
+
+### Verification
+- `python3 -m py_compile` по изменённым Python-файлам: OK
+- `bash -n` по driver/report: OK
+- `ruff check` по изменённым Python-файлам: `All checks passed!`
+- `pytest -q coint4/tests/scripts/test_anti_idle_capacity_controller.py coint4/tests/scripts/test_autonomous_wfa_driver_runtime_policy.py coint4/tests/scripts/test_remote_runtime_probe.py`
+  - покрывает:
+    - child-only remote activity
+    - SSH failure fallback
+    - preference of fresh canonical snapshot over stale runtime metrics
+    - stale snapshot + high remote load => `busy`, not `idle`
 
 ## Winner definition (без двусмысленности)
 Winner достигается только при одновременном выполнении:
