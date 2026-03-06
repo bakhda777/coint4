@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import textwrap
@@ -40,6 +41,7 @@ def _run_reselect_block(
     *,
     fallback_success: bool,
     ready_buffer_success: bool = False,
+    selector_guard: bool = False,
     pending_before_reconcile: int = 0,
     completed: int = 0,
 ) -> subprocess.CompletedProcess[str]:
@@ -89,6 +91,9 @@ CSV
 ready_buffer_refresh() {{ :; }}
 ready_buffer_emit_candidate() {{
 {"  cat > \"$CANDIDATE_FILE\" <<'CSV'\n" + header + "\nartifacts/wfa/aggregate/ready/run_queue.csv,2,0,0,0,0,2,1.000,456,POSSIBLE,OPEN,ready_buffer,9.000,FULLSPAN_PREFILTER_PASSED,,2,0.000000,9.000,0.000\nCSV\n  return 0\n" if ready_buffer_success else "  return 1\n"}
+}}
+selector_empty_candidate_pool_guard() {{
+{"  echo \"GUARD:$1\"\n  return 0\n" if selector_guard else "  return 1\n"}
 }}
 fallback_calls=0
 fallback_pending_candidate() {{
@@ -176,6 +181,16 @@ def test_candidate_reselect_after_reconcile_runs_cycle_once_on_pending_transitio
     assert "CYCLE:artifacts/wfa/aggregate/current/run_queue.csv|" in proc.stdout
     assert "CYCLE_CALLS:1" in proc.stdout
     assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/demo/run_queue.csv pending=1" in proc.stdout
+
+
+def test_candidate_reselect_after_reconcile_selector_guard_skips_auto_seed(tmp_path: Path) -> None:
+    block = _extract_reselect_after_reconcile_block(_source())
+    proc = _run_reselect_block(tmp_path, block, fallback_success=False, selector_guard=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "LOG:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "GUARD:candidate_parse_empty_after_reconcile" in proc.stdout
+    assert "SEED:candidate_parse_empty_after_reconcile" not in proc.stdout
+    assert "STOP:selector_empty_candidate_pool" in proc.stdout
 
 
 def test_queue_hygiene_noop_skip_contract() -> None:
@@ -658,6 +673,99 @@ maybe_trigger_auto_seed candidate_empty_after_reconcile
     assert "INFRA:hard_block|infra_recovery_mode_remote_unreachable_no_coverage_ready|" in proc.stdout
     assert "NOTE:global|AUTO_SEED_HARD_BLOCK|" in proc.stdout
     assert "AUTO_SEED_TRIGGER" not in proc.stdout
+
+
+def test_process_slo_remote_coverage_snapshot_prefers_queue_remote_reachable_with_fallback(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "process_slo_remote_coverage_snapshot")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / "process_slo_state.json"
+
+    def _run_snapshot(payload: dict[str, object]) -> str:
+        state_path.write_text(json.dumps(payload), encoding="utf-8")
+        script = f"""#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="{state_dir}"
+{fn}
+process_slo_remote_coverage_snapshot
+"""
+        proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+        assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        return proc.stdout.strip()
+
+    assert _run_snapshot({"queue": {"remote_reachable": True}, "kpi": {"coverage_verified_ready_count": 2}}) == "1\t2"
+    assert _run_snapshot({"remote_reachable": False, "coverage_verified_ready_count": 1}) == "0\t1"
+
+
+def test_selector_empty_candidate_pool_guard_signals_when_pool_empty_with_healthy_vps(tmp_path: Path) -> None:
+    count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
+    guard_fn = _extract_shell_function(_source(), "selector_empty_candidate_pool_guard")
+    pool_path = tmp_path / "candidate_pool.csv"
+    pool_path.write_text(
+        "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,"
+        "gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,"
+        "stalled_share,queue_yield_score,recent_yield,executable_pending\n",
+        encoding="utf-8",
+    )
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+READY_BUFFER_POOL_FILE="{pool_path}"
+FULLSPAN_DECISION_STATE_FILE="{tmp_path / 'fullspan_state.json'}"
+RUNTIME_OBSERVABILITY_STATE_FILE="{tmp_path / 'runtime_observability.json'}"
+SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC=300
+{count_fn}
+{guard_fn}
+global_backlog_snapshot() {{
+  echo "1 3 0"
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '1\\t0\\n'
+}}
+capacity_controller_remote_reachable_recent() {{
+  echo "1"
+}}
+remote_runner_count() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    selector_empty_candidate_pool_last_epoch) echo "0" ;;
+    selector_empty_candidate_pool_last_reason) echo "" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+runtime_observability_record_event() {{
+  printf 'EVENT:%s|%s\\n' "${{1:-}}" "${{2:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+if selector_empty_candidate_pool_guard candidate_parse_empty; then
+  echo "RC:0"
+else
+  echo "RC:1"
+fi
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "RC:0" in proc.stdout
+    assert "SET:selector_error=empty_candidate_pool_with_executable_pending" in proc.stdout
+    assert "INC:selector_empty_candidate_pool_count=1" in proc.stdout
+    assert "EVENT:selector_empty_candidate_pool|" in proc.stdout
+    assert "NOTE:global|SELECTOR_EMPTY_CANDIDATE_POOL|" in proc.stdout
+    assert "LOG:selector_empty_candidate_pool reason=candidate_parse_empty executable_pending=3" in proc.stdout
 
 
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:

@@ -135,6 +135,7 @@ export FULLSPAN_TAIL_QUANTILE FULLSPAN_TAIL_Q_SOFT_LOSS_PCT FULLSPAN_TAIL_WORST_
 export FULLSPAN_TAIL_Q_PENALTY FULLSPAN_TAIL_WORST_PENALTY
 START_QUEUE_CONFIRM_POLL_SEC="${START_QUEUE_CONFIRM_POLL_SEC:-5}"
 AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC="${AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC:-1800}"
+SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC="${SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC:-300}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
 DRIVER_MAX_LOCAL_SEARCH_RUNNERS="${DRIVER_MAX_LOCAL_SEARCH_RUNNERS:-3}"
 DRIVER_MAX_REMOTE_RUNNERS="${DRIVER_MAX_REMOTE_RUNNERS:-64}"
@@ -2010,10 +2011,15 @@ except Exception:
 if not isinstance(data, dict):
     print("1\t1")
     raise SystemExit(0)
+queue = data.get("queue", {})
+if not isinstance(queue, dict):
+    queue = {}
 kpi = data.get("kpi", {})
 if not isinstance(kpi, dict):
     kpi = {}
-remote_reachable = data.get("remote_reachable")
+remote_reachable = queue.get("remote_reachable")
+if remote_reachable in (None, ""):
+    remote_reachable = data.get("remote_reachable")
 if isinstance(remote_reachable, str):
     remote_reachable = remote_reachable.strip().lower() in {"1", "true", "yes", "y", "on"}
 remote_flag = "1" if bool(remote_reachable) else "0"
@@ -2727,6 +2733,9 @@ choose_max_retries() {
     NETWORK)
       echo 2
       ;;
+    MANIFEST_MISMATCH)
+      echo 1
+      ;;
     DATA)
       echo 1
       ;;
@@ -2767,9 +2776,14 @@ classify_root_cause() {
     elif [[ -f "$ROOT_DIR/$qdir/strategy_metrics/equity_curve_error.log" ]]; then
       err_file="$ROOT_DIR/$qdir/strategy_metrics/equity_curve_error.log"
     fi
-    if [[ -n "$err_file" ]]; then
+  if [[ -n "$err_file" ]]; then
       latest="$latest\n$(tail -n 40 "$err_file" 2>/dev/null || true)"
     fi
+  fi
+
+  if printf '%s' "$latest" | grep -Eqi '(manifest_mismatch|sync_code verification failed|remote code drift detected|powered: FAIL reason=REMOTE_SYNC_FAILED|MANIFEST_MISMATCH)'; then
+    echo "MANIFEST_MISMATCH"
+    return
   fi
 
   if printf '%s' "$latest" | grep -Eqi '(network|connection.*timeout|connection reset|temporarily unavailable|failed to connect|ssh:|timed out)'; then
@@ -5591,6 +5605,90 @@ print(count)
 PY
 }
 
+candidate_pool_ready_count() {
+  python3 - "$READY_BUFFER_POOL_FILE" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+
+count = 0
+try:
+    with path.open(newline='', encoding='utf-8') as handle:
+        for row in csv.DictReader(handle):
+            if any(str(value or '').strip() for value in row.values()):
+                count += 1
+except Exception:
+    count = 0
+print(max(0, count))
+PY
+}
+
+selector_empty_candidate_pool_guard() {
+  local reason="${1:-selector_empty_candidate_pool}"
+  local now_epoch cooldown_sec last_epoch last_reason
+  local planned_exec pending_exec no_op_queues pool_ready_count
+  local process_remote_reachable process_coverage_ready
+  local fresh_capacity remote_count vps_fail_closed infra_gate_status
+
+  pool_ready_count="$(candidate_pool_ready_count)"
+  [[ "$pool_ready_count" =~ ^[0-9]+$ ]] || pool_ready_count=0
+  if (( pool_ready_count > 0 )); then
+    return 1
+  fi
+
+  read -r planned_exec pending_exec no_op_queues <<< "$(global_backlog_snapshot)"
+  [[ "$planned_exec" =~ ^[0-9]+$ ]] || planned_exec=0
+  [[ "$pending_exec" =~ ^[0-9]+$ ]] || pending_exec=0
+  [[ "$no_op_queues" =~ ^[0-9]+$ ]] || no_op_queues=0
+  if (( pending_exec <= 0 )); then
+    return 1
+  fi
+
+  vps_fail_closed="$(fullspan_state_metric_get vps_infra_fail_closed 0)"
+  [[ "$vps_fail_closed" =~ ^[0-9]+$ ]] || vps_fail_closed=0
+  infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
+  if (( vps_fail_closed > 0 )) || [[ "$infra_gate_status" == "fail_closed" ]]; then
+    return 1
+  fi
+
+  IFS=$'\t' read -r process_remote_reachable process_coverage_ready <<< "$(process_slo_remote_coverage_snapshot)"
+  [[ "$process_remote_reachable" =~ ^[01]$ ]] || process_remote_reachable=0
+  fresh_capacity="$(capacity_controller_remote_reachable_recent)"
+  [[ "$fresh_capacity" =~ ^[01]$ ]] || fresh_capacity=0
+  remote_count="$(remote_runner_count)"
+  [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+  if [[ "$process_remote_reachable" != "1" && "$fresh_capacity" != "1" && "$remote_count" -le 0 ]]; then
+    return 1
+  fi
+
+  now_epoch="$(date +%s)"
+  cooldown_sec="${SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC:-300}"
+  [[ "$cooldown_sec" =~ ^[0-9]+$ ]] || cooldown_sec=300
+  last_epoch="$(fullspan_state_metric_get selector_empty_candidate_pool_last_epoch 0)"
+  [[ "$last_epoch" =~ ^[0-9]+$ ]] || last_epoch=0
+  last_reason="$(fullspan_state_metric_get selector_empty_candidate_pool_last_reason "")"
+
+  fullspan_state_metric_set "selector_error" "empty_candidate_pool_with_executable_pending"
+  fullspan_state_metric_set "selector_error_context" "$reason"
+  fullspan_state_metric_set "selector_error_epoch" "$now_epoch"
+
+  if (( last_epoch <= 0 || now_epoch - last_epoch >= cooldown_sec )) || [[ "$last_reason" != "$reason" ]]; then
+    fullspan_state_metric_inc "selector_empty_candidate_pool_count" 1
+    fullspan_state_metric_set "selector_empty_candidate_pool_last_epoch" "$now_epoch"
+    fullspan_state_metric_set "selector_empty_candidate_pool_last_reason" "$reason"
+    runtime_observability_record_event "selector_empty_candidate_pool" "$now_epoch"
+    log "selector_empty_candidate_pool reason=$reason executable_pending=$pending_exec planned_exec=$planned_exec no_op_queues=$no_op_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count"
+    log_decision_note "global" "SELECTOR_EMPTY_CANDIDATE_POOL" "reason=$reason executable_pending=$pending_exec planned_exec=$planned_exec no_op_queues=$no_op_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count" "skip_auto_seed_and_retry_selector"
+  fi
+
+  return 0
+}
+
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
   local now_epoch last_seed planned_exec pending_exec no_op_queues
@@ -6756,6 +6854,17 @@ while true; do
 	    else
 	      log_state "idle now=none completed=all"
 	      log "candidate_empty"
+	      if selector_empty_candidate_pool_guard "candidate_empty"; then
+	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	        fi
+          if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+            adaptive_idle_sleep=300
+          fi
+          batch_session_maybe_stop "selector_empty_candidate_pool"
+          sleep "$adaptive_idle_sleep"
+          continue
+        fi
 	      maybe_trigger_auto_seed "candidate_empty" || true
 	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
@@ -6787,6 +6896,17 @@ while true; do
       else
 	    log_state "idle now=none completed=all"
 	    log "candidate_parse_empty"
+	    if selector_empty_candidate_pool_guard "candidate_parse_empty"; then
+	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	      fi
+        if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+          adaptive_idle_sleep=300
+        fi
+        batch_session_maybe_stop "selector_empty_candidate_pool"
+        sleep "$adaptive_idle_sleep"
+        continue
+      fi
 	    maybe_trigger_auto_seed "candidate_parse_empty" || true
 	    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
@@ -6870,6 +6990,17 @@ PY
 	    if [[ ! -s "$CANDIDATE_FILE" ]]; then
 	      log_state "idle now=none completed=all"
 	      log "candidate_empty_after_reconcile"
+	      if selector_empty_candidate_pool_guard "candidate_empty_after_reconcile"; then
+	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	        fi
+      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+        adaptive_idle_sleep=300
+      fi
+      batch_session_maybe_stop "selector_empty_candidate_pool"
+      sleep "$adaptive_idle_sleep"
+      continue
+    fi
 	      maybe_trigger_auto_seed "candidate_empty_after_reconcile" || true
 	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
@@ -6897,6 +7028,17 @@ PY
         else
 	      log_state "idle now=none completed=all"
 	      log "candidate_parse_empty_after_reconcile"
+	      if selector_empty_candidate_pool_guard "candidate_parse_empty_after_reconcile"; then
+	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	        fi
+	        if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+	          adaptive_idle_sleep=300
+	        fi
+	        batch_session_maybe_stop "selector_empty_candidate_pool"
+	        sleep "$adaptive_idle_sleep"
+	        continue
+        fi
 	      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
 	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))

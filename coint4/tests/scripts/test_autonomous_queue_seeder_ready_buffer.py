@@ -410,6 +410,24 @@ def test_prune_seed_queue_marks_full_prune_as_blocked_rows(tmp_path: Path) -> No
     assert [row["note"] for row in rows] == ["coverage_fail_closed", "coverage_fail_closed"]
 
 
+def test_prune_seed_queue_materializes_header_only_queue_as_blocked_placeholder(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "group_empty" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text("config_path,results_dir,status\n", encoding="utf-8")
+
+    stats = autonomous_queue_seeder._prune_seed_queue(queue_path=queue_path, app_root=app_root)
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+
+    assert stats["rows_before"] == 0
+    assert stats["rows_after"] == 0
+    assert stats["blocked_rows_written"] == 1
+    assert stats["block_reason"] == "queue_pruned_empty"
+    assert len(rows) == 1
+    assert rows[0]["status"] == "blocked"
+    assert rows[0]["note"] == "queue_pruned_empty"
+
+
 def test_hygiene_seed_queues_orphans_zero_coverage_history(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     aggregate_dir = app_root / "artifacts" / "wfa" / "aggregate"

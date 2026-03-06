@@ -448,7 +448,29 @@ def _prune_seed_queue(
 ) -> dict[str, Any]:
     rows = _load_queue_rows(queue_path)
     if not rows:
-        return {"rows_before": 0, "rows_after": 0, "coverage_rejected": 0, "dedupe_rejected": 0, "missing_months": []}
+        blocked_rows_written = 0
+        if queue_path.exists():
+            _write_queue_rows(
+                queue_path,
+                [
+                    {
+                        "config_path": "",
+                        "results_dir": "",
+                        "status": "blocked",
+                        "note": "queue_pruned_empty",
+                    }
+                ],
+            )
+            blocked_rows_written = 1
+        return {
+            "rows_before": 0,
+            "rows_after": 0,
+            "coverage_rejected": 0,
+            "dedupe_rejected": 0,
+            "missing_months": [],
+            "blocked_rows_written": blocked_rows_written,
+            "block_reason": "queue_pruned_empty",
+        }
 
     filtered_rows: list[dict[str, str]] = []
     seen_signatures: set[str] = set()

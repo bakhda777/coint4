@@ -339,6 +339,129 @@ cleanup() {
 
 trap cleanup EXIT
 
+sync_up_path_is_included() {
+  local rel_path="$1"
+  case "$SYNC_UP_MODE" in
+    tracked)
+      return 0
+      ;;
+    code)
+      case "$rel_path" in
+        coint4/artifacts/*|coint4/outputs/*|outputs/*|.ralph-tui/iterations/*|*.log|*.pid)
+          return 1
+          ;;
+      esac
+      return 0
+      ;;
+    *)
+      echo "Unsupported SYNC_UP_MODE=${SYNC_UP_MODE}. Use tracked or code." >&2
+      exit 1
+      ;;
+  esac
+}
+
+build_sync_up_manifest() {
+  git -C "$LOCAL_REPO_DIR" ls-files -z \
+    | while IFS= read -r -d '' rel_path; do
+        if sync_up_path_is_included "$rel_path"; then
+          printf '%s\0' "$rel_path"
+        fi
+      done
+}
+
+cleanup_remote_stale_tracked_files() {
+  local sync_manifest="$1"
+  local remote_manifest
+  local quoted_repo_dir
+  local quoted_manifest
+  local quoted_mode
+
+  remote_manifest="${SERVER_REPO_DIR}/.sync_up_manifest.$$.${RANDOM}.bin"
+  quoted_repo_dir="$(shell_quote_single "${SERVER_REPO_DIR}")"
+  quoted_manifest="$(shell_quote_single "${remote_manifest}")"
+  quoted_mode="$(shell_quote_single "${SYNC_UP_MODE}")"
+
+  rsync -az -e "ssh ${SSH_OPTS[*]}" "${sync_manifest}" "${SERVER_USER}@${SERVER_IP}:${remote_manifest}"
+
+  ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "python3 - ${quoted_repo_dir} ${quoted_manifest} ${quoted_mode} <<'PY'
+import subprocess
+import sys
+from pathlib import Path
+
+repo_dir = Path(sys.argv[1]).resolve()
+manifest_path = Path(sys.argv[2])
+mode = sys.argv[3]
+
+try:
+    manifest_bytes = manifest_path.read_bytes()
+finally:
+    try:
+        manifest_path.unlink()
+    except FileNotFoundError:
+        pass
+
+local_paths = {
+    item.decode('utf-8', errors='surrogateescape')
+    for item in manifest_bytes.split(b'\\0')
+    if item
+}
+try:
+    remote_output = subprocess.check_output(
+        ['git', '-C', str(repo_dir), 'ls-files', '-z'],
+        stderr=subprocess.DEVNULL,
+    )
+except (FileNotFoundError, subprocess.CalledProcessError):
+    print(f'[server] sync_up cleanup skipped: remote git index unavailable under {repo_dir}')
+    raise SystemExit(0)
+remote_paths = [
+    item.decode('utf-8', errors='surrogateescape')
+    for item in remote_output.split(b'\\0')
+    if item
+]
+
+def in_scope(rel_path: str) -> bool:
+    if mode == 'tracked':
+        return True
+    if mode == 'code':
+        blocked = (
+            rel_path.startswith('coint4/artifacts/')
+            or rel_path.startswith('coint4/outputs/')
+            or rel_path.startswith('outputs/')
+            or rel_path.startswith('.ralph-tui/iterations/')
+            or rel_path.endswith('.log')
+            or rel_path.endswith('.pid')
+        )
+        return not blocked
+    raise SystemExit(f'Unsupported SYNC_UP_MODE={mode}')
+
+stale_paths: list[Path] = []
+for rel_path in remote_paths:
+    if rel_path in local_paths or not in_scope(rel_path):
+        continue
+    candidate = (repo_dir / rel_path).resolve()
+    try:
+        candidate.relative_to(repo_dir)
+    except ValueError:
+        continue
+    if candidate.exists() or candidate.is_symlink():
+        candidate.unlink()
+        stale_paths.append(candidate)
+
+for stale in stale_paths:
+    parent = stale.parent
+    while parent != repo_dir:
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+
+print(f'[server] sync_up cleanup removed {len(stale_paths)} stale tracked files (mode={mode})')
+for stale in stale_paths:
+    print(f'[server] sync_up cleanup path={stale.relative_to(repo_dir)}')
+PY"
+}
+
 sync_up() {
   if [[ "$SYNC_UP" != "1" ]]; then
     return 0
@@ -361,7 +484,12 @@ sync_up() {
   fi
 
   local sha
+  local tmpdir
+  local sync_manifest
   sha="$(git -C "$LOCAL_REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+  tmpdir="$(mktemp -d)"
+  sync_manifest="${tmpdir}/sync_up_manifest.bin"
+  build_sync_up_manifest >"${sync_manifest}"
   local unsynced_untracked
   unsynced_untracked="$(
     git -C "$LOCAL_REPO_DIR" ls-files --others --exclude-standard -- \
@@ -374,23 +502,9 @@ sync_up() {
   echo "[server] syncing files (${SYNC_UP_MODE}) from ${LOCAL_REPO_DIR} -> ${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}"
 
   ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "mkdir -p '${SERVER_REPO_DIR}'"
-  if [[ "$SYNC_UP_MODE" == "tracked" ]]; then
-    git -C "$LOCAL_REPO_DIR" ls-files -z | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
-  elif [[ "$SYNC_UP_MODE" == "code" ]]; then
-    git -C "$LOCAL_REPO_DIR" ls-files -z \
-      | while IFS= read -r -d '' rel_path; do
-          case "$rel_path" in
-            coint4/artifacts/*|coint4/outputs/*|outputs/*|.ralph-tui/iterations/*|*.log|*.pid)
-              continue
-              ;;
-          esac
-          printf '%s\0' "$rel_path"
-        done \
-      | rsync -az --from0 --files-from=- -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
-  else
-    echo "Unsupported SYNC_UP_MODE=${SYNC_UP_MODE}. Use tracked or code." >&2
-    exit 1
-  fi
+  rsync -az --from0 --files-from="${sync_manifest}" -e "ssh ${SSH_OPTS[*]}" "${LOCAL_REPO_DIR}/" "${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}/"
+  cleanup_remote_stale_tracked_files "${sync_manifest}"
+  rm -rf "${tmpdir}"
 
   if [[ -n "$sha" ]]; then
     ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "echo '${sha}' > '${SERVER_REPO_DIR}/SYNCED_FROM_COMMIT.txt'"

@@ -518,6 +518,59 @@ def test_sync_repo_code_retries_transient_stream_failure(
     assert any("sync_code ok" in entry for entry in logs)
 
 
+def test_sync_repo_code_prunes_remote_only_files_before_stream_when_parity_is_restored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("value = 1\n", encoding="utf-8")
+
+    local_manifest = module._build_local_sync_manifest(tmp_path, module._sync_code_include_paths(tmp_path))
+    local_entries = list(local_manifest["entries"])
+    remote_before = {
+        "digest": "remote-before",
+        "count": int(local_manifest["count"]) + 1,
+        "entries": local_entries
+        + [{"path": "scripts/data/build_market_metrics.py", "sha256": "deadbeef", "size": 17}],
+    }
+    manifest_payloads = [remote_before, local_manifest]
+    pruned_paths: list[str] = []
+
+    monkeypatch.setattr(
+        module,
+        "_remote_sync_manifest",
+        lambda **_kwargs: manifest_payloads.pop(0),
+    )
+    monkeypatch.setattr(
+        module,
+        "_prune_remote_sync_extras",
+        lambda **kwargs: pruned_paths.extend(list(kwargs.get("extra_paths") or [])) or len(pruned_paths),
+    )
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+
+    def _unexpected_popen(*_args, **_kwargs):
+        raise AssertionError("stream sync should be skipped once stale remote-only files are pruned")
+
+    monkeypatch.setattr(module.subprocess, "Popen", _unexpected_popen)
+
+    logs: list[str] = []
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=tmp_path / "powered.log",
+        log=lambda msg: logs.append(msg),
+    )
+
+    assert pruned_paths == ["scripts/data/build_market_metrics.py"]
+    assert any("remote_only_before count=1" in entry for entry in logs)
+    assert any("reason=post_prune_manifest_match" in entry for entry in logs)
+
+
 def test_wait_for_completion_until_metrics_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

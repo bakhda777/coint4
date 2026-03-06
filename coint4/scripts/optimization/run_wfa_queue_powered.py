@@ -556,6 +556,7 @@ def _remote_sync_manifest(
         "includes = json.loads(os.environ.get('INCLUDE_JSON', '[]'))\n"
         "digest = hashlib.sha256()\n"
         "count = 0\n"
+        "entries = []\n"
         "for include in sorted({str(item or '').strip() for item in includes if str(item or '').strip()}):\n"
         "    path = (root / include).resolve()\n"
         "    if not path.exists():\n"
@@ -574,7 +575,8 @@ def _remote_sync_manifest(
         "        digest.update(file_digest.encode('ascii'))\n"
         "        digest.update(b'\\0')\n"
         "        count += 1\n"
-        "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': count}, sort_keys=True))\n"
+        "        entries.append({'path': rel_path.as_posix(), 'sha256': file_digest, 'size': int(candidate.stat().st_size)})\n"
+        "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': count, 'entries': entries}, sort_keys=True))\n"
         "PY"
     )
     rc, output = _exec_ssh_command(
@@ -596,7 +598,102 @@ def _remote_sync_manifest(
     return {
         "digest": str(payload.get("digest") or ""),
         "count": int(payload.get("count") or 0),
+        "entries": payload.get("entries") if isinstance(payload.get("entries"), list) else [],
     }
+
+
+def _manifest_entry_index(manifest: dict[str, object] | None) -> dict[str, dict[str, object]]:
+    index: dict[str, dict[str, object]] = {}
+    if not isinstance(manifest, dict):
+        return index
+    entries = manifest.get("entries")
+    if not isinstance(entries, list):
+        return index
+    for raw_entry in entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        path_text = str(raw_entry.get("path") or "").strip()
+        if not path_text:
+            continue
+        index[path_text] = raw_entry
+    return index
+
+
+def _manifest_remote_only_paths(
+    local_manifest: dict[str, object] | None,
+    remote_manifest: dict[str, object] | None,
+) -> list[str]:
+    local_paths = set(_manifest_entry_index(local_manifest))
+    remote_paths = sorted(set(_manifest_entry_index(remote_manifest)) - local_paths)
+    return remote_paths
+
+
+def _prune_remote_sync_extras(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    extra_paths: Iterable[str],
+    port: int,
+    log_path: Path,
+    log: Callable[[str], None],
+) -> int:
+    extra_list = sorted({str(item or "").strip() for item in extra_paths if str(item or "").strip()})
+    if not extra_list:
+        return 0
+    remote_cmd = (
+        f"cd {shlex.quote(str(remote_repo))} "
+        f"&& DELETE_JSON={shlex.quote(json.dumps(extra_list, ensure_ascii=True))} "
+        "python3 - <<'PY'\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "\n"
+        "root = pathlib.Path.cwd().resolve()\n"
+        "paths = json.loads(os.environ.get('DELETE_JSON', '[]'))\n"
+        "deleted = 0\n"
+        "for item in paths:\n"
+        "    rel_path = pathlib.Path(str(item or '').strip())\n"
+        "    if not rel_path.parts:\n"
+        "        continue\n"
+        "    target = (root / rel_path).resolve()\n"
+        "    try:\n"
+        "        target.relative_to(root)\n"
+        "    except ValueError:\n"
+        "        continue\n"
+        "    if target.exists() and target.is_file():\n"
+        "        target.unlink()\n"
+        "        deleted += 1\n"
+        "        parent = target.parent\n"
+        "        while parent != root:\n"
+        "            try:\n"
+        "                parent.rmdir()\n"
+        "            except OSError:\n"
+        "                break\n"
+        "            parent = parent.parent\n"
+        "print(json.dumps({'ok': True, 'deleted': deleted}, sort_keys=True))\n"
+        "PY"
+    )
+    rc, output = _exec_ssh_command(
+        host,
+        user,
+        remote_cmd,
+        log_path,
+        port=port,
+        command_purpose="sync-code-prune-extras",
+        log=log,
+    )
+    payload = _extract_last_json_line(output)
+    if rc != 0 or not isinstance(payload, dict) or not bool(payload.get("ok")):
+        raise _PoweredFailure(
+            "sync_code remote extra cleanup failed",
+            error_class="REMOTE_SYNC_FAILED" if rc == 0 else "NETWORK",
+            fatal=False,
+        )
+    deleted = int(payload.get("deleted") or 0)
+    if deleted > 0:
+        log(f"powered: sync_code pruned remote_only_files={deleted}")
+    return deleted
 
 
 def _run_scp_file(source: Path, destination_user: str, destination_host: str, destination: Path, *, port: int, log: Callable[[str], None]) -> None:
@@ -2023,6 +2120,7 @@ def _sync_repo_code(
     local_manifest_digest = str(local_manifest.get("digest") or "")
     remote_manifest_before: Optional[dict[str, object]] = None
     remote_manifest_after: Optional[dict[str, object]] = None
+    local_entry_index = _manifest_entry_index(local_manifest)
     try:
         remote_manifest_before = _remote_sync_manifest(
             host=host,
@@ -2051,6 +2149,41 @@ def _sync_repo_code(
             )
         )
         return
+    remote_only_before = _manifest_remote_only_paths(local_manifest, remote_manifest_before)
+    if remote_only_before:
+        log(
+            "powered: sync_code remote_only_before count={count} sample={sample}".format(
+                count=len(remote_only_before),
+                sample=",".join(remote_only_before[:5]),
+            )
+        )
+        _prune_remote_sync_extras(
+            host=host,
+            user=user,
+            remote_repo=remote_repo,
+            extra_paths=remote_only_before,
+            port=port,
+            log_path=log_path,
+            log=log,
+        )
+        remote_manifest_before = _remote_sync_manifest(
+            host=host,
+            user=user,
+            remote_repo=remote_repo,
+            includes=includes,
+            port=port,
+            log_path=log_path,
+            log=log,
+        )
+        remote_manifest_before_digest = str((remote_manifest_before or {}).get("digest") or "")
+        if local_manifest_digest and remote_manifest_before_digest == local_manifest_digest:
+            log(
+                "powered: sync_code ok reason=post_prune_manifest_match digest={digest} files={count}".format(
+                    digest=local_manifest_digest,
+                    count=int(local_manifest.get("count") or 0),
+                )
+            )
+            return
 
     local_head = _git_head_revision(project_root)
     local_dirty = _local_paths_have_tracked_changes(project_root, includes)
@@ -2203,9 +2336,48 @@ def _sync_repo_code(
             log=log,
         )
         remote_manifest_after_digest = str(remote_manifest_after.get("digest") or "")
+        remote_only_after = _manifest_remote_only_paths(local_manifest, remote_manifest_after)
+        if local_manifest_digest and remote_manifest_after_digest != local_manifest_digest and remote_only_after:
+            log(
+                "powered: sync_code remote_only_after count={count} sample={sample}".format(
+                    count=len(remote_only_after),
+                    sample=",".join(remote_only_after[:5]),
+                )
+            )
+            _prune_remote_sync_extras(
+                host=host,
+                user=user,
+                remote_repo=remote_repo,
+                extra_paths=remote_only_after,
+                port=port,
+                log_path=log_path,
+                log=log,
+            )
+            remote_manifest_after = _remote_sync_manifest(
+                host=host,
+                user=user,
+                remote_repo=remote_repo,
+                includes=includes,
+                port=port,
+                log_path=log_path,
+                log=log,
+            )
+            remote_manifest_after_digest = str(remote_manifest_after.get("digest") or "")
         if local_manifest_digest and remote_manifest_after_digest != local_manifest_digest:
+            remote_entry_index = _manifest_entry_index(remote_manifest_after)
+            remote_only_final = sorted(set(remote_entry_index) - set(local_entry_index))
+            mismatched_paths = sorted(
+                path_text
+                for path_text, entry in local_entry_index.items()
+                if path_text in remote_entry_index
+                and str(entry.get("sha256") or "") != str(remote_entry_index[path_text].get("sha256") or "")
+            )
+            mismatch_detail = "remote_only={remote_only} mismatched={mismatched}".format(
+                remote_only=",".join(remote_only_final[:5]) or "none",
+                mismatched=",".join(mismatched_paths[:5]) or "none",
+            )
             raise _PoweredFailure(
-                "sync_code verification failed: remote manifest mismatch",
+                f"sync_code verification failed: remote manifest mismatch ({mismatch_detail})",
                 error_class="REMOTE_SYNC_FAILED",
                 fatal=True,
             )
