@@ -498,6 +498,11 @@ def test_process_slo_exposes_search_quality_counters_for_control_plane(
                 "hard_block_reason": "zero_coverage_seed_streak",
                 "hard_block_until_epoch": int(time.time()) + 600,
                 "zero_coverage_seed_streak": 4,
+                "controlled_recovery_active": True,
+                "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                "controlled_recovery_attempts_remaining": 2,
+                "controlled_recovery_variants_cap": 8,
+                "winner_proximate_positive_contains": ["positive_alpha", "positive_gamma"],
                 "lineages": [
                     {
                         "lineage_uid": "positive_alpha",
@@ -556,6 +561,14 @@ def test_process_slo_exposes_search_quality_counters_for_control_plane(
     assert process_state["search_quality"]["broad_search_allowed"] is False
     assert process_state["search_quality"]["seed_generation_mode"] == "micro"
     assert process_state["search_quality"]["zero_coverage_seed_streak"] == 4
+    assert process_state["search_quality"]["winner_proximate_positive_contains"] == [
+        "positive_alpha",
+        "positive_gamma",
+    ]
+    assert process_state["search_quality"]["controlled_recovery_active"] is True
+    assert process_state["search_quality"]["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
+    assert process_state["search_quality"]["controlled_recovery_attempts_remaining"] == 2
+    assert process_state["search_quality"]["controlled_recovery_variants_cap"] == 8
     assert process_state["queue"]["positive_lineage_count"] == 2
     assert process_state["queue"]["zero_evidence_lineage_count"] == 1
     assert process_state["runtime"]["broad_search_allowed"] is False
@@ -807,4 +820,129 @@ def test_process_slo_and_capacity_ignore_fullspan_reject_backlog_for_dispatchabl
     assert capacity_state["backlog"]["executable_pending"] == 1
     assert capacity_state["backlog"]["dispatchable_pending"] == 0
     assert capacity_state["backlog"]["hard_rejected_pending"] == 1
+    assert "anti_idle_dispatchable_backlog" not in capacity_state["reasons"]
+
+
+def test_capacity_controller_clamps_parallelism_for_controlled_recovery_backlog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_recovery" / "run_queue.csv"
+
+    config_rel = "configs/recovery.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: recovery\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "process_slo_state.json").write_text(
+        json.dumps(
+            {
+                "search_quality": {
+                    "controlled_recovery_active": True,
+                    "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                    "controlled_recovery_attempts_remaining": 2,
+                    "controlled_recovery_variants_cap": 8,
+                    "winner_proximate_positive_contains": ["positive_alpha"],
+                },
+                "queue": {
+                    "candidate_pool_status": "ready",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
+    monkeypatch.setattr(
+        capacity_module,
+        "probe_remote_runtime_snapshot",
+        lambda *_args, **_kwargs: {
+            "reachable": True,
+            "load1": 0.2,
+            "top_level_queue_jobs": 0,
+            "remote_active_queue_jobs": 0,
+            "remote_queue_job_count": 0,
+            "watch_queue_count": 0,
+            "remote_child_process_count": 0,
+            "remote_runner_count": 0,
+            "remote_work_active": False,
+            "cpu_busy_without_queue_job": False,
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["vps_capacity_controller_agent.py", "--root", str(root)])
+    assert capacity_module.main() == 0
+
+    capacity_state = json.loads((state_dir / "capacity_controller_state.json").read_text(encoding="utf-8"))
+    assert capacity_state["controlled_recovery"]["active"] is True
+    assert capacity_state["controlled_recovery"]["backlog_active"] is True
+    assert capacity_state["controlled_recovery"]["attempts_remaining"] == 2
+    assert capacity_state["controlled_recovery"]["variants_cap"] == 8
+    assert capacity_state["controlled_recovery"]["winner_proximate_positive_contains"] == ["positive_alpha"]
+    assert capacity_state["policy"]["search_parallel_min"] == 4
+    assert capacity_state["policy"]["search_parallel_max"] == 8
+    assert capacity_state["policy"]["confirm_parallel_min"] == 1
+    assert capacity_state["policy"]["confirm_parallel_max"] == 1
+    assert "controlled_recovery_backlog" in capacity_state["reasons"]
+
+
+def test_capacity_controller_does_not_hold_controlled_recovery_without_backlog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    state_dir.mkdir(parents=True, exist_ok=True)
+
+    (state_dir / "process_slo_state.json").write_text(
+        json.dumps(
+            {
+                "search_quality": {
+                    "controlled_recovery_active": True,
+                    "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                    "controlled_recovery_attempts_remaining": 2,
+                    "controlled_recovery_variants_cap": 8,
+                    "winner_proximate_positive_contains": ["positive_alpha"],
+                },
+                "queue": {
+                    "candidate_pool_status": "empty_expected",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    capacity_module = _load_module("vps_capacity_controller_agent.py", tmp_path)
+    monkeypatch.setattr(
+        capacity_module,
+        "probe_remote_runtime_snapshot",
+        lambda *_args, **_kwargs: {
+            "reachable": True,
+            "load1": 0.2,
+            "top_level_queue_jobs": 0,
+            "remote_active_queue_jobs": 0,
+            "remote_queue_job_count": 0,
+            "watch_queue_count": 0,
+            "remote_child_process_count": 0,
+            "remote_runner_count": 0,
+            "remote_work_active": False,
+            "cpu_busy_without_queue_job": False,
+        },
+    )
+    monkeypatch.setattr(sys, "argv", ["vps_capacity_controller_agent.py", "--root", str(root)])
+    assert capacity_module.main() == 0
+
+    capacity_state = json.loads((state_dir / "capacity_controller_state.json").read_text(encoding="utf-8"))
+    assert capacity_state["backlog"]["dispatchable_pending"] == 0
+    assert capacity_state["controlled_recovery"]["active"] is True
+    assert capacity_state["controlled_recovery"]["backlog_active"] is False
+    assert capacity_state["controlled_recovery"]["candidate_pool_status"] == "empty_expected"
+    assert "controlled_recovery_backlog" not in capacity_state["reasons"]
     assert "anti_idle_dispatchable_backlog" not in capacity_state["reasons"]

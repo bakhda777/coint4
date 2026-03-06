@@ -55,6 +55,17 @@ def parse_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def parse_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def load_json(path: Path, default):
     if not path.exists():
         return default
@@ -181,6 +192,64 @@ def read_sla_escalation(path: Path) -> dict[str, Any]:
     return policy if isinstance(policy, dict) else {}
 
 
+def _normalize_token_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        token = str(value or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+    return normalized
+
+
+def read_process_slo_controlled_recovery(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {
+            "active": False,
+            "reason": "",
+            "attempts_remaining": 0,
+            "variants_cap": 0,
+            "winner_proximate_positive_contains": [],
+            "candidate_pool_status": "",
+        }
+    search_quality = data.get("search_quality", {})
+    if not isinstance(search_quality, dict):
+        search_quality = {}
+    queue = data.get("queue", {})
+    if not isinstance(queue, dict):
+        queue = {}
+    return {
+        "active": parse_bool(
+            search_quality.get("controlled_recovery_active"),
+            parse_bool(queue.get("controlled_recovery_active"), False),
+        ),
+        "reason": str(
+            search_quality.get("controlled_recovery_reason")
+            or queue.get("controlled_recovery_reason")
+            or ""
+        ).strip(),
+        "attempts_remaining": parse_int(
+            search_quality.get("controlled_recovery_attempts_remaining"),
+            parse_int(queue.get("controlled_recovery_attempts_remaining"), 0),
+        ),
+        "variants_cap": parse_int(
+            search_quality.get("controlled_recovery_variants_cap"),
+            parse_int(queue.get("controlled_recovery_variants_cap"), 0),
+        ),
+        "winner_proximate_positive_contains": _normalize_token_list(
+            search_quality.get("winner_proximate_positive_contains"),
+        ),
+        "candidate_pool_status": str(
+            queue.get("candidate_pool_status") or data.get("candidate_pool_status") or ""
+        ).strip(),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Adaptive VPS capacity controller.")
     parser.add_argument("--root", default="", help="App root (`coint4/`).")
@@ -194,6 +263,7 @@ def main() -> int:
     output_path = state_dir / "capacity_controller_state.json"
     remote_runtime_state_path = state_dir / "remote_runtime_state.json"
     fullspan_state_path = state_dir / "fullspan_decision_state.json"
+    process_slo_state_path = state_dir / "process_slo_state.json"
     sla_state_path = state_dir / "confirm_sla_escalation_state.json"
     aggregate_root = root / "artifacts" / "wfa" / "aggregate"
 
@@ -232,6 +302,7 @@ def main() -> int:
         executable_pending = parse_int(backlog.get("executable_pending"), 0)
         dispatchable_pending = parse_int(backlog.get("dispatchable_pending"), 0)
         hard_rejected_pending = parse_int(backlog.get("hard_rejected_pending"), 0)
+        controlled_recovery = read_process_slo_controlled_recovery(process_slo_state_path)
 
         remote_snapshot = probe_remote_runtime_snapshot(root, state_dir, server_user=server_user, server_ip=server_ip)
         reachable = bool(remote_snapshot.get("reachable"))
@@ -252,6 +323,22 @@ def main() -> int:
         cpu_busy_without_queue_job = bool(remote_snapshot.get("cpu_busy_without_queue_job"))
         remote_snapshot_ts_epoch = parse_int(remote_snapshot.get("ts_epoch"), 0)
         remote_snapshot_age_sec = max(0, int(time.time()) - remote_snapshot_ts_epoch) if remote_snapshot_ts_epoch > 0 else -1
+        controlled_recovery_active = bool(controlled_recovery.get("active"))
+        controlled_recovery_attempts_remaining = parse_int(
+            controlled_recovery.get("attempts_remaining"),
+            0,
+        )
+        controlled_recovery_backlog_active = bool(
+            controlled_recovery_active
+            and controlled_recovery_attempts_remaining > 0
+            and (
+                dispatchable_pending > 0
+                or remote_queue_job_count > 0
+                or remote_active_queue_jobs > 0
+                or remote_work_active
+                or runner_count > 0
+            )
+        )
 
         policy = {
             "search_parallel_min": 2,
@@ -329,6 +416,20 @@ def main() -> int:
                 if key in sla_override:
                     policy[key] = parse_int(sla_override.get(key), parse_int(policy.get(key), 0))
 
+        if controlled_recovery_backlog_active:
+            policy.update(
+                {
+                    "search_parallel_min": 4,
+                    "search_parallel_max": 8,
+                    "confirm_parallel_min": 1,
+                    "confirm_parallel_max": 1,
+                    "confirm_dispatches_per_cycle": 1,
+                    "confirm_lane_max_active": 1,
+                    "confirm_lane_max_remote_runners": 1,
+                }
+            )
+            reasons.append("controlled_recovery_backlog")
+
         policy["search_parallel_min"] = max(
             int(search_parallel_hard_min),
             min(int(policy["search_parallel_min"]), int(search_parallel_hard_max)),
@@ -369,6 +470,17 @@ def main() -> int:
                 "hard_rejected_pending": int(hard_rejected_pending),
                 "sla_confirm_sec": int(sla_confirm_sec),
             },
+            "controlled_recovery": {
+                "active": controlled_recovery_active,
+                "reason": str(controlled_recovery.get("reason") or ""),
+                "attempts_remaining": int(controlled_recovery_attempts_remaining),
+                "variants_cap": parse_int(controlled_recovery.get("variants_cap"), 0),
+                "backlog_active": controlled_recovery_backlog_active,
+                "candidate_pool_status": str(controlled_recovery.get("candidate_pool_status") or ""),
+                "winner_proximate_positive_contains": list(
+                    controlled_recovery.get("winner_proximate_positive_contains") or []
+                ),
+            },
             "remote_runtime_state_file": str(remote_runtime_state_path),
             "policy": policy,
             "reasons": reasons,
@@ -387,6 +499,7 @@ def main() -> int:
                 f"remote_snapshot_age_sec={remote_snapshot_age_sec} "
                 f"pending_confirm={pending_confirm} overdue_confirm={overdue_confirm} "
                 f"executable_pending={executable_pending} dispatchable_pending={dispatchable_pending} hard_rejected_pending={hard_rejected_pending} "
+                f"controlled_recovery_active={int(controlled_recovery_active)} controlled_recovery_backlog_active={int(controlled_recovery_backlog_active)} "
                 f"search_max={policy['search_parallel_max']} confirm_min={policy['confirm_parallel_min']} "
                 f"confirm_max={policy['confirm_parallel_max']} reasons={';'.join(reasons) or 'none'} dry_run={int(bool(args.dry_run))}\n"
             )

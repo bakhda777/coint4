@@ -11,6 +11,7 @@ QUEUE_ROOT="$ROOT_DIR/artifacts/wfa/aggregate"
 STATE_DIR="$ROOT_DIR/artifacts/wfa/aggregate/.autonomous"
 STATE_FILE="$STATE_DIR/driver_state.txt"
 DRIVER_RUNTIME_STATE_FILE="$STATE_DIR/driver_runtime_state.json"
+PROCESS_SLO_STATE_FILE="$STATE_DIR/process_slo_state.json"
 LOG_FILE="$STATE_DIR/driver.log"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
@@ -2278,7 +2279,7 @@ driver_idle_with_dispatchable_pending() {
 }
 
 process_slo_remote_coverage_snapshot() {
-  python3 - "$STATE_DIR/process_slo_state.json" <<'PY'
+  python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -2312,6 +2313,74 @@ try:
 except Exception:
     coverage_ready = 0
 print(f"{remote_flag}\t{max(0, coverage_ready)}")
+PY
+}
+
+process_slo_controlled_recovery_snapshot() {
+  python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("0\t\t0\t0")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0\t\t0\t0")
+    raise SystemExit(0)
+if not isinstance(data, dict):
+    print("0\t\t0\t0")
+    raise SystemExit(0)
+search_quality = data.get("search_quality", {})
+if not isinstance(search_quality, dict):
+    search_quality = {}
+queue = data.get("queue", {})
+if not isinstance(queue, dict):
+    queue = {}
+
+active = search_quality.get("controlled_recovery_active")
+if active in (None, ""):
+    active = queue.get("controlled_recovery_active")
+if isinstance(active, str):
+    active = active.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+reason = str(
+    search_quality.get("controlled_recovery_reason")
+    or queue.get("controlled_recovery_reason")
+    or ""
+).strip()
+try:
+    attempts_remaining = int(
+        float(
+            search_quality.get("controlled_recovery_attempts_remaining")
+            or queue.get("controlled_recovery_attempts_remaining")
+            or 0
+        )
+    )
+except Exception:
+    attempts_remaining = 0
+try:
+    variants_cap = int(
+        float(
+            search_quality.get("controlled_recovery_variants_cap")
+            or queue.get("controlled_recovery_variants_cap")
+            or 0
+        )
+    )
+except Exception:
+    variants_cap = 0
+print(
+    ("1" if bool(active) else "0")
+    + "\t"
+    + reason
+    + "\t"
+    + str(max(0, attempts_remaining))
+    + "\t"
+    + str(max(0, variants_cap))
+)
 PY
 }
 
@@ -6202,6 +6271,10 @@ maybe_trigger_auto_seed() {
   local candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending
   local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
+  local controlled_recovery_active controlled_recovery_reason controlled_recovery_attempts_remaining controlled_recovery_variants_cap
+  local controlled_recovery_override controlled_recovery_exhausted controlled_recovery_zero_coverage_only
+  local controlled_recovery_exhausted_prev=0
+  local effective_num_variants effective_num_variants_floor
   local runtime_block_active runtime_block_reason
   local infra_gate_status startup_failure_code
   local process_remote_reachable process_coverage_ready
@@ -6234,6 +6307,19 @@ maybe_trigger_auto_seed() {
   IFS=$'\t' read -r candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending <<< "$(candidate_pool_status_snapshot)"
   fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
   fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
+  IFS=$'\t' read -r controlled_recovery_active controlled_recovery_reason controlled_recovery_attempts_remaining controlled_recovery_variants_cap <<< "$(process_slo_controlled_recovery_snapshot)"
+  [[ "$controlled_recovery_active" =~ ^[01]$ ]] || controlled_recovery_active=0
+  [[ "$controlled_recovery_attempts_remaining" =~ ^[0-9]+$ ]] || controlled_recovery_attempts_remaining=0
+  [[ "$controlled_recovery_variants_cap" =~ ^[0-9]+$ ]] || controlled_recovery_variants_cap=0
+  controlled_recovery_override=0
+  controlled_recovery_exhausted=0
+  controlled_recovery_zero_coverage_only=0
+  effective_num_variants="$AUTO_SEED_NUM_VARIANTS"
+  effective_num_variants_floor="$AUTO_SEED_NUM_VARIANTS_FLOOR"
+  fullspan_state_metric_set "controlled_recovery_active" "$controlled_recovery_active"
+  fullspan_state_metric_set "controlled_recovery_reason" "$controlled_recovery_reason"
+  fullspan_state_metric_set "controlled_recovery_attempts_remaining" "$controlled_recovery_attempts_remaining"
+  fullspan_state_metric_set "controlled_recovery_variants_cap" "$controlled_recovery_variants_cap"
 
   IFS=$'\t' read -r yield_block_active yield_block_reason yield_block_until yield_block_streak <<< "$(yield_governor_hard_block_snapshot "$now_epoch")"
   [[ "$yield_block_active" =~ ^[0-9]+$ ]] || yield_block_active=0
@@ -6341,6 +6427,49 @@ maybe_trigger_auto_seed() {
     fi
   fi
   if (( hard_block_active > 0 )); then
+    local zero_coverage_reason_present=0
+    local non_zero_coverage_reason_present=0
+    local hard_block_reason_entry=""
+    local -a hard_block_reason_parts=()
+    IFS=',' read -r -a hard_block_reason_parts <<< "$hard_block_reason"
+    for hard_block_reason_entry in "${hard_block_reason_parts[@]}"; do
+      hard_block_reason_entry="${hard_block_reason_entry//[[:space:]]/}"
+      [[ -n "$hard_block_reason_entry" ]] || continue
+      if [[ "$hard_block_reason_entry" == "zero_coverage_seed_streak" ]]; then
+        zero_coverage_reason_present=1
+      else
+        non_zero_coverage_reason_present=1
+      fi
+    done
+    if (( zero_coverage_reason_present > 0 && non_zero_coverage_reason_present == 0 )); then
+      controlled_recovery_zero_coverage_only=1
+    fi
+    if (( controlled_recovery_zero_coverage_only > 0 && controlled_recovery_active > 0 && controlled_recovery_attempts_remaining > 0 && dispatchable_pending <= 8 )); then
+      controlled_recovery_override=1
+      if (( controlled_recovery_variants_cap > 0 )); then
+        effective_num_variants="$controlled_recovery_variants_cap"
+        effective_num_variants_floor="$controlled_recovery_variants_cap"
+      fi
+      fullspan_state_metric_set "controlled_recovery_override_active" "1"
+    else
+      fullspan_state_metric_set "controlled_recovery_override_active" "0"
+      if (( controlled_recovery_zero_coverage_only > 0 && controlled_recovery_attempts_remaining <= 0 )); then
+        controlled_recovery_exhausted=1
+      fi
+    fi
+  else
+    fullspan_state_metric_set "controlled_recovery_override_active" "0"
+  fi
+  if (( hard_block_active > 0 )); then
+    if (( controlled_recovery_override > 0 )); then
+      fullspan_state_metric_set "controlled_recovery_exhausted" "0"
+    else
+      controlled_recovery_exhausted_prev="$(fullspan_state_metric_get controlled_recovery_exhausted 0)"
+      [[ "$controlled_recovery_exhausted_prev" =~ ^[0-9]+$ ]] || controlled_recovery_exhausted_prev=0
+      fullspan_state_metric_set "controlled_recovery_exhausted" "$controlled_recovery_exhausted"
+    fi
+  fi
+  if (( hard_block_active > 0 && controlled_recovery_override == 0 )); then
     if [[ "$infra_gate_status" == "fail_closed" && -n "$startup_failure_code" ]]; then
       gate_block_status="fail_closed"
     fi
@@ -6350,6 +6479,10 @@ maybe_trigger_auto_seed() {
     if [[ "$prev_blocked" != "1" || "$prev_block_reason" != "${hard_block_reason:-auto_seed_hard_block}" ]]; then
       log "auto_seed_hard_block reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}"
       log_decision_note "global" "AUTO_SEED_HARD_BLOCK" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}" "skip_seed_generation"
+    fi
+    if (( controlled_recovery_exhausted > 0 && controlled_recovery_exhausted_prev == 0 )); then
+      log "CONTROLLED_RECOVERY_EXHAUSTED reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status"
+      log_decision_note "global" "CONTROLLED_RECOVERY_EXHAUSTED" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status" "keep_fail_closed_zero_coverage_hard_block"
     fi
     return 0
   fi
@@ -6381,12 +6514,16 @@ maybe_trigger_auto_seed() {
   fi
 
   local rc=0
+  if (( controlled_recovery_override > 0 )); then
+    log "CONTROLLED_RECOVERY_TRIGGER reason=$reason block_reason=${hard_block_reason:-zero_coverage_seed_streak} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants"
+    log_decision_note "global" "CONTROLLED_RECOVERY_TRIGGER" "reason=$reason block_reason=${hard_block_reason:-zero_coverage_seed_streak} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants" "invoke_controlled_recovery_seed_batch"
+  fi
   (
     cd "$ROOT_DIR"
     PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_queue_seeder.py \
       --pending-threshold "$effective_seed_pending_threshold" \
-      --num-variants "$AUTO_SEED_NUM_VARIANTS" \
-      --num-variants-floor "$AUTO_SEED_NUM_VARIANTS_FLOOR" \
+      --num-variants "$effective_num_variants" \
+      --num-variants-floor "$effective_num_variants_floor" \
       --aggregate-dir artifacts/wfa/aggregate \
       --run-index artifacts/wfa/aggregate/rollup/run_index.csv
   ) >>"$LOG_FILE" 2>&1 || rc=$?
@@ -6398,8 +6535,12 @@ maybe_trigger_auto_seed() {
     fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
     fullspan_state_metric_set "auto_seed_blocked" 0
     fullspan_state_metric_set "auto_seed_block_reason" ""
-    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth no_dispatchable_queues=$no_dispatchable_queues threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS"
-    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
+    if (( controlled_recovery_override > 0 )); then
+      log "CONTROLLED_RECOVERY_SUCCESS reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants"
+      log_decision_note "global" "CONTROLLED_RECOVERY_SUCCESS" "reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants" "controlled_recovery_seed_batch_created"
+    fi
+    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth no_dispatchable_queues=$no_dispatchable_queues threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants"
+    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants" "expand_planned_backlog"
   else
     fullspan_state_metric_inc "seed_trigger_fail_count" 1
     log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc planned_dispatchable=$planned_dispatchable threshold=$effective_seed_pending_threshold"

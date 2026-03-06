@@ -283,10 +283,16 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
             "zero_coverage_seed_streak_reason": "",
             "positive_lineage_count": 0,
             "zero_evidence_lineage_count": 0,
+            "winner_proximate_positive_lineage_count": 0,
             "broad_search_allowed": None,
             "seed_generation_mode": "",
             "lineages": [],
             "winner_proximate": {},
+            "winner_proximate_positive_contains": [],
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": 0,
         }
     lineages = data.get("lineages", [])
     if not isinstance(lineages, list):
@@ -294,6 +300,11 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
     winner_proximate = data.get("winner_proximate", {})
     if not isinstance(winner_proximate, dict):
         winner_proximate = {}
+    winner_proximate_positive_contains = data.get("winner_proximate_positive_contains")
+    if winner_proximate_positive_contains is None:
+        winner_proximate_positive_contains = winner_proximate.get("contains")
+    if not isinstance(winner_proximate_positive_contains, list):
+        winner_proximate_positive_contains = []
     return {
         "hard_block_active": parse_bool(data.get("hard_block_active"), False),
         "hard_block_reason": str(data.get("hard_block_reason") or ""),
@@ -302,10 +313,22 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
         "zero_coverage_seed_streak_reason": str(data.get("zero_coverage_seed_streak_reason") or ""),
         "positive_lineage_count": parse_int(data.get("positive_lineage_count"), 0),
         "zero_evidence_lineage_count": parse_int(data.get("zero_evidence_lineage_count"), 0),
+        "winner_proximate_positive_lineage_count": parse_int(
+            data.get("winner_proximate_positive_lineage_count"),
+            0,
+        ),
         "broad_search_allowed": data.get("broad_search_allowed"),
         "seed_generation_mode": str(data.get("seed_generation_mode") or ""),
         "lineages": lineages,
         "winner_proximate": winner_proximate,
+        "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_active": parse_bool(data.get("controlled_recovery_active"), False),
+        "controlled_recovery_reason": str(data.get("controlled_recovery_reason") or ""),
+        "controlled_recovery_attempts_remaining": parse_int(
+            data.get("controlled_recovery_attempts_remaining"),
+            0,
+        ),
+        "controlled_recovery_variants_cap": parse_int(data.get("controlled_recovery_variants_cap"), 0),
     }
 
 
@@ -322,6 +345,11 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
             "recent_seed_quality": {},
             "quality_governor": {},
             "directive": {},
+            "winner_proximate_positive_contains": [],
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": 0,
         }
     covered_window_count = parse_int(data.get("covered_window_count"), 0)
     coverage_verified_ready_count = parse_int(data.get("coverage_verified_ready_count"), 0)
@@ -352,6 +380,11 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
     directive = data.get("directive", {})
     if not isinstance(directive, dict):
         directive = {}
+    winner_proximate_positive_contains = data.get("winner_proximate_positive_contains")
+    if winner_proximate_positive_contains is None:
+        winner_proximate_positive_contains = directive.get("winner_proximate_tokens")
+    if not isinstance(winner_proximate_positive_contains, list):
+        winner_proximate_positive_contains = []
     return {
         "covered_window_count": covered_window_count,
         "coverage_verified_ready_count": coverage_verified_ready_count,
@@ -362,6 +395,14 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
         "recent_seed_quality": recent_seed_quality,
         "quality_governor": quality_governor,
         "directive": directive,
+        "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_active": parse_bool(data.get("controlled_recovery_active"), False),
+        "controlled_recovery_reason": str(data.get("controlled_recovery_reason") or ""),
+        "controlled_recovery_attempts_remaining": parse_int(
+            data.get("controlled_recovery_attempts_remaining"),
+            0,
+        ),
+        "controlled_recovery_variants_cap": parse_int(data.get("controlled_recovery_variants_cap"), 0),
     }
 
 
@@ -369,6 +410,20 @@ def _count_non_empty_tokens(values: Any) -> int:
     if not isinstance(values, list):
         return 0
     return sum(1 for value in values if str(value or "").strip())
+
+
+def _normalize_non_empty_tokens(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        token = str(value or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+    return normalized
 
 
 def derive_search_quality_state(
@@ -415,6 +470,16 @@ def derive_search_quality_state(
     if zero_evidence_lineage_count <= 0:
         zero_evidence_lineage_count = parse_int(queue_seeder_state.get("zero_evidence_lineage_count"), 0)
 
+    winner_proximate_positive_contains = _normalize_non_empty_tokens(
+        yield_governor_state.get("winner_proximate_positive_contains"),
+    )
+    if not winner_proximate_positive_contains:
+        winner_proximate_positive_contains = _normalize_non_empty_tokens(
+            queue_seeder_state.get("winner_proximate_positive_contains"),
+        )
+    if not winner_proximate_positive_contains:
+        winner_proximate_positive_contains = _normalize_non_empty_tokens(winner_proximate.get("contains"))
+
     recent_seed_quality = queue_seeder_state.get("recent_seed_quality", {})
     if not isinstance(recent_seed_quality, dict):
         recent_seed_quality = {}
@@ -448,6 +513,32 @@ def derive_search_quality_state(
     if not seed_generation_mode and parse_bool(quality_governor.get("repair_mode_effective"), False):
         seed_generation_mode = "repair"
 
+    controlled_recovery_active = parse_bool(yield_governor_state.get("controlled_recovery_active"), False)
+    controlled_recovery_reason = str(yield_governor_state.get("controlled_recovery_reason") or "").strip()
+    controlled_recovery_attempts_remaining = parse_int(
+        yield_governor_state.get("controlled_recovery_attempts_remaining"),
+        0,
+    )
+    controlled_recovery_variants_cap = parse_int(
+        yield_governor_state.get("controlled_recovery_variants_cap"),
+        0,
+    )
+
+    if not controlled_recovery_active:
+        controlled_recovery_active = parse_bool(queue_seeder_state.get("controlled_recovery_active"), False)
+    if not controlled_recovery_reason:
+        controlled_recovery_reason = str(queue_seeder_state.get("controlled_recovery_reason") or "").strip()
+    if controlled_recovery_attempts_remaining <= 0:
+        controlled_recovery_attempts_remaining = parse_int(
+            queue_seeder_state.get("controlled_recovery_attempts_remaining"),
+            0,
+        )
+    if controlled_recovery_variants_cap <= 0:
+        controlled_recovery_variants_cap = parse_int(
+            queue_seeder_state.get("controlled_recovery_variants_cap"),
+            0,
+        )
+
     return {
         "positive_lineage_count": max(0, int(positive_lineage_count)),
         "zero_evidence_lineage_count": max(0, int(zero_evidence_lineage_count)),
@@ -455,6 +546,11 @@ def derive_search_quality_state(
         "seed_generation_mode": seed_generation_mode,
         "zero_coverage_seed_streak": parse_int(yield_governor_state.get("zero_coverage_seed_streak"), 0),
         "zero_coverage_seed_streak_reason": str(yield_governor_state.get("zero_coverage_seed_streak_reason") or ""),
+        "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_active": bool(controlled_recovery_active),
+        "controlled_recovery_reason": controlled_recovery_reason,
+        "controlled_recovery_attempts_remaining": max(0, int(controlled_recovery_attempts_remaining)),
+        "controlled_recovery_variants_cap": max(0, int(controlled_recovery_variants_cap)),
     }
 
 
@@ -1068,10 +1164,15 @@ def main() -> int:
                 "startup_failure_code": startup_failure_code,
                 "positive_lineage_count": search_quality_state["positive_lineage_count"],
                 "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
+                "winner_proximate_positive_contains": search_quality_state["winner_proximate_positive_contains"],
                 "broad_search_allowed": search_quality_state["broad_search_allowed"],
                 "seed_generation_mode": search_quality_state["seed_generation_mode"],
                 "zero_coverage_seed_streak": search_quality_state["zero_coverage_seed_streak"],
                 "zero_coverage_seed_streak_reason": search_quality_state["zero_coverage_seed_streak_reason"],
+                "controlled_recovery_active": search_quality_state["controlled_recovery_active"],
+                "controlled_recovery_reason": search_quality_state["controlled_recovery_reason"],
+                "controlled_recovery_attempts_remaining": search_quality_state["controlled_recovery_attempts_remaining"],
+                "controlled_recovery_variants_cap": search_quality_state["controlled_recovery_variants_cap"],
             },
             "kpi": {
                 "completed_rows": completed_rows,
@@ -1115,6 +1216,9 @@ def main() -> int:
                 "startup_failure_code": startup_failure_code,
                 "positive_lineage_count": search_quality_state["positive_lineage_count"],
                 "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
+                "winner_proximate_positive_contains": search_quality_state["winner_proximate_positive_contains"],
+                "controlled_recovery_active": search_quality_state["controlled_recovery_active"],
+                "controlled_recovery_attempts_remaining": search_quality_state["controlled_recovery_attempts_remaining"],
             },
             "runtime": {
                 "ready_buffer_depth": ready_buffer_depth,
@@ -1153,10 +1257,15 @@ def main() -> int:
                 "startup_failure_code": startup_failure_code,
                 "positive_lineage_count": search_quality_state["positive_lineage_count"],
                 "zero_evidence_lineage_count": search_quality_state["zero_evidence_lineage_count"],
+                "winner_proximate_positive_contains": search_quality_state["winner_proximate_positive_contains"],
                 "broad_search_allowed": search_quality_state["broad_search_allowed"],
                 "seed_generation_mode": search_quality_state["seed_generation_mode"],
                 "zero_coverage_seed_streak": search_quality_state["zero_coverage_seed_streak"],
                 "zero_coverage_seed_streak_reason": search_quality_state["zero_coverage_seed_streak_reason"],
+                "controlled_recovery_active": search_quality_state["controlled_recovery_active"],
+                "controlled_recovery_reason": search_quality_state["controlled_recovery_reason"],
+                "controlled_recovery_attempts_remaining": search_quality_state["controlled_recovery_attempts_remaining"],
+                "controlled_recovery_variants_cap": search_quality_state["controlled_recovery_variants_cap"],
             },
             "wip": {
                 "search_max": wip_search_max,
