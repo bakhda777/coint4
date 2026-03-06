@@ -482,6 +482,14 @@ def _prune_seed_queue(
         filtered_rows.append(row)
 
     blocked_rows_written = 0
+    block_reason = ""
+    if not filtered_rows:
+        if coverage_rejected > 0:
+            block_reason = "coverage_fail_closed"
+        elif dedupe_rejected > 0:
+            block_reason = "dedupe_fail_closed"
+        else:
+            block_reason = "queue_pruned_empty"
     if filtered_rows:
         _write_queue_rows(queue_path, filtered_rows)
     else:
@@ -489,7 +497,7 @@ def _prune_seed_queue(
         for row in rows:
             blocked = dict(row)
             blocked["status"] = "blocked"
-            blocked["note"] = "coverage_fail_closed"
+            blocked["note"] = block_reason or "queue_pruned_empty"
             blocked_rows.append(blocked)
         blocked_rows_written = len(blocked_rows)
         _write_queue_rows(queue_path, blocked_rows)
@@ -500,6 +508,7 @@ def _prune_seed_queue(
         "dedupe_rejected": dedupe_rejected,
         "missing_months": sorted(missing_months),
         "blocked_rows_written": int(blocked_rows_written),
+        "block_reason": block_reason,
     }
 
 
@@ -741,7 +750,7 @@ def _hygiene_seed_queues(
         ) and _rank_result_has_zero_coverage_binding(rank_result)
         reason = ""
         if rows_after <= 0:
-            reason = "coverage_fail_closed"
+            reason = str(queue_prune.get("block_reason") or "queue_pruned_empty")
         elif zero_coverage_history:
             reason = "zero_coverage_fail_closed"
             zero_coverage_rejected += 1
@@ -2697,12 +2706,45 @@ def main() -> int:
             )
             snapshot["queue_prune"] = dict(queue_prune)
             if int(queue_prune.get("rows_after", 0)) <= 0:
+                block_reason = str(queue_prune.get("block_reason") or "queue_pruned_empty")
+                queue_rel = _safe_rel(queue_path, app_root)
+                queue_policy_path = _write_queue_policy_sidecar(
+                    queue_path=queue_path,
+                    app_root=app_root,
+                    planner_policy_hash=planner_policy_hash,
+                    selected_lane=selected_lane,
+                    selected_lane_index=selected_lane_index,
+                    token_rotation=token_rotation,
+                    parent_rotation_offset=parent_rotation_offset,
+                    parent_diversity_depth=parent_diversity_depth,
+                    confirm_replay_hints=confirm_replay_hints,
+                    decision_payload=decision_payload,
+                    coverage_verified=False,
+                    coverage_reason=block_reason,
+                    ready_buffer_excluded=True,
+                )
+                _decorate_queue_metadata(
+                    queue_path=queue_path,
+                    planner_policy_hash=planner_policy_hash,
+                    queue_policy_path=queue_policy_path,
+                    app_root=app_root,
+                    coverage_verified=False,
+                    coverage_reason=block_reason,
+                    ready_buffer_excluded=True,
+                )
+                _upsert_orphan_queue(
+                    orphan_path=orphan_path,
+                    queue_rel=queue_rel,
+                    reason=block_reason,
+                    cooldown_sec=21600,
+                )
                 snapshot.update(
                     {
                         "status": "failed",
-                        "reason": "queue_pruned_empty",
+                        "reason": block_reason,
                         "human": "Queue seeder pruned all generated rows due to missing OOS coverage or duplicate seed signatures.",
-                        "queue_path": _safe_rel(queue_path, app_root),
+                        "queue_path": queue_rel,
+                        "queue_policy_path": _safe_rel(queue_policy_path, app_root),
                     }
                 )
                 _emit_state(state_path, snapshot)

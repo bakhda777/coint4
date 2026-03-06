@@ -21,7 +21,6 @@ from typing import Dict, List
 from fullspan_contract import (
     CONTRACT_NAME,
     DIAGNOSTIC_RANKING_KEY,
-    FullspanThresholds,
     PRIMARY_RANKING_KEY,
     dominant_rejection_reason,
     evaluate_variant_contract,

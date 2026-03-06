@@ -24,6 +24,7 @@ def _load_script_module(tmp_name: str, script_name: str):
 def test_fullspan_contract_defaults_match_hard_gates() -> None:
     module = _load_script_module("fullspan_contract_regression_guard", "fullspan_contract.py")
     thresholds = module.FullspanThresholds()
+    policy = module.fullspan_policy_defaults()
 
     assert thresholds.min_trades == 200.0
     assert thresholds.min_pairs == 20.0
@@ -31,6 +32,8 @@ def test_fullspan_contract_defaults_match_hard_gates() -> None:
     assert thresholds.min_pnl == 0.0
     assert thresholds.initial_capital == 1000.0
     assert thresholds.max_worst_step_loss_pct == 0.20
+    assert policy["min_windows"] == 3
+    assert policy["min_coverage_ratio"] == 0.95
     assert module.PRIMARY_RANKING_KEY == "score_fullspan_v1"
     assert module.DIAGNOSTIC_RANKING_KEY == "avg_robust_sharpe"
     assert module.CONTRACT_NAME == "strict_fullspan_holdout_stress_v1"
@@ -152,3 +155,21 @@ def test_gatekeeper_and_diversity_guard_keep_fail_closed_contract() -> None:
     assert '"ranking_primary_key"] = "avg_robust_sharpe"' not in gatekeeper_src
     assert "confirm_independent_lineage_count" in diversity_src
     assert "confirm_non_independent_lineage" in diversity_src
+
+
+def test_dominant_rejection_reason_prefers_counted_contract_reason() -> None:
+    module = _load_script_module("fullspan_contract_reject_reason_guard", "fullspan_contract.py")
+
+    reason = module.dominant_rejection_reason(
+        "strict_contract_fail(TRADES_FAIL:1,PAIRS_FAIL:2)",
+        reject_reasons={"TRADES_FAIL": 1, "PAIRS_FAIL": 2},
+    )
+
+    assert reason == "PAIRS_FAIL"
+
+
+def test_dominant_rejection_reason_preserves_strict_diag_tokens() -> None:
+    module = _load_script_module("fullspan_contract_diag_reason_guard", "fullspan_contract.py")
+
+    assert module.dominant_rejection_reason("strict_hard_fail: coverage_below") == "coverage_below"
+    assert module.dominant_rejection_reason("RANK_OK_FALLBACK_STRICT_BINDING:min_windows,min_pairs") == "min_windows"

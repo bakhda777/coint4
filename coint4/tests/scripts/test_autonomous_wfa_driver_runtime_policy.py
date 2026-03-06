@@ -21,14 +21,17 @@ def _extract_shell_function(source: str, function_name: str) -> str:
 
 
 def _extract_reselect_after_reconcile_block(source: str) -> str:
+    anchor = 'pending_before_reconcile="$pending"'
+    anchor_idx = source.find(anchor)
+    assert anchor_idx != -1, "pending_before_reconcile anchor not found"
+    scoped = source[anchor_idx:]
     pattern = (
         r'if \(\( pending <= 0 \)\); then\s*\n'
-        r'\s*: > "\$CANDIDATE_FILE"'
         r'(?P<body>.*?log "candidate_reselect_after_reconcile queue=\$queue_rel pending=\$pending"\n\s*fi)'
     )
-    match = re.search(pattern, source, flags=re.DOTALL)
+    match = re.search(pattern, scoped, flags=re.DOTALL)
     assert match is not None, "pending<=0 reconcile reselect block not found"
-    return 'if (( pending <= 0 )); then\n    : > "$CANDIDATE_FILE"' + match.group("body")
+    return 'if (( pending <= 0 )); then\n' + match.group("body")
 
 
 def _run_reselect_block(
@@ -37,6 +40,8 @@ def _run_reselect_block(
     *,
     fallback_success: bool,
     ready_buffer_success: bool = False,
+    pending_before_reconcile: int = 0,
+    completed: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     candidate_file = tmp_path / "candidate.csv"
     header = (
@@ -65,14 +70,15 @@ LAST_REJECTED_QUEUE=""
 ROOT_DIR="{tmp_path}"
 adaptive_idle_sleep=0
 pending=0
+pending_before_reconcile={pending_before_reconcile}
 planned=0
 running=0
 stalled=0
 failed=0
-completed=0
+completed={completed}
 total=0
-queue=""
-queue_rel=""
+queue="{tmp_path / 'artifacts/wfa/aggregate/current/run_queue.csv'}"
+queue_rel="artifacts/wfa/aggregate/current/run_queue.csv"
 recent_yield=0
 cleanup_orphans() {{ :; }}
 find_candidate() {{
@@ -94,6 +100,11 @@ maybe_trigger_auto_seed() {{ echo "SEED:$1"; return 0; }}
 batch_session_maybe_stop() {{ echo "STOP:$1"; }}
 fullspan_state_metric_set() {{ :; }}
 log_decision_note() {{ echo "NOTE:$*"; }}
+cycle_calls=0
+run_fullspan_cycle() {{
+  cycle_calls=$((cycle_calls + 1))
+  echo "CYCLE:$1|$2|$3"
+}}
 iter=0
 while true; do
   iter=$((iter + 1))
@@ -106,6 +117,7 @@ while true; do
   break
 done
 echo "FALLBACK_CALLS:$fallback_calls"
+echo "CYCLE_CALLS:$cycle_calls"
 """
     return subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
 
@@ -149,6 +161,21 @@ def test_candidate_reselect_after_reconcile_prefers_ready_buffer_before_hot_scan
     assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/ready/run_queue.csv pending=2" in proc.stdout
     assert "LOG:candidate_parse_empty_after_reconcile" not in proc.stdout
     assert "FALLBACK_CALLS:0" in proc.stdout
+
+
+def test_candidate_reselect_after_reconcile_runs_cycle_once_on_pending_transition(tmp_path: Path) -> None:
+    block = _extract_reselect_after_reconcile_block(_source())
+    proc = _run_reselect_block(
+        tmp_path,
+        block,
+        fallback_success=True,
+        pending_before_reconcile=2,
+        completed=3,
+    )
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "CYCLE:artifacts/wfa/aggregate/current/run_queue.csv|" in proc.stdout
+    assert "CYCLE_CALLS:1" in proc.stdout
+    assert "LOG:candidate_reselect_after_reconcile queue=artifacts/wfa/aggregate/demo/run_queue.csv pending=1" in proc.stdout
 
 
 def test_queue_hygiene_noop_skip_contract() -> None:
@@ -457,6 +484,7 @@ def test_auto_seed_hard_block_and_coverage_policy_contract() -> None:
         src,
         [
             'yield_governor_hard_block_snapshot()',
+            'process_slo_remote_coverage_snapshot()',
             'queue_coverage_policy_snapshot()',
             'AUTO_SEED_HARD_BLOCK',
             'coverage_fail_closed queue=$queue_rel',
@@ -464,6 +492,7 @@ def test_auto_seed_hard_block_and_coverage_policy_contract() -> None:
             'auto_seed_hard_block',
             'coverage_verified',
             'infra_gate_status',
+            'infra_recovery_mode_remote_unreachable_no_coverage_ready',
             'startup_failure_code',
         ],
     )
@@ -565,6 +594,68 @@ maybe_trigger_auto_seed candidate_empty
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     assert "INFRA:fail_closed|" in proc.stdout
     assert "infra_fail_closed:SSH_WAIT_TIMEOUT" in proc.stdout
+    assert "NOTE:global|AUTO_SEED_HARD_BLOCK|" in proc.stdout
+    assert "AUTO_SEED_TRIGGER" not in proc.stdout
+
+
+def test_maybe_trigger_auto_seed_respects_remote_recovery_mode_block(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+AUTO_SEED_PENDING_THRESHOLD=96
+READY_BUFFER_REFILL_THRESHOLD=2
+AUTO_SEED_COOLDOWN_SEC=0
+AUTO_SEED_NUM_VARIANTS=64
+AUTO_SEED_NUM_VARIANTS_FLOOR=24
+{fn}
+global_backlog_snapshot() {{
+  echo "0 0 0"
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+yield_governor_hard_block_snapshot() {{
+  printf '0\\t\\t0\\t0\\n'
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '0\\t0\\n'
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    last_seed_trigger_epoch) echo "0" ;;
+    auto_seed_hard_block) echo "0" ;;
+    auto_seed_block_reason) echo "" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "" ;;
+    startup_failure_code) echo "" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+set_infra_gate_state() {{
+  printf 'INFRA:%s|%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}" "${{5:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+maybe_trigger_auto_seed candidate_empty_after_reconcile
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "INFRA:hard_block|infra_recovery_mode_remote_unreachable_no_coverage_ready|" in proc.stdout
     assert "NOTE:global|AUTO_SEED_HARD_BLOCK|" in proc.stdout
     assert "AUTO_SEED_TRIGGER" not in proc.stdout
 

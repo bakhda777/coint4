@@ -376,6 +376,40 @@ def test_prune_seed_queue_filters_missing_coverage_and_duplicates(tmp_path: Path
     assert [row["run_name"] for row in rows] == ["valid"]
 
 
+def test_prune_seed_queue_marks_full_prune_as_blocked_rows(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "group_b" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path = app_root / "configs" / "missing_holdout.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        "walk_forward:\n  start_date: 2025-08-01\n  end_date: 2025-09-30\n",
+        encoding="utf-8",
+    )
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "missing_a,configs/missing_holdout.yaml,planned",
+                "missing_b,configs/missing_holdout.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    stats = autonomous_queue_seeder._prune_seed_queue(queue_path=queue_path, app_root=app_root)
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+
+    assert stats["rows_before"] == 2
+    assert stats["rows_after"] == 0
+    assert stats["coverage_rejected"] == 2
+    assert stats["blocked_rows_written"] == 2
+    assert stats["block_reason"] == "coverage_fail_closed"
+    assert [row["status"] for row in rows] == ["blocked", "blocked"]
+    assert [row["note"] for row in rows] == ["coverage_fail_closed", "coverage_fail_closed"]
+
+
 def test_hygiene_seed_queues_orphans_zero_coverage_history(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     aggregate_dir = app_root / "artifacts" / "wfa" / "aggregate"

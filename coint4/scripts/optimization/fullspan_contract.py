@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -20,6 +21,17 @@ _OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
 CONTRACT_NAME = "strict_fullspan_holdout_stress_v1"
 PRIMARY_RANKING_KEY = "score_fullspan_v1"
 DIAGNOSTIC_RANKING_KEY = "avg_robust_sharpe"
+DEFAULT_FULLSPAN_MIN_WINDOWS = 3
+DEFAULT_FULLSPAN_MIN_COVERAGE_RATIO = 0.95
+DEFAULT_FULLSPAN_STRICT_TOP = 200
+DEFAULT_FULLSPAN_RESEARCH_TOP = 10
+DEFAULT_FULLSPAN_STRICT_TAIL_WORST_GATE_PCT = 0.20
+DEFAULT_FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT = 0.21
+DEFAULT_FULLSPAN_TAIL_QUANTILE = 0.20
+DEFAULT_FULLSPAN_TAIL_Q_SOFT_LOSS_PCT = 0.03
+DEFAULT_FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT = 0.10
+DEFAULT_FULLSPAN_TAIL_Q_PENALTY = 2.0
+DEFAULT_FULLSPAN_TAIL_WORST_PENALTY = 1.0
 
 
 @dataclass(frozen=True)
@@ -63,6 +75,151 @@ class VariantContractResult:
     min_total_trades: float | None
     min_total_pairs_traded: float | None
     sample_config: str
+
+
+def _to_int(value: Any, default: int) -> int:
+    try:
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return int(default)
+        return int(float(text))
+    except Exception:
+        return int(default)
+
+
+def fullspan_policy_defaults(*, initial_capital: float = 1000.0) -> dict[str, float | int]:
+    capital = float(initial_capital)
+    return {
+        "min_windows": int(DEFAULT_FULLSPAN_MIN_WINDOWS),
+        "min_trades": 200.0,
+        "min_pairs": 20.0,
+        "max_dd_pct": 0.20,
+        "min_pnl": 0.0,
+        "initial_capital": capital,
+        "max_worst_step_loss_pct": 0.20,
+        "min_coverage_ratio": float(DEFAULT_FULLSPAN_MIN_COVERAGE_RATIO),
+        "strict_top": int(DEFAULT_FULLSPAN_STRICT_TOP),
+        "research_top": int(DEFAULT_FULLSPAN_RESEARCH_TOP),
+        "strict_tail_worst_gate_pct": float(DEFAULT_FULLSPAN_STRICT_TAIL_WORST_GATE_PCT),
+        "diagnostic_tail_worst_gate_pct": float(DEFAULT_FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT),
+        "tail_quantile": float(DEFAULT_FULLSPAN_TAIL_QUANTILE),
+        "tail_q_soft_loss_pct": float(DEFAULT_FULLSPAN_TAIL_Q_SOFT_LOSS_PCT),
+        "tail_worst_soft_loss_pct": float(DEFAULT_FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT),
+        "tail_q_penalty": float(DEFAULT_FULLSPAN_TAIL_Q_PENALTY),
+        "tail_worst_penalty": float(DEFAULT_FULLSPAN_TAIL_WORST_PENALTY),
+    }
+
+
+def load_fullspan_policy_from_env(
+    env: Mapping[str, Any] | None = None,
+    *,
+    initial_capital: float = 1000.0,
+) -> dict[str, float | int]:
+    env_map = os.environ if env is None else env
+    defaults = fullspan_policy_defaults(initial_capital=initial_capital)
+    policy = dict(defaults)
+    env_mapping: dict[str, tuple[str, float | int]] = {
+        "FULLSPAN_MIN_WINDOWS": ("min_windows", defaults["min_windows"]),
+        "FULLSPAN_MIN_TRADES": ("min_trades", defaults["min_trades"]),
+        "FULLSPAN_MIN_PAIRS": ("min_pairs", defaults["min_pairs"]),
+        "FULLSPAN_MAX_DD_PCT": ("max_dd_pct", defaults["max_dd_pct"]),
+        "FULLSPAN_MIN_PNL": ("min_pnl", defaults["min_pnl"]),
+        "FULLSPAN_INITIAL_CAPITAL": ("initial_capital", defaults["initial_capital"]),
+        "FULLSPAN_MAX_WORST_STEP_LOSS_PCT": ("max_worst_step_loss_pct", defaults["max_worst_step_loss_pct"]),
+        "FULLSPAN_MIN_COVERAGE_RATIO": ("min_coverage_ratio", defaults["min_coverage_ratio"]),
+        "FULLSPAN_STRICT_TOP": ("strict_top", defaults["strict_top"]),
+        "FULLSPAN_RESEARCH_TOP": ("research_top", defaults["research_top"]),
+        "FULLSPAN_STRICT_TAIL_WORST_GATE_PCT": (
+            "strict_tail_worst_gate_pct",
+            defaults["strict_tail_worst_gate_pct"],
+        ),
+        "FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT": (
+            "diagnostic_tail_worst_gate_pct",
+            defaults["diagnostic_tail_worst_gate_pct"],
+        ),
+        "FULLSPAN_TAIL_QUANTILE": ("tail_quantile", defaults["tail_quantile"]),
+        "FULLSPAN_TAIL_Q_SOFT_LOSS_PCT": ("tail_q_soft_loss_pct", defaults["tail_q_soft_loss_pct"]),
+        "FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT": (
+            "tail_worst_soft_loss_pct",
+            defaults["tail_worst_soft_loss_pct"],
+        ),
+        "FULLSPAN_TAIL_Q_PENALTY": ("tail_q_penalty", defaults["tail_q_penalty"]),
+        "FULLSPAN_TAIL_WORST_PENALTY": ("tail_worst_penalty", defaults["tail_worst_penalty"]),
+    }
+    int_keys = {"min_windows", "strict_top", "research_top"}
+    for env_key, (policy_key, default_value) in env_mapping.items():
+        raw_value = env_map.get(env_key)
+        if raw_value is None:
+            continue
+        if policy_key in int_keys:
+            policy[policy_key] = _to_int(raw_value, int(default_value))
+        else:
+            policy[policy_key] = float(_to_float(raw_value, float(default_value)) or float(default_value))
+    return policy
+
+
+def fullspan_thresholds_from_policy(policy: Mapping[str, Any] | None = None) -> FullspanThresholds:
+    data = dict(policy or fullspan_policy_defaults())
+    return FullspanThresholds(
+        min_trades=float(_to_float(data.get("min_trades"), 200.0) or 200.0),
+        min_pairs=float(_to_float(data.get("min_pairs"), 20.0) or 20.0),
+        max_dd_pct=float(_to_float(data.get("max_dd_pct"), 0.20) or 0.20),
+        min_pnl=float(_to_float(data.get("min_pnl"), 0.0) or 0.0),
+        initial_capital=float(_to_float(data.get("initial_capital"), 1000.0) or 1000.0),
+        max_worst_step_loss_pct=float(
+            _to_float(data.get("max_worst_step_loss_pct"), 0.20) or 0.20
+        ),
+    )
+
+
+def dominant_rejection_reason(
+    raw_reason: str | None,
+    *,
+    reject_reasons: Mapping[str, Any] | None = None,
+) -> str:
+    if isinstance(reject_reasons, Mapping) and reject_reasons:
+        ranked: list[tuple[int, str]] = []
+        for key, value in reject_reasons.items():
+            token = str(key or "").strip()
+            if not token:
+                continue
+            ranked.append((_to_int(value, 0), token))
+        if ranked:
+            ranked.sort(key=lambda item: (-item[0], item[1]))
+            return ranked[0][1]
+    text = str(raw_reason or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"strict_contract_fail\((.*?)\)", text)
+    if match:
+        entries = [part.strip() for part in match.group(1).split(",") if part.strip()]
+        if entries:
+            first = entries[0]
+            return first.split(":", 1)[0].strip()
+    for token in (
+        "coverage_below",
+        "min_windows",
+        "min_trades",
+        "min_pairs",
+        "max_dd_pct",
+        "min_pnl",
+        "TRADES_FAIL",
+        "PAIRS_FAIL",
+        "DD_FAIL",
+        "ECONOMIC_FAIL",
+        "STEP_FAIL",
+        "INSUFFICIENT_WINDOWS",
+        "STATUS_NOT_COMPLETED",
+        "HOLDOUT_STRESS_MISSING",
+        "METRICS_MISSING",
+    ):
+        if token in text:
+            return token
+    if ":" in text:
+        tail = text.rsplit(":", 1)[-1].strip()
+        if tail:
+            return tail
+    return text
 
 
 def _to_float(value: Any, default: float | None = None) -> float | None:

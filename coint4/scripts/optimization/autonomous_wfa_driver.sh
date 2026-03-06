@@ -3955,6 +3955,7 @@ print(strict_data.get('top_run_group', '') or '')
 print(strict_data.get('top_variant', '') or '')
 print(strict_data.get('top_score', '') or '')
 print((strict_data.get('rejection_reason_line', '') or '').replace('\n', ' '))
+print(strict_data.get('dominant_rejection_reason', '') or '')
 PY
 )"
 
@@ -3963,10 +3964,12 @@ PY
       strict_pass_count="${parsed_lines[0]:-0}"
       strict_run_group_count="${parsed_lines[1]:-0}"
       strict_run_groups="${parsed_lines[2]:-}"
-      top_run_group="${parsed_lines[3]:-}"
-      top_variant="${parsed_lines[4]:-}"
-      top_score="${parsed_lines[5]:-}"
-      strict_rejection_reason="${parsed_lines[6]:-}"
+	      top_run_group="${parsed_lines[3]:-}"
+	      top_variant="${parsed_lines[4]:-}"
+	      top_score="${parsed_lines[5]:-}"
+	      strict_rejection_reason="${parsed_lines[6]:-}"
+	      local strict_gate_reason
+	      strict_gate_reason="${parsed_lines[7]:-}"
 
       local confirm_count
       local candidate_uid
@@ -3979,10 +3982,13 @@ PY
         confirm_count="$(fullspan_confirm_count_for_queue "$candidate_uid")"
       fi
 
-      if [[ "$strict_pass_count" -le 0 ]]; then
-        fullspan_state_set "$queue_rel" "REJECT" \
-          "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-          "${strict_rejection_reason:-STRICT_NO_PASS}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+	      if [[ "$strict_pass_count" -le 0 ]]; then
+	        if [[ -z "$strict_gate_reason" ]]; then
+	          strict_gate_reason="${strict_rejection_reason:-STRICT_NO_PASS}"
+	        fi
+	        fullspan_state_set "$queue_rel" "REJECT" \
+	          "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+	          "${strict_rejection_reason:-$strict_gate_reason}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "$strict_gate_reason" "$strict_run_groups" "$cycle_summary"
         [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       elif (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
         if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
@@ -4002,8 +4008,8 @@ PY
         [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fi
 
-      low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
-      write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "$strict_rejection_reason" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
+	      low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "$strict_gate_reason" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
+	      write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "${strict_rejection_reason:-$strict_gate_reason}" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
       fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
       printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
       return 0
@@ -4016,24 +4022,34 @@ PY
   local cycle_count
   cycle_count="$(fullspan_state_metric_get fullspan_cycle_counter 0)"
 
-  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py \
-    --queue "$queue_rel" \
-    --contains "$queue_name" \
-    --min-windows "$FULLSPAN_MIN_WINDOWS" \
-    --min-trades "$FULLSPAN_MIN_TRADES" \
-    --min-pairs "$FULLSPAN_MIN_PAIRS" \
-    --min-coverage-ratio "$FULLSPAN_MIN_COVERAGE_RATIO" \
-    --max-dd-pct "$FULLSPAN_MAX_DD_PCT" \
-    --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
+	  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py \
+	    --queue "$queue_rel" \
+	    --contains "$queue_name" \
+	    --min-windows "$FULLSPAN_MIN_WINDOWS" \
+	    --min-trades "$FULLSPAN_MIN_TRADES" \
+	    --min-pairs "$FULLSPAN_MIN_PAIRS" \
+	    --min-coverage-ratio "$FULLSPAN_MIN_COVERAGE_RATIO" \
+	    --max-dd-pct "$FULLSPAN_MAX_DD_PCT" \
+	    --min-pnl "$FULLSPAN_MIN_PNL" \
+	    --initial-capital "$FULLSPAN_INITIAL_CAPITAL" \
+	    --strict-tail-worst-gate-pct "$FULLSPAN_STRICT_TAIL_WORST_GATE_PCT" \
+	    --diagnostic-tail-worst-gate-pct "$FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT" \
+	    --tail-quantile "$FULLSPAN_TAIL_QUANTILE" \
+	    --tail-q-soft-loss-pct "$FULLSPAN_TAIL_Q_SOFT_LOSS_PCT" \
+	    --tail-worst-soft-loss-pct "$FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT" \
+	    --tail-q-penalty "$FULLSPAN_TAIL_Q_PENALTY" \
+	    --tail-worst-penalty "$FULLSPAN_TAIL_WORST_PENALTY" \
+	    --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
   local cycle_rc=$?
 
   strict_pass_count=0
   strict_run_group_count=0
-  strict_run_groups=""
-  top_run_group=""
-  top_variant=""
-  top_score=""
-  strict_rejection_reason=""
+	  strict_run_groups=""
+	  top_run_group=""
+	  top_variant=""
+	  top_score=""
+	  strict_rejection_reason=""
+	  strict_gate_reason=""
 
   if [[ -f "$cycle_summary" ]]; then
     parsed="$(python3 - "$cycle_summary" - <<'PY'
@@ -4052,17 +4068,19 @@ print(strict_data.get('top_run_group', '') or '')
 print(strict_data.get('top_variant', '') or '')
 print(strict_data.get('top_score', '') or '')
 print((strict_data.get('rejection_reason_line', '') or '').replace('\n', ' '))
+print(strict_data.get('dominant_rejection_reason', '') or '')
 PY
 )"
     readarray -t parsed_lines <<< "$parsed"
     strict_pass_count="${parsed_lines[0]:-0}"
     strict_run_group_count="${parsed_lines[1]:-0}"
     strict_run_groups="${parsed_lines[2]:-}"
-    top_run_group="${parsed_lines[3]:-}"
-    top_variant="${parsed_lines[4]:-}"
-    top_score="${parsed_lines[5]:-}"
-    strict_rejection_reason="${parsed_lines[6]:-}"
-  fi
+	    top_run_group="${parsed_lines[3]:-}"
+	    top_variant="${parsed_lines[4]:-}"
+	    top_score="${parsed_lines[5]:-}"
+	    strict_rejection_reason="${parsed_lines[6]:-}"
+	    strict_gate_reason="${parsed_lines[7]:-}"
+	  fi
 
   local confirm_count
   local candidate_uid
@@ -4075,16 +4093,19 @@ PY
     confirm_count="$(fullspan_confirm_count_for_queue "$candidate_uid")"
   fi
 
-  if (( cycle_rc == 0 )); then
-    if (( strict_pass_count <= 0 )); then
-      fullspan_state_set "$queue_rel" "REJECT" \
-        "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-        "${strict_rejection_reason:-STRICT_NO_PASS}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
-      [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
+	  if (( cycle_rc == 0 )); then
+	    if (( strict_pass_count <= 0 )); then
+	      if [[ -z "$strict_gate_reason" ]]; then
+	        strict_gate_reason="${strict_rejection_reason:-STRICT_NO_PASS}"
+	      fi
+	      fullspan_state_set "$queue_rel" "REJECT" \
+	        "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
+	        "${strict_rejection_reason:-$strict_gate_reason}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "$strict_gate_reason" "$strict_run_groups" "$cycle_summary"
+	      [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fullspan_state_metric_inc "strict_fullspan_reject_count" 1
       fullspan_state_metric_set "cycles_since_last_strict_pass" "$cycle_count"
       fullspan_state_metric_set "last_decision_epoch" "$now_epoch"
-      log_decision_note "$queue_rel" "FULLSPAN_REJECT" "no_strict_fullspan_pass ${strict_rejection_reason}" "await_fullspan_improvement"
+	      log_decision_note "$queue_rel" "FULLSPAN_REJECT" "no_strict_fullspan_pass ${strict_rejection_reason:-$strict_gate_reason}" "await_fullspan_improvement"
     else
       fullspan_state_metric_inc "strict_fullspan_pass_count" 1
       local prev_pass_cycle
@@ -4123,8 +4144,8 @@ PY
       fi
     fi
 
-    low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
-    write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "$strict_rejection_reason" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
+	    low_yield_hardfail_stop_rule "$queue_rel" "$strict_pass_count" "$strict_run_group_count" "$strict_rejection_reason" "$top_run_group" "$top_variant" "$top_score" "$strict_gate_reason" "$strict_run_groups" "$cycle_summary" "$confirm_count" || true
+	    write_decision_memo "$queue_rel" "$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")" "$strict_pass_count" "$strict_run_group_count" "$confirm_count" "${strict_rejection_reason:-$strict_gate_reason}" "$top_variant" "$top_run_group" "$top_score" "$(fullspan_state_get "$queue_rel" "strict_gate_status" "")" "$(fullspan_state_get "$queue_rel" "strict_gate_reason" "")"
     fullspan_cycle_cache_set "$queue_rel" "$decision_fingerprint" "$strict_pass_count" "$strict_run_group_count" "$cycle_summary"
     printf '%s\n' "$queue_rel" >> "$FULLSPAN_CYCLE_STATE_FILE"
   else
@@ -6783,6 +6804,9 @@ while true; do
 	  recent_yield="${recent_yield:-0}"
 	  fullspan_state_metric_set "recent_yield" "$recent_yield"
 	  pending=$((planned + running + stalled + failed))
+	  pending_before_reconcile="$pending"
+	  cycle_ran_this_loop=0
+	  cycle_ran_queue_rel=""
 
   queue_abs="$ROOT_DIR/$queue_rel"
   if [[ -f "$queue_abs" ]]; then
@@ -6820,12 +6844,13 @@ PY
     fi
   fi
 
-  if (( pending <= 0 )); then
-    reconcile_safe_queue_name="$(basename "$queue")"
-    reconcile_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
-    if [[ "$completed" -gt 0 && "$reconcile_verdict" != "REJECT" ]]; then
-      run_fullspan_cycle "$queue_rel" "$queue" "$reconcile_safe_queue_name"
-    fi
+	  if (( pending <= 0 )); then
+	    reconcile_safe_queue_name="$(basename "$queue")"
+	    if (( pending_before_reconcile > 0 && completed > 0 )); then
+	      run_fullspan_cycle "$queue_rel" "$queue" "$reconcile_safe_queue_name"
+	      cycle_ran_this_loop=1
+	      cycle_ran_queue_rel="$queue_rel"
+	    fi
     : > "$CANDIDATE_FILE"
     ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
     if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
@@ -7203,10 +7228,12 @@ PY
     no_progress_streak_by_queue["$queue_rel"]=0
   fi
 
-  safe_queue_name="$(basename "$queue")"
-  if [[ "$pending" -eq 0 && "$completed" -gt 0 && "$promotion_verdict" != "REJECT" ]]; then
-    run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
-  fi
+	  safe_queue_name="$(basename "$queue")"
+	  if [[ "$pending" -eq 0 && "$completed" -gt 0 ]] && [[ "$cycle_ran_this_loop" != "1" || "$cycle_ran_queue_rel" != "$queue_rel" ]]; then
+	    run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+	    cycle_ran_this_loop=1
+	    cycle_ran_queue_rel="$queue_rel"
+	  fi
 
   if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
     LAST_REJECTED_QUEUE="$queue_rel"
@@ -7317,11 +7344,13 @@ PY
   busy_repeat_count=0
   adaptive_idle_sleep=30
 
-  if [[ "$reason" == "no_pending" ]]; then
-    if [[ "$completed" -gt 0 ]]; then
-      safe_queue_name="$(basename "$queue")"
-      run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
-    fi
+	  if [[ "$reason" == "no_pending" ]]; then
+	    if [[ "$completed" -gt 0 ]] && [[ "$cycle_ran_this_loop" != "1" || "$cycle_ran_queue_rel" != "$queue_rel" ]]; then
+	      safe_queue_name="$(basename "$queue")"
+	      run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+	      cycle_ran_this_loop=1
+	      cycle_ran_queue_rel="$queue_rel"
+	    fi
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
     log "no_pending queue=$queue_rel action=WAIT selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
     batch_session_maybe_stop "no_pending"

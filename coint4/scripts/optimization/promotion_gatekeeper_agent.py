@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from fullspan_contract import FullspanThresholds, evaluate_variant_contract
+from fullspan_contract import evaluate_variant_contract, fullspan_thresholds_from_policy, load_fullspan_policy_from_env
 from fullspan_lineage import count_confirms_by_lineage, derive_candidate_uid
 
 
@@ -277,23 +277,17 @@ def main() -> int:
     events_path = state_dir / "promotion_gatekeeper_events.jsonl"
     ledger_path = state_dir / "promotion_ledger.jsonl"
 
+    policy = load_fullspan_policy_from_env()
     cfg = GateConfig(
         min_groups=parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_GROUPS", "2"), 2),
         min_replays=parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_REPLIES", "2"), 2),
-        min_windows=parse_int(os.environ.get("FULLSPAN_MIN_WINDOWS", "1"), 1),
-        thresholds=FullspanThresholds(
-            min_trades=parse_float(os.environ.get("FULLSPAN_MIN_TRADES", "200"), 200.0),
-            min_pairs=parse_float(os.environ.get("FULLSPAN_MIN_PAIRS", "20"), 20.0),
-            max_dd_pct=parse_float(os.environ.get("FULLSPAN_MAX_DD_PCT", "0.20"), 0.20),
-            min_pnl=parse_float(os.environ.get("FULLSPAN_MIN_PNL", "0"), 0.0),
-            initial_capital=parse_float(os.environ.get("FULLSPAN_INITIAL_CAPITAL", "1000"), 1000.0),
-            max_worst_step_loss_pct=parse_float(os.environ.get("FULLSPAN_MAX_WORST_STEP_LOSS_PCT", "0.20"), 0.20),
-        ),
-        tail_quantile=parse_float(os.environ.get("FULLSPAN_TAIL_QUANTILE", "0.20"), 0.20),
-        tail_q_soft_loss_pct=parse_float(os.environ.get("FULLSPAN_TAIL_Q_SOFT_LOSS_PCT", "0.03"), 0.03),
-        tail_worst_soft_loss_pct=parse_float(os.environ.get("FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT", "0.10"), 0.10),
-        tail_q_penalty=parse_float(os.environ.get("FULLSPAN_TAIL_Q_PENALTY", "2.0"), 2.0),
-        tail_worst_penalty=parse_float(os.environ.get("FULLSPAN_TAIL_WORST_PENALTY", "1.0"), 1.0),
+        min_windows=parse_int(policy.get("min_windows"), 3),
+        thresholds=fullspan_thresholds_from_policy(policy),
+        tail_quantile=parse_float(policy.get("tail_quantile"), 0.20),
+        tail_q_soft_loss_pct=parse_float(policy.get("tail_q_soft_loss_pct"), 0.03),
+        tail_worst_soft_loss_pct=parse_float(policy.get("tail_worst_soft_loss_pct"), 0.10),
+        tail_q_penalty=parse_float(policy.get("tail_q_penalty"), 2.0),
+        tail_worst_penalty=parse_float(policy.get("tail_worst_penalty"), 1.0),
     )
 
     state_dir.mkdir(parents=True, exist_ok=True)
