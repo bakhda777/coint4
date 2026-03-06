@@ -46,6 +46,7 @@ load_api_key_from_file "/etc/serverspace_api_key"
 load_api_key_from_file "${LOCAL_REPO_DIR}/.secrets/serverspace_api_key"
 
 UPDATE_CODE=${UPDATE_CODE:-"1"}
+UPDATE_CODE_FF_ONLY=${UPDATE_CODE_FF_ONLY:-"1"}
 SYNC_BACK=${SYNC_BACK:-"1"}
 SYNC_PATHS=${SYNC_PATHS:-"docs coint4/artifacts coint4/results coint4/outputs"}
 # If local repo is ahead of origin or git push isn't available, sync tracked files up to VPS.
@@ -361,6 +362,15 @@ sync_up() {
 
   local sha
   sha="$(git -C "$LOCAL_REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+  local unsynced_untracked
+  unsynced_untracked="$(
+    git -C "$LOCAL_REPO_DIR" ls-files --others --exclude-standard -- \
+      coint4/configs/evolution \
+      coint4/artifacts/wfa/aggregate 2>/dev/null | wc -l | tr -d ' '
+  )"
+  if [[ "${unsynced_untracked}" =~ ^[0-9]+$ ]] && (( unsynced_untracked > 0 )); then
+    echo "[local] warning: ${unsynced_untracked} untracked files under coint4/configs/evolution or coint4/artifacts/wfa/aggregate will NOT be synced with SYNC_UP=1 (tracked-only)." >&2
+  fi
   echo "[server] syncing files (${SYNC_UP_MODE}) from ${LOCAL_REPO_DIR} -> ${SERVER_USER}@${SERVER_IP}:${SERVER_REPO_DIR}"
 
   ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "mkdir -p '${SERVER_REPO_DIR}'"
@@ -419,9 +429,14 @@ preflight_guard() {
 
 run_remote() {
   local cmd
+  local update_cmd
   cmd=$(printf '%q ' "$@")
   if [[ "$UPDATE_CODE" == "1" ]]; then
-    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "cd '${SERVER_REPO_DIR}' && git pull && cd '${SERVER_WORK_DIR}' && ${cmd}"
+    update_cmd="git pull"
+    if [[ "$UPDATE_CODE_FF_ONLY" == "1" ]]; then
+      update_cmd="git pull --ff-only"
+    fi
+    ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "cd '${SERVER_REPO_DIR}' && ${update_cmd} && cd '${SERVER_WORK_DIR}' && ${cmd}"
   else
     ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "cd '${SERVER_WORK_DIR}' && ${cmd}"
   fi

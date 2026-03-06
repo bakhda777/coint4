@@ -189,6 +189,30 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return bool(default)
 
 
+def _env_int(name: str, default: int, *, min_value: int | None = None) -> int:
+    raw = os.getenv(name)
+    try:
+        value = int(float(raw)) if raw is not None else int(default)
+    except Exception:
+        value = int(default)
+    if min_value is not None and value < int(min_value):
+        value = int(min_value)
+    return value
+
+
+def _env_float(name: str, default: float, *, min_value: float | None = None, max_value: float | None = None) -> float:
+    raw = os.getenv(name)
+    try:
+        value = float(raw) if raw is not None else float(default)
+    except Exception:
+        value = float(default)
+    if min_value is not None and value < float(min_value):
+        value = float(min_value)
+    if max_value is not None and value > float(max_value):
+        value = float(max_value)
+    return value
+
+
 def compute_backoff_delay(attempt_index: int, base_seconds: float, cap_seconds: float = 120.0) -> float:
     return min(float(cap_seconds), float(base_seconds) * (2.0 ** max(0, attempt_index)))
 
@@ -277,7 +301,6 @@ def _sync_code_include_paths(project_root: Path) -> list[str]:
         "pyproject.toml",
         "requirements.txt",
         "pytest.ini",
-        "artifacts/wfa/aggregate/rollup",
     ):
         if (project_root / rel).exists():
             includes.append(rel)
@@ -1095,12 +1118,12 @@ def _remote_rank_and_sync(
             return local_rank_path
 
         strict = {
-            "min_windows": 3,
-            "min_trades": 200,
-            "min_pairs": 20,
-            "min_coverage_ratio": 0.95,
-            "max_dd_pct": 0.40,
-            "min_pnl": 0.0,
+            "min_windows": _env_int("FULLSPAN_MIN_WINDOWS", 3, min_value=1),
+            "min_trades": _env_float("FULLSPAN_MIN_TRADES", 200.0, min_value=0.0),
+            "min_pairs": _env_float("FULLSPAN_MIN_PAIRS", 20.0, min_value=0.0),
+            "min_coverage_ratio": _env_float("FULLSPAN_MIN_COVERAGE_RATIO", 0.95, min_value=0.0, max_value=1.0),
+            "max_dd_pct": _env_float("FULLSPAN_MAX_DD_PCT", 0.20, min_value=0.0),
+            "min_pnl": _env_float("FULLSPAN_MIN_PNL", 0.0),
             "min_psr": None,
             "min_dsr": None,
         }

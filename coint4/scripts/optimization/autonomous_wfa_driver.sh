@@ -49,6 +49,21 @@ VPS_RECOVERY_STATE_FILE="$STATE_DIR/vps_recovery_state.json"
 CONFIRM_LINEAGE_REGISTRY_FILE="$STATE_DIR/confirm_lineage_registry.json"
 FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
 FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
+FULLSPAN_MIN_WINDOWS="${FULLSPAN_MIN_WINDOWS:-3}"
+FULLSPAN_MIN_TRADES="${FULLSPAN_MIN_TRADES:-200}"
+FULLSPAN_MIN_PAIRS="${FULLSPAN_MIN_PAIRS:-20}"
+FULLSPAN_MIN_COVERAGE_RATIO="${FULLSPAN_MIN_COVERAGE_RATIO:-0.95}"
+FULLSPAN_MAX_DD_PCT="${FULLSPAN_MAX_DD_PCT:-0.20}"
+FULLSPAN_MIN_PNL="${FULLSPAN_MIN_PNL:-0.0}"
+FULLSPAN_INITIAL_CAPITAL="${FULLSPAN_INITIAL_CAPITAL:-1000.0}"
+FULLSPAN_MAX_WORST_STEP_LOSS_PCT="${FULLSPAN_MAX_WORST_STEP_LOSS_PCT:-0.20}"
+FULLSPAN_STRICT_TAIL_WORST_GATE_PCT="${FULLSPAN_STRICT_TAIL_WORST_GATE_PCT:-0.20}"
+FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT="${FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT:-0.21}"
+FULLSPAN_TAIL_QUANTILE="${FULLSPAN_TAIL_QUANTILE:-0.20}"
+FULLSPAN_TAIL_Q_SOFT_LOSS_PCT="${FULLSPAN_TAIL_Q_SOFT_LOSS_PCT:-0.03}"
+FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT="${FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT:-0.10}"
+FULLSPAN_TAIL_Q_PENALTY="${FULLSPAN_TAIL_Q_PENALTY:-2.0}"
+FULLSPAN_TAIL_WORST_PENALTY="${FULLSPAN_TAIL_WORST_PENALTY:-1.0}"
 FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-300}"
 FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
 CAPACITY_CONTROLLER_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
@@ -113,6 +128,11 @@ START_QUEUE_SSH_READY_TIMEOUT_SEC="${START_QUEUE_SSH_READY_TIMEOUT_SEC:-180}"
 START_QUEUE_SYNC_TIMEOUT_SEC="${START_QUEUE_SYNC_TIMEOUT_SEC:-120}"
 START_QUEUE_STARTUP_BUDGET_SEC="${START_QUEUE_STARTUP_BUDGET_SEC:-420}"
 START_QUEUE_CONFIRM_TIMEOUT_SEC="${START_QUEUE_CONFIRM_TIMEOUT_SEC:-120}"
+export FULLSPAN_MIN_WINDOWS FULLSPAN_MIN_TRADES FULLSPAN_MIN_PAIRS FULLSPAN_MIN_COVERAGE_RATIO FULLSPAN_MAX_DD_PCT
+export FULLSPAN_MIN_PNL FULLSPAN_INITIAL_CAPITAL FULLSPAN_MAX_WORST_STEP_LOSS_PCT
+export FULLSPAN_STRICT_TAIL_WORST_GATE_PCT FULLSPAN_DIAGNOSTIC_TAIL_WORST_GATE_PCT
+export FULLSPAN_TAIL_QUANTILE FULLSPAN_TAIL_Q_SOFT_LOSS_PCT FULLSPAN_TAIL_WORST_SOFT_LOSS_PCT
+export FULLSPAN_TAIL_Q_PENALTY FULLSPAN_TAIL_WORST_PENALTY
 START_QUEUE_CONFIRM_POLL_SEC="${START_QUEUE_CONFIRM_POLL_SEC:-5}"
 AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC="${AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC:-1800}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
@@ -400,6 +420,12 @@ HARDFAIL_MAP = {
     "dd_gate_fail": "DD_FAIL",
     "economic_gate_fail": "ECONOMIC_FAIL",
     "step_gate_fail": "STEP_FAIL",
+    "coverage_below": "coverage_below",
+    "min_windows": "min_windows",
+    "min_trades": "min_trades",
+    "min_pairs": "min_pairs",
+    "max_dd_pct": "max_dd_pct",
+    "min_pnl": "min_pnl",
     "METRICS_MISSING": "METRICS_MISSING",
     "TRADES_FAIL": "TRADES_FAIL",
     "PAIRS_FAIL": "PAIRS_FAIL",
@@ -479,7 +505,10 @@ def load_state(path: Path):
 def canonical_state_reason(raw: str) -> str:
     if not raw:
         return ""
-    return HARDFAIL_MAP.get(raw, str(raw).strip().upper() or "METRICS_MISSING")
+    token = str(raw).strip()
+    if not token:
+        return "METRICS_MISSING"
+    return HARDFAIL_MAP.get(token, HARDFAIL_MAP.get(token.lower(), token))
 
 
 LOW_YIELD_HOMOGENEOUS_FRACTION = 0.7
@@ -514,15 +543,16 @@ except Exception:
 opt_dir = app_root / "scripts" / "optimization"
 if str(opt_dir) not in sys.path:
     sys.path.insert(0, str(opt_dir))
-from fullspan_contract import FullspanThresholds, evaluate_row_hard_gates, row_worst_step_pnl, score_fullspan_v1
+from fullspan_contract import (
+    evaluate_row_hard_gates,
+    fullspan_thresholds_from_policy,
+    load_fullspan_policy_from_env,
+    row_worst_step_pnl,
+    score_fullspan_v1,
+)
 
-CONTRACT_THRESHOLDS = FullspanThresholds(
-    min_trades=200.0,
-    min_pairs=20.0,
-    max_dd_pct=0.20,
-    min_pnl=0.0,
-    initial_capital=INITIAL_CAPITAL,
-    max_worst_step_loss_pct=0.20,
+CONTRACT_THRESHOLDS = fullspan_thresholds_from_policy(
+    load_fullspan_policy_from_env(initial_capital=INITIAL_CAPITAL)
 )
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 run_index_path = Path(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None
@@ -1959,6 +1989,39 @@ queue = data.get("queue", {}) if isinstance(data, dict) else {}
 kpi = data.get("kpi", {}) if isinstance(data, dict) else {}
 idle = bool(queue.get("idle_with_executable_pending")) or bool(kpi.get("idle_with_executable_pending"))
 print("1" if idle else "0")
+PY
+}
+
+process_slo_remote_coverage_snapshot() {
+  python3 - "$STATE_DIR/process_slo_state.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("1\t1")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding='utf-8'))
+except Exception:
+    print("1\t1")
+    raise SystemExit(0)
+if not isinstance(data, dict):
+    print("1\t1")
+    raise SystemExit(0)
+kpi = data.get("kpi", {})
+if not isinstance(kpi, dict):
+    kpi = {}
+remote_reachable = data.get("remote_reachable")
+if isinstance(remote_reachable, str):
+    remote_reachable = remote_reachable.strip().lower() in {"1", "true", "yes", "y", "on"}
+remote_flag = "1" if bool(remote_reachable) else "0"
+try:
+    coverage_ready = int(float(kpi.get("coverage_verified_ready_count") or data.get("coverage_verified_ready_count") or 0))
+except Exception:
+    coverage_ready = 0
+print(f"{remote_flag}\t{max(0, coverage_ready)}")
 PY
 }
 
@@ -3871,7 +3934,7 @@ PY
 )"
 
   local decision_fingerprint
-  decision_fingerprint="${queue_sig}|${run_index_sig}|${PROMOTION_SELECTION_PROFILE}|${PROMOTION_SELECTION_MODE}|${FULLSPAN_POLICY_NAME}|${PROMOTION_PRE_RANK_TOPK}|${FULLSPAN_CONFIRM_MIN_GROUPS}|${FULLSPAN_CONFIRM_MIN_REPLIES}"
+  decision_fingerprint="${queue_sig}|${run_index_sig}|${PROMOTION_SELECTION_PROFILE}|${PROMOTION_SELECTION_MODE}|${FULLSPAN_POLICY_NAME}|${PROMOTION_PRE_RANK_TOPK}|${FULLSPAN_CONFIRM_MIN_GROUPS}|${FULLSPAN_CONFIRM_MIN_REPLIES}|${FULLSPAN_MIN_WINDOWS}|${FULLSPAN_MIN_TRADES}|${FULLSPAN_MIN_PAIRS}|${FULLSPAN_MIN_COVERAGE_RATIO}|${FULLSPAN_MAX_DD_PCT}"
 
   if [[ -s "$cycle_summary" ]] && fullspan_cycle_cache_get "$queue_rel" "$decision_fingerprint" "$cycle_summary" >/dev/null 2>&1; then
     log "decision_cycle_cached queue=$queue_rel fingerprint=$decision_fingerprint"
@@ -3919,7 +3982,7 @@ PY
       if [[ "$strict_pass_count" -le 0 ]]; then
         fullspan_state_set "$queue_rel" "REJECT" \
           "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-          "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+          "${strict_rejection_reason:-STRICT_NO_PASS}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
         [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       elif (( strict_run_group_count >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
         if (( confirm_count >= FULLSPAN_CONFIRM_MIN_REPLIES )); then
@@ -3953,7 +4016,15 @@ PY
   local cycle_count
   cycle_count="$(fullspan_state_metric_get fullspan_cycle_counter 0)"
 
-  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue "$queue_rel" --contains "$queue_name" --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
+  (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py \
+    --queue "$queue_rel" \
+    --contains "$queue_name" \
+    --min-windows "$FULLSPAN_MIN_WINDOWS" \
+    --min-trades "$FULLSPAN_MIN_TRADES" \
+    --min-pairs "$FULLSPAN_MIN_PAIRS" \
+    --min-coverage-ratio "$FULLSPAN_MIN_COVERAGE_RATIO" \
+    --max-dd-pct "$FULLSPAN_MAX_DD_PCT" \
+    --summary-json "$cycle_summary" >> "$cycle_log" 2>&1)
   local cycle_rc=$?
 
   strict_pass_count=0
@@ -4008,7 +4079,7 @@ PY
     if (( strict_pass_count <= 0 )); then
       fullspan_state_set "$queue_rel" "REJECT" \
         "$strict_pass_count" "$strict_run_group_count" "$top_run_group" "$top_variant" "$top_score" \
-        "${strict_rejection_reason:-METRICS_MISSING}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
+        "${strict_rejection_reason:-STRICT_NO_PASS}" "$confirm_count" "FULLSPAN_PREFILTER_REJECT" "" "$strict_run_groups" "$cycle_summary"
       [[ -n "$candidate_uid" ]] && fullspan_state_queue_set "$queue_rel" "candidate_uid" "$candidate_uid"
       fullspan_state_metric_inc "strict_fullspan_reject_count" 1
       fullspan_state_metric_set "cycles_since_last_strict_pass" "$cycle_count"
@@ -5506,6 +5577,7 @@ maybe_trigger_auto_seed() {
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
   local runtime_block_active runtime_block_reason
   local infra_gate_status startup_failure_code
+  local process_remote_reachable process_coverage_ready
   local gate_block_status="hard_block"
   local prev_blocked prev_block_reason
   local remote_count=0
@@ -5535,6 +5607,9 @@ maybe_trigger_auto_seed() {
   [[ "$runtime_block_active" =~ ^[0-9]+$ ]] || runtime_block_active=0
   infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
   startup_failure_code="$(fullspan_state_metric_get startup_failure_code "")"
+  IFS=$'\t' read -r process_remote_reachable process_coverage_ready <<< "$(process_slo_remote_coverage_snapshot)"
+  [[ "$process_remote_reachable" =~ ^[01]$ ]] || process_remote_reachable=1
+  [[ "$process_coverage_ready" =~ ^[0-9]+$ ]] || process_coverage_ready=0
   if [[ "$(fullspan_state_metric_get vps_infra_fail_closed 0)" == "1" ]]; then
     runtime_block_active=1
     if [[ -z "$runtime_block_reason" ]]; then
@@ -5565,6 +5640,14 @@ maybe_trigger_auto_seed() {
       hard_block_reason="${runtime_block_reason:-runtime_hard_block}"
     else
       hard_block_reason="${hard_block_reason},${runtime_block_reason:-runtime_hard_block}"
+    fi
+  fi
+  if [[ "$process_remote_reachable" == "0" && "$process_coverage_ready" -le 0 ]]; then
+    hard_block_active=1
+    if [[ -z "$hard_block_reason" ]]; then
+      hard_block_reason="infra_recovery_mode_remote_unreachable_no_coverage_ready"
+    else
+      hard_block_reason="${hard_block_reason},infra_recovery_mode_remote_unreachable_no_coverage_ready"
     fi
   fi
   if (( hard_block_active > 0 )); then
@@ -6738,6 +6821,11 @@ PY
   fi
 
   if (( pending <= 0 )); then
+    reconcile_safe_queue_name="$(basename "$queue")"
+    reconcile_verdict="$(fullspan_state_get "$queue_rel" "promotion_verdict" "ANALYZE")"
+    if [[ "$completed" -gt 0 && "$reconcile_verdict" != "REJECT" ]]; then
+      run_fullspan_cycle "$queue_rel" "$queue" "$reconcile_safe_queue_name"
+    fi
     : > "$CANDIDATE_FILE"
     ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
     if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then

@@ -214,6 +214,19 @@ def _write_queue_rows(queue_path: Path, rows: list[dict[str, str]]) -> None:
         for key in row.keys():
             if key not in fieldnames:
                 fieldnames.append(str(key))
+    if not fieldnames and queue_path.exists():
+        try:
+            with queue_path.open("r", encoding="utf-8", newline="") as handle:
+                reader = csv.reader(handle)
+                header = next(reader, [])
+            for key in header:
+                key_text = str(key).strip()
+                if key_text and key_text not in fieldnames:
+                    fieldnames.append(key_text)
+        except Exception:
+            fieldnames = []
+    if not fieldnames:
+        fieldnames = ["config_path", "results_dir", "status"]
     queue_path.parent.mkdir(parents=True, exist_ok=True)
     with queue_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -468,13 +481,25 @@ def _prune_seed_queue(
             seen_signatures.add(signature)
         filtered_rows.append(row)
 
-    _write_queue_rows(queue_path, filtered_rows)
+    blocked_rows_written = 0
+    if filtered_rows:
+        _write_queue_rows(queue_path, filtered_rows)
+    else:
+        blocked_rows: list[dict[str, str]] = []
+        for row in rows:
+            blocked = dict(row)
+            blocked["status"] = "blocked"
+            blocked["note"] = "coverage_fail_closed"
+            blocked_rows.append(blocked)
+        blocked_rows_written = len(blocked_rows)
+        _write_queue_rows(queue_path, blocked_rows)
     return {
         "rows_before": len(rows),
         "rows_after": len(filtered_rows),
         "coverage_rejected": coverage_rejected,
         "dedupe_rejected": dedupe_rejected,
         "missing_months": sorted(missing_months),
+        "blocked_rows_written": int(blocked_rows_written),
     }
 
 
@@ -668,6 +693,7 @@ def _hygiene_seed_queues(
     app_root: Path,
     run_group_prefix: str,
     orphan_path: Path,
+    incident_path: Path | None = None,
     cooldown_sec: int = 21600,
 ) -> dict[str, Any]:
     reviewed = 0
@@ -724,6 +750,26 @@ def _hygiene_seed_queues(
         if reason:
             _upsert_orphan_queue(orphan_path=orphan_path, queue_rel=queue_rel, reason=reason, cooldown_sec=cooldown_sec)
             orphaned += 1
+            if incident_path is not None:
+                _append_log(
+                    incident_path,
+                    {
+                        "ts": _utc_now_iso(),
+                        "agent": "queue_seeder",
+                        "kind": "queue_hygiene_blocked",
+                        "human": "Queue hygiene fail-closed: queue excluded from dispatch due to coverage checks.",
+                        "payload": {
+                            "queue": queue_rel,
+                            "reason": reason,
+                            "rows_before": int(prune_stats.get("rows_before", 0) or 0),
+                            "rows_after": rows_after,
+                            "blocked_rows_written": int(prune_stats.get("blocked_rows_written", 0) or 0),
+                            "coverage_rejected": int(prune_stats.get("coverage_rejected", 0) or 0),
+                            "dedupe_rejected": int(prune_stats.get("dedupe_rejected", 0) or 0),
+                            "missing_months": list(prune_stats.get("missing_months", []) or []),
+                        },
+                    },
+                )
         coverage_verified = bool(rows_after > 0) and not bool(reason)
         queue_policy_path = _write_queue_policy_sidecar(
             queue_path=queue_path,
@@ -757,6 +803,7 @@ def _hygiene_seed_queues(
                 "dedupe_rejected": int(prune_stats.get("dedupe_rejected", 0) or 0),
                 "zero_coverage_history": bool(zero_coverage_history),
                 "orphan_reason": reason,
+                "blocked_rows_written": int(prune_stats.get("blocked_rows_written", 0) or 0),
             }
         )
     return {
@@ -1740,6 +1787,7 @@ def main() -> int:
                 app_root=app_root,
                 run_group_prefix=run_group_prefix,
                 orphan_path=orphan_path,
+                incident_path=incident_path,
             )
             (
                 total_pending_like,

@@ -23,7 +23,10 @@ from fullspan_contract import (
     DIAGNOSTIC_RANKING_KEY,
     FullspanThresholds,
     PRIMARY_RANKING_KEY,
+    dominant_rejection_reason,
     evaluate_variant_contract,
+    fullspan_thresholds_from_policy,
+    load_fullspan_policy_from_env,
 )
 
 
@@ -126,13 +129,15 @@ def _strict_contract_summary(
     strict_hard_reason: str,
 ) -> Dict[str, object]:
     rows = list(strict_preview.get("rows", []) or [])
-    thresholds = FullspanThresholds(
-        min_trades=float(args.min_trades),
-        min_pairs=float(args.min_pairs),
-        max_dd_pct=float(args.max_dd_pct),
-        min_pnl=float(args.min_pnl),
-        initial_capital=float(args.initial_capital),
-        max_worst_step_loss_pct=float(args.strict_tail_worst_gate_pct),
+    thresholds = fullspan_thresholds_from_policy(
+        {
+            "min_trades": float(args.min_trades),
+            "min_pairs": float(args.min_pairs),
+            "max_dd_pct": float(args.max_dd_pct),
+            "min_pnl": float(args.min_pnl),
+            "initial_capital": float(args.initial_capital),
+            "max_worst_step_loss_pct": float(args.strict_tail_worst_gate_pct),
+        }
     )
 
     accepted: list[dict[str, object]] = []
@@ -230,6 +235,10 @@ def _strict_contract_summary(
         "diagnostic_key": DIAGNOSTIC_RANKING_KEY,
         "contract_name": CONTRACT_NAME,
         "contract_reject_reasons": dict(rejects),
+        "dominant_rejection_reason": dominant_rejection_reason(
+            rejection_reason_line,
+            reject_reasons=rejects,
+        ),
     }
 
 
@@ -244,6 +253,7 @@ def _empty_profile_summary(*, pass_count: int = 0, run_groups: List[str] | None 
         "top_config": "",
         "top_score": "",
         "rejection_reason_line": reason,
+        "dominant_rejection_reason": dominant_rejection_reason(reason),
         "exit_code": 1,
         "status": "reject" if pass_count <= 0 else "pass",
     }
@@ -273,6 +283,15 @@ def _build_summary(
     strict_summary.setdefault("ranking_primary_key", PRIMARY_RANKING_KEY)
     strict_summary.setdefault("diagnostic_key", DIAGNOSTIC_RANKING_KEY)
     strict_summary.setdefault("contract_name", CONTRACT_NAME)
+    strict_summary.setdefault(
+        "dominant_rejection_reason",
+        dominant_rejection_reason(
+            str(strict_summary.get("rejection_reason_line") or ""),
+            reject_reasons=strict_summary.get("contract_reject_reasons")
+            if isinstance(strict_summary.get("contract_reject_reasons"), dict)
+            else None,
+        ),
+    )
 
     if diag_skipped_reason:
         diagnostic_summary = _empty_profile_summary(reason=diag_skipped_reason)
@@ -312,6 +331,7 @@ def _safe_json_dump(path: Path, payload: Dict[str, object]) -> None:
 
 
 def main() -> int:
+    policy_defaults = load_fullspan_policy_from_env()
     parser = argparse.ArgumentParser(
         description="Run canonical fullspan decision cycle (sync queue status, rebuild rollup, rank strict/diagnostic)."
     )
@@ -342,25 +362,25 @@ def main() -> int:
     parser.add_argument(
         "--strict-tail-worst-gate-pct",
         type=float,
-        default=0.20,
+        default=float(policy_defaults["strict_tail_worst_gate_pct"]),
         help="Promote profile tail worst-step hard gate.",
     )
     parser.add_argument(
         "--diagnostic-tail-worst-gate-pct",
         type=float,
-        default=0.21,
+        default=float(policy_defaults["diagnostic_tail_worst_gate_pct"]),
         help="Research profile tail worst-step gate (diagnostic only).",
     )
     parser.add_argument(
         "--research-top",
         type=int,
-        default=10,
+        default=int(policy_defaults["research_top"]),
         help="Top N rows for research (diagnostic) profile output.",
     )
     parser.add_argument(
         "--strict-top",
         type=int,
-        default=200,
+        default=int(policy_defaults["strict_top"]),
         help="Top N strict candidates passed to fullspan contract validation.",
     )
     parser.add_argument(
@@ -371,62 +391,62 @@ def main() -> int:
     parser.add_argument(
         "--min-windows",
         type=int,
-        default=1,
+        default=int(policy_defaults["min_windows"]),
     )
     parser.add_argument(
         "--min-trades",
         type=int,
-        default=200,
+        default=int(policy_defaults["min_trades"]),
     )
     parser.add_argument(
         "--min-pairs",
         type=int,
-        default=20,
+        default=int(policy_defaults["min_pairs"]),
     )
     parser.add_argument(
         "--max-dd-pct",
         type=float,
-        default=0.20,
+        default=float(policy_defaults["max_dd_pct"]),
     )
     parser.add_argument(
         "--min-pnl",
         type=float,
-        default=0.0,
+        default=float(policy_defaults["min_pnl"]),
     )
     parser.add_argument(
         "--initial-capital",
         type=float,
-        default=1000.0,
+        default=float(policy_defaults["initial_capital"]),
     )
     parser.add_argument(
         "--tail-quantile",
         type=float,
-        default=0.20,
+        default=float(policy_defaults["tail_quantile"]),
     )
     parser.add_argument(
         "--tail-q-soft-loss-pct",
         type=float,
-        default=0.03,
+        default=float(policy_defaults["tail_q_soft_loss_pct"]),
     )
     parser.add_argument(
         "--tail-worst-soft-loss-pct",
         type=float,
-        default=0.10,
+        default=float(policy_defaults["tail_worst_soft_loss_pct"]),
     )
     parser.add_argument(
         "--tail-q-penalty",
         type=float,
-        default=2.0,
+        default=float(policy_defaults["tail_q_penalty"]),
     )
     parser.add_argument(
         "--tail-worst-penalty",
         type=float,
-        default=1.0,
+        default=float(policy_defaults["tail_worst_penalty"]),
     )
     parser.add_argument(
         "--min-coverage-ratio",
         type=float,
-        default=0.95,
+        default=float(policy_defaults["min_coverage_ratio"]),
         help="Coverage floor for ranker (0..1). Default from optimization contract.",
     )
     parser.add_argument(
