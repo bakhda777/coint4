@@ -74,6 +74,8 @@ VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC="${VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC:-20}"
 VPS_FORCE_CYCLE_BOOT_WAIT_SEC="${VPS_FORCE_CYCLE_BOOT_WAIT_SEC:-360}"
 VPS_UNREACHABLE_ORPHAN_STREAK="${VPS_UNREACHABLE_ORPHAN_STREAK:-3}"
 VPS_UNREACHABLE_SLEEP_CAP_SEC="${VPS_UNREACHABLE_SLEEP_CAP_SEC:-300}"
+VPS_RECENT_READY_GRACE_SEC="${VPS_RECENT_READY_GRACE_SEC:-180}"
+VPS_CAPACITY_STATE_MAX_AGE_SEC="${VPS_CAPACITY_STATE_MAX_AGE_SEC:-180}"
 EARLY_STOP_MIN_COMPLETED="${EARLY_STOP_MIN_COMPLETED:-8}"
 EARLY_STOP_FAIL_FRACTION="${EARLY_STOP_FAIL_FRACTION:-0.75}"
 EARLY_STOP_DOMINANT_FRACTION="${EARLY_STOP_DOMINANT_FRACTION:-0.70}"
@@ -1929,6 +1931,84 @@ kpi = data.get("kpi", {}) if isinstance(data, dict) else {}
 idle = bool(queue.get("idle_with_executable_pending")) or bool(kpi.get("idle_with_executable_pending"))
 print("1" if idle else "0")
 PY
+}
+
+capacity_controller_remote_reachable_recent() {
+  python3 - "$CAPACITY_CONTROLLER_STATE_FILE" "$VPS_CAPACITY_STATE_MAX_AGE_SEC" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    max_age_sec = int(float(sys.argv[2] or 0))
+except Exception:
+    max_age_sec = 0
+if not path.exists() or max_age_sec <= 0:
+    print("0")
+    raise SystemExit(0)
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0")
+    raise SystemExit(0)
+if not isinstance(data, dict):
+    print("0")
+    raise SystemExit(0)
+remote = data.get("remote", {})
+if not isinstance(remote, dict) or not bool(remote.get("reachable")):
+    print("0")
+    raise SystemExit(0)
+ts_raw = str(data.get("ts") or "").strip()
+if not ts_raw:
+    print("0")
+    raise SystemExit(0)
+try:
+    ts = datetime.strptime(ts_raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+except Exception:
+    print("0")
+    raise SystemExit(0)
+age_sec = (datetime.now(timezone.utc) - ts).total_seconds()
+print("1" if age_sec <= max_age_sec else "0")
+PY
+}
+
+vps_recently_recovered() {
+  local grace_sec="${1:-$VPS_RECENT_READY_GRACE_SEC}"
+  local now_epoch last_recover_epoch
+  now_epoch="$(date +%s)"
+  [[ "$grace_sec" =~ ^[0-9]+$ ]] || grace_sec=0
+  if (( grace_sec <= 0 )); then
+    echo 0
+    return 0
+  fi
+  last_recover_epoch="$vps_runtime_last_recover_epoch"
+  [[ "$last_recover_epoch" =~ ^[0-9]+$ ]] || last_recover_epoch=0
+  if (( last_recover_epoch <= 0 )); then
+    last_recover_epoch="$(fullspan_state_metric_get vps_recover_last_epoch 0)"
+  fi
+  [[ "$last_recover_epoch" =~ ^[0-9]+$ ]] || last_recover_epoch=0
+  if (( last_recover_epoch > 0 && now_epoch - last_recover_epoch <= grace_sec )); then
+    echo 1
+    return 0
+  fi
+  echo 0
+}
+
+start_queue_softpass_reason() {
+  local recent_recovery fresh_capacity
+  recent_recovery="$(vps_recently_recovered "$VPS_RECENT_READY_GRACE_SEC")"
+  fresh_capacity="$(capacity_controller_remote_reachable_recent)"
+  if [[ "$recent_recovery" == "1" ]]; then
+    echo "recent_vps_recovery"
+    return 0
+  fi
+  if [[ "$fresh_capacity" == "1" ]]; then
+    echo "fresh_capacity_state"
+    return 0
+  fi
+  echo ""
 }
 
 runtime_observability_record_event() {
@@ -5670,11 +5750,18 @@ start_queue() {
   local stamp
   stamp="$(date -u +%Y%m%d_%H%M%S)"
   local qlog="$STATE_DIR/run_${stamp}_$(basename "$(dirname "$queue_rel")").log"
+  local softpass_reason=""
 
   log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries"
   if ! ensure_vps_ready "start_queue:$queue_rel"; then
-    log "start_blocked queue=$queue_rel reason=vps_unreachable"
-    return 1
+    softpass_reason="$(start_queue_softpass_reason)"
+    if [[ -z "$softpass_reason" ]]; then
+      log "start_blocked queue=$queue_rel reason=vps_unreachable"
+      return 1
+    fi
+    fullspan_state_metric_inc "vps_start_softpass_count" 1
+    log "start_softpass queue=$queue_rel reason=$softpass_reason"
+    log_decision_note "$queue_rel" "START_VPS_SOFTPASS" "reason=$softpass_reason" "continue_dispatch"
   fi
   (
     cd "$ROOT_DIR"

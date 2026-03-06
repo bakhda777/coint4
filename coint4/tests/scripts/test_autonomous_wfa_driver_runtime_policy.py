@@ -341,6 +341,24 @@ def test_hot_standby_and_replay_fastlane_contract() -> None:
     )
 
 
+def test_vps_start_softpass_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'VPS_RECENT_READY_GRACE_SEC',
+            'VPS_CAPACITY_STATE_MAX_AGE_SEC',
+            'capacity_controller_remote_reachable_recent()',
+            'vps_recently_recovered()',
+            'start_queue_softpass_reason()',
+            'START_VPS_SOFTPASS',
+            'start_softpass queue=$queue_rel',
+            'vps_start_softpass_count',
+            'continue_dispatch',
+        ],
+    )
+
+
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
     src = _source()
     _assert_contains_all(
