@@ -230,6 +230,82 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
     }
 
 
+def read_ready_queue_buffer(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {"ready_count": 0, "coverage_verified_ready_count": 0}
+    entries = data.get("entries", [])
+    if not isinstance(entries, list):
+        entries = []
+    coverage_verified_ready_count = 0
+    has_coverage_verified_signal = "coverage_verified_ready_count" in data
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if "coverage_verified" in entry:
+            has_coverage_verified_signal = True
+        if parse_bool(entry.get("coverage_verified"), False):
+            coverage_verified_ready_count += 1
+    if "coverage_verified_ready_count" in data:
+        coverage_verified_ready_count = parse_int(
+            data.get("coverage_verified_ready_count"),
+            coverage_verified_ready_count,
+        )
+    return {
+        "ready_count": parse_int(data.get("ready_count"), len(entries)),
+        "coverage_verified_ready_count": (
+            coverage_verified_ready_count if has_coverage_verified_signal else None
+        ),
+    }
+
+
+def read_yield_governor_state(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {
+            "hard_block_active": False,
+            "hard_block_reason": "",
+            "hard_block_until_epoch": 0,
+            "zero_coverage_seed_streak": 0,
+        }
+    return {
+        "hard_block_active": parse_bool(data.get("hard_block_active"), False),
+        "hard_block_reason": str(data.get("hard_block_reason") or ""),
+        "hard_block_until_epoch": parse_int(data.get("hard_block_until_epoch"), 0),
+        "zero_coverage_seed_streak": parse_int(data.get("zero_coverage_seed_streak"), 0),
+    }
+
+
+def read_queue_seeder_state(path: Path) -> dict[str, Any]:
+    data = load_json(path, {})
+    if not isinstance(data, dict):
+        return {"covered_window_count": 0, "coverage_verified_ready_count": 0}
+    covered_window_count = parse_int(data.get("covered_window_count"), 0)
+    coverage_verified_ready_count = parse_int(data.get("coverage_verified_ready_count"), 0)
+    hygiene = data.get("hygiene", {})
+    if isinstance(hygiene, dict):
+        covered_window_count = parse_int(hygiene.get("covered_window_count"), covered_window_count)
+    window_coverage = data.get("window_coverage", {})
+    if isinstance(window_coverage, dict):
+        windows = list(window_coverage.get("windows") or [])
+        counted_windows = 0
+        for entry in windows:
+            if isinstance(entry, dict) and parse_bool(entry.get("ok"), False):
+                counted_windows += 1
+        if counted_windows > 0 or not covered_window_count:
+            covered_window_count = counted_windows
+    ready_queue_buffer = data.get("ready_queue_buffer", {})
+    if isinstance(ready_queue_buffer, dict):
+        coverage_verified_ready_count = parse_int(
+            ready_queue_buffer.get("coverage_verified_ready_count"),
+            coverage_verified_ready_count,
+        )
+    return {
+        "covered_window_count": covered_window_count,
+        "coverage_verified_ready_count": coverage_verified_ready_count,
+    }
+
+
 def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
     totals = Counter()
     per_queue: dict[str, dict[str, int]] = {}
@@ -352,6 +428,9 @@ def main() -> int:
     capacity_state_path = state_dir / "capacity_controller_state.json"
     remote_runtime_state_path = state_dir / "remote_runtime_state.json"
     cold_fail_index_path = state_dir / "cold_fail_index.json"
+    yield_governor_state_path = state_dir / "yield_governor_state.json"
+    ready_buffer_state_path = state_dir / "ready_queue_buffer.json"
+    queue_seeder_state_path = state_dir / "queue_seeder.state.json"
 
     now = now_epoch()
     ts = utc_now_iso()
@@ -399,6 +478,9 @@ def main() -> int:
         executable_pending_rows = parse_int(totals.get("executable_pending"), 0)
 
         fullspan_state = load_json(fullspan_state_path, {})
+        yield_governor_state = read_yield_governor_state(yield_governor_state_path)
+        ready_buffer_state = read_ready_queue_buffer(ready_buffer_state_path)
+        queue_seeder_state = read_queue_seeder_state(queue_seeder_state_path)
         queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
         if not isinstance(queues, dict):
             queues = {}
@@ -588,6 +670,33 @@ def main() -> int:
             0,
         )
         hot_standby_active = parse_bool(runtime_metrics.get("hot_standby_active"), False)
+        infra_gate_status = str(runtime_metrics.get("infra_gate_status") or "").strip()
+        infra_gate_reason = str(runtime_metrics.get("infra_gate_reason") or "").strip()
+        startup_failure_code = str(runtime_metrics.get("startup_failure_code") or "").strip()
+        auto_seed_blocked = parse_bool(
+            runtime_metrics.get("auto_seed_blocked"),
+            yield_governor_state.get("hard_block_active", False),
+        )
+        auto_seed_block_reason = str(
+            runtime_metrics.get("auto_seed_block_reason")
+            or yield_governor_state.get("hard_block_reason")
+            or ""
+        ).strip()
+        if not infra_gate_status and parse_bool(runtime_metrics.get("vps_infra_fail_closed"), False):
+            infra_gate_status = "hard_block"
+            if not infra_gate_reason:
+                infra_gate_reason = "vps_infra_fail_closed"
+        coverage_verified_ready_count = parse_int(
+            runtime_metrics.get("coverage_verified_ready_count"),
+            parse_int(
+                ready_buffer_state.get("coverage_verified_ready_count"),
+                parse_int(queue_seeder_state.get("coverage_verified_ready_count"), 0),
+            ),
+        )
+        covered_window_count = parse_int(
+            runtime_metrics.get("covered_window_count"),
+            parse_int(queue_seeder_state.get("covered_window_count"), 0),
+        )
         progress_source = "local_queue"
         if remote_runtime_fresh and (
             active_remote_queue_rel
@@ -706,6 +815,13 @@ def main() -> int:
             "progress_source": progress_source,
             "active_remote_queue_rel": active_remote_queue_rel,
             "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
+            "infra_gate_status": infra_gate_status,
+            "infra_gate_reason": infra_gate_reason,
+            "auto_seed_blocked": auto_seed_blocked,
+            "auto_seed_block_reason": auto_seed_block_reason,
+            "covered_window_count": covered_window_count,
+            "coverage_verified_ready_count": coverage_verified_ready_count,
+            "startup_failure_code": startup_failure_code,
             "funnel": {
                 "generated": total_rows,
                 "executable": executable_rows,
@@ -743,6 +859,13 @@ def main() -> int:
                 "cold_fail_active_count": cold_fail_active_count,
                 "fastlane_replay_pending": fastlane_replay_pending,
                 "hot_standby_active": hot_standby_active,
+                "coverage_verified_ready_count": coverage_verified_ready_count,
+                "covered_window_count": covered_window_count,
+                "infra_gate_status": infra_gate_status,
+                "infra_gate_reason": infra_gate_reason,
+                "auto_seed_blocked": auto_seed_blocked,
+                "auto_seed_block_reason": auto_seed_block_reason,
+                "startup_failure_code": startup_failure_code,
             },
             "kpi": {
                 "completed_rows": completed_rows,
@@ -776,6 +899,10 @@ def main() -> int:
                 "fastlane_replay_pending": fastlane_replay_pending,
                 "metrics_missing_abort_count_30m": metrics_missing_abort_count_30m,
                 "winner_proximate_dispatch_count_30m": winner_proximate_dispatch_count_30m,
+                "coverage_verified_ready_count": coverage_verified_ready_count,
+                "covered_window_count": covered_window_count,
+                "auto_seed_blocked": auto_seed_blocked,
+                "startup_failure_code": startup_failure_code,
             },
             "runtime": {
                 "ready_buffer_depth": ready_buffer_depth,
@@ -804,6 +931,13 @@ def main() -> int:
                 "metrics_missing_abort_count_30m": metrics_missing_abort_count_30m,
                 "winner_proximate_dispatch_count_30m": winner_proximate_dispatch_count_30m,
                 "hot_standby_active": hot_standby_active,
+                "coverage_verified_ready_count": coverage_verified_ready_count,
+                "covered_window_count": covered_window_count,
+                "infra_gate_status": infra_gate_status,
+                "infra_gate_reason": infra_gate_reason,
+                "auto_seed_blocked": auto_seed_blocked,
+                "auto_seed_block_reason": auto_seed_block_reason,
+                "startup_failure_code": startup_failure_code,
             },
             "wip": {
                 "search_max": wip_search_max,
@@ -842,6 +976,10 @@ def main() -> int:
                 "progress_source={progress_source} active_remote_queue_rel={active_remote_queue_rel} "
                 "remote_queue_sync_age_sec={remote_queue_sync_age_sec} postprocess_active={postprocess_active} "
                 "build_index_active={build_index_active} "
+                "infra_gate_status={infra_gate_status} infra_gate_reason={infra_gate_reason} "
+                "auto_seed_blocked={auto_seed_blocked} auto_seed_block_reason={auto_seed_block_reason} "
+                "covered_window_count={covered_window_count} coverage_verified_ready_count={coverage_verified_ready_count} "
+                "startup_failure_code={startup_failure_code} "
                 "cold_fail_active_count={cold_fail_active_count} surrogate_idle_override_count={surrogate_idle_override_count} "
                 "overlap_dispatch_count={overlap_dispatch_count} cpu_busy_without_queue_job={cpu_busy_without_queue_job} "
                 "vps_duty_cycle_30m={vps_duty_cycle_30m:.3f} ready_buffer_policy_mismatch_count={ready_buffer_policy_mismatch_count} "
@@ -872,6 +1010,13 @@ def main() -> int:
                 remote_queue_sync_age_sec=summary["queue"]["remote_queue_sync_age_sec"],
                 postprocess_active=int(bool(summary["queue"]["postprocess_active"])),
                 build_index_active=int(bool(summary["queue"]["build_index_active"])),
+                infra_gate_status=summary["queue"]["infra_gate_status"] or "none",
+                infra_gate_reason=summary["queue"]["infra_gate_reason"] or "none",
+                auto_seed_blocked=int(bool(summary["queue"]["auto_seed_blocked"])),
+                auto_seed_block_reason=summary["queue"]["auto_seed_block_reason"] or "none",
+                covered_window_count=summary["queue"]["covered_window_count"],
+                coverage_verified_ready_count=summary["queue"]["coverage_verified_ready_count"],
+                startup_failure_code=summary["queue"]["startup_failure_code"] or "none",
                 cold_fail_active_count=summary["queue"]["cold_fail_active_count"],
                 surrogate_idle_override_count=summary["runtime"]["surrogate_idle_override_count"],
                 overlap_dispatch_count=summary["runtime"]["overlap_dispatch_count"],

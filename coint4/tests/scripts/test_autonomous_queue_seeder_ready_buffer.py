@@ -91,6 +91,32 @@ def test_load_ready_queue_buffer_uses_target_depth_when_refill_threshold_missing
     assert state["seed_needed"] is True
 
 
+def test_load_ready_queue_buffer_counts_only_coverage_verified_entries(tmp_path: Path) -> None:
+    state_path = tmp_path / "ready_queue_buffer.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "target_depth": 4,
+                "refill_threshold": 2,
+                "entries": [
+                    {"queue": "q1", "coverage_verified": True},
+                    {"queue": "q2", "coverage_verified": False},
+                    {"queue": "q3"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = autonomous_queue_seeder._load_ready_queue_buffer(state_path)
+
+    assert state["ready_depth_total"] == 3
+    assert state["coverage_verified_ready_count"] == 2
+    assert state["ready_depth"] == 2
+    assert state["seed_needed"] is False
+
+
 def test_evaluate_seed_needed_includes_ready_buffer_reason_with_healthy_global_backlog() -> None:
     seed_needed, reasons = autonomous_queue_seeder._evaluate_seed_needed(
         executable_pending=128,
@@ -126,6 +152,9 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["exists"] is True
     assert state["status"] == "ok"
     assert state["active"] is True
+    assert state["hard_block_active"] is False
+    assert state["hard_block_until_epoch"] == 0
+    assert state["zero_coverage_seed_streak"] == 0
     assert state["preferred_contains"] == ["rg_fast", "rg_broad"]
     assert state["winner_proximate"]["contains"] == ["rg_fast"]
     assert state["replay_fastlane"]["contains"] == ["confirm_rg"]
@@ -197,6 +226,30 @@ def test_load_yield_governor_state_backfills_replay_fastlane_from_legacy_confirm
     assert state["confirm_replay_contains"] == ["legacy_rg"]
 
 
+def test_load_yield_governor_state_reads_hard_block_fields(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "active": True,
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
+                "hard_block_until_epoch": 1772809999,
+                "zero_coverage_seed_streak": 3,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = autonomous_queue_seeder._load_yield_governor_state(state_path)
+
+    assert state["hard_block_active"] is True
+    assert state["hard_block_reason"] == "zero_coverage_seed_streak"
+    assert state["hard_block_until_epoch"] == 1772809999
+    assert state["zero_coverage_seed_streak"] == 3
+
+
 def test_select_seed_lane_prefers_replay_fastlane_before_winner_fallback() -> None:
     selection = autonomous_queue_seeder._select_seed_lane(
         winner_proximate_tokens=["winner_rg"],
@@ -259,6 +312,25 @@ def test_coverage_gate_rejects_missing_oos_months(tmp_path: Path) -> None:
     assert gate["missing_months"] == ["2025-08", "2025-09"]
 
 
+def test_assess_window_data_coverage_fail_closed_on_missing_months(tmp_path: Path) -> None:
+    data_root = tmp_path / "app" / "data_downloaded"
+    (data_root / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+    (data_root / "year=2025" / "month=08").mkdir(parents=True, exist_ok=True)
+
+    coverage = autonomous_queue_seeder._assess_window_data_coverage(
+        data_root,
+        ["2025-07-01,2025-08-31", "2025-09-01,2025-10-31"],
+    )
+
+    assert coverage["ok"] is False
+    assert coverage["reason"] == "missing_data_coverage"
+    assert coverage["covered_window_count"] == 1
+    assert coverage["uncovered_window_count"] == 1
+    assert coverage["missing_months"] == ["2025-09", "2025-10"]
+    assert coverage["windows"][0]["ok"] is True
+    assert coverage["windows"][1]["ok"] is False
+
+
 def test_prune_seed_queue_filters_missing_coverage_and_duplicates(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "group_a" / "run_queue.csv"
@@ -304,6 +376,69 @@ def test_prune_seed_queue_filters_missing_coverage_and_duplicates(tmp_path: Path
     assert [row["run_name"] for row in rows] == ["valid"]
 
 
+def test_hygiene_seed_queues_orphans_zero_coverage_history(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    aggregate_dir = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_dir = aggregate_dir / "autonomous_seed_20260306_122359"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = queue_dir / "run_queue.csv"
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "valid,configs/valid_holdout.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    valid_cfg = app_root / "configs" / "valid_holdout.yaml"
+    valid_cfg.parent.mkdir(parents=True, exist_ok=True)
+    valid_cfg.write_text(
+        "metadata:\n  evo_hash: evo_a\n  lineage_uid: line_a\nwalk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-07-31\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+    (aggregate_dir / "rollup").mkdir(parents=True, exist_ok=True)
+    (aggregate_dir / "rollup" / "run_index.csv").write_text(
+        "\n".join(
+            [
+                "run_group,coverage_ratio,total_trades,total_pnl",
+                "autonomous_seed_20260306_122359,0,0,0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (queue_dir / "rank_result.json").write_text(
+        json.dumps(
+            {
+                "details": "RANK_OK_FALLBACK_STRICT_BINDING:min_windows,min_trades,min_pairs,coverage_below",
+                "strict_diag": {
+                    "variants_passing_all": 0,
+                    "binding_gates": ["min_windows", "min_trades", "coverage_below"],
+                    "rejects": {"min_trades": 1, "coverage_below": 1},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    hygiene = autonomous_queue_seeder._hygiene_seed_queues(
+        aggregate_dir=aggregate_dir,
+        app_root=app_root,
+        run_group_prefix="autonomous_seed",
+        orphan_path=aggregate_dir / ".autonomous" / "orphan_queues.csv",
+    )
+
+    assert hygiene["reviewed"] == 1
+    assert hygiene["orphaned"] == 1
+    assert hygiene["zero_coverage_rejected"] == 1
+    assert hygiene["covered_window_count"] == 0
+    assert hygiene["queues"][0]["orphan_reason"] == "zero_coverage_fail_closed"
+
+
 def test_recent_zero_yield_signal_activates_on_zero_activity_streak(tmp_path: Path) -> None:
     rank_results_dir = tmp_path / "artifacts" / "optimization_state" / "rank_results"
     rank_results_dir.mkdir(parents=True, exist_ok=True)
@@ -327,3 +462,72 @@ def test_recent_zero_yield_signal_activates_on_zero_activity_streak(tmp_path: Pa
     assert signal["analyzed"] == 4
     assert signal["zeroish"] == 4
     assert signal["strict_binding"] == 4
+
+
+def test_assess_recent_seed_quality_detects_zero_coverage_streak(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    aggregate_dir = app_root / "artifacts" / "wfa" / "aggregate"
+    rollup_dir = aggregate_dir / "rollup"
+    rollup_dir.mkdir(parents=True, exist_ok=True)
+    run_index = rollup_dir / "run_index.csv"
+    run_index.write_text(
+        "\n".join(
+            [
+                "run_group,coverage_ratio,total_trades,total_pnl",
+                "autonomous_seed_20260306_120953,0,0,0",
+                "autonomous_seed_20260306_122359,0,0,0",
+                "autonomous_seed_20260306_123454,1,5,10",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    for group, variants in [
+        ("autonomous_seed_20260306_120953", 0),
+        ("autonomous_seed_20260306_122359", 0),
+        ("autonomous_seed_20260306_123454", 1),
+    ]:
+        group_dir = aggregate_dir / group
+        group_dir.mkdir(parents=True, exist_ok=True)
+        (group_dir / "rank_result.json").write_text(
+            json.dumps({"strict_diag": {"variants_passing_all": variants}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    quality = autonomous_queue_seeder._assess_recent_seed_quality(
+        app_root=app_root,
+        run_group_prefix="autonomous_seed",
+        run_index_path=run_index,
+    )
+
+    assert quality["groups_analyzed"] == 3
+    assert quality["zero_coverage_seed_streak"] == 0
+    assert quality["covered_window_count"] == 1
+    assert quality["hard_block_recommended"] is False
+
+    run_index.write_text(
+        "\n".join(
+            [
+                "run_group,coverage_ratio,total_trades,total_pnl",
+                "autonomous_seed_20260306_122359,0,0,0",
+                "autonomous_seed_20260306_123454,0,0,0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    for group in ["autonomous_seed_20260306_122359", "autonomous_seed_20260306_123454"]:
+        (aggregate_dir / group / "rank_result.json").write_text(
+            json.dumps({"strict_diag": {"variants_passing_all": 0}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    quality = autonomous_queue_seeder._assess_recent_seed_quality(
+        app_root=app_root,
+        run_group_prefix="autonomous_seed",
+        run_index_path=run_index,
+    )
+
+    assert quality["zero_coverage_seed_streak"] == 2
+    assert quality["backlog_suppress"] is True
+    assert quality["hard_block_recommended"] is True

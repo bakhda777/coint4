@@ -109,6 +109,9 @@ NO_PROGRESS_BREAKER_WINDOW_SEC="${NO_PROGRESS_BREAKER_WINDOW_SEC:-900}"
 NO_PROGRESS_BREAKER_STREAK="${NO_PROGRESS_BREAKER_STREAK:-2}"
 NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC="${NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC:-1800}"
 FORCE_SYNC_BEFORE_START="${FORCE_SYNC_BEFORE_START:-1}"
+START_QUEUE_CONFIRM_TIMEOUT_SEC="${START_QUEUE_CONFIRM_TIMEOUT_SEC:-120}"
+START_QUEUE_CONFIRM_POLL_SEC="${START_QUEUE_CONFIRM_POLL_SEC:-5}"
+AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC="${AUTO_SEED_HARD_BLOCK_COOLDOWN_SEC:-1800}"
 LAST_REJECTED_QUEUE="${LAST_REJECTED_QUEUE:-}"
 DRIVER_MAX_LOCAL_SEARCH_RUNNERS="${DRIVER_MAX_LOCAL_SEARCH_RUNNERS:-3}"
 DRIVER_MAX_REMOTE_RUNNERS="${DRIVER_MAX_REMOTE_RUNNERS:-64}"
@@ -1568,6 +1571,19 @@ for row in rows:
     queue_path = root_dir / queue
     if not queue_path.exists():
         continue
+    queue_policy = load_json(queue_path.parent / "queue_policy.json", {})
+    if not isinstance(queue_policy, dict):
+        queue_policy = {}
+    default_verified = not queue_path.parent.name.startswith("autonomous_seed_")
+    coverage_verified = bool(queue_policy.get("coverage_verified", default_verified))
+    coverage_reason = str(
+        queue_policy.get("coverage_reason")
+        or queue_policy.get("ready_buffer_reason")
+        or ("coverage_verified" if coverage_verified else "coverage_unverified")
+        or ""
+    ).strip()
+    if not coverage_verified:
+        continue
     queue_file_mtime = int(queue_path.stat().st_mtime)
     row_mtime = int(float(row.get("mtime") or 0))
     if row_mtime > 0 and queue_file_mtime > row_mtime:
@@ -1595,6 +1611,8 @@ for row in rows:
         "executable_pending": int(float(row.get("executable_pending") or 0)),
         "surrogate_decision": decision,
         "surrogate_reason": reason,
+        "coverage_verified": coverage_verified,
+        "coverage_reason": coverage_reason,
         "queue_file_mtime": queue_file_mtime,
         "claimed": False,
         "claim_ts": 0,
@@ -1701,6 +1719,9 @@ for entry in entries:
         continue
     queue = str(entry.get("queue") or "").strip()
     if not queue or queue == exclude_queue or bool(entry.get("claimed")):
+        continue
+    if not bool(entry.get("coverage_verified", False)):
+        stale_skips += 1
         continue
     queue_path = root_dir / queue
     if not queue_path.exists():
@@ -1826,6 +1847,8 @@ for entry in entries:
         continue
     queue = str(entry.get("queue") or "").strip()
     if not queue or queue == exclude_queue or bool(entry.get("claimed")):
+        continue
+    if not bool(entry.get("coverage_verified", False)):
         continue
     queue_path = root_dir / queue
     if not queue_path.exists():
@@ -4865,6 +4888,188 @@ refresh_remote_runtime_metrics() {
   fullspan_state_metric_set "remote_runtime_snapshot_age_sec" "$snapshot_age"
 }
 
+yield_governor_hard_block_snapshot() {
+  local now_epoch="${1:-$(date +%s)}"
+  python3 - "$YIELD_GOVERNOR_STATE_FILE" "$now_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    now_epoch = int(float(sys.argv[2] or 0))
+except Exception:
+    now_epoch = 0
+if not path.exists():
+    print("0\t\t0")
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("0\t\t0")
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print("0\t\t0")
+    raise SystemExit(0)
+raw_until = payload.get("hard_block_until_epoch", 0)
+try:
+    until_epoch = int(float(raw_until or 0))
+except Exception:
+    until_epoch = 0
+active = bool(payload.get("hard_block_active"))
+if until_epoch > 0 and now_epoch > 0 and until_epoch < now_epoch:
+    active = False
+reason = str(payload.get("hard_block_reason") or "").strip()
+streak = payload.get("zero_coverage_seed_streak", 0)
+try:
+    streak = int(float(streak or 0))
+except Exception:
+    streak = 0
+print(("1" if active else "0") + "\t" + reason + "\t" + str(max(0, until_epoch)) + "\t" + str(max(0, streak)))
+PY
+}
+
+queue_coverage_policy_snapshot() {
+  local queue_rel="$1"
+  python3 - "$ROOT_DIR" "$queue_rel" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+queue_path = root / queue_rel
+queue_dir = queue_path.parent
+policy_path = queue_dir / "queue_policy.json"
+queue_name = queue_dir.name
+default_verified = not queue_name.startswith("autonomous_seed_")
+if not policy_path.exists():
+    print(("1" if default_verified else "0") + "\tmissing_queue_policy\t" + str(policy_path))
+    raise SystemExit(0)
+try:
+    payload = json.loads(policy_path.read_text(encoding="utf-8"))
+except Exception:
+    print("0\tinvalid_queue_policy\t" + str(policy_path))
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print("0\tinvalid_queue_policy\t" + str(policy_path))
+    raise SystemExit(0)
+verified = bool(payload.get("coverage_verified", default_verified))
+reason = str(payload.get("coverage_reason") or payload.get("ready_buffer_reason") or "").strip()
+if not reason:
+    reason = "coverage_verified" if verified else "coverage_unverified"
+print(("1" if verified else "0") + "\t" + reason + "\t" + str(policy_path))
+PY
+}
+
+set_infra_gate_state() {
+  local status="$1"
+  local reason="${2:-}"
+  local startup_failure_code="${3:-}"
+  local auto_seed_blocked="${4:-0}"
+  local auto_seed_block_reason="${5:-}"
+  fullspan_state_metric_set "infra_gate_status" "$status"
+  fullspan_state_metric_set "infra_gate_reason" "$reason"
+  fullspan_state_metric_set "startup_failure_code" "$startup_failure_code"
+  fullspan_state_metric_set "auto_seed_blocked" "$auto_seed_blocked"
+  fullspan_state_metric_set "auto_seed_block_reason" "$auto_seed_block_reason"
+}
+
+queue_start_confirmation_status() {
+  local queue_rel="$1"
+  local qlog="$2"
+  python3 - "$ROOT_DIR" "$queue_rel" "$qlog" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+log_path = Path(sys.argv[3])
+queue_path = root / queue_rel
+status = "pending"
+code = ""
+reason = ""
+
+text = ""
+if log_path.exists():
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        text = ""
+
+for line in reversed(text.splitlines()):
+    if "powered: FAIL reason=" in line:
+        status = "fail"
+        code = line.split("powered: FAIL reason=", 1)[1].strip().split()[0]
+        reason = "powered_fail"
+        break
+    if "sync_code failed with remote code drift detected" in line:
+        status = "fail"
+        code = "REMOTE_SYNC_FAILED"
+        reason = "remote_code_drift"
+        break
+
+if status == "pending":
+    if "powered: remote run start queue=" in text:
+        status = "confirmed"
+        code = "REMOTE_RUN_STARTED"
+        reason = "powered_remote_run_start"
+    else:
+        try:
+            with queue_path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+        except Exception:
+            rows = []
+        for row in rows:
+            queue_status = str(row.get("status") or "").strip().lower()
+            if queue_status and queue_status not in {"planned", ""}:
+                status = "confirmed"
+                code = "QUEUE_STATUS_PROGRESS"
+                reason = queue_status
+                break
+
+print("\t".join([status, code, reason]))
+PY
+}
+
+wait_for_queue_start_confirmation() {
+  local queue_rel="$1"
+  local qlog="$2"
+  local timeout_sec="${3:-$START_QUEUE_CONFIRM_TIMEOUT_SEC}"
+  local poll_sec="${4:-$START_QUEUE_CONFIRM_POLL_SEC}"
+  local deadline now_epoch status code reason
+  deadline=$(( $(date +%s) + timeout_sec ))
+  while true; do
+    IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog")"
+    case "$status" in
+      confirmed)
+        echo "${code:-REMOTE_RUN_STARTED}"$'\t'"${reason:-confirmed}"
+        return 0
+        ;;
+      fail)
+        echo "${code:-START_CONFIRM_FAILED}"$'\t'"${reason:-startup_fail}"
+        return 1
+        ;;
+    esac
+    if ! local_powered_queue_running "$queue_rel"; then
+      IFS=$'\t' read -r status code reason <<< "$(queue_start_confirmation_status "$queue_rel" "$qlog")"
+      if [[ "$status" == "fail" ]]; then
+        echo "${code:-START_CONFIRM_FAILED}"$'\t'"${reason:-startup_fail}"
+        return 1
+      fi
+      echo "START_PROCESS_EXIT"$'\t'"local_powered_runner_exited_before_confirmation"
+      return 1
+    fi
+    now_epoch="$(date +%s)"
+    if (( now_epoch >= deadline )); then
+      echo "START_CONFIRM_TIMEOUT"$'\t'"start_confirmation_timeout"
+      return 2
+    fi
+    sleep "$poll_sec"
+  done
+}
+
 remote_queue_running() {
   local queue_rel="$1"
   local cnt
@@ -5157,7 +5362,10 @@ PY
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
   local now_epoch last_seed planned_exec pending_exec no_op_queues
-  local ready_depth
+  local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
+  local yield_block_active yield_block_reason yield_block_until yield_block_streak
+  local runtime_block_active runtime_block_reason
+  local prev_blocked prev_block_reason
   local remote_count=0
   local force_seed=0
   local effective_seed_pending_threshold
@@ -5175,6 +5383,48 @@ maybe_trigger_auto_seed() {
   ready_depth="$(ready_buffer_depth)"
   [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
   fullspan_state_metric_set "ready_buffer_depth" "$ready_depth"
+
+  IFS=$'\t' read -r yield_block_active yield_block_reason yield_block_until yield_block_streak <<< "$(yield_governor_hard_block_snapshot "$now_epoch")"
+  [[ "$yield_block_active" =~ ^[0-9]+$ ]] || yield_block_active=0
+  [[ "$yield_block_until" =~ ^[0-9]+$ ]] || yield_block_until=0
+  [[ "$yield_block_streak" =~ ^[0-9]+$ ]] || yield_block_streak=0
+  runtime_block_active="$(fullspan_state_metric_get auto_seed_hard_block 0)"
+  runtime_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
+  [[ "$runtime_block_active" =~ ^[0-9]+$ ]] || runtime_block_active=0
+  if [[ "$(fullspan_state_metric_get vps_infra_fail_closed 0)" == "1" ]]; then
+    runtime_block_active=1
+    if [[ -z "$runtime_block_reason" ]]; then
+      runtime_block_reason="vps_infra_fail_closed"
+    fi
+  fi
+  hard_block_active=0
+  hard_block_reason=""
+  hard_block_until=0
+  hard_block_streak=0
+  if (( yield_block_active > 0 )); then
+    hard_block_active=1
+    hard_block_reason="${yield_block_reason:-yield_governor_hard_block}"
+    hard_block_until="$yield_block_until"
+    hard_block_streak="$yield_block_streak"
+  fi
+  if (( runtime_block_active > 0 )); then
+    hard_block_active=1
+    if [[ -z "$hard_block_reason" ]]; then
+      hard_block_reason="${runtime_block_reason:-runtime_hard_block}"
+    else
+      hard_block_reason="${hard_block_reason},${runtime_block_reason:-runtime_hard_block}"
+    fi
+  fi
+  if (( hard_block_active > 0 )); then
+    prev_blocked="$(fullspan_state_metric_get auto_seed_blocked 0)"
+    prev_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
+    set_infra_gate_state "hard_block" "${hard_block_reason:-auto_seed_hard_block}" "$(fullspan_state_metric_get startup_failure_code "")" "1" "${hard_block_reason:-auto_seed_hard_block}"
+    if [[ "$prev_blocked" != "1" || "$prev_block_reason" != "${hard_block_reason:-auto_seed_hard_block}" ]]; then
+      log "auto_seed_hard_block reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}"
+      log_decision_note "global" "AUTO_SEED_HARD_BLOCK" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}" "skip_seed_generation"
+    fi
+    return 0
+  fi
 
   case "$reason" in
     candidate_empty|candidate_parse_empty|candidate_empty_after_reconcile|candidate_parse_empty_after_reconcile)
@@ -5218,6 +5468,8 @@ maybe_trigger_auto_seed() {
     fullspan_state_metric_set "seed_trigger_reason" "$reason"
     fullspan_state_metric_inc "seed_trigger_count" 1
     fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
+    fullspan_state_metric_set "auto_seed_blocked" 0
+    fullspan_state_metric_set "auto_seed_block_reason" ""
     log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth no_op_queues=$no_op_queues threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS"
     log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
   else
@@ -5896,6 +6148,7 @@ start_queue() {
   local queue_rel="$1"
   local cause="$2"
   local target="$ROOT_DIR/$queue_rel"
+  local coverage_verified coverage_reason coverage_policy_path
 
   if [[ ! -f "$target" ]]; then
     log "candidate_missing queue=$queue_rel"
@@ -5916,9 +6169,32 @@ start_queue() {
   local parallel
   local max_retries
   local queue_poweroff
+  local startup_code=""
+  local startup_reason=""
+  local startup_payload=""
+  local startup_rc=0
+  local startup_timeout="$START_QUEUE_CONFIRM_TIMEOUT_SEC"
+  local startup_poll="$START_QUEUE_CONFIRM_POLL_SEC"
 
   if is_truthy "$FORCE_SYNC_BEFORE_START"; then
     sync_queue_status "$queue_rel"
+  fi
+
+  IFS=$'\t' read -r coverage_verified coverage_reason coverage_policy_path <<< "$(queue_coverage_policy_snapshot "$queue_rel")"
+  [[ "$coverage_verified" =~ ^[0-9]+$ ]] || coverage_verified=0
+  if (( coverage_verified <= 0 )); then
+    LAST_REJECTED_QUEUE="$queue_rel"
+    mark_orphan "$queue_rel" "coverage_fail_closed"
+    cold_fail_state_add "$queue_rel" "${coverage_reason:-coverage_unverified}"
+    fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
+    set_infra_gate_state "coverage_fail_closed" "${coverage_reason:-coverage_unverified}" "COVERAGE_FAIL_CLOSED" "1" "${coverage_reason:-coverage_unverified}"
+    fullspan_state_metric_set "auto_seed_hard_block" 1
+    fullspan_state_metric_set "auto_seed_block_reason" "${coverage_reason:-coverage_unverified}"
+    log "coverage_fail_closed queue=$queue_rel reason=${coverage_reason:-coverage_unverified} policy_path=${coverage_policy_path:-none}"
+    log_decision_note "$queue_rel" "COVERAGE_FAIL_CLOSED" "reason=${coverage_reason:-coverage_unverified} policy_path=${coverage_policy_path:-none}" "orphan_and_reselect"
+    ready_buffer_release_claim "$queue_rel"
+    log_state "idle now=none reason=coverage_fail_closed queue=$queue_rel"
+    return 1
   fi
 
   read -r pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
@@ -5951,6 +6227,9 @@ start_queue() {
   if ! ensure_vps_ready "start_queue:$queue_rel"; then
     softpass_reason="$(start_queue_softpass_reason)"
     if [[ -z "$softpass_reason" ]]; then
+      set_infra_gate_state "hard_block" "vps_unreachable" "VPS_UNREACHABLE" "1" "vps_unreachable"
+      fullspan_state_metric_set "auto_seed_hard_block" 1
+      fullspan_state_metric_set "auto_seed_block_reason" "vps_unreachable"
       log "start_blocked queue=$queue_rel reason=vps_unreachable"
       return 1
     fi
@@ -5980,15 +6259,41 @@ start_queue() {
   batch_session_note_dispatch
   local rc=$?
   if [[ "$rc" -ne 0 ]]; then
+    set_infra_gate_state "hard_block" "failed_to_start" "START_PROCESS_SPAWN_FAILED" "1" "failed_to_start"
+    fullspan_state_metric_set "auto_seed_hard_block" 1
+    fullspan_state_metric_set "auto_seed_block_reason" "failed_to_start"
     log "failed_to_start queue=$queue_rel rc=$rc"
     return "$rc"
   fi
-  log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
+  log_state "starting queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0}"
+  if startup_payload="$(wait_for_queue_start_confirmation "$queue_rel" "$qlog" "$startup_timeout" "$startup_poll")"; then
+    startup_rc=0
+  else
+    startup_rc=$?
+  fi
+  IFS=$'\t' read -r startup_code startup_reason <<< "$startup_payload"
+  if (( startup_rc == 0 )); then
+    set_infra_gate_state "ok" "" "" "0" ""
+    fullspan_state_metric_set "auto_seed_hard_block" 0
+    fullspan_state_metric_set "auto_seed_block_reason" ""
+    log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0} startup_code=${startup_code:-REMOTE_RUN_STARTED}"
+    log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict startup_code=${startup_code:-REMOTE_RUN_STARTED}"
+  else
+    LAST_REJECTED_QUEUE="$queue_rel"
+    mark_orphan "$queue_rel" "infra_fail_closed_${startup_code:-START_CONFIRM_FAILED}"
+    fullspan_state_metric_set "auto_seed_hard_block" 1
+    fullspan_state_metric_set "auto_seed_block_reason" "${startup_reason:-startup_fail_closed}"
+    set_infra_gate_state "hard_block" "${startup_reason:-startup_fail_closed}" "${startup_code:-START_CONFIRM_FAILED}" "1" "${startup_reason:-startup_fail_closed}"
+    log_decision_note "$queue_rel" "INFRA_FAIL_CLOSED" "reason=${startup_reason:-startup_fail_closed} startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog" "orphan_and_continue_search"
+    log "start_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} startup_reason=${startup_reason:-startup_fail_closed} log=$qlog"
+    ready_buffer_release_claim "$queue_rel"
+    log_state "idle now=none reason=infra_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog"
+    return 1
+  fi
   if [[ "$(queue_is_winner_proximate "$queue_rel")" == "1" ]]; then
     runtime_observability_record_event "winner_proximate_dispatch" "$stamp"
     fullspan_state_metric_inc "winner_proximate_dispatch_total" 1
   fi
-  log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
 }
 
 maybe_dispatch_overlap_from_buffer() {

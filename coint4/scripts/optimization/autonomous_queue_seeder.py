@@ -285,6 +285,79 @@ def _coverage_gate_for_config(*, config_path: Path, app_root: Path) -> dict[str,
     }
 
 
+def _assess_window_data_coverage(data_root: Path, windows: list[str]) -> dict[str, Any]:
+    requested_windows = [str(raw or "").strip() for raw in list(windows or []) if str(raw or "").strip()]
+    if not requested_windows:
+        return {
+            "ok": True,
+            "reason": "no_windows_requested",
+            "windows": [],
+            "covered_window_count": 0,
+            "uncovered_window_count": 0,
+            "missing_months": [],
+        }
+
+    details: list[dict[str, Any]] = []
+    missing_months: set[str] = set()
+    covered_window_count = 0
+    uncovered_window_count = 0
+    invalid_window_count = 0
+    for raw in requested_windows:
+        start_date, sep, end_date = raw.partition(",")
+        start_date = start_date.strip()
+        end_date = end_date.strip()
+        if not sep or not start_date or not end_date:
+            invalid_window_count += 1
+            details.append(
+                {
+                    "window": raw,
+                    "ok": False,
+                    "reason": "invalid_window",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "missing_months": [],
+                }
+            )
+            continue
+        window_missing: list[str] = []
+        for year, month in _month_sequence(start_date, end_date):
+            month_token = f"{year:04d}-{month:02d}"
+            month_dir = data_root / f"year={year:04d}" / f"month={month:02d}"
+            if not month_dir.exists():
+                missing_months.add(month_token)
+                window_missing.append(month_token)
+        covered = len(window_missing) == 0
+        if covered:
+            covered_window_count += 1
+        else:
+            uncovered_window_count += 1
+        details.append(
+            {
+                "window": raw,
+                "ok": covered,
+                "reason": "ok" if covered else "missing_data_coverage",
+                "start_date": start_date,
+                "end_date": end_date,
+                "missing_months": window_missing,
+            }
+        )
+
+    ok = invalid_window_count == 0 and uncovered_window_count == 0
+    reason = "ok"
+    if invalid_window_count > 0:
+        reason = "invalid_window"
+    elif uncovered_window_count > 0:
+        reason = "missing_data_coverage"
+    return {
+        "ok": ok,
+        "reason": reason,
+        "windows": details,
+        "covered_window_count": int(covered_window_count),
+        "uncovered_window_count": int(uncovered_window_count + invalid_window_count),
+        "missing_months": sorted(missing_months),
+    }
+
+
 def _decision_lineage_uid(decision_payload: dict[str, Any]) -> str:
     if not isinstance(decision_payload, dict):
         return ""
@@ -440,6 +513,261 @@ def _recent_zero_yield_signal(rank_results_dir: Path, *, limit: int = 24) -> dic
     }
 
 
+def _load_rank_result(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _is_zero_coverage_seed_group(*, rows: list[dict[str, str]], rank_result: dict[str, Any]) -> bool:
+    if not rows:
+        return False
+    coverage_positive = False
+    trades_positive = False
+    pnl_nonzero = False
+    for row in rows:
+        try:
+            coverage_positive = coverage_positive or float(row.get("coverage_ratio") or 0.0) > 0.0
+        except Exception:
+            pass
+        try:
+            trades_positive = trades_positive or float(row.get("total_trades") or 0.0) > 0.0
+        except Exception:
+            pass
+        try:
+            pnl_nonzero = pnl_nonzero or float(row.get("total_pnl") or 0.0) != 0.0
+        except Exception:
+            pass
+    strict_diag = rank_result.get("strict_diag", {}) if isinstance(rank_result, dict) else {}
+    if not isinstance(strict_diag, dict):
+        strict_diag = {}
+    try:
+        variants_passing_all = int(float(strict_diag.get("variants_passing_all") or 0))
+    except Exception:
+        variants_passing_all = 0
+    return not coverage_positive and not trades_positive and not pnl_nonzero and variants_passing_all <= 0
+
+
+def _rank_result_has_zero_coverage_binding(rank_result: dict[str, Any]) -> bool:
+    if not isinstance(rank_result, dict):
+        return False
+    details = str(rank_result.get("details") or "").strip()
+    strict_diag = rank_result.get("strict_diag", {})
+    if not isinstance(strict_diag, dict):
+        strict_diag = {}
+    binding_gates = {str(item).strip() for item in list(strict_diag.get("binding_gates", []) or []) if str(item).strip()}
+    rejects = strict_diag.get("rejects", {})
+    if not isinstance(rejects, dict):
+        rejects = {}
+    variants_passing_all = _as_int(strict_diag.get("variants_passing_all"), default=0, min_value=0) or 0
+    coverage_below_rejects = _as_int(rejects.get("coverage_below"), default=0, min_value=0) or 0
+    min_trades_rejects = _as_int(rejects.get("min_trades"), default=0, min_value=0) or 0
+    return bool(
+        variants_passing_all <= 0
+        and (
+            "coverage_below" in binding_gates
+            or coverage_below_rejects > 0
+            or "coverage_below" in details
+        )
+        and (
+            "min_trades" in binding_gates
+            or min_trades_rejects > 0
+            or "min_trades" in details
+        )
+    )
+
+
+def _assess_recent_seed_quality(
+    *,
+    app_root: Path,
+    run_group_prefix: str,
+    run_index_path: Path,
+    limit_groups: int = 8,
+) -> dict[str, Any]:
+    by_group: dict[str, list[dict[str, str]]] = {}
+    if run_index_path.exists():
+        try:
+            with run_index_path.open(newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    group = str(row.get("run_group") or "").strip()
+                    if not group.startswith(f"{run_group_prefix}_"):
+                        continue
+                    by_group.setdefault(group, []).append({k: (v or "").strip() for k, v in row.items()})
+        except Exception:
+            by_group = {}
+
+    recent_groups = sorted(by_group.keys())[-max(1, int(limit_groups)) :]
+    groups: list[dict[str, Any]] = []
+    zero_coverage_seed_streak = 0
+    covered_window_count = 0
+    for group in reversed(recent_groups):
+        rows = list(by_group.get(group) or [])
+        rank_result = _load_rank_result(app_root / "artifacts" / "wfa" / "aggregate" / group / "rank_result.json")
+        zero_coverage = _is_zero_coverage_seed_group(rows=rows, rank_result=rank_result)
+        if zero_coverage and zero_coverage_seed_streak == len(groups):
+            zero_coverage_seed_streak += 1
+        if not zero_coverage:
+            covered_window_count += 1
+        groups.append(
+            {
+                "run_group": group,
+                "rows": len(rows),
+                "zero_coverage": bool(zero_coverage),
+            }
+        )
+
+    return {
+        "groups_analyzed": len(groups),
+        "recent_groups": list(groups),
+        "zero_coverage_seed_streak": int(zero_coverage_seed_streak),
+        "covered_window_count": int(covered_window_count),
+        "repair_mode": bool(zero_coverage_seed_streak >= 1),
+        "backlog_suppress": bool(zero_coverage_seed_streak >= 2),
+        "hard_block_recommended": bool(zero_coverage_seed_streak >= 2),
+        "hard_block_reason": "zero_coverage_seed_streak" if zero_coverage_seed_streak >= 2 else "",
+    }
+
+
+def _upsert_orphan_queue(*, orphan_path: Path, queue_rel: str, reason: str, cooldown_sec: int = 21600) -> None:
+    queue = str(queue_rel or "").strip()
+    if not queue:
+        return
+    rows: list[dict[str, str]] = []
+    if orphan_path.exists():
+        try:
+            with orphan_path.open(newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    if str(row.get("queue") or "").strip() == queue:
+                        continue
+                    rows.append(
+                        {
+                            "queue": str(row.get("queue") or "").strip(),
+                            "until_ts": str(row.get("until_ts") or "").strip(),
+                            "reason": str(row.get("reason") or "").strip(),
+                        }
+                    )
+        except Exception:
+            rows = []
+    until_ts = int(datetime.now(timezone.utc).timestamp()) + max(60, int(cooldown_sec))
+    rows.append({"queue": queue, "until_ts": str(until_ts), "reason": str(reason or "").strip()})
+    orphan_path.parent.mkdir(parents=True, exist_ok=True)
+    with orphan_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["queue", "until_ts", "reason"])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _hygiene_seed_queues(
+    *,
+    aggregate_dir: Path,
+    app_root: Path,
+    run_group_prefix: str,
+    orphan_path: Path,
+    cooldown_sec: int = 21600,
+) -> dict[str, Any]:
+    reviewed = 0
+    pruned = 0
+    orphaned = 0
+    coverage_rejected = 0
+    dedupe_rejected = 0
+    zero_coverage_rejected = 0
+    covered_window_count = 0
+    queue_results: list[dict[str, Any]] = []
+    run_index_groups: dict[str, list[dict[str, str]]] = {}
+    run_index_path = aggregate_dir / "rollup" / "run_index.csv"
+    if run_index_path.exists():
+        try:
+            with run_index_path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    run_group = str(row.get("run_group") or "").strip()
+                    if not run_group.startswith(f"{run_group_prefix}_"):
+                        continue
+                    run_index_groups.setdefault(run_group, []).append({k: (v or "").strip() for k, v in row.items()})
+        except Exception:
+            run_index_groups = {}
+    for queue_path in sorted(aggregate_dir.glob(f"{run_group_prefix}_*/run_queue.csv")):
+        rows = _load_queue_rows(queue_path)
+        if not rows:
+            continue
+        statuses = {(row.get("status") or "").strip().lower() for row in rows}
+        if "completed" in statuses or "error" in statuses:
+            continue
+        if not statuses.intersection({"planned", "queued", "running", "stalled", "failed", "active"}):
+            continue
+        reviewed += 1
+        prune_stats = _prune_seed_queue(queue_path=queue_path, app_root=app_root)
+        coverage_rejected += int(prune_stats.get("coverage_rejected", 0) or 0)
+        dedupe_rejected += int(prune_stats.get("dedupe_rejected", 0) or 0)
+        if int(prune_stats.get("coverage_rejected", 0) or 0) > 0 or int(prune_stats.get("dedupe_rejected", 0) or 0) > 0:
+            pruned += 1
+        rows_after = int(prune_stats.get("rows_after", 0) or 0)
+        queue_rel = _safe_rel(queue_path, app_root)
+        run_group = queue_path.parent.name
+        rank_result = _load_rank_result(queue_path.parent / "rank_result.json")
+        zero_coverage_history = _is_zero_coverage_seed_group(
+            rows=list(run_index_groups.get(run_group) or []),
+            rank_result=rank_result,
+        ) and _rank_result_has_zero_coverage_binding(rank_result)
+        reason = ""
+        if rows_after <= 0:
+            reason = "coverage_fail_closed"
+        elif zero_coverage_history:
+            reason = "zero_coverage_fail_closed"
+            zero_coverage_rejected += 1
+        else:
+            covered_window_count += 1
+        if reason:
+            _upsert_orphan_queue(orphan_path=orphan_path, queue_rel=queue_rel, reason=reason, cooldown_sec=cooldown_sec)
+            orphaned += 1
+        queue_policy_path = _write_queue_policy_sidecar(
+            queue_path=queue_path,
+            app_root=app_root,
+            planner_policy_hash="coverage_hygiene",
+            selected_lane="hygiene",
+            selected_lane_index=0,
+            token_rotation=0,
+            parent_rotation_offset=0,
+            parent_diversity_depth=0,
+            confirm_replay_hints=[],
+            decision_payload={},
+            coverage_verified=bool(rows_after > 0),
+            coverage_reason=str(reason or "coverage_verified"),
+            ready_buffer_excluded=bool(reason),
+        )
+        _decorate_queue_metadata(
+            queue_path=queue_path,
+            planner_policy_hash="coverage_hygiene",
+            queue_policy_path=queue_policy_path,
+            app_root=app_root,
+            coverage_verified=bool(rows_after > 0),
+        )
+        queue_results.append(
+            {
+                "queue": queue_rel,
+                "rows_after": rows_after,
+                "coverage_rejected": int(prune_stats.get("coverage_rejected", 0) or 0),
+                "dedupe_rejected": int(prune_stats.get("dedupe_rejected", 0) or 0),
+                "zero_coverage_history": bool(zero_coverage_history),
+                "orphan_reason": reason,
+            }
+        )
+    return {
+        "reviewed": reviewed,
+        "pruned": pruned,
+        "orphaned": orphaned,
+        "coverage_rejected": coverage_rejected,
+        "dedupe_rejected": dedupe_rejected,
+        "zero_coverage_rejected": zero_coverage_rejected,
+        "covered_window_count": covered_window_count,
+        "queues": queue_results[:32],
+    }
+
+
 def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, list[Path]]:
     pending_like_status = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
     dispatchable_status = {"planned", "queued", "running", "failed"}
@@ -517,6 +845,9 @@ def _write_queue_policy_sidecar(
     parent_diversity_depth: int,
     confirm_replay_hints: list[str],
     decision_payload: dict[str, Any],
+    coverage_verified: bool = True,
+    coverage_reason: str = "",
+    ready_buffer_excluded: bool = False,
 ) -> Path:
     queue_dir = queue_path.parent
     sidecar_path = queue_dir / "queue_policy.json"
@@ -570,6 +901,9 @@ def _write_queue_policy_sidecar(
             "run_group": str(primary_parent.get("run_group") or "").strip(),
             "lineage_uid": str(primary_parent.get("lineage_uid") or "").strip(),
         },
+        "coverage_verified": bool(coverage_verified),
+        "coverage_reason": str(coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")).strip(),
+        "ready_buffer_excluded": bool(ready_buffer_excluded),
     }
     sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     return sidecar_path
@@ -581,6 +915,7 @@ def _decorate_queue_metadata(
     planner_policy_hash: str,
     queue_policy_path: Path,
     app_root: Path,
+    coverage_verified: bool = True,
 ) -> None:
     if not queue_path.exists():
         return
@@ -608,6 +943,7 @@ def _decorate_queue_metadata(
         meta["buffer_policy_version"] = planner_policy_hash
         meta["queue_policy_path"] = queue_policy_rel
         meta["queue_path"] = queue_rel
+        meta["coverage_verified"] = bool(coverage_verified)
         row["metadata_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     with queue_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -925,6 +1261,8 @@ def _load_ready_queue_buffer(path: Path) -> dict[str, Any]:
         "refill_threshold": None,
         "effective_refill_threshold": None,
         "ready_depth": 0,
+        "ready_depth_total": 0,
+        "coverage_verified_ready_count": 0,
         "seed_needed": False,
     }
     if not path.exists():
@@ -949,7 +1287,14 @@ def _load_ready_queue_buffer(path: Path) -> dict[str, Any]:
     target_depth = _as_int(payload.get("target_depth"), default=None, min_value=0)
     refill_threshold = _as_int(payload.get("refill_threshold"), default=None, min_value=0)
     effective_refill_threshold = refill_threshold if refill_threshold is not None else target_depth
-    ready_depth = len(entries)
+    ready_depth_total = len(entries)
+    coverage_verified_ready_count = 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if bool(entry.get("coverage_verified", True)):
+            coverage_verified_ready_count += 1
+    ready_depth = int(coverage_verified_ready_count)
 
     state.update(
         {
@@ -959,6 +1304,8 @@ def _load_ready_queue_buffer(path: Path) -> dict[str, Any]:
             "refill_threshold": int(refill_threshold) if refill_threshold is not None else None,
             "effective_refill_threshold": int(effective_refill_threshold) if effective_refill_threshold is not None else None,
             "ready_depth": int(ready_depth),
+            "ready_depth_total": int(ready_depth_total),
+            "coverage_verified_ready_count": int(coverage_verified_ready_count),
         }
     )
     if effective_refill_threshold is None:
@@ -1072,6 +1419,10 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "status": "missing",
         "reason": "missing",
         "active": False,
+        "hard_block_active": False,
+        "hard_block_reason": "",
+        "hard_block_until_epoch": 0,
+        "zero_coverage_seed_streak": 0,
         "preferred_contains": [],
         "cooldown_contains": [],
         "preferred_operator_ids": [],
@@ -1136,6 +1487,10 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "status": "ok",
             "reason": "ok",
             "active": bool(payload.get("active")),
+            "hard_block_active": bool(payload.get("hard_block_active")),
+            "hard_block_reason": str(payload.get("hard_block_reason") or "").strip(),
+            "hard_block_until_epoch": int(_as_int(payload.get("hard_block_until_epoch"), default=0, min_value=0) or 0),
+            "zero_coverage_seed_streak": int(_as_int(payload.get("zero_coverage_seed_streak"), default=0, min_value=0) or 0),
             "preferred_contains": _to_tokens(payload.get("preferred_contains", [])),
             "cooldown_contains": _to_tokens(payload.get("cooldown_contains", [])),
             "preferred_operator_ids": _to_tokens(payload.get("preferred_operator_ids", [])),
@@ -1163,6 +1518,21 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         }
     )
     return state
+
+
+def _persist_yield_governor_state(path: Path, updates: dict[str, Any]) -> None:
+    payload: dict[str, Any] = {}
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload.update(dict(updates))
+    payload["ts"] = _utc_now_iso()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _entry_matches_controller(entry: dict[str, Any], controller_group: str) -> bool:
@@ -1353,6 +1723,15 @@ def main() -> int:
         try:
             before_mtime = datetime.now().timestamp()
             previous_state = _load_previous_state(state_path)
+            controller_group = str(args.controller_group).strip() or "autonomous_queue_seeder"
+            run_group_prefix = str(args.run_group_prefix).strip() or "autonomous_seed"
+            orphan_path = aggregate_dir / ".autonomous" / "orphan_queues.csv"
+            hygiene = _hygiene_seed_queues(
+                aggregate_dir=aggregate_dir,
+                app_root=app_root,
+                run_group_prefix=run_group_prefix,
+                orphan_path=orphan_path,
+            )
             (
                 total_pending_like,
                 dispatchable_pending,
@@ -1380,6 +1759,7 @@ def main() -> int:
                 "queue_files_total": len(queue_files),
                 "queue_files_sample": [str(path) for path in queue_files[:120]],
                 "pending_threshold": int(args.pending_threshold),
+                "hygiene": dict(hygiene),
                 "ready_buffer_state_path": _safe_rel(ready_buffer_state_path, app_root),
                 "ready_queue_buffer": {
                     "exists": bool(ready_buffer_state.get("exists")),
@@ -1389,6 +1769,8 @@ def main() -> int:
                     "refill_threshold": ready_buffer_state.get("refill_threshold"),
                     "effective_refill_threshold": ready_buffer_state.get("effective_refill_threshold"),
                     "ready_depth": ready_buffer_state.get("ready_depth"),
+                    "ready_depth_total": ready_buffer_state.get("ready_depth_total"),
+                    "coverage_verified_ready_count": ready_buffer_state.get("coverage_verified_ready_count"),
                     "seed_needed": bool(ready_buffer_state.get("seed_needed")),
                 },
                 "yield_governor_state_path": "",
@@ -1404,10 +1786,9 @@ def main() -> int:
             snapshot["trigger_reasons"] = list(trigger_reasons)
             snapshot["trigger"] = "+".join(trigger_reasons)
 
-            controller_group = str(args.controller_group).strip() or "autonomous_queue_seeder"
             base_config = str(args.base_config).strip() or "configs/prod_final_budget1000.yaml"
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            run_group = f"{str(args.run_group_prefix).strip() or 'autonomous_seed'}_{timestamp}"
+            run_group = f"{run_group_prefix}_{timestamp}"
             run_index_path = _resolve_under_root(str(args.run_index), app_root)
             window_coverage = _assess_window_data_coverage(app_root / "data_downloaded", list(args.window or []))
             snapshot["window_coverage"] = window_coverage
@@ -1440,6 +1821,28 @@ def main() -> int:
             gate_surrogate = _load_gate_surrogate_state(gate_surrogate_path)
             yield_governor_path = _resolve_under_root(str(args.yield_governor_state_path), app_root)
             yield_governor = _load_yield_governor_state(yield_governor_path)
+            current_epoch = int(datetime.now(timezone.utc).timestamp())
+            yield_updates: dict[str, Any] = {
+                "zero_coverage_seed_streak": int(recent_seed_quality.get("zero_coverage_seed_streak", 0) or 0),
+            }
+            existing_hard_block_reason = str(yield_governor.get("hard_block_reason") or "").strip()
+            if bool(recent_seed_quality.get("hard_block_recommended")) and (
+                not bool(yield_governor.get("hard_block_active"))
+                or existing_hard_block_reason in {"", "zero_coverage_seed_streak"}
+            ):
+                yield_updates.update(
+                    {
+                        "hard_block_active": True,
+                        "hard_block_reason": str(recent_seed_quality.get("hard_block_reason") or "zero_coverage_seed_streak"),
+                        "hard_block_until_epoch": current_epoch + 21600,
+                    }
+                )
+            _persist_yield_governor_state(yield_governor_path, yield_updates)
+            yield_governor = _load_yield_governor_state(yield_governor_path)
+            hard_block_until_epoch = int(yield_governor.get("hard_block_until_epoch") or 0)
+            hard_block_active = bool(yield_governor.get("hard_block_active")) and (
+                hard_block_until_epoch <= 0 or hard_block_until_epoch > current_epoch
+            )
             zero_yield_signal = _recent_zero_yield_signal(app_root / "artifacts" / "optimization_state" / "rank_results")
             hard_fail_risk_policy = gate_surrogate.get("hard_fail_risk_policy", {})
             if not isinstance(hard_fail_risk_policy, dict):
@@ -1869,6 +2272,10 @@ def main() -> int:
                 "exists": bool(yield_governor.get("exists")),
                 "status": str(yield_governor.get("status") or ""),
                 "active": bool(yield_governor.get("active")),
+                "hard_block_active": bool(yield_governor.get("hard_block_active")),
+                "hard_block_reason": str(yield_governor.get("hard_block_reason") or ""),
+                "hard_block_until_epoch": int(yield_governor.get("hard_block_until_epoch") or 0),
+                "zero_coverage_seed_streak": int(yield_governor.get("zero_coverage_seed_streak") or 0),
                 "preferred_contains": list(yield_governor.get("preferred_contains", []) or [])[:8],
                 "cooldown_contains": list(yield_governor.get("cooldown_contains", []) or [])[:8],
                 "winner_proximate": dict(yield_governor.get("winner_proximate") or {}),
@@ -1876,6 +2283,12 @@ def main() -> int:
                 "lane_weights": dict(yield_governor.get("lane_weights") or {}),
                 "policy_overrides": dict(yield_governor.get("policy_overrides") or {}),
             }
+            snapshot["covered_window_count"] = int(hygiene.get("covered_window_count", 0) or 0) + int(
+                recent_seed_quality.get("covered_window_count", 0) or 0
+            )
+            snapshot["coverage_verified_ready_count"] = int(
+                ready_buffer_state.get("coverage_verified_ready_count", ready_buffer_state.get("ready_depth", 0)) or 0
+            )
             snapshot["recent_zero_yield_signal"] = {
                 "active": bool(zero_yield_signal.get("active")),
                 "analyzed": int(zero_yield_signal.get("analyzed", 0) or 0),
@@ -1889,6 +2302,18 @@ def main() -> int:
                 "include_stress_effective": bool(effective_include_stress),
                 "repair_mode_effective": bool(effective_repair_mode),
             }
+            if hard_block_active:
+                snapshot.update(
+                    {
+                        "status": "skipped",
+                        "status_detail": "hard_block",
+                        "reason": f"hard_block:{yield_governor.get('hard_block_reason') or 'unknown'}",
+                        "human": "Queue seeder skipped: hard block is active due to repeated zero-coverage seed batches.",
+                    }
+                )
+                _emit_state(state_path, snapshot)
+                _append_log(log_path, snapshot)
+                return 0
             snapshot["lane_selection"] = {
                 "selected_lane": selected_lane,
                 "selected_index": int(selected_lane_index),
@@ -2258,6 +2683,7 @@ def main() -> int:
                 planner_policy_hash=planner_policy_hash,
                 queue_policy_path=queue_policy_path,
                 app_root=app_root,
+                coverage_verified=True,
             )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(

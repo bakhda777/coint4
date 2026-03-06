@@ -373,6 +373,154 @@ def test_process_slo_exposes_remote_progress_source_and_sync_age(tmp_path: Path,
     assert process_state["queue"]["progress_source"] == "remote_runtime_state"
 
 
+def test_process_slo_exposes_infra_and_auto_seed_gate_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json")
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps(
+            {
+                "runtime_metrics": {
+                    "infra_gate_status": "hard_block",
+                    "infra_gate_reason": "remote_code_drift",
+                    "startup_failure_code": "REMOTE_SYNC_FAILED",
+                    "auto_seed_blocked": 1,
+                    "auto_seed_block_reason": "remote_code_drift",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "yield_governor_state.json").write_text(
+        json.dumps(
+            {
+                "hard_block_active": True,
+                "hard_block_reason": "remote_code_drift",
+                "hard_block_until_epoch": int(time.time()) + 600,
+                "zero_coverage_seed_streak": 2,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "ready_queue_buffer.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {"queue": "artifacts/wfa/aggregate/group_a/run_queue.csv", "coverage_verified": True},
+                    {"queue": "artifacts/wfa/aggregate/group_b/run_queue.csv", "coverage_verified": False},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "queue_seeder.state.json").write_text(
+        json.dumps(
+            {
+                "window_coverage": {
+                    "windows": [
+                        {"window": "2025-01-01,2025-03-31", "ok": True},
+                        {"window": "2025-04-01,2025-06-30", "ok": True},
+                        {"window": "2025-07-01,2025-09-30", "ok": False},
+                    ]
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["infra_gate_status"] == "hard_block"
+    assert process_state["infra_gate_reason"] == "remote_code_drift"
+    assert process_state["auto_seed_blocked"] is True
+    assert process_state["auto_seed_block_reason"] == "remote_code_drift"
+    assert process_state["covered_window_count"] == 2
+    assert process_state["coverage_verified_ready_count"] == 1
+    assert process_state["startup_failure_code"] == "REMOTE_SYNC_FAILED"
+    assert process_state["queue"]["coverage_verified_ready_count"] == 1
+    assert process_state["queue"]["covered_window_count"] == 2
+    assert process_state["runtime"]["infra_gate_status"] == "hard_block"
+    assert process_state["runtime"]["auto_seed_blocked"] is True
+
+
+def test_process_slo_falls_back_to_queue_seeder_state_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json")
+    (state_dir / "ready_queue_buffer.json").write_text(
+        json.dumps(
+            {
+                "ready_count": 2,
+                "entries": [
+                    {"queue": "artifacts/wfa/aggregate/group_a/run_queue.csv"},
+                    {"queue": "artifacts/wfa/aggregate/group_b/run_queue.csv"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "queue_seeder.state.json").write_text(
+        json.dumps(
+            {
+                "hygiene": {"covered_window_count": 3},
+                "ready_queue_buffer": {"coverage_verified_ready_count": 2},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["covered_window_count"] == 3
+    assert process_state["coverage_verified_ready_count"] == 2
+    assert process_state["queue"]["covered_window_count"] == 3
+    assert process_state["queue"]["coverage_verified_ready_count"] == 2
+    assert process_state["kpi"]["covered_window_count"] == 3
+    assert process_state["runtime"]["coverage_verified_ready_count"] == 2
+
+
 def test_process_slo_treats_stale_runtime_snapshot_with_high_capacity_load_as_busy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

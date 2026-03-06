@@ -409,6 +409,49 @@ def test_remote_runtime_snapshot_contract() -> None:
     )
 
 
+def test_start_queue_requires_confirmed_start_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'START_QUEUE_CONFIRM_TIMEOUT_SEC',
+            'START_QUEUE_CONFIRM_POLL_SEC',
+            'queue_start_confirmation_status()',
+            'wait_for_queue_start_confirmation()',
+            'log_state "starting queue=$queue_rel',
+            'log_state "running queue=$queue_rel',
+            'start_fail_closed queue=$queue_rel',
+            'startup_failure_code',
+            'INFRA_FAIL_CLOSED',
+        ],
+    )
+    _assert_contains_any(
+        src,
+        [
+            'powered: remote run start queue=',
+            'QUEUE_STATUS_PROGRESS',
+        ],
+        label='startup confirmation marker',
+    )
+
+
+def test_auto_seed_hard_block_and_coverage_policy_contract() -> None:
+    src = _source()
+    _assert_contains_all(
+        src,
+        [
+            'yield_governor_hard_block_snapshot()',
+            'queue_coverage_policy_snapshot()',
+            'AUTO_SEED_HARD_BLOCK',
+            'coverage_fail_closed queue=$queue_rel',
+            'COVERAGE_FAIL_CLOSED',
+            'auto_seed_hard_block',
+            'coverage_verified',
+            'set_infra_gate_state "hard_block"',
+        ],
+    )
+
+
 def test_early_abort_zero_activity_and_confirm_guard_contract() -> None:
     src = _source()
     _assert_contains_all(
