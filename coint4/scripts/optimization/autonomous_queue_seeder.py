@@ -14,16 +14,11 @@ import fcntl
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-
-_OOS_WINDOW_RE = re.compile(r"_oos(?P<start>\d{8})_(?P<end>\d{8})")
-_EVO_HASH_RE = re.compile(r"_evo_(?P<hash>[0-9a-fA-F]+)")
 
 
 def _parse_bool(value: str | bool, default: bool = False) -> bool:
@@ -1413,6 +1408,27 @@ def main() -> int:
             base_config = str(args.base_config).strip() or "configs/prod_final_budget1000.yaml"
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             run_group = f"{str(args.run_group_prefix).strip() or 'autonomous_seed'}_{timestamp}"
+            run_index_path = _resolve_under_root(str(args.run_index), app_root)
+            window_coverage = _assess_window_data_coverage(app_root / "data_downloaded", list(args.window or []))
+            snapshot["window_coverage"] = window_coverage
+            if not bool(window_coverage.get("ok")):
+                snapshot.update(
+                    {
+                        "status": "skipped",
+                        "status_detail": "preflight_data_coverage",
+                        "reason": f"window_coverage:{window_coverage.get('reason')}",
+                        "human": "Queue seeder skipped: requested OOS window is not fully covered by local data.",
+                    }
+                )
+                _emit_state(state_path, snapshot)
+                _append_log(log_path, snapshot)
+                return 0
+            recent_seed_quality = _assess_recent_seed_quality(
+                app_root=app_root,
+                run_group_prefix=str(args.run_group_prefix).strip() or "autonomous_seed",
+                run_index_path=run_index_path,
+            )
+            snapshot["recent_seed_quality"] = recent_seed_quality
 
             directive_path = _resolve_under_root(str(args.directive_path), app_root)
             directive = _load_directive(directive_path)
@@ -1451,10 +1467,13 @@ def main() -> int:
             effective_policy_scale = str(args.policy_scale)
             effective_repair_mode = bool(args.repair_mode)
             effective_repair_max_neighbors = max(1, int(args.repair_max_neighbors))
+            effective_include_stress = bool(args.include_stress)
             effective_exclude_knobs = [token.strip() for token in list(args.exclude_knob or []) if token and token.strip()]
             extra_cli_args = directive.get("extra_cli_args", {})
             if not isinstance(extra_cli_args, dict):
                 extra_cli_args = {}
+            quality_variant_cap: int | None = None
+            quality_actions: list[str] = []
             selected_lane = "broad_search"
             selected_lane_index = 0
             lane_streak = 1
@@ -1507,6 +1526,25 @@ def main() -> int:
                 effective_num_variants_floor = min(int(effective_num_variants_floor), int(repair_variant_cap))
                 effective_num_variants = min(int(effective_num_variants), int(repair_variant_cap))
                 effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), 8)
+                quality_actions.append("recent_zero_yield_signal")
+            if bool(recent_seed_quality.get("repair_mode")):
+                effective_repair_mode = True
+                effective_policy_scale = "micro"
+                effective_dedupe_distance = max(float(effective_dedupe_distance), 0.08)
+                effective_max_changed_keys = min(int(effective_max_changed_keys), 3)
+                effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), 8)
+                quality_variant_cap = max(
+                    4,
+                    min(int(effective_num_variants_floor), max(4, int(effective_num_variants) // 2)),
+                )
+                effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
+                quality_actions.append("recent_seed_quality_repair")
+            if bool(recent_seed_quality.get("backlog_suppress")):
+                effective_include_stress = False
+                suppress_cap = max(4, min(int(effective_num_variants_floor), 12))
+                quality_variant_cap = suppress_cap if quality_variant_cap is None else min(int(quality_variant_cap), suppress_cap)
+                effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
+                quality_actions.append("recent_seed_quality_backlog_suppress")
 
             directive_pruner = directive.get("impossibility_pruner", {})
             if isinstance(directive_pruner, dict) and bool(directive_pruner.get("enabled")):
@@ -1708,6 +1746,8 @@ def main() -> int:
 
             effective_exclude_knobs = _merge_unique(effective_exclude_knobs, surrogate_exclude_knobs)
             effective_num_variants = max(int(effective_num_variants), int(effective_num_variants_floor))
+            if quality_variant_cap is not None:
+                effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
 
             lane_selection_payload = _select_seed_lane(
                 winner_proximate_tokens=list(winner_proximate_tokens),
