@@ -405,6 +405,16 @@ print(pending)
 PY
 }
 
+global_dispatchable_pending_count() {
+  local _planned_dispatchable=0
+  local dispatchable_pending=0
+  local _no_dispatchable_queues=0
+  local _executable_pending_raw=0
+  read -r _planned_dispatchable dispatchable_pending _no_dispatchable_queues _executable_pending_raw <<< "$(global_backlog_snapshot)"
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  printf '%s\n' "$dispatchable_pending"
+}
+
 batch_session_stop() {
   local reason="${1:-idle}"
   local now_epoch
@@ -462,11 +472,16 @@ batch_session_maybe_stop() {
     return 0
   fi
 
-  local pending_total
+  local pending_total planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
   pending_total="$(global_pending_count)"
   if [[ -z "$pending_total" || ! "$pending_total" =~ ^[0-9]+$ ]]; then
     pending_total=0
   fi
+  read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+  [[ "$planned_dispatchable" =~ ^[0-9]+$ ]] || planned_dispatchable=0
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  [[ "$no_dispatchable_queues" =~ ^[0-9]+$ ]] || no_dispatchable_queues=0
+  [[ "$executable_pending_raw" =~ ^[0-9]+$ ]] || executable_pending_raw=0
 
   local ready_depth replay_pending standby_ttl
   ready_depth="$(ready_buffer_depth)"
@@ -479,14 +494,14 @@ batch_session_maybe_stop() {
   local age_sec=$((now_epoch - batch_session_start_epoch))
   local idle_sec=$((now_epoch - batch_session_last_dispatch_epoch))
 
-  if (( pending_total == 0 )); then
-    batch_session_stop "all_queues_done:${reason}"
+  if (( dispatchable_pending == 0 )); then
+    batch_session_stop "dispatchable_backlog_empty:${reason}"
     return 0
   fi
 
   if is_hot_standby_enabled; then
     if (( ready_depth > 0 || replay_pending > 0 || idle_sec < standby_ttl )); then
-      log "batch_session_hot_standby reason=$reason pending_total=$pending_total ready_depth=$ready_depth replay_pending=$replay_pending idle_sec=$idle_sec standby_ttl=$standby_ttl"
+      log "batch_session_hot_standby reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw pending_total=$pending_total ready_depth=$ready_depth replay_pending=$replay_pending idle_sec=$idle_sec standby_ttl=$standby_ttl"
       return 0
     fi
   fi
@@ -720,9 +735,43 @@ if orphan_file and orphan_file.exists():
                 except Exception:
                     until = 0
                 if q:
-                    orphan[q] = until
+                    orphan[q] = {
+                        'until': until,
+                        'reason': str(row.get('reason') or '').strip(),
+                    }
     except Exception:
         orphan = {}
+
+
+def entry_is_true(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+def queue_block_reason(state_entry, orphan_entry):
+    entry = state_entry if isinstance(state_entry, dict) else {}
+    verdict = str(entry.get('promotion_verdict') or '').strip().upper()
+    strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
+    cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
+    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT':
+        return 'FULLSPAN_REJECT'
+    if cutover_permission == 'FAIL_CLOSED':
+        return 'FAIL_CLOSED'
+    if entry_is_true(entry.get('low_yield_fail_closed')):
+        return 'FAIL_CLOSED'
+    for state_key in ('startup_state', 'coverage_state', 'queue_state'):
+        if str(entry.get(state_key) or '').strip().lower() == 'fail_closed':
+            return 'FAIL_CLOSED'
+    orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
+    try:
+        orphan_until = float(orphan_payload.get('until') or 0.0)
+    except Exception:
+        orphan_until = 0.0
+    if orphan_until > now:
+        orphan_reason = str(orphan_payload.get('reason') or '').strip().lower()
+        if 'fail_closed' in orphan_reason:
+            return 'FAIL_CLOSED'
+        return 'ORPHAN_COOLDOWN'
+    return ''
 
 
 def emit_scores():
@@ -752,17 +801,19 @@ def emit_scores():
         if pending == 0:
             continue
 
+        dispatchable_pending = 0
         executable_pending = 0
-        executable_planned = 0
+        dispatchable_planned = 0
         for row in rows:
             status = str(row.get('status') or '').strip().lower()
             if status == 'running':
                 executable_pending += 1
                 continue
-            if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
+            if status in {'planned', 'stalled', 'failed', 'error', 'queued'} and config_exists(row.get('config_path')):
+                dispatchable_pending += 1
                 executable_pending += 1
                 if status == 'planned':
-                    executable_planned += 1
+                    dispatchable_planned += 1
 
         queue_abs = str(p)
         try:
@@ -770,6 +821,9 @@ def emit_scores():
         except Exception:
             queue_rel = queue_abs
         mtime = float(p.stat().st_mtime)
+        state_entry = state_by_queue.get(queue_rel, {})
+        if not state_entry and queue_abs in state_by_queue:
+            state_entry = state_by_queue.get(queue_abs, {})
 
         cold_entry = cold_fail_state.get(queue_rel) or cold_fail_state.get(queue_abs) or cold_fail_state.get('/' + queue_rel.lstrip('/'))
         if cold_entry:
@@ -785,17 +839,13 @@ def emit_scores():
             if entry_policy == policy_version and until_ts > now and inserted_ts > 0.0 and mtime <= inserted_ts:
                 continue
 
-        orphan_until = None
+        orphan_entry = None
         for k in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
             if k in orphan:
-                orphan_until = orphan.get(k, 0.0)
+                orphan_entry = orphan.get(k, {})
                 break
-        if orphan_until is not None:
-            try:
-                if now < float(orphan_until or 0.0):
-                    continue
-            except Exception:
-                pass
+        if queue_block_reason(state_entry, orphan_entry):
+            continue
 
         age_min = max(0.0, (now - mtime) / 60.0)
 
@@ -822,9 +872,6 @@ def emit_scores():
         worst_steps = []
         by_state_reason = defaultdict(int)
 
-        state_entry = state_by_queue.get(queue_rel, {})
-        if not state_entry and queue_abs in state_by_queue:
-            state_entry = state_by_queue.get(queue_abs, {})
         state_verdict = str(state_entry.get('promotion_verdict', '') or '').strip().upper()
         state_strict_status = str(state_entry.get('strict_gate_status', '') or '').strip()
         state_strict_reason = str(state_entry.get('strict_gate_reason', '') or '').strip()
@@ -982,7 +1029,7 @@ def emit_scores():
         if gate_status == 'HARD_FAIL' and promotion_potential == 'REJECT':
             pre_rank_score -= 10000
 
-        effective_planned_count = int(executable_planned if executable_planned > 0 else planned)
+        effective_planned_count = int(dispatchable_planned if dispatchable_planned > 0 else planned)
         stalled_share = float(stalled) / float(max(1, pending))
         queue_yield_score = float(pass_configs) / float(max(1, total_configs))
         completed_with_metrics = 0
@@ -1026,11 +1073,12 @@ def emit_scores():
             'stalled_share': stalled_share,
             'queue_yield_score': queue_yield_score,
             'recent_yield': recent_yield,
+            'dispatchable_pending': dispatchable_pending,
             'executable_pending': executable_pending,
         })
 
     header = 'queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n'
-    pool_header = header[:-1] + ',executable_pending\n'
+    pool_header = header[:-1] + ',dispatchable_pending,executable_pending\n'
     with out_csv.open('w', encoding='utf-8', newline='') as f:
         f.write(header)
         if not entries:
@@ -1049,12 +1097,12 @@ def emit_scores():
 
         ranked = []
         for item in pool:
-            executable_rank = 1 if int(item.get('executable_pending', 0)) > 0 else 0
+            dispatchable_rank = 1 if int(item.get('dispatchable_pending', 0)) > 0 else 0
             planned_rank = 1 if int(item.get('effective_planned_count', 0)) > 0 else 0
             potential_rank = {'POSSIBLE': 2, 'UNKNOWN': 1, 'REJECT': 0}.get(str(item.get('promotion_potential', 'UNKNOWN')), 1)
             ranked.append((
                 -planned_rank,
-                -executable_rank,
+                -dispatchable_rank,
                 -potential_rank,
                 -float(item.get('queue_yield_score', 0.0)),
                 -float(item.get('pre_rank_score', 0.0)),
@@ -1099,7 +1147,7 @@ def emit_scores():
             pool_handle.write(pool_header)
             for item in top_entries[:max(1, ready_buffer_target_depth)]:
                 pool_handle.write(
-                    '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{executable_pending}\n'.format(
+                    '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{dispatchable_pending},{executable_pending}\n'.format(
                         queue=item['queue_rel'],
                         planned=int(item['planned']),
                         running=int(item['running']),
@@ -1119,6 +1167,7 @@ def emit_scores():
                         stalled_share=float(item['stalled_share']),
                         yield_score=float(item['queue_yield_score']),
                         recent_yield=float(item.get('recent_yield', 0.0)),
+                        dispatchable_pending=int(item.get('dispatchable_pending', 0)),
                         executable_pending=int(item.get('executable_pending', 0)),
                     )
                 )
@@ -1173,11 +1222,18 @@ if orphan_file and orphan_file.exists():
                     until = float((row.get('until_ts') or '').strip() or 0)
                 except Exception:
                     until = 0
-                orphan[q] = until
+                orphan[q] = {
+                    'until': until,
+                    'reason': str(row.get('reason') or '').strip(),
+                }
     except Exception:
         orphan = {}
 
-state_reject = set()
+def entry_is_true(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+state_blocked = set()
 if state_path and state_path.exists():
     try:
         state = json.loads(state_path.read_text(encoding='utf-8'))
@@ -1187,10 +1243,19 @@ if state_path and state_path.exists():
                 if not isinstance(entry, dict):
                     continue
                 verdict = str(entry.get('promotion_verdict') or '').strip().upper()
-                if verdict == 'REJECT':
-                    state_reject.add(str(qrel).strip())
+                strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
+                cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
+                blocked = (
+                    verdict == 'REJECT'
+                    or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT'
+                    or cutover_permission == 'FAIL_CLOSED'
+                    or entry_is_true(entry.get('low_yield_fail_closed'))
+                    or any(str(entry.get(key) or '').strip().lower() == 'fail_closed' for key in ('startup_state', 'coverage_state', 'queue_state'))
+                )
+                if blocked:
+                    state_blocked.add(str(qrel).strip())
     except Exception:
-        state_reject = set()
+        state_blocked = set()
 
 best = None
 for p in sorted(queue_root.rglob('run_queue.csv')):
@@ -1203,15 +1268,20 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
     queue_abs = str(p)
     if skip_queue and skip_queue in {queue_rel, queue_abs, '/' + queue_rel.lstrip('/')}:
         continue
-    if queue_rel in state_reject or queue_abs in state_reject:
+    if queue_rel in state_blocked or queue_abs in state_blocked:
         continue
-    orphan_until = None
+    orphan_entry = None
     for key in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
         if key in orphan:
-            orphan_until = orphan.get(key, 0.0)
+            orphan_entry = orphan.get(key, {})
             break
-    if orphan_until is not None and now < float(orphan_until or 0.0):
-        continue
+    if orphan_entry is not None:
+        try:
+            orphan_until = float((orphan_entry or {}).get('until') or 0.0)
+        except Exception:
+            orphan_until = 0.0
+        if orphan_until > now:
+            continue
 
     try:
         rows = list(csv.DictReader(p.open(newline='', encoding='utf-8')))
@@ -1234,7 +1304,7 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         if status == 'running':
             executable_pending += 1
             continue
-        if status in {'planned', 'stalled', 'failed', 'error'} and config_exists(row.get('config_path')):
+        if status in {'planned', 'stalled', 'failed', 'error', 'queued'} and config_exists(row.get('config_path')):
             executable_pending += 1
 
     mtime = int(p.stat().st_mtime)
@@ -1410,7 +1480,39 @@ PY
 ready_buffer_policy_hash() {
   local planner_policy_hash
   planner_policy_hash="$(current_planner_policy_hash)"
-  python3 - "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$FULLSPAN_POLICY_NAME" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$planner_policy_hash" <<'PY'
+  python3 - "$FULLSPAN_POLICY_NAME" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$planner_policy_hash" <<'PY'
+import hashlib
+import json
+import sys
+
+policy_version = str(sys.argv[1] or "").strip() or "fullspan_v1"
+try:
+    target_depth = max(1, int(float(sys.argv[2] or 3)))
+except Exception:
+    target_depth = 3
+try:
+    refill_threshold = max(1, int(float(sys.argv[3] or 2)))
+except Exception:
+    refill_threshold = 2
+planner_policy_hash = str(sys.argv[4] or "").strip()
+
+payload = {
+    "policy_version": policy_version,
+    "target_depth": target_depth,
+    "refill_threshold": refill_threshold,
+    "planner_policy_hash": planner_policy_hash,
+}
+body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+print(hashlib.sha256(body.encode("utf-8")).hexdigest())
+PY
+}
+
+ready_buffer_snapshot_hash() {
+  local planner_policy_hash="${1:-}"
+  if [[ -z "$planner_policy_hash" ]]; then
+    planner_policy_hash="$(ready_buffer_policy_hash)"
+  fi
+  python3 - "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$READY_BUFFER_TARGET_DEPTH" "$planner_policy_hash" <<'PY'
 import csv
 import hashlib
 import json
@@ -1420,16 +1522,11 @@ from pathlib import Path
 pool_path = Path(sys.argv[1])
 surrogate_path = Path(sys.argv[2])
 fullspan_path = Path(sys.argv[3])
-policy_version = str(sys.argv[4] or "").strip() or "fullspan_v1"
 try:
-    target_depth = max(1, int(float(sys.argv[5] or 3)))
+    target_depth = max(1, int(float(sys.argv[4] or 3)))
 except Exception:
     target_depth = 3
-try:
-    refill_threshold = max(1, int(float(sys.argv[6] or 2)))
-except Exception:
-    refill_threshold = 2
-planner_policy_hash = str(sys.argv[7] or "").strip()
+planner_policy_hash = str(sys.argv[5] or "").strip()
 
 pool_rows = []
 if pool_path.exists():
@@ -1448,6 +1545,7 @@ if pool_path.exists():
                     "gate_status": str(row.get("gate_status") or "").strip(),
                     "strict_gate_status": str(row.get("strict_gate_status") or "").strip(),
                     "pre_rank_score": str(row.get("pre_rank_score") or "").strip(),
+                    "dispatchable_pending": int(float(row.get("dispatchable_pending") or 0)),
                     "executable_pending": int(float(row.get("executable_pending") or 0)),
                 }
             )
@@ -1455,9 +1553,6 @@ if pool_path.exists():
         pool_rows = []
 
 payload = {
-    "policy_version": policy_version,
-    "target_depth": target_depth,
-    "refill_threshold": refill_threshold,
     "planner_policy_hash": planner_policy_hash,
     "pool_rows": pool_rows,
     "pool_mtime": int(pool_path.stat().st_mtime) if pool_path.exists() else 0,
@@ -1568,12 +1663,13 @@ PY
 ready_buffer_refresh() {
   local exclude_queue="${1:-}"
   local py_bin="$ROOT_DIR/.venv/bin/python"
-  local policy_hash
+  local planner_policy_hash snapshot_hash
   [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
   if [[ -z "$py_bin" || ! -f "$READY_BUFFER_POOL_FILE" ]]; then
     return 1
   fi
-  policy_hash="$(ready_buffer_policy_hash)"
+  planner_policy_hash="$(ready_buffer_policy_hash)"
+  snapshot_hash="$(ready_buffer_snapshot_hash "$planner_policy_hash")"
 
   local refresh_needed="1"
   refresh_needed="$(python3 - "$GATE_SURROGATE_STATE_FILE" "$READY_BUFFER_POOL_FILE" <<'PY'
@@ -1619,7 +1715,7 @@ PY
     fi
   fi
 
-  python3 - "$READY_BUFFER_POOL_FILE" "$READY_BUFFER_STATE_FILE" "$GATE_SURROGATE_STATE_FILE" "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$exclude_queue" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$ROOT_DIR" "$FULLSPAN_POLICY_NAME" "$policy_hash" <<'PY'
+  python3 - "$READY_BUFFER_POOL_FILE" "$READY_BUFFER_STATE_FILE" "$GATE_SURROGATE_STATE_FILE" "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$exclude_queue" "$READY_BUFFER_TARGET_DEPTH" "$READY_BUFFER_REFILL_THRESHOLD" "$ROOT_DIR" "$FULLSPAN_POLICY_NAME" "$planner_policy_hash" "$snapshot_hash" <<'PY'
 import csv
 import json
 import sys
@@ -1636,7 +1732,8 @@ target_depth = max(1, int(float(sys.argv[7] or 3)))
 refill_threshold = max(1, int(float(sys.argv[8] or 2)))
 root_dir = Path(sys.argv[9])
 policy_version = str(sys.argv[10] or "").strip() or "fullspan_v1"
-policy_hash = str(sys.argv[11] or "").strip()
+planner_policy_hash = str(sys.argv[11] or "").strip()
+snapshot_hash = str(sys.argv[12] or "").strip()
 
 def load_json(path: Path, default):
     if not path.exists():
@@ -1646,7 +1743,38 @@ def load_json(path: Path, default):
     except Exception:
         return default
 
-def queue_pending(queue_rel: str) -> int:
+
+def entry_is_true(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts: float) -> str:
+    entry = state_entry if isinstance(state_entry, dict) else {}
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
+    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+        return "FULLSPAN_REJECT"
+    if cutover_permission == "FAIL_CLOSED":
+        return "FAIL_CLOSED"
+    if entry_is_true(entry.get("low_yield_fail_closed")):
+        return "FAIL_CLOSED"
+    for state_key in ("startup_state", "coverage_state", "queue_state"):
+        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
+            return "FAIL_CLOSED"
+    orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
+    try:
+        orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
+    except Exception:
+        orphan_until = 0.0
+    if orphan_until > now_ts:
+        orphan_reason = str(orphan_payload.get("reason") or "").strip().lower()
+        if "fail_closed" in orphan_reason:
+            return "FAIL_CLOSED"
+        return "ORPHAN_COOLDOWN"
+    return ""
+
+def queue_dispatchable_pending(queue_rel: str) -> int:
     queue_path = root_dir / queue_rel
     if not queue_path.exists():
         return 0
@@ -1657,7 +1785,13 @@ def queue_pending(queue_rel: str) -> int:
     pending = 0
     for row in rows:
         status = str(row.get("status") or "").strip().lower()
-        if status in {"planned", "running", "stalled", "failed", "error"}:
+        config_path = str(row.get("config_path") or "").strip()
+        if not config_path:
+            continue
+        config = Path(config_path)
+        if not config.is_absolute():
+            config = root_dir / config
+        if status in {"planned", "stalled", "failed", "error", "queued"} and config.exists():
             pending += 1
     return pending
 
@@ -1692,15 +1826,12 @@ for row in rows:
     queue = str(row.get("queue") or "").strip()
     if not queue or queue == exclude_queue:
         continue
-    if queue_pending(queue) <= 0:
-        continue
-    if queue in orphans and float(orphans.get(queue) or 0.0) > now_ts:
-        continue
     state_entry = fullspan_queues.get(queue, {})
-    if isinstance(state_entry, dict):
-        verdict = str(state_entry.get("promotion_verdict") or "").strip().upper()
-        if verdict == "REJECT":
-            continue
+    orphan_entry = orphans.get(queue, {})
+    if queue_block_reason(queue, state_entry, orphan_entry, now_ts):
+        continue
+    if queue_dispatchable_pending(queue) <= 0:
+        continue
     surrogate_entry = surrogate_queues.get(queue, {})
     if not surrogate_entry and (root_dir / queue).exists():
         surrogate_entry = surrogate_queues.get(str((root_dir / queue).resolve()), {})
@@ -1748,6 +1879,7 @@ for row in rows:
         "stalled_share": float(row.get("stalled_share") or 0.0),
         "queue_yield_score": float(row.get("queue_yield_score") or 0.0),
         "recent_yield": float(row.get("recent_yield") or 0.0),
+        "dispatchable_pending": int(float(row.get("dispatchable_pending") or 0)),
         "executable_pending": int(float(row.get("executable_pending") or 0)),
         "surrogate_decision": decision,
         "surrogate_reason": reason,
@@ -1765,7 +1897,9 @@ payload = {
     "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "built_epoch": int(datetime.now(timezone.utc).timestamp()),
     "policy_version": policy_version,
-    "policy_hash": policy_hash,
+    "planner_policy_hash": planner_policy_hash,
+    "policy_hash": planner_policy_hash,
+    "snapshot_hash": snapshot_hash,
     "target_depth": target_depth,
     "refill_threshold": refill_threshold,
     "ready_count": len(entries),
@@ -1790,9 +1924,10 @@ PY
 ready_buffer_emit_candidate() {
   local exclude_queue="${1:-}"
   local rc=0
-  local policy_hash
-  policy_hash="$(ready_buffer_policy_hash)"
-  python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$policy_hash" <<'PY'
+  local planner_policy_hash snapshot_hash
+  planner_policy_hash="$(ready_buffer_policy_hash)"
+  snapshot_hash="$(ready_buffer_snapshot_hash "$planner_policy_hash")"
+  python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$planner_policy_hash" "$snapshot_hash" <<'PY'
 import csv
 import json
 import sys
@@ -1811,6 +1946,7 @@ try:
 except Exception:
     max_age_sec = 900
 expected_hash = str(sys.argv[9] or "").strip()
+expected_snapshot_hash = str(sys.argv[10] or "").strip()
 
 header = [
     "queue",
@@ -1840,9 +1976,12 @@ try:
     data = json.loads(state_path.read_text(encoding='utf-8'))
 except Exception:
     raise SystemExit(1)
-policy_hash = str(data.get("policy_hash") or "").strip()
-if expected_hash and policy_hash and policy_hash != expected_hash:
+planner_policy_hash = str(data.get("planner_policy_hash") or data.get("policy_hash") or "").strip()
+if expected_hash and planner_policy_hash and planner_policy_hash != expected_hash:
     raise SystemExit(23)
+snapshot_hash = str(data.get("snapshot_hash") or "").strip()
+if expected_snapshot_hash and snapshot_hash != expected_snapshot_hash:
+    raise SystemExit(24)
 try:
     built_epoch = int(float(data.get("built_epoch") or 0))
 except Exception:
@@ -1882,7 +2021,13 @@ for entry in entries:
     try:
         for row in csv.DictReader(queue_path.open(newline="", encoding="utf-8")):
             status = str(row.get("status") or "").strip().lower()
-            if status in {"planned", "running", "stalled", "failed", "error"}:
+            config_path = str(row.get("config_path") or "").strip()
+            if not config_path:
+                continue
+            config = Path(config_path)
+            if not config.is_absolute():
+                config = root_dir / config
+            if status in {"planned", "stalled", "failed", "error", "queued"} and config.exists():
                 pending += 1
     except Exception:
         pending = 0
@@ -1928,9 +2073,9 @@ PY
   rc=$?
   if (( rc == 23 )); then
     fullspan_state_metric_inc "ready_buffer_policy_mismatch_count" 1
-    log "ready_buffer_policy_mismatch expected=$policy_hash"
+    log "ready_buffer_policy_mismatch expected=$planner_policy_hash"
     ready_buffer_refresh "$exclude_queue" || true
-    python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$policy_hash" <<'PY'
+    python3 - "$READY_BUFFER_STATE_FILE" "$CANDIDATE_FILE" "$exclude_queue" "$READY_BUFFER_POOL_FILE" "$GATE_SURROGATE_STATE_FILE" "$FULLSPAN_DECISION_STATE_FILE" "$ROOT_DIR" "$READY_BUFFER_MAX_AGE_SEC" "$planner_policy_hash" "$snapshot_hash" <<'PY'
 import csv
 import json
 import sys
@@ -1946,6 +2091,7 @@ try:
 except Exception:
     max_age_sec = 900
 expected_hash = str(sys.argv[9] or "").strip()
+expected_snapshot_hash = str(sys.argv[10] or "").strip()
 
 header = [
     "queue",
@@ -1972,8 +2118,12 @@ header = [
 if not state_path.exists():
     raise SystemExit(1)
 data = json.loads(state_path.read_text(encoding='utf-8'))
-if expected_hash and str(data.get("policy_hash") or "").strip() != expected_hash:
+planner_policy_hash = str(data.get("planner_policy_hash") or data.get("policy_hash") or "").strip()
+if expected_hash and planner_policy_hash != expected_hash:
     raise SystemExit(23)
+snapshot_hash = str(data.get("snapshot_hash") or "").strip()
+if expected_snapshot_hash and snapshot_hash != expected_snapshot_hash:
+    raise SystemExit(24)
 try:
     built_epoch = int(float(data.get("built_epoch") or 0))
 except Exception:
@@ -1996,7 +2146,13 @@ for entry in entries:
     pending = 0
     for row in csv.DictReader(queue_path.open(newline="", encoding="utf-8")):
         status = str(row.get("status") or "").strip().lower()
-        if status in {"planned", "running", "stalled", "failed", "error"}:
+        config_path = str(row.get("config_path") or "").strip()
+        if not config_path:
+            continue
+        config = Path(config_path)
+        if not config.is_absolute():
+            config = root_dir / config
+        if status in {"planned", "stalled", "failed", "error", "queued"} and config.exists():
             pending += 1
     if pending <= 0:
         continue
@@ -2097,6 +2253,28 @@ kpi = data.get("kpi", {}) if isinstance(data, dict) else {}
 idle = bool(queue.get("idle_with_executable_pending")) or bool(kpi.get("idle_with_executable_pending"))
 print("1" if idle else "0")
 PY
+}
+
+driver_idle_with_dispatchable_pending() {
+  local raw_idle dispatchable_pending remote_jobs postprocess_active build_index_active
+  raw_idle="$(process_slo_idle_with_executable_pending)"
+  [[ "$raw_idle" =~ ^[01]$ ]] || raw_idle=0
+  dispatchable_pending="$(global_dispatchable_pending_count)"
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  remote_jobs="$(remote_active_queue_jobs)"
+  [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
+  refresh_remote_runtime_metrics
+  postprocess_active="$(remote_postprocess_active)"
+  build_index_active="$(remote_build_index_active)"
+  [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+  [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+  if (( dispatchable_pending <= 0 )); then
+    echo "0"
+  elif [[ "$raw_idle" == "1" || ( "$remote_jobs" -eq 0 && "$postprocess_active" -eq 0 && "$build_index_active" -eq 0 ) ]]; then
+    echo "1"
+  else
+    echo "0"
+  fi
 }
 
 process_slo_remote_coverage_snapshot() {
@@ -2489,7 +2667,7 @@ hot_standby_needed() {
   local fastlane_pending ready_depth idle_pending
   fastlane_pending="$(fullspan_state_metric_get fastlane_replay_pending 0)"
   ready_depth="$(ready_buffer_depth)"
-  idle_pending="$(process_slo_idle_with_executable_pending)"
+  idle_pending="$(driver_idle_with_dispatchable_pending)"
   [[ "$fastlane_pending" =~ ^[0-9]+$ ]] || fastlane_pending=0
   [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
   [[ "$idle_pending" =~ ^[0-9]+$ ]] || idle_pending=0
@@ -2501,23 +2679,25 @@ hot_standby_needed() {
 }
 
 maybe_prepare_hot_standby() {
-  local standby_required pending_total
+  local standby_required dispatchable_pending executable_pending_raw _planned_dispatchable _dispatchable_pending _no_dispatchable_queues
   standby_required="$(hot_standby_needed)"
   [[ "$standby_required" =~ ^[0-9]+$ ]] || standby_required=0
   fullspan_state_metric_set "hot_standby_active" "$standby_required"
   if (( standby_required == 0 )); then
     return 0
   fi
-  pending_total="$(global_pending_count)"
-  [[ "$pending_total" =~ ^[0-9]+$ ]] || pending_total=0
-  if (( pending_total <= 0 )); then
+  dispatchable_pending="$(global_dispatchable_pending_count)"
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  read -r _planned_dispatchable _dispatchable_pending _no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+  [[ "$executable_pending_raw" =~ ^[0-9]+$ ]] || executable_pending_raw=0
+  if (( dispatchable_pending <= 0 )); then
     return 0
   fi
   if ! vps_is_reachable; then
     if ensure_vps_ready "hot_standby"; then
-      log "hot_standby_ready pending_total=$pending_total"
+      log "hot_standby_ready dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw"
     else
-      log "hot_standby_deferred pending_total=$pending_total"
+      log "hot_standby_deferred dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw"
     fi
   fi
 }
@@ -4604,7 +4784,7 @@ PY
 early_stop_low_yield_queue() {
   local queue_rel="$1"
   local queue_path="$ROOT_DIR/$queue_rel"
-  python3 - "$queue_rel" "$queue_path" "$RUN_INDEX_PATH" "$EARLY_STOP_MIN_COMPLETED" "$EARLY_STOP_FAIL_FRACTION" "$EARLY_STOP_DOMINANT_FRACTION" "$EARLY_STOP_DOMINANT_MIN" "$EARLY_ABORT_MIN_COMPLETED" "$EARLY_ABORT_ZERO_ACTIVITY_SHARE" "$EARLY_ABORT_ZERO_ACTIVITY_MIN" <<'PY'
+  python3 - "$queue_rel" "$queue_path" "$RUN_INDEX_PATH" "$EARLY_STOP_MIN_COMPLETED" "$EARLY_STOP_FAIL_FRACTION" "$EARLY_STOP_DOMINANT_FRACTION" "$EARLY_STOP_DOMINANT_MIN" "$EARLY_ABORT_MIN_COMPLETED" "$EARLY_ABORT_ZERO_ACTIVITY_SHARE" "$EARLY_ABORT_ZERO_ACTIVITY_MIN" "$FULLSPAN_MIN_WINDOWS" "$FULLSPAN_MIN_COVERAGE_RATIO" <<'PY'
 import csv
 import json
 import re
@@ -4622,8 +4802,11 @@ dominant_min = int(float(sys.argv[7] or 6))
 zero_activity_min_completed = int(float(sys.argv[8] or 12))
 zero_activity_share_gate = float(sys.argv[9] or 0.80)
 zero_activity_min = int(float(sys.argv[10] or 6))
+min_windows = max(1, int(float(sys.argv[11] or 3)))
+min_coverage_ratio = float(sys.argv[12] or 0.95)
 
 INITIAL_CAPITAL = 1000.0
+OOS_RE = re.compile(r"_oos\d+$", re.IGNORECASE)
 
 payload = {
     "trigger": False,
@@ -4662,9 +4845,6 @@ except Exception:
 
 completed_rows = [r for r in rows if str(r.get("status") or "").strip().lower() == "completed"]
 payload["completed"] = len(completed_rows)
-if len(completed_rows) < max(1, min_completed):
-    print(json.dumps(payload, ensure_ascii=False))
-    raise SystemExit(0)
 
 def to_float(value, default=None):
     try:
@@ -4709,6 +4889,105 @@ for row in completed_rows:
         by_base[base]["stress"] = run_index.get(run_id)
     else:
         by_base[base]["holdout"] = run_index.get(run_id)
+
+variant_windows = defaultdict(dict)
+dispatchable_remaining = 0
+for row in rows:
+    results_dir = str(row.get("results_dir") or "").strip()
+    if not results_dir:
+        continue
+    run_id = Path(results_dir).name.strip()
+    base = re.sub(r"^(holdout_|stress_)", "", run_id)
+    variant = OOS_RE.sub("", base)
+    status = str(row.get("status") or "").strip().lower()
+    if run_id.startswith("stress_"):
+        continue
+    window = variant_windows[variant].setdefault(
+        base,
+        {
+            "status": "",
+            "run_id": "",
+            "run_index_row": None,
+        },
+    )
+    if run_id.startswith("holdout_") or not window["run_id"]:
+        window["status"] = status
+        window["run_id"] = run_id
+        window["run_index_row"] = run_index.get(run_id)
+    if status in {"planned", "stalled", "failed", "error", "queued"}:
+        dispatchable_remaining += 1
+
+reachable_variants = 0
+coverage_viable_variants = 0
+coverage_blocked_variants = 0
+for windows in variant_windows.values():
+    completed_metric_windows = 0
+    pending_windows = 0
+    coverage_failed = False
+    for window in windows.values():
+        status = str(window.get("status") or "").strip().lower()
+        run_row = window.get("run_index_row") or {}
+        metrics_present = is_true((run_row or {}).get("metrics_present"))
+        coverage = to_float((run_row or {}).get("coverage_ratio"), None)
+        if status == "completed" and metrics_present:
+            completed_metric_windows += 1
+            if coverage is not None and coverage < min_coverage_ratio:
+                coverage_failed = True
+        elif status in {"planned", "stalled", "failed", "error", "queued"}:
+            pending_windows += 1
+    if completed_metric_windows + pending_windows >= min_windows:
+        reachable_variants += 1
+        if not coverage_failed:
+            coverage_viable_variants += 1
+        else:
+            coverage_blocked_variants += 1
+
+payload["dispatchable_remaining"] = dispatchable_remaining
+payload["reachable_variants"] = reachable_variants
+payload["coverage_viable_variants"] = coverage_viable_variants
+payload["coverage_blocked_variants"] = coverage_blocked_variants
+
+if dispatchable_remaining > 0 and reachable_variants <= 0:
+    changed = 0
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "stalled", "failed", "error", "queued"}:
+            row["status"] = "skipped"
+            changed += 1
+    if changed > 0 and rows:
+        with queue_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+    payload["trigger"] = bool(changed > 0)
+    payload["changed"] = changed
+    payload["reason"] = "MIN_WINDOWS_UNREACHABLE"
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+if dispatchable_remaining > 0 and reachable_variants > 0 and coverage_viable_variants <= 0 and coverage_blocked_variants >= reachable_variants:
+    changed = 0
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status in {"planned", "stalled", "failed", "error", "queued"}:
+            row["status"] = "skipped"
+            changed += 1
+    if changed > 0 and rows:
+        with queue_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+    payload["trigger"] = bool(changed > 0)
+    payload["changed"] = changed
+    payload["reason"] = "COVERAGE_UNREACHABLE"
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
+if len(completed_rows) < max(1, min_completed):
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
 
 fail_counter = Counter()
 pass_count = 0
@@ -5560,13 +5839,13 @@ root = Path(sys.argv[2])
 run_index_path = Path(sys.argv[3])
 
 if not queue_path.exists():
-    print("0 0 0 0 0 0 0 0")
+    print("0 0 0 0 0 0 0 0 0")
     raise SystemExit(0)
 
 try:
     rows = list(csv.DictReader(queue_path.open(newline='', encoding='utf-8')))
 except Exception:
-    print("0 0 0 0 0 0 0 0")
+    print("0 0 0 0 0 0 0 0 0")
     raise SystemExit(0)
 
 run_index = {}
@@ -5591,9 +5870,12 @@ def cfg_exists(path_raw):
     return p.exists()
 
 pending = 0
+dispatchable_pending = 0
 executable_pending = 0
 completed_with_metrics = 0
 planned = running = stalled = failed = completed = 0
+
+dispatchable_statuses = {'planned', 'stalled', 'failed', 'error', 'queued'}
 
 for row in rows:
     status = str(row.get('status') or '').strip().lower()
@@ -5609,9 +5891,12 @@ for row in rows:
     elif status == 'completed':
         completed += 1
 
-    if status in {'planned', 'running', 'stalled', 'failed', 'error'}:
+    if status in {'planned', 'running', 'stalled', 'failed', 'error', 'queued'}:
         pending += 1
-        if status == 'running' or cfg_exists(cfg):
+        if status in dispatchable_statuses and cfg_exists(cfg):
+            dispatchable_pending += 1
+            executable_pending += 1
+        elif status == 'running':
             executable_pending += 1
 
     if status == 'completed':
@@ -5628,6 +5913,7 @@ for row in rows:
 
 print(
     pending,
+    dispatchable_pending,
     executable_pending,
     completed_with_metrics,
     planned,
@@ -5642,11 +5928,17 @@ PY
 global_backlog_snapshot() {
   python3 - "$QUEUE_ROOT" "$ROOT_DIR" <<'PY'
 import csv
+import json
 import sys
+import time
 from pathlib import Path
 
 queue_root = Path(sys.argv[1])
 root = Path(sys.argv[2])
+state_dir = queue_root / '.autonomous'
+fullspan_path = state_dir / 'fullspan_decision_state.json'
+orphan_path = state_dir / 'orphan_queues.csv'
+now = time.time()
 
 def cfg_exists(path_raw):
     s = str(path_raw or '').strip()
@@ -5657,33 +5949,112 @@ def cfg_exists(path_raw):
         p = root / p
     return p.exists()
 
-planned_exec = 0
-pending_exec = 0
-no_op_queues = 0
+
+def entry_is_true(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+def load_state(path):
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    queues = payload.get('queues', {}) if isinstance(payload, dict) else {}
+    return dict(queues) if isinstance(queues, dict) else {}
+
+
+fullspan_queues = load_state(fullspan_path)
+orphans = {}
+if orphan_path.exists():
+    try:
+        with orphan_path.open(newline='', encoding='utf-8') as handle:
+            for row in csv.DictReader(handle):
+                queue = str(row.get('queue') or '').strip()
+                if not queue:
+                    continue
+                try:
+                    until = float((row.get('until_ts') or '').strip() or 0.0)
+                except Exception:
+                    until = 0.0
+                orphans[queue] = {
+                    'until': until,
+                    'reason': str(row.get('reason') or '').strip(),
+                }
+    except Exception:
+        orphans = {}
+
+
+def queue_block_reason(queue_rel, queue_abs):
+    entry = fullspan_queues.get(queue_rel) or fullspan_queues.get(queue_abs) or {}
+    if not isinstance(entry, dict):
+        entry = {}
+    verdict = str(entry.get('promotion_verdict') or '').strip().upper()
+    strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
+    cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
+    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT':
+        return 'FULLSPAN_REJECT'
+    if cutover_permission == 'FAIL_CLOSED':
+        return 'FAIL_CLOSED'
+    if entry_is_true(entry.get('low_yield_fail_closed')):
+        return 'FAIL_CLOSED'
+    for state_key in ('startup_state', 'coverage_state', 'queue_state'):
+        if str(entry.get(state_key) or '').strip().lower() == 'fail_closed':
+            return 'FAIL_CLOSED'
+    orphan_entry = orphans.get(queue_rel) or orphans.get(queue_abs) or orphans.get('/' + queue_rel.lstrip('/')) or {}
+    try:
+        orphan_until = float((orphan_entry or {}).get('until') or 0.0)
+    except Exception:
+        orphan_until = 0.0
+    if orphan_until > now:
+        orphan_reason = str((orphan_entry or {}).get('reason') or '').strip().lower()
+        if 'fail_closed' in orphan_reason:
+            return 'FAIL_CLOSED'
+        return 'ORPHAN_COOLDOWN'
+    return ''
+
+planned_dispatchable = 0
+pending_dispatchable = 0
+no_dispatchable_queues = 0
+executable_pending_raw = 0
+dispatchable_statuses = {'planned', 'stalled', 'failed', 'error', 'queued'}
 
 for q in sorted(queue_root.rglob('run_queue.csv')):
     q_str = str(q)
     if '/rollup/' in q_str or '/.autonomous/' in q_str:
         continue
     try:
+        queue_rel = str(q.relative_to(root))
+    except Exception:
+        queue_rel = q_str
+    queue_abs = q_str
+    blocked_reason = queue_block_reason(queue_rel, queue_abs)
+    try:
         rows = list(csv.DictReader(q.open(newline='', encoding='utf-8')))
     except Exception:
         continue
     queue_pending = 0
-    queue_exec = 0
+    queue_dispatchable = 0
     for row in rows:
         st = str(row.get('status') or '').strip().lower()
-        if st in {'planned', 'running', 'stalled', 'failed', 'error'}:
+        if st in {'planned', 'running', 'stalled', 'failed', 'error', 'queued'}:
             queue_pending += 1
-            if st == 'running' or cfg_exists(row.get('config_path')):
-                queue_exec += 1
-                pending_exec += 1
-            if st == 'planned' and cfg_exists(row.get('config_path')):
-                planned_exec += 1
-    if queue_pending > 0 and queue_exec == 0:
-        no_op_queues += 1
+            cfg_ok = cfg_exists(row.get('config_path'))
+            if st in dispatchable_statuses and cfg_ok:
+                if not blocked_reason:
+                    queue_dispatchable += 1
+                    pending_dispatchable += 1
+                executable_pending_raw += 1
+                if st == 'planned':
+                    if not blocked_reason:
+                        planned_dispatchable += 1
+            elif st == 'running':
+                executable_pending_raw += 1
+    if queue_pending > 0 and queue_dispatchable == 0:
+        no_dispatchable_queues += 1
 
-print(planned_exec, pending_exec, no_op_queues)
+print(planned_dispatchable, pending_dispatchable, no_dispatchable_queues, executable_pending_raw)
 PY
 }
 
@@ -5715,24 +6086,38 @@ candidate_pool_ready_count() {
   csv_data_row_count "$READY_BUFFER_POOL_FILE"
 }
 
+candidate_pool_status_snapshot() {
+  local pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw status
+  pool_ready_count="$(candidate_pool_ready_count)"
+  [[ "$pool_ready_count" =~ ^[0-9]+$ ]] || pool_ready_count=0
+  read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+  [[ "$planned_dispatchable" =~ ^[0-9]+$ ]] || planned_dispatchable=0
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  [[ "$no_dispatchable_queues" =~ ^[0-9]+$ ]] || no_dispatchable_queues=0
+  [[ "$executable_pending_raw" =~ ^[0-9]+$ ]] || executable_pending_raw=0
+  if (( pool_ready_count > 0 )); then
+    status="ready"
+  elif (( dispatchable_pending > 0 )); then
+    status="empty_error"
+  else
+    status="empty_expected"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$status" "$pool_ready_count" "$planned_dispatchable" "$dispatchable_pending" "$no_dispatchable_queues" "$executable_pending_raw"
+}
+
 selector_empty_candidate_pool_guard() {
   local reason="${1:-selector_empty_candidate_pool}"
   local now_epoch cooldown_sec last_epoch last_reason
-  local planned_exec pending_exec no_op_queues pool_ready_count
+  local candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
   local process_remote_reachable process_coverage_ready
   local fresh_capacity remote_count vps_fail_closed infra_gate_status
 
-  pool_ready_count="$(candidate_pool_ready_count)"
-  [[ "$pool_ready_count" =~ ^[0-9]+$ ]] || pool_ready_count=0
-  if (( pool_ready_count > 0 )); then
-    return 1
-  fi
-
-  read -r planned_exec pending_exec no_op_queues <<< "$(global_backlog_snapshot)"
-  [[ "$planned_exec" =~ ^[0-9]+$ ]] || planned_exec=0
-  [[ "$pending_exec" =~ ^[0-9]+$ ]] || pending_exec=0
-  [[ "$no_op_queues" =~ ^[0-9]+$ ]] || no_op_queues=0
-  if (( pending_exec <= 0 )); then
+  IFS=$'\t' read -r candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(candidate_pool_status_snapshot)"
+  fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
+  fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
+  fullspan_state_metric_set "candidate_pool_dispatchable_pending" "$dispatchable_pending"
+  fullspan_state_metric_set "candidate_pool_executable_pending" "$executable_pending_raw"
+  if [[ "$candidate_pool_status" != "empty_error" ]]; then
     return 1
   fi
 
@@ -5760,7 +6145,7 @@ selector_empty_candidate_pool_guard() {
   [[ "$last_epoch" =~ ^[0-9]+$ ]] || last_epoch=0
   last_reason="$(fullspan_state_metric_get selector_empty_candidate_pool_last_reason "")"
 
-  fullspan_state_metric_set "selector_error" "empty_candidate_pool_with_executable_pending"
+  fullspan_state_metric_set "selector_error" "empty_candidate_pool_with_dispatchable_pending"
   fullspan_state_metric_set "selector_error_context" "$reason"
   fullspan_state_metric_set "selector_error_epoch" "$now_epoch"
 
@@ -5769,16 +6154,51 @@ selector_empty_candidate_pool_guard() {
     fullspan_state_metric_set "selector_empty_candidate_pool_last_epoch" "$now_epoch"
     fullspan_state_metric_set "selector_empty_candidate_pool_last_reason" "$reason"
     runtime_observability_record_event "selector_empty_candidate_pool" "$now_epoch"
-    log "selector_empty_candidate_pool reason=$reason executable_pending=$pending_exec planned_exec=$planned_exec no_op_queues=$no_op_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count"
-    log_decision_note "global" "SELECTOR_EMPTY_CANDIDATE_POOL" "reason=$reason executable_pending=$pending_exec planned_exec=$planned_exec no_op_queues=$no_op_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count" "skip_auto_seed_and_retry_selector"
+    log "selector_empty_candidate_pool reason=$reason dispatchable_pending=$dispatchable_pending planned_dispatchable=$planned_dispatchable executable_pending=$executable_pending_raw no_dispatchable_queues=$no_dispatchable_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count"
+    log_decision_note "global" "SELECTOR_EMPTY_CANDIDATE_POOL" "reason=$reason dispatchable_pending=$dispatchable_pending planned_dispatchable=$planned_dispatchable executable_pending=$executable_pending_raw no_dispatchable_queues=$no_dispatchable_queues process_remote_reachable=$process_remote_reachable fresh_capacity=$fresh_capacity remote_runner_count=$remote_count" "skip_auto_seed_and_retry_selector"
   fi
 
   return 0
 }
 
+handle_empty_candidate_state() {
+  local reason="${1:-candidate_empty}"
+  local candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
+  IFS=$'\t' read -r candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(candidate_pool_status_snapshot)"
+  fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
+  fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
+  fullspan_state_metric_set "candidate_pool_dispatchable_pending" "$dispatchable_pending"
+  fullspan_state_metric_set "candidate_pool_executable_pending" "$executable_pending_raw"
+  if [[ "$candidate_pool_status" == "empty_expected" ]]; then
+    log "candidate_pool_empty_expected reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues"
+    log_decision_note "global" "CANDIDATE_POOL_EMPTY_EXPECTED" "reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues" "idle_and_allow_batch_session_stop"
+    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    fi
+    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+      adaptive_idle_sleep=300
+    fi
+    batch_session_maybe_stop "candidate_pool_empty_expected"
+    sleep "$adaptive_idle_sleep"
+    return 0
+  fi
+  if selector_empty_candidate_pool_guard "$reason"; then
+    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    fi
+    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+      adaptive_idle_sleep=300
+    fi
+    batch_session_maybe_stop "selector_empty_candidate_pool"
+    sleep "$adaptive_idle_sleep"
+    return 0
+  fi
+  return 1
+}
+
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
-  local now_epoch last_seed planned_exec pending_exec no_op_queues
+  local now_epoch last_seed planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
   local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
   local runtime_block_active runtime_block_reason
@@ -5794,13 +6214,18 @@ maybe_trigger_auto_seed() {
   last_seed="$(fullspan_state_metric_get last_seed_trigger_epoch 0)"
   [[ "$last_seed" =~ ^[0-9]+$ ]] || last_seed=0
 
-  read -r planned_exec pending_exec no_op_queues <<< "$(global_backlog_snapshot)"
-  planned_exec="${planned_exec:-0}"
-  pending_exec="${pending_exec:-0}"
-  no_op_queues="${no_op_queues:-0}"
-  fullspan_state_metric_set "global_planned_exec" "$planned_exec"
-  fullspan_state_metric_set "global_pending_exec" "$pending_exec"
-  fullspan_state_metric_set "global_no_op_queue_count" "$no_op_queues"
+  read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+  planned_dispatchable="${planned_dispatchable:-0}"
+  dispatchable_pending="${dispatchable_pending:-0}"
+  no_dispatchable_queues="${no_dispatchable_queues:-0}"
+  executable_pending_raw="${executable_pending_raw:-0}"
+  fullspan_state_metric_set "global_planned_dispatchable" "$planned_dispatchable"
+  fullspan_state_metric_set "global_pending_dispatchable" "$dispatchable_pending"
+  fullspan_state_metric_set "global_planned_exec" "$planned_dispatchable"
+  fullspan_state_metric_set "global_pending_exec" "$executable_pending_raw"
+  fullspan_state_metric_set "global_pending_exec_raw" "$executable_pending_raw"
+  fullspan_state_metric_set "global_no_dispatchable_queue_count" "$no_dispatchable_queues"
+  fullspan_state_metric_set "global_no_op_queue_count" "$no_dispatchable_queues"
   ready_depth="$(ready_buffer_depth)"
   [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
   fullspan_state_metric_set "ready_buffer_depth" "$ready_depth"
@@ -5916,7 +6341,7 @@ maybe_trigger_auto_seed() {
   esac
   fullspan_state_metric_set "auto_seed_force_last_remote_count" "$remote_count"
 
-  if (( force_seed == 0 )) && (( planned_exec >= AUTO_SEED_PENDING_THRESHOLD )) && (( ready_depth >= READY_BUFFER_REFILL_THRESHOLD )); then
+  if (( force_seed == 0 )) && (( planned_dispatchable >= AUTO_SEED_PENDING_THRESHOLD )) && (( ready_depth >= READY_BUFFER_REFILL_THRESHOLD )); then
     return 0
   fi
   if (( now_epoch - last_seed < AUTO_SEED_COOLDOWN_SEC )); then
@@ -5925,7 +6350,7 @@ maybe_trigger_auto_seed() {
 
   effective_seed_pending_threshold="$AUTO_SEED_PENDING_THRESHOLD"
   if (( force_seed == 1 )); then
-    effective_seed_pending_threshold=$(( pending_exec + 1 ))
+    effective_seed_pending_threshold=$(( dispatchable_pending + 1 ))
     if (( effective_seed_pending_threshold <= AUTO_SEED_PENDING_THRESHOLD )); then
       effective_seed_pending_threshold=$(( AUTO_SEED_PENDING_THRESHOLD + 1 ))
     fi
@@ -5949,11 +6374,11 @@ maybe_trigger_auto_seed() {
     fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
     fullspan_state_metric_set "auto_seed_blocked" 0
     fullspan_state_metric_set "auto_seed_block_reason" ""
-    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth no_op_queues=$no_op_queues threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS"
-    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_exec=$planned_exec pending_exec=$pending_exec ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
+    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth no_dispatchable_queues=$no_dispatchable_queues threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS"
+    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
   else
     fullspan_state_metric_inc "seed_trigger_fail_count" 1
-    log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc planned_exec=$planned_exec threshold=$effective_seed_pending_threshold"
+    log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc planned_dispatchable=$planned_dispatchable threshold=$effective_seed_pending_threshold"
   fi
 }
 
@@ -6642,6 +7067,7 @@ start_queue() {
   local failed=0
   local completed=0
   local pending=0
+  local dispatchable_pending=0
   local executable_pending=0
   local completed_with_metrics=0
 
@@ -6680,7 +7106,7 @@ start_queue() {
     return 1
   fi
 
-  read -r pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+  read -r pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
   total=$((planned + running + stalled + failed + completed))
 
 	  if (( pending <= 0 )); then
@@ -6688,12 +7114,12 @@ start_queue() {
     return 2
   fi
 
-  if (( pending > 0 && executable_pending == 0 && completed_with_metrics > 0 )); then
+  if (( pending > 0 && dispatchable_pending == 0 && completed_with_metrics > 0 )); then
     fullspan_state_metric_inc "no_op_queue_skips" 1
     fullspan_state_metric_set "last_no_op_queue_skip_epoch" "$(date +%s)"
     fullspan_state_metric_set "seed_trigger_reason" "queue_hygiene_noop"
-    log "queue_hygiene_noop_skip queue=$queue_rel pending=$pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics"
-    log_decision_note "$queue_rel" "QUEUE_HYGIENE_NOOP_SKIP" "pending=$pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics" "skip_and_reselect"
+    log "queue_hygiene_noop_skip queue=$queue_rel pending=$pending dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics"
+    log_decision_note "$queue_rel" "QUEUE_HYGIENE_NOOP_SKIP" "pending=$pending dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending completed_metrics=$completed_with_metrics" "skip_and_reselect"
     return 2
   fi
 
@@ -6815,10 +7241,11 @@ maybe_dispatch_overlap_from_buffer() {
     return 1
   fi
 
-  local active_exec_pending active_completed_metrics active_planned
-  read -r _active_pending active_exec_pending active_completed_metrics active_planned _active_running _active_stalled _active_failed _active_completed <<< "$(queue_hygiene_snapshot "$active_queue_rel")"
+  local active_dispatchable_pending active_exec_pending active_completed_metrics active_planned
+  read -r _active_pending active_dispatchable_pending active_exec_pending active_completed_metrics active_planned _active_running _active_stalled _active_failed _active_completed <<< "$(queue_hygiene_snapshot "$active_queue_rel")"
+  [[ "$active_dispatchable_pending" =~ ^[0-9]+$ ]] || active_dispatchable_pending=0
   [[ "$active_exec_pending" =~ ^[0-9]+$ ]] || active_exec_pending=0
-  if (( active_exec_pending > READY_BUFFER_OVERLAP_TAIL_PENDING )); then
+  if (( active_dispatchable_pending > READY_BUFFER_OVERLAP_TAIL_PENDING )); then
     return 1
   fi
 
@@ -6854,8 +7281,8 @@ maybe_dispatch_overlap_from_buffer() {
   local overlap_cause="UNKNOWN"
   if start_queue "$queue" "$overlap_cause" "${planned:-0}" "${running:-0}" "${stalled:-0}" "${total:-0}"; then
     fullspan_state_metric_inc "overlap_dispatch_count" 1
-    log_decision_note "$active_queue_rel" "READY_BUFFER_DISPATCH" "next_queue=$queue tail_exec_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs" "dispatch_next_queue_overlap"
-    log "ready_buffer_dispatch source=$active_queue_rel next_queue=$queue tail_exec_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs"
+    log_decision_note "$active_queue_rel" "READY_BUFFER_DISPATCH" "next_queue=$queue tail_dispatchable_pending=$active_dispatchable_pending tail_executable_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs" "dispatch_next_queue_overlap"
+    log "ready_buffer_dispatch source=$active_queue_rel next_queue=$queue tail_dispatchable_pending=$active_dispatchable_pending tail_executable_pending=$active_exec_pending remote_active_queue_jobs=$remote_jobs"
     return 0
   fi
 
@@ -6975,25 +7402,17 @@ while true; do
   fi
 
   if ! candidate_file_has_rows; then
-    if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
-      log "candidate_fallback_selected reason=no_candidate_file"
-	    else
-	      log_state "idle now=none completed=all"
-	      log "candidate_empty"
-	      if selector_empty_candidate_pool_guard "candidate_empty"; then
-	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	    if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
+	      log "candidate_fallback_selected reason=no_candidate_file"
+		    else
+		      log_state "idle now=none completed=all"
+		      log "candidate_empty"
+		      if handle_empty_candidate_state "candidate_empty"; then
+	          continue
 	        fi
-          if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-            adaptive_idle_sleep=300
-          fi
-          batch_session_maybe_stop "selector_empty_candidate_pool"
-          sleep "$adaptive_idle_sleep"
-          continue
-        fi
-	      maybe_trigger_auto_seed "candidate_empty" || true
-	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+		      maybe_trigger_auto_seed "candidate_empty" || true
+		      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+		        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
 	      fi
       if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
         adaptive_idle_sleep=300
@@ -7019,23 +7438,15 @@ while true; do
         log "ready_buffer_hit reason=candidate_parse_empty"
         log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty" "reuse_ready_buffer_candidate"
         IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
-      else
-	    log_state "idle now=none completed=all"
-	    log "candidate_parse_empty"
-	    if selector_empty_candidate_pool_guard "candidate_parse_empty"; then
-	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	      else
+		    log_state "idle now=none completed=all"
+		    log "candidate_parse_empty"
+		    if handle_empty_candidate_state "candidate_parse_empty"; then
+	        continue
 	      fi
-        if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-          adaptive_idle_sleep=300
-        fi
-        batch_session_maybe_stop "selector_empty_candidate_pool"
-        sleep "$adaptive_idle_sleep"
-        continue
-      fi
-	    maybe_trigger_auto_seed "candidate_parse_empty" || true
-	    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+		    maybe_trigger_auto_seed "candidate_parse_empty" || true
+		    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+		      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
 	    fi
         if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
           adaptive_idle_sleep=300
@@ -7116,17 +7527,9 @@ PY
 	    if ! candidate_file_has_rows; then
 	      log_state "idle now=none completed=all"
 	      log "candidate_empty_after_reconcile"
-	      if selector_empty_candidate_pool_guard "candidate_empty_after_reconcile"; then
-	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-	        fi
-      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-        adaptive_idle_sleep=300
-      fi
-      batch_session_maybe_stop "selector_empty_candidate_pool"
-      sleep "$adaptive_idle_sleep"
-      continue
-    fi
+	      if handle_empty_candidate_state "candidate_empty_after_reconcile"; then
+	        continue
+	      fi
 	      maybe_trigger_auto_seed "candidate_empty_after_reconcile" || true
 	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
@@ -7151,23 +7554,15 @@ PY
           log "ready_buffer_hit reason=candidate_parse_empty_after_reconcile"
           log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty_after_reconcile" "reuse_ready_buffer_candidate"
           IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
-        else
-	      log_state "idle now=none completed=all"
-	      log "candidate_parse_empty_after_reconcile"
-	      if selector_empty_candidate_pool_guard "candidate_parse_empty_after_reconcile"; then
-	        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+	        else
+		      log_state "idle now=none completed=all"
+		      log "candidate_parse_empty_after_reconcile"
+		      if handle_empty_candidate_state "candidate_parse_empty_after_reconcile"; then
+		        continue
 	        fi
-	        if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-	          adaptive_idle_sleep=300
-	        fi
-	        batch_session_maybe_stop "selector_empty_candidate_pool"
-	        sleep "$adaptive_idle_sleep"
-	        continue
-        fi
-	      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
-	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+		      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
+		      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+		        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
 	      fi
 	      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
 	        adaptive_idle_sleep=300
@@ -7638,7 +8033,7 @@ PY
 
   remote_active_jobs="$(remote_active_queue_jobs)"
   [[ "$remote_active_jobs" =~ ^[0-9]+$ ]] || remote_active_jobs=0
-  idle_with_pending="$(process_slo_idle_with_executable_pending)"
+  idle_with_pending="$(driver_idle_with_dispatchable_pending)"
   [[ "$idle_with_pending" =~ ^[0-9]+$ ]] || idle_with_pending=0
   refresh_remote_runtime_metrics
   if [[ "$surrogate_decision" == "refine" && "${surrogate_reason:-}" == "queue_pending_backlog" && "$planned" -gt 0 && "$running" -eq 0 && "$stalled" -eq 0 && "$failed" -eq 0 && "$completed" -eq 0 ]]; then

@@ -25,9 +25,16 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from remote_runtime_probe import dump_json as dump_remote_runtime_json
 from remote_runtime_probe import probe_remote_runtime
-
-
-PENDING_STATUSES = {"planned", "queued", "running", "stalled", "failed", "error", "active"}
+from _queue_status_contract import (
+    load_fullspan_queue_state,
+    load_orphan_queue_cooldowns,
+    normalize_queue_status,
+    queue_dispatch_block_reason,
+    queue_rel_path,
+    row_counts_dispatchable_pending,
+    row_counts_executable,
+    row_counts_pending,
+)
 
 
 def utc_now_iso() -> str:
@@ -69,27 +76,47 @@ def resolve_under_root(path_text: str, root: Path) -> Path:
     return root / path
 
 
-def count_executable_pending_rows(*, aggregate_root: Path, app_root: Path) -> int:
+def count_backlog_rows(*, aggregate_root: Path, app_root: Path) -> dict[str, int]:
     executable_pending = 0
+    dispatchable_pending = 0
+    hard_rejected_pending = 0
+    state_dir = aggregate_root / ".autonomous"
+    fullspan_queues = load_fullspan_queue_state(state_dir / "fullspan_decision_state.json")
+    orphan_queues = load_orphan_queue_cooldowns(state_dir / "orphan_queues.csv")
+    current_epoch = time.time()
 
     for queue_path in sorted(aggregate_root.glob("*/run_queue.csv")):
+        queue_rel = queue_rel_path(queue_path, app_root)
         try:
             rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
         except Exception:
             continue
+        blocked_reason = queue_dispatch_block_reason(
+            queue_rel=queue_rel,
+            fullspan_entry=fullspan_queues.get(queue_rel),
+            orphan_entry=orphan_queues.get(queue_rel),
+            now_epoch=current_epoch,
+        )
+        queue_dispatchable = not bool(blocked_reason)
 
         for row in rows:
-            status = str(row.get("status") or "").strip().lower()
-            if status not in PENDING_STATUSES:
+            status = normalize_queue_status(row.get("status"))
+            if not row_counts_pending(status):
                 continue
-            config_path = str(row.get("config_path") or "").strip()
-            cfg_exists = False
-            if config_path:
-                cfg_exists = resolve_under_root(config_path, app_root).exists()
-            if cfg_exists or status == "running":
+            executable = row_counts_executable(status, row.get("config_path"), app_root)
+            dispatchable_row = row_counts_dispatchable_pending(status, row.get("config_path"), app_root)
+            if executable:
                 executable_pending += 1
+                if queue_dispatchable and dispatchable_row:
+                    dispatchable_pending += 1
+                elif blocked_reason == "FULLSPAN_REJECT" and dispatchable_row:
+                    hard_rejected_pending += 1
 
-    return executable_pending
+    return {
+        "executable_pending": int(executable_pending),
+        "dispatchable_pending": int(dispatchable_pending),
+        "hard_rejected_pending": int(hard_rejected_pending),
+    }
 
 
 def probe_remote_runtime_snapshot(root: Path, state_dir: Path, *, server_user: str, server_ip: str) -> dict[str, Any]:
@@ -201,7 +228,10 @@ def main() -> int:
             min_replies=min_replies,
             sla_confirm_sec=sla_confirm_sec,
         )
-        executable_pending = count_executable_pending_rows(aggregate_root=aggregate_root, app_root=root)
+        backlog = count_backlog_rows(aggregate_root=aggregate_root, app_root=root)
+        executable_pending = parse_int(backlog.get("executable_pending"), 0)
+        dispatchable_pending = parse_int(backlog.get("dispatchable_pending"), 0)
+        hard_rejected_pending = parse_int(backlog.get("hard_rejected_pending"), 0)
 
         remote_snapshot = probe_remote_runtime_snapshot(root, state_dir, server_user=server_user, server_ip=server_ip)
         reachable = bool(remote_snapshot.get("reachable"))
@@ -260,7 +290,7 @@ def main() -> int:
         anti_idle_candidate = bool(
             reachable
             and overdue_confirm <= 0
-            and executable_pending > 0
+            and dispatchable_pending > 0
             and not remote_work_active
             and load1 >= 0.0
             and load1 <= anti_idle_load_max
@@ -273,7 +303,7 @@ def main() -> int:
                 int(anti_idle_search_max),
                 int(policy["search_parallel_min"]),
             )
-            reasons.append("anti_idle_executable_backlog")
+            reasons.append("anti_idle_dispatchable_backlog")
 
         if overdue_confirm > 0:
             policy["search_parallel_max"] = min(int(policy["search_parallel_max"]), 4)
@@ -335,6 +365,8 @@ def main() -> int:
                 "pending_confirm": int(pending_confirm),
                 "overdue_confirm": int(overdue_confirm),
                 "executable_pending": int(executable_pending),
+                "dispatchable_pending": int(dispatchable_pending),
+                "hard_rejected_pending": int(hard_rejected_pending),
                 "sla_confirm_sec": int(sla_confirm_sec),
             },
             "remote_runtime_state_file": str(remote_runtime_state_path),
@@ -354,7 +386,7 @@ def main() -> int:
                 f"remote_work_active={int(remote_work_active)} cpu_busy_without_queue_job={int(cpu_busy_without_queue_job)} "
                 f"remote_snapshot_age_sec={remote_snapshot_age_sec} "
                 f"pending_confirm={pending_confirm} overdue_confirm={overdue_confirm} "
-                f"executable_pending={executable_pending} "
+                f"executable_pending={executable_pending} dispatchable_pending={dispatchable_pending} hard_rejected_pending={hard_rejected_pending} "
                 f"search_max={policy['search_parallel_max']} confirm_min={policy['confirm_parallel_min']} "
                 f"confirm_max={policy['confirm_parallel_max']} reasons={';'.join(reasons) or 'none'} dry_run={int(bool(args.dry_run))}\n"
             )

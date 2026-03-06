@@ -54,6 +54,10 @@ def _strict_gate_row_base() -> dict[str, str]:
     ("patch", "expected_reason"),
     [
         ({"metrics_present": "false"}, "METRICS_MISSING"),
+        ({"observed_test_days": "0"}, "ZERO_OBSERVED_TEST_DAYS"),
+        ({"coverage_ratio": "0"}, "ZERO_COVERAGE"),
+        ({"total_trades": "0"}, "ZERO_TRADES"),
+        ({"total_pairs_traded": "0"}, "ZERO_PAIRS"),
         ({"total_trades": "199"}, "TRADES_FAIL"),
         ({"total_pairs_traded": "19"}, "PAIRS_FAIL"),
         ({"max_drawdown_on_equity": "0.21"}, "DD_FAIL"),
@@ -173,3 +177,9 @@ def test_dominant_rejection_reason_preserves_strict_diag_tokens() -> None:
 
     assert module.dominant_rejection_reason("strict_hard_fail: coverage_below") == "coverage_below"
     assert module.dominant_rejection_reason("RANK_OK_FALLBACK_STRICT_BINDING:min_windows,min_pairs") == "min_windows"
+
+
+def test_dominant_rejection_reason_preserves_canonical_zero_evidence_tokens() -> None:
+    module = _load_script_module("fullspan_contract_zero_reason_guard", "fullspan_contract.py")
+
+    assert module.dominant_rejection_reason("strict_contract_fail(ZERO_COVERAGE:2,TRADES_FAIL:1)") == "ZERO_COVERAGE"

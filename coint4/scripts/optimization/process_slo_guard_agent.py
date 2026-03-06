@@ -30,7 +30,12 @@ if str(SCRIPTS_DIR) not in sys.path:
 from _queue_status_contract import (
     FAILED_LIKE_STATUSES,
     PENDING_LIKE_STATUSES,
+    load_fullspan_queue_state,
+    load_orphan_queue_cooldowns,
     normalize_queue_status,
+    queue_dispatch_block_reason,
+    queue_rel_path,
+    row_counts_dispatchable_pending,
     row_counts_executable,
     row_counts_pending,
 )
@@ -240,7 +245,7 @@ def read_remote_runtime_snapshot(path: Path) -> dict[str, Any]:
 def read_ready_queue_buffer(path: Path) -> dict[str, Any]:
     data = load_json(path, {})
     if not isinstance(data, dict):
-        return {"ready_count": 0, "coverage_verified_ready_count": 0}
+        return {"ready_count": 0, "coverage_verified_ready_count": 0, "candidate_pool_status": ""}
     entries = data.get("entries", [])
     if not isinstance(entries, list):
         entries = []
@@ -263,6 +268,7 @@ def read_ready_queue_buffer(path: Path) -> dict[str, Any]:
         "coverage_verified_ready_count": (
             coverage_verified_ready_count if has_coverage_verified_signal else None
         ),
+        "candidate_pool_status": str(data.get("candidate_pool_status") or "").strip().lower(),
     }
 
 
@@ -313,16 +319,27 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
     }
 
 
+def csv_data_row_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            return sum(1 for row in reader if any(str(value or "").strip() for value in row.values()))
+    except Exception:
+        return 0
+
+
 def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
     totals = Counter()
     per_queue: dict[str, dict[str, int]] = {}
+    state_dir = aggregate_root / ".autonomous"
+    fullspan_queues = load_fullspan_queue_state(state_dir / "fullspan_decision_state.json")
+    orphan_queues = load_orphan_queue_cooldowns(state_dir / "orphan_queues.csv")
+    current_epoch = time.time()
 
     for queue_path in sorted(aggregate_root.glob("*/run_queue.csv")):
-        queue_rel = str(queue_path)
-        try:
-            queue_rel = str(queue_path.relative_to(app_root)).replace("\\", "/")
-        except Exception:
-            queue_rel = queue_path.as_posix()
+        queue_rel = queue_rel_path(queue_path, app_root)
 
         row_count = 0
         completed = 0
@@ -332,17 +349,28 @@ def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
         failed = 0
         executable_rows = 0
         executable_pending = 0
+        dispatchable_pending = 0
+        hard_rejected_pending = 0
 
         try:
             rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
         except Exception:
             continue
 
+        block_reason = queue_dispatch_block_reason(
+            queue_rel=queue_rel,
+            fullspan_entry=fullspan_queues.get(queue_rel),
+            orphan_entry=orphan_queues.get(queue_rel),
+            now_epoch=current_epoch,
+        )
+        queue_dispatchable = not bool(block_reason)
+
         for row in rows:
             row_count += 1
             status = normalize_queue_status(row.get("status"))
             config_path = str(row.get("config_path") or "").strip()
             executable = row_counts_executable(status, config_path, app_root)
+            dispatchable_row = row_counts_dispatchable_pending(status, config_path, app_root)
             if executable:
                 executable_rows += 1
 
@@ -352,6 +380,10 @@ def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
                 pending += 1
                 if executable:
                     executable_pending += 1
+                if queue_dispatchable and dispatchable_row:
+                    dispatchable_pending += 1
+                elif block_reason == "FULLSPAN_REJECT" and dispatchable_row:
+                    hard_rejected_pending += 1
             if status == "running":
                 running += 1
             elif status == "stalled":
@@ -368,6 +400,8 @@ def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
             "failed": failed,
             "executable_rows": executable_rows,
             "executable_pending": executable_pending,
+            "dispatchable_pending": dispatchable_pending,
+            "hard_rejected_pending": hard_rejected_pending,
         }
 
         totals["total"] += row_count
@@ -378,6 +412,8 @@ def queue_stats(*, aggregate_root: Path, app_root: Path) -> dict[str, Any]:
         totals["failed"] += failed
         totals["executable_rows"] += executable_rows
         totals["executable_pending"] += executable_pending
+        totals["dispatchable_pending"] += dispatchable_pending
+        totals["hard_rejected_pending"] += hard_rejected_pending
 
     return {
         "totals": dict(totals),
@@ -434,6 +470,7 @@ def main() -> int:
     cold_fail_index_path = state_dir / "cold_fail_index.json"
     yield_governor_state_path = state_dir / "yield_governor_state.json"
     ready_buffer_state_path = state_dir / "ready_queue_buffer.json"
+    candidate_pool_path = state_dir / "candidate_pool.csv"
     queue_seeder_state_path = state_dir / "queue_seeder.state.json"
 
     now = now_epoch()
@@ -480,11 +517,14 @@ def main() -> int:
         failed_rows = parse_int(totals.get("failed"), 0)
         executable_rows = parse_int(totals.get("executable_rows"), 0)
         executable_pending_rows = parse_int(totals.get("executable_pending"), 0)
+        dispatchable_pending_rows = parse_int(totals.get("dispatchable_pending"), 0)
+        hard_rejected_pending_rows = parse_int(totals.get("hard_rejected_pending"), 0)
 
         fullspan_state = load_json(fullspan_state_path, {})
         yield_governor_state = read_yield_governor_state(yield_governor_state_path)
         ready_buffer_state = read_ready_queue_buffer(ready_buffer_state_path)
         queue_seeder_state = read_queue_seeder_state(queue_seeder_state_path)
+        candidate_pool_ready_count = csv_data_row_count(candidate_pool_path)
         queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
         if not isinstance(queues, dict):
             queues = {}
@@ -712,15 +752,23 @@ def main() -> int:
         elif remote_work_active:
             progress_source = "capacity_or_runtime_metrics"
 
-        idle_with_executable_pending = bool(
-            executable_pending_rows > 0
+        idle_with_dispatchable_pending = bool(
+            dispatchable_pending_rows > 0
             and local_runner_count <= 0
             and remote_reachable
             and not remote_work_active
         )
+        candidate_pool_status = str(ready_buffer_state.get("candidate_pool_status") or "").strip().lower()
+        if not candidate_pool_status:
+            if candidate_pool_ready_count > 0:
+                candidate_pool_status = "ready"
+            elif dispatchable_pending_rows > 0:
+                candidate_pool_status = "empty_error"
+            else:
+                candidate_pool_status = "empty_expected"
 
         no_runner_since_epoch = parse_int(prev_state.get("no_runner_since_epoch"), 0)
-        if pending_rows > 0 and local_runner_count <= 0:
+        if dispatchable_pending_rows > 0 and local_runner_count <= 0:
             if no_runner_since_epoch <= 0:
                 no_runner_since_epoch = now
         else:
@@ -776,7 +824,7 @@ def main() -> int:
                     "code": "SLA_NO_RUNNER_PENDING",
                     "severity": "warning",
                     "message": (
-                        f"pending={pending_rows} without local_runner for "
+                        f"dispatchable_pending={dispatchable_pending_rows} without local_runner for "
                         f"{no_runner_pending_age_sec}s >= {sla_no_runner_pending_sec}s"
                     ),
                 }
@@ -837,6 +885,8 @@ def main() -> int:
             "queue": {
                 "pending": pending_rows,
                 "executable_pending": executable_pending_rows,
+                "dispatchable_pending": dispatchable_pending_rows,
+                "hard_rejected_pending": hard_rejected_pending_rows,
                 "running": running_rows,
                 "stalled": stalled_rows,
                 "failed": failed_rows,
@@ -854,12 +904,14 @@ def main() -> int:
                 "postprocess_active": postprocess_active,
                 "build_index_active": build_index_active,
                 "remote_reachable": remote_reachable,
-                "idle_with_executable_pending": idle_with_executable_pending,
+                "idle_with_executable_pending": idle_with_dispatchable_pending,
+                "idle_with_dispatchable_pending": idle_with_dispatchable_pending,
                 "progress_source": progress_source,
                 "active_remote_queue_rel": active_remote_queue_rel,
                 "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
                 "active_queues": active_queues[:8],
                 "ready_buffer_depth": ready_buffer_depth,
+                "candidate_pool_status": candidate_pool_status,
                 "cold_fail_active_count": cold_fail_active_count,
                 "fastlane_replay_pending": fastlane_replay_pending,
                 "hot_standby_active": hot_standby_active,
@@ -880,6 +932,8 @@ def main() -> int:
                 "promote_conversion_rate": round(promote_conversion_rate, 6),
                 "lead_time_to_promote_min": lead_time_to_promote_min,
                 "executable_pending_rows": executable_pending_rows,
+                "dispatchable_pending_rows": dispatchable_pending_rows,
+                "hard_rejected_pending_rows": hard_rejected_pending_rows,
                 "local_runner_count": local_runner_count,
                 "remote_runner_count": remote_runner_count,
                 "remote_child_process_count": remote_child_process_count,
@@ -896,7 +950,9 @@ def main() -> int:
                 "progress_source": progress_source,
                 "active_remote_queue_rel": active_remote_queue_rel,
                 "remote_queue_sync_age_sec": remote_queue_sync_age_sec,
-                "idle_with_executable_pending": idle_with_executable_pending,
+                "idle_with_executable_pending": idle_with_dispatchable_pending,
+                "idle_with_dispatchable_pending": idle_with_dispatchable_pending,
+                "candidate_pool_status": candidate_pool_status,
                 "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
                 "ready_buffer_policy_mismatch_count": ready_buffer_policy_mismatch_count,
                 "winner_parent_duplication_rate": round(winner_parent_duplication_rate, 6),
@@ -928,6 +984,7 @@ def main() -> int:
                 "active_queues": active_queues[:8],
                 "surrogate_idle_override_count": surrogate_idle_override_count,
                 "overlap_dispatch_count": overlap_dispatch_count,
+                "candidate_pool_status": candidate_pool_status,
                 "vps_duty_cycle_30m": round(vps_duty_cycle_30m, 6),
                 "ready_buffer_policy_mismatch_count": ready_buffer_policy_mismatch_count,
                 "winner_parent_duplication_rate": round(winner_parent_duplication_rate, 6),
@@ -990,6 +1047,8 @@ def main() -> int:
                 "winner_parent_duplication_rate={winner_parent_duplication_rate:.3f} fastlane_replay_pending={fastlane_replay_pending} "
                 "metrics_missing_abort_count_30m={metrics_missing_abort_count_30m} winner_proximate_dispatch_count_30m={winner_proximate_dispatch_count_30m} "
                 "hot_standby_active={hot_standby_active} "
+                "dispatchable_pending={dispatchable_pending} hard_rejected_pending={hard_rejected_pending} "
+                "candidate_pool_status={candidate_pool_status} "
                 "idle_with_executable_pending={idle_with_executable_pending} "
                 "alerts={alerts} emitted={emitted}"
             ).format(
@@ -1032,6 +1091,9 @@ def main() -> int:
                 metrics_missing_abort_count_30m=summary["runtime"]["metrics_missing_abort_count_30m"],
                 winner_proximate_dispatch_count_30m=summary["runtime"]["winner_proximate_dispatch_count_30m"],
                 hot_standby_active=int(bool(summary["runtime"]["hot_standby_active"])),
+                dispatchable_pending=summary["queue"]["dispatchable_pending"],
+                hard_rejected_pending=summary["queue"]["hard_rejected_pending"],
+                candidate_pool_status=summary["queue"]["candidate_pool_status"] or "none",
                 idle_with_executable_pending=int(bool(summary["queue"]["idle_with_executable_pending"])),
                 alerts=summary["alerts_count"],
                 emitted=summary["events_emitted"],

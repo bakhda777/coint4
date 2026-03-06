@@ -119,3 +119,53 @@ def test_queue_policy_defaults_fill_missing_gate_fields(tmp_path: Path) -> None:
     meta = json.loads(rows[0]["metadata_json"])
     assert meta["gate_status"] == "UNKNOWN"
     assert meta["strict_gate_status"] == "UNKNOWN"
+
+
+def test_queue_dispatch_block_reason_distinguishes_reject_fail_closed_and_orphan(tmp_path: Path) -> None:
+    module = _load_module("_queue_status_contract.py", tmp_path)
+
+    now_epoch = 1_777_000_000.0
+
+    assert (
+        module.queue_dispatch_block_reason(
+            queue_rel="artifacts/wfa/aggregate/demo/run_queue.csv",
+            fullspan_entry={
+                "promotion_verdict": "REJECT",
+                "cutover_permission": "FAIL_CLOSED",
+                "contract_hard_pass": False,
+            },
+            now_epoch=now_epoch,
+        )
+        == "FULLSPAN_REJECT"
+    )
+
+    assert (
+        module.queue_dispatch_block_reason(
+            queue_rel="artifacts/wfa/aggregate/demo/run_queue.csv",
+            fullspan_entry={
+                "promotion_verdict": "ANALYZE",
+                "cutover_permission": "FAIL_CLOSED",
+                "contract_hard_pass": False,
+            },
+            now_epoch=now_epoch,
+        )
+        == "FAIL_CLOSED"
+    )
+
+    assert (
+        module.queue_dispatch_block_reason(
+            queue_rel="artifacts/wfa/aggregate/demo/run_queue.csv",
+            orphan_entry={"until_ts": now_epoch + 600, "reason": "no_progress_streak_6"},
+            now_epoch=now_epoch,
+        )
+        == "ORPHAN_COOLDOWN"
+    )
+
+    assert (
+        module.queue_dispatch_block_reason(
+            queue_rel="artifacts/wfa/aggregate/demo/run_queue.csv",
+            orphan_entry={"until_ts": now_epoch + 600, "reason": "coverage_fail_closed"},
+            now_epoch=now_epoch,
+        )
+        == "FAIL_CLOSED"
+    )

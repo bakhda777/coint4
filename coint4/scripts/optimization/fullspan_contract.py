@@ -11,9 +11,16 @@ import csv
 import math
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from _search_quality_contract import CANONICAL_ZERO_EVIDENCE_REASONS, canonical_zero_evidence_reason
 
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -211,6 +218,7 @@ def dominant_rejection_reason(
         "INSUFFICIENT_WINDOWS",
         "STATUS_NOT_COMPLETED",
         "HOLDOUT_STRESS_MISSING",
+        *CANONICAL_ZERO_EVIDENCE_REASONS,
         "METRICS_MISSING",
     ):
         if token in text:
@@ -280,10 +288,10 @@ def row_worst_step_pnl(row: dict[str, Any]) -> float | None:
     return min(float(period), float(pair))
 
 
-def _metrics_missing_result(*, metrics_present: bool) -> RowGateResult:
+def _metrics_missing_result(*, metrics_present: bool, reason: str = "METRICS_MISSING") -> RowGateResult:
     return RowGateResult(
         passed=False,
-        reason="METRICS_MISSING",
+        reason=str(reason or "METRICS_MISSING"),
         metrics_present=bool(metrics_present),
         total_trades=0.0,
         total_pairs_traded=0.0,
@@ -300,6 +308,10 @@ def evaluate_row_hard_gates(row: dict[str, Any] | None, thresholds: FullspanThre
     metrics_present = _to_bool(row.get("metrics_present"))
     if not metrics_present:
         return _metrics_missing_result(metrics_present=False)
+
+    zero_evidence_reason = canonical_zero_evidence_reason(row, require_metrics_present=True)
+    if zero_evidence_reason in CANONICAL_ZERO_EVIDENCE_REASONS:
+        return _metrics_missing_result(metrics_present=True, reason=zero_evidence_reason)
 
     total_trades_raw = _to_float(row.get("total_trades"), None)
     total_pairs_raw = _to_float(row.get("total_pairs_traded"), None)

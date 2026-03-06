@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from _search_quality_contract import CANONICAL_ZERO_EVIDENCE_REASONS, micro_broad_search_caps
 from yield_governor_agent import build_yield_governor_state, dump_json as dump_yield_json
 
 
@@ -85,6 +85,9 @@ def canonical_reason(entry: dict[str, Any]) -> str:
         return "PAIRS_FAIL"
     if "ECONOMIC_FAIL" in merged:
         return "ECONOMIC_FAIL"
+    for reason in CANONICAL_ZERO_EVIDENCE_REASONS:
+        if reason in merged:
+            return reason
     if "METRICS_MISSING" in merged:
         return "METRICS_MISSING"
     return merged or "UNKNOWN"
@@ -232,6 +235,7 @@ def _attach_policy_metadata(directive: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None = None) -> dict[str, Any]:
+    micro_caps = micro_broad_search_caps()
     reasons = Counter()
     run_group_hints: list[str] = []
     proximate_tokens: list[str] = []
@@ -298,10 +302,7 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
         "impossibility_pruner": {
             "enabled": False,
             "reason": "",
-            "max_changed_keys_cap": 4,
-            "dedupe_distance_floor": 0.03,
-            "num_variants_cap": 24,
-            "policy_scale": "auto",
+            **micro_caps,
         },
         "winner_proximate": {
             "enabled": bool(proximate_tokens or yield_winner_contains),
@@ -377,27 +378,22 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
                 "impossibility_pruner": {
                     "enabled": True,
                     "reason": dominant_reason,
-                    "max_changed_keys_cap": 3,
-                    "dedupe_distance_floor": 0.05,
-                    "num_variants_cap": 24,
-                    "policy_scale": "micro",
+                    **micro_caps,
                 },
             }
         )
-    elif dominant_reason == "METRICS_MISSING":
+    elif dominant_reason in {"METRICS_MISSING", *CANONICAL_ZERO_EVIDENCE_REASONS}:
         directive.update(
             {
                 "mode": "stability_focus",
                 "policy_scale": "micro",
-                "max_changed_keys": 2,
+                "max_changed_keys": int(micro_caps["max_changed_keys_cap"]),
                 "num_variants": 20,
+                "dedupe_distance": float(micro_caps["dedupe_distance_floor"]),
                 "impossibility_pruner": {
                     "enabled": True,
-                    "reason": "METRICS_MISSING",
-                    "max_changed_keys_cap": 2,
-                    "dedupe_distance_floor": 0.05,
-                    "num_variants_cap": 20,
-                    "policy_scale": "micro",
+                    "reason": dominant_reason,
+                    **micro_caps,
                 },
             }
         )

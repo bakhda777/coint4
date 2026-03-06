@@ -42,6 +42,7 @@ def _run_reselect_block(
     fallback_success: bool,
     ready_buffer_success: bool = False,
     selector_guard: bool = False,
+    empty_expected: bool = False,
     pending_before_reconcile: int = 0,
     completed: int = 0,
 ) -> subprocess.CompletedProcess[str]:
@@ -98,6 +99,9 @@ ready_buffer_emit_candidate() {{
 }}
 selector_empty_candidate_pool_guard() {{
 {"  echo \"GUARD:$1\"\n  return 0\n" if selector_guard else "  return 1\n"}
+}}
+handle_empty_candidate_state() {{
+{"  echo \"HANDLE_EMPTY_EXPECTED:$1\"\n  echo \"STOP:candidate_pool_empty_expected\"\n  return 0\n" if empty_expected else ("  echo \"GUARD:$1\"\n  echo \"STOP:selector_empty_candidate_pool\"\n  return 0\n" if selector_guard else "  return 1\n")}
 }}
 fallback_calls=0
 fallback_pending_candidate() {{
@@ -345,6 +349,9 @@ def test_runtime_metric_fields_contract() -> None:
             'cpu_busy_without_queue_job',
             'surrogate_idle_override_count',
             'overlap_dispatch_count',
+            'candidate_pool_status',
+            'candidate_pool_dispatchable_pending',
+            'candidate_pool_executable_pending',
         ],
     )
     _assert_contains_any(
@@ -367,9 +374,12 @@ def test_ready_buffer_and_cold_fail_contract() -> None:
             'COLD_FAIL_STATE_FILE',
             'READY_BUFFER_MAX_AGE_SEC',
             'ready_buffer_policy_hash()',
+            'ready_buffer_snapshot_hash()',
             'ready_buffer_refresh()',
             'ready_buffer_emit_candidate()',
             'policy_hash',
+            'snapshot_hash',
+            'planner_policy_hash',
             'queue_file_mtime',
             'ready_buffer_policy_mismatch_count',
             'cold_fail_state_add()',
@@ -406,6 +416,7 @@ def test_hot_standby_and_replay_fastlane_contract() -> None:
             'VPS_HOT_STANDBY_GRACE_SEC',
             'REPLAY_FASTLANE_SCAN_LIMIT',
             'is_hot_standby_enabled()',
+            'driver_idle_with_dispatchable_pending()',
             'hot_standby_needed()',
             'maybe_prepare_hot_standby()',
             'dispatch_replay_fastlane_hooks()',
@@ -570,7 +581,7 @@ AUTO_SEED_NUM_VARIANTS_FLOOR=24
 REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 {fn}
 global_backlog_snapshot() {{
-  echo "0 0 0"
+  echo "0 0 0 0"
 }}
 ready_buffer_depth() {{
   echo "0"
@@ -640,7 +651,7 @@ AUTO_SEED_NUM_VARIANTS_FLOOR=24
 REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 {fn}
 global_backlog_snapshot() {{
-  echo "0 0 0"
+  echo "0 0 0 0"
 }}
 ready_buffer_depth() {{
   echo "0"
@@ -712,7 +723,7 @@ AUTO_SEED_NUM_VARIANTS_FLOOR=24
 REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
 {fn}
 global_backlog_snapshot() {{
-  echo "0 0 0"
+  echo "0 0 0 0"
 }}
 ready_buffer_depth() {{
   echo "0"
@@ -795,12 +806,13 @@ process_slo_remote_coverage_snapshot
 
 def test_selector_empty_candidate_pool_guard_signals_when_pool_empty_with_healthy_vps(tmp_path: Path) -> None:
     count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
+    status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
     guard_fn = _extract_shell_function(_source(), "selector_empty_candidate_pool_guard")
     pool_path = tmp_path / "candidate_pool.csv"
     pool_path.write_text(
         "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,"
         "gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,"
-        "stalled_share,queue_yield_score,recent_yield,executable_pending\n",
+        "stalled_share,queue_yield_score,recent_yield,dispatchable_pending,executable_pending\n",
         encoding="utf-8",
     )
 
@@ -811,9 +823,10 @@ FULLSPAN_DECISION_STATE_FILE="{tmp_path / 'fullspan_state.json'}"
 RUNTIME_OBSERVABILITY_STATE_FILE="{tmp_path / 'runtime_observability.json'}"
 SELECTOR_EMPTY_POOL_GUARD_COOLDOWN_SEC=300
 {count_fn}
+{status_fn}
 {guard_fn}
 global_backlog_snapshot() {{
-  echo "1 3 0"
+  echo "1 3 0 3"
 }}
 process_slo_remote_coverage_snapshot() {{
   printf '1\\t0\\n'
@@ -857,11 +870,142 @@ fi
     proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     assert "RC:0" in proc.stdout
-    assert "SET:selector_error=empty_candidate_pool_with_executable_pending" in proc.stdout
+    assert "SET:candidate_pool_status=empty_error" in proc.stdout
+    assert "SET:selector_error=empty_candidate_pool_with_dispatchable_pending" in proc.stdout
     assert "INC:selector_empty_candidate_pool_count=1" in proc.stdout
     assert "EVENT:selector_empty_candidate_pool|" in proc.stdout
     assert "NOTE:global|SELECTOR_EMPTY_CANDIDATE_POOL|" in proc.stdout
-    assert "LOG:selector_empty_candidate_pool reason=candidate_parse_empty executable_pending=3" in proc.stdout
+    assert "LOG:selector_empty_candidate_pool reason=candidate_parse_empty dispatchable_pending=3 planned_dispatchable=1 executable_pending=3" in proc.stdout
+
+
+def test_candidate_pool_status_snapshot_marks_empty_expected_when_dispatchable_is_zero(tmp_path: Path) -> None:
+    count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
+    status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
+    pool_path = tmp_path / "candidate_pool.csv"
+    pool_path.write_text(
+        "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,"
+        "gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,"
+        "stalled_share,queue_yield_score,recent_yield,dispatchable_pending,executable_pending\n",
+        encoding="utf-8",
+    )
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+READY_BUFFER_POOL_FILE="{pool_path}"
+{count_fn}
+{status_fn}
+global_backlog_snapshot() {{
+  echo "0 0 1 5"
+}}
+candidate_pool_status_snapshot
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert proc.stdout.strip() == "empty_expected\t0\t0\t0\t1\t5"
+
+
+def test_handle_empty_candidate_state_empty_expected_stops_batch_session(tmp_path: Path) -> None:
+    count_fn = _extract_shell_function(_source(), "candidate_pool_ready_count")
+    status_fn = _extract_shell_function(_source(), "candidate_pool_status_snapshot")
+    handle_fn = _extract_shell_function(_source(), "handle_empty_candidate_state")
+    pool_path = tmp_path / "candidate_pool.csv"
+    pool_path.write_text(
+        "queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,"
+        "gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,"
+        "stalled_share,queue_yield_score,recent_yield,dispatchable_pending,executable_pending\n",
+        encoding="utf-8",
+    )
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+READY_BUFFER_POOL_FILE="{pool_path}"
+adaptive_idle_sleep=30
+{count_fn}
+{status_fn}
+{handle_fn}
+global_backlog_snapshot() {{
+  echo "0 0 1 5"
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+batch_session_maybe_stop() {{
+  printf 'STOP:%s\\n' "$1"
+}}
+selector_empty_candidate_pool_guard() {{
+  printf 'GUARD:%s\\n' "$1"
+  return 1
+}}
+sleep() {{ :; }}
+if handle_empty_candidate_state candidate_parse_empty; then
+  echo "RC:0"
+else
+  echo "RC:1"
+fi
+printf 'ADAPTIVE:%s\\n' "$adaptive_idle_sleep"
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "RC:0" in proc.stdout
+    assert "SET:candidate_pool_status=empty_expected" in proc.stdout
+    assert "LOG:candidate_pool_empty_expected reason=candidate_parse_empty dispatchable_pending=0 executable_pending=5 planned_dispatchable=0 no_dispatchable_queues=1" in proc.stdout
+    assert "NOTE:global|CANDIDATE_POOL_EMPTY_EXPECTED|" in proc.stdout
+    assert "STOP:candidate_pool_empty_expected" in proc.stdout
+    assert "GUARD:" not in proc.stdout
+    assert "ADAPTIVE:60" in proc.stdout
+
+
+def test_batch_session_maybe_stop_uses_dispatchable_pending_for_auto_stop(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "batch_session_maybe_stop")
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+VPS_BATCH_SESSION_MAX_JOBS=3
+VPS_BATCH_SESSION_IDLE_GRACE_SEC=60
+VPS_BATCH_SESSION_MAX_SECONDS=3600
+VPS_HOT_STANDBY_GRACE_SEC=120
+batch_session_active=1
+batch_session_start_epoch=$(( $(date +%s) - 300 ))
+batch_session_last_dispatch_epoch=$(( $(date +%s) - 300 ))
+batch_session_runs_started=1
+{fn}
+batch_session_enabled() {{
+  return 0
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+global_pending_count() {{
+  echo "5"
+}}
+global_backlog_snapshot() {{
+  echo "0 0 1 5"
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+confirm_fastlane_pending_count() {{
+  echo "0"
+}}
+is_hot_standby_enabled() {{
+  return 1
+}}
+batch_session_stop() {{
+  printf 'STOP:%s\\n' "$1"
+}}
+batch_session_maybe_stop idle_probe
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "STOP:dispatchable_backlog_empty:idle_probe" in proc.stdout
 
 
 def test_driver_runtime_contract_includes_runtime_state_file_and_reconcile_hook() -> None:

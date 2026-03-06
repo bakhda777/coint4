@@ -488,17 +488,17 @@ def test_hygiene_seed_queues_orphans_zero_coverage_history(tmp_path: Path) -> No
     assert hygiene["orphaned"] == 1
     assert hygiene["zero_coverage_rejected"] == 1
     assert hygiene["covered_window_count"] == 0
-    assert hygiene["queues"][0]["orphan_reason"] == "zero_coverage_fail_closed"
+    assert hygiene["queues"][0]["orphan_reason"] == "ZERO_COVERAGE"
 
     queue_policy = json.loads((queue_dir / "queue_policy.json").read_text(encoding="utf-8"))
     assert queue_policy["coverage_verified"] is False
-    assert queue_policy["coverage_reason"] == "zero_coverage_fail_closed"
+    assert queue_policy["coverage_reason"] == "ZERO_COVERAGE"
     assert queue_policy["ready_buffer_excluded"] is True
 
     rows = autonomous_queue_seeder._load_queue_rows(queue_path)
     metadata = json.loads(rows[0]["metadata_json"])
     assert metadata["coverage_verified"] is False
-    assert metadata["coverage_reason"] == "zero_coverage_fail_closed"
+    assert metadata["coverage_reason"] == "ZERO_COVERAGE"
     assert metadata["ready_buffer_excluded"] is True
 
 
@@ -560,10 +560,10 @@ def test_assess_recent_seed_quality_detects_zero_coverage_streak(tmp_path: Path)
     run_index.write_text(
         "\n".join(
             [
-                "run_group,coverage_ratio,total_trades,total_pnl",
-                "autonomous_seed_20260306_120953,0,0,0",
-                "autonomous_seed_20260306_122359,0,0,0",
-                "autonomous_seed_20260306_123454,1,5,10",
+                "run_group,coverage_ratio,observed_test_days,total_trades,total_pairs_traded,total_pnl",
+                "autonomous_seed_20260306_120953,0,0,0,0,0",
+                "autonomous_seed_20260306_122359,0,0,0,0,0",
+                "autonomous_seed_20260306_123454,1,30,5,3,10",
             ]
         )
         + "\n",
@@ -595,9 +595,9 @@ def test_assess_recent_seed_quality_detects_zero_coverage_streak(tmp_path: Path)
     run_index.write_text(
         "\n".join(
             [
-                "run_group,coverage_ratio,total_trades,total_pnl",
-                "autonomous_seed_20260306_122359,0,0,0",
-                "autonomous_seed_20260306_123454,0,0,0",
+                "run_group,coverage_ratio,observed_test_days,total_trades,total_pairs_traded,total_pnl",
+                "autonomous_seed_20260306_122359,0,0,0,0,0",
+                "autonomous_seed_20260306_123454,0,0,0,0,0",
             ]
         )
         + "\n",
@@ -618,3 +618,106 @@ def test_assess_recent_seed_quality_detects_zero_coverage_streak(tmp_path: Path)
     assert quality["zero_coverage_seed_streak"] == 2
     assert quality["backlog_suppress"] is True
     assert quality["hard_block_recommended"] is True
+
+
+def test_load_search_blacklist_uses_micro_defaults_for_missing_caps(tmp_path: Path) -> None:
+    blacklist_path = tmp_path / "search_policy_blacklist.json"
+    blacklist_path.write_text(
+        json.dumps({"active": True, "stats": {"dominant_code": "MAX_VAR_MULTIPLIER_INVALID", "total_coded": 8}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    payload = autonomous_queue_seeder._load_search_blacklist(blacklist_path)
+
+    assert payload["active"] is True
+    assert payload["max_changed_keys_cap"] == 3
+    assert payload["dedupe_distance_floor"] == 0.04
+    assert payload["num_variants_cap"] == 48
+    assert payload["policy_scale"] == "micro"
+
+
+def test_prune_seed_queue_blocks_recent_zero_evidence_lineage_before_runnable(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "autonomous_seed_demo" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "valid,configs/valid_holdout.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    valid_cfg = app_root / "configs" / "valid_holdout.yaml"
+    valid_cfg.parent.mkdir(parents=True, exist_ok=True)
+    valid_cfg.write_text(
+        "metadata:\n  evo_hash: evo_a\n  lineage_uid: line_a\nwalk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-07-31\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+
+    stats = autonomous_queue_seeder._prune_seed_queue(
+        queue_path=queue_path,
+        app_root=app_root,
+        decision_payload={"primary_parent": {"run_group": "parent_rg"}},
+        run_index_groups={
+            "parent_rg": [
+                {
+                    "metrics_present": "True",
+                    "observed_test_days": "0",
+                    "coverage_ratio": "0",
+                    "total_trades": "",
+                    "total_pairs_traded": "",
+                }
+            ]
+        },
+        quarantine_by_group={},
+    )
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+
+    assert stats["rows_before"] == 1
+    assert stats["rows_after"] == 0
+    assert stats["block_reason"] == "ZERO_OBSERVED_TEST_DAYS"
+    assert stats["matched_run_groups"] == ["parent_rg"]
+    assert rows[0]["status"] == "blocked"
+    assert rows[0]["note"] == "ZERO_OBSERVED_TEST_DAYS"
+
+
+def test_prune_seed_queue_blocks_deterministic_quarantine_lineage_before_runnable(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "autonomous_seed_demo" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status",
+                "valid,configs/valid_holdout.yaml,planned",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    valid_cfg = app_root / "configs" / "valid_holdout.yaml"
+    valid_cfg.parent.mkdir(parents=True, exist_ok=True)
+    valid_cfg.write_text(
+        "metadata:\n  evo_hash: evo_a\n  lineage_uid: line_a\nwalk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-07-31\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+
+    stats = autonomous_queue_seeder._prune_seed_queue(
+        queue_path=queue_path,
+        app_root=app_root,
+        decision_payload={"primary_parent": {"run_group": "parent_rg"}},
+        run_index_groups={"parent_rg": []},
+        quarantine_by_group={"parent_rg": {"MAX_VAR_MULTIPLIER_INVALID": 3}},
+    )
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+
+    assert stats["rows_after"] == 0
+    assert stats["block_reason"] == "MAX_VAR_MULTIPLIER_INVALID"
+    assert stats["quarantine_counts"] == {"MAX_VAR_MULTIPLIER_INVALID": 3}
+    assert rows[0]["status"] == "blocked"
+    assert rows[0]["note"] == "MAX_VAR_MULTIPLIER_INVALID"

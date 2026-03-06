@@ -30,6 +30,14 @@ from _queue_status_contract import (
     normalize_queue_status,
     row_counts_executable,
 )
+from _search_quality_contract import (
+    CANONICAL_ZERO_EVIDENCE_REASONS,
+    DETERMINISTIC_QUARANTINE_CODES,
+    canonical_zero_evidence_reason,
+    has_positive_coverage_trade_evidence,
+    micro_broad_search_caps,
+    summarize_recent_zero_evidence,
+)
 
 
 def _parse_bool(value: str | bool, default: bool = False) -> bool:
@@ -475,6 +483,9 @@ def _prune_seed_queue(
     queue_path: Path,
     app_root: Path,
     lineage_uid: str = "",
+    decision_payload: dict[str, Any] | None = None,
+    run_index_groups: dict[str, list[dict[str, str]]] | None = None,
+    quarantine_by_group: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any]:
     rows = _load_queue_rows(queue_path)
     if not rows:
@@ -542,6 +553,14 @@ def _prune_seed_queue(
             block_reason = "dedupe_fail_closed"
         else:
             block_reason = "queue_pruned_empty"
+    lineage_feasibility = _assess_lineage_preseed_feasibility(
+        decision_payload=decision_payload,
+        run_index_groups=run_index_groups,
+        quarantine_by_group=quarantine_by_group,
+    )
+    if filtered_rows and not bool(lineage_feasibility.get("ok")):
+        block_reason = str(lineage_feasibility.get("reason") or "NO_RECENT_POSITIVE_COVERAGE_TRADE_EVIDENCE").strip()
+        filtered_rows = []
     if filtered_rows:
         _write_queue_rows(queue_path, filtered_rows)
     else:
@@ -561,6 +580,10 @@ def _prune_seed_queue(
         "missing_months": sorted(missing_months),
         "blocked_rows_written": int(blocked_rows_written),
         "block_reason": block_reason,
+        "lineage_hints": list(lineage_feasibility.get("lineage_hints", []) or []),
+        "matched_run_groups": list(lineage_feasibility.get("matched_run_groups", []) or []),
+        "lineage_recent_summary": dict(lineage_feasibility.get("recent_summary") or {}),
+        "quarantine_counts": dict(lineage_feasibility.get("quarantine_counts") or {}),
     }
 
 
@@ -579,10 +602,8 @@ def _recent_zero_yield_signal(rank_results_dir: Path, *, limit: int = 24) -> dic
             continue
         analyzed += 1
         details = str(payload.get("details") or "").strip()
-        coverage = float(payload.get("coverage") or 0.0)
-        observed_test_days = int(float(payload.get("observed_test_days") or 0))
-        total_trades = int(float(payload.get("total_trades") or 0))
-        if coverage <= 0.0 or observed_test_days <= 0 or total_trades <= 0:
+        zero_reason = canonical_zero_evidence_reason(payload)
+        if zero_reason in CANONICAL_ZERO_EVIDENCE_REASONS:
             zeroish += 1
         if details.startswith("RANK_OK_FALLBACK_STRICT_BINDING") or any(
             token in details for token in ("min_windows", "min_trades", "min_pairs", "coverage_below")
@@ -609,25 +630,153 @@ def _load_rank_result(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _dominant_zero_reason(rows: list[dict[str, str]], *, limit: int = 12) -> str:
+    summary = summarize_recent_zero_evidence(rows, limit=limit)
+    return str(summary.get("dominant_zero_reason") or "").strip()
+
+
+def _load_run_index_groups(run_index_path: Path, *, run_group_prefix: str = "") -> dict[str, list[dict[str, str]]]:
+    groups: dict[str, list[dict[str, str]]] = {}
+    if not run_index_path.exists():
+        return groups
+    try:
+        with run_index_path.open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                run_group = str(row.get("run_group") or "").strip()
+                if not run_group:
+                    continue
+                if run_group_prefix and not run_group.startswith(run_group_prefix):
+                    continue
+                groups.setdefault(run_group, []).append({k: (v or "").strip() for k, v in row.items()})
+    except Exception:
+        return {}
+    return groups
+
+
+def _decision_lineage_hints(decision_payload: dict[str, Any]) -> list[str]:
+    hints: list[str] = []
+
+    def _push(value: Any) -> None:
+        token = str(value or "").strip()
+        if token and token not in hints:
+            hints.append(token)
+
+    if not isinstance(decision_payload, dict):
+        return hints
+
+    for key in ("contains", "lineage_priority", "winner_proximate_tokens"):
+        for item in list(decision_payload.get(key, []) or []):
+            _push(item)
+
+    primary_parent = decision_payload.get("primary_parent", {})
+    if isinstance(primary_parent, dict):
+        _push(primary_parent.get("run_group"))
+        _push(primary_parent.get("lineage_uid"))
+
+    parent_resolution = decision_payload.get("parent_resolution", {})
+    if isinstance(parent_resolution, dict):
+        for key in ("winner_proximate_tokens", "preferred_any_contains", "contains", "lineage_priority"):
+            for item in list(parent_resolution.get(key, []) or []):
+                _push(item)
+        _push(parent_resolution.get("lineage_uid"))
+
+    parent_diversification = decision_payload.get("parent_diversification", {})
+    if isinstance(parent_diversification, dict):
+        for parent in list(parent_diversification.get("pool", []) or []):
+            if not isinstance(parent, dict):
+                continue
+            _push(parent.get("run_group"))
+            _push(parent.get("lineage_uid"))
+
+    return hints
+
+
+def _load_recent_quarantine_by_group(path: Path, *, limit: int = 200) -> dict[str, dict[str, int]]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    entries = payload.get("entries", []) if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        return {}
+    grouped: dict[str, dict[str, int]] = {}
+    for entry in entries[-max(1, int(limit)) :]:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get("queue") or "").strip()
+        code = str(entry.get("code") or "").strip().upper()
+        if not queue or not code:
+            continue
+        group = Path(queue).parent.name
+        counters = grouped.setdefault(group, {})
+        counters[code] = int(counters.get(code, 0) or 0) + 1
+    return grouped
+
+
+def _assess_lineage_preseed_feasibility(
+    *,
+    decision_payload: dict[str, Any] | None,
+    run_index_groups: dict[str, list[dict[str, str]]] | None,
+    quarantine_by_group: dict[str, dict[str, int]] | None,
+) -> dict[str, Any]:
+    hints = _decision_lineage_hints(decision_payload or {})
+    candidate_groups = set(run_index_groups or {})
+    candidate_groups.update(set(quarantine_by_group or {}))
+    matched_groups = [hint for hint in hints if hint in candidate_groups]
+    recent_rows: list[dict[str, str]] = []
+    for group in matched_groups:
+        recent_rows.extend(list((run_index_groups or {}).get(group) or []))
+
+    zero_summary = summarize_recent_zero_evidence(recent_rows, limit=12)
+    quarantine_counts: dict[str, int] = {}
+    for group in matched_groups:
+        for code, count in dict((quarantine_by_group or {}).get(group) or {}).items():
+            quarantine_counts[code] = int(quarantine_counts.get(code, 0) or 0) + int(count or 0)
+
+    quarantine_reason = ""
+    for code in DETERMINISTIC_QUARANTINE_CODES:
+        if int(quarantine_counts.get(code, 0) or 0) > 0:
+            quarantine_reason = code
+            break
+
+    if quarantine_reason:
+        return {
+            "ok": False,
+            "reason": quarantine_reason,
+            "lineage_hints": hints,
+            "matched_run_groups": matched_groups,
+            "recent_summary": zero_summary,
+            "quarantine_counts": quarantine_counts,
+        }
+
+    if matched_groups and not bool(zero_summary.get("has_positive_coverage_trade_evidence")):
+        return {
+            "ok": False,
+            "reason": str(zero_summary.get("dominant_zero_reason") or "NO_RECENT_POSITIVE_COVERAGE_TRADE_EVIDENCE"),
+            "lineage_hints": hints,
+            "matched_run_groups": matched_groups,
+            "recent_summary": zero_summary,
+            "quarantine_counts": quarantine_counts,
+        }
+
+    return {
+        "ok": True,
+        "reason": "",
+        "lineage_hints": hints,
+        "matched_run_groups": matched_groups,
+        "recent_summary": zero_summary,
+        "quarantine_counts": quarantine_counts,
+    }
+
+
 def _is_zero_coverage_seed_group(*, rows: list[dict[str, str]], rank_result: dict[str, Any]) -> bool:
     if not rows:
         return False
-    coverage_positive = False
-    trades_positive = False
-    pnl_nonzero = False
+    positive_coverage_trade = False
     for row in rows:
-        try:
-            coverage_positive = coverage_positive or float(row.get("coverage_ratio") or 0.0) > 0.0
-        except Exception:
-            pass
-        try:
-            trades_positive = trades_positive or float(row.get("total_trades") or 0.0) > 0.0
-        except Exception:
-            pass
-        try:
-            pnl_nonzero = pnl_nonzero or float(row.get("total_pnl") or 0.0) != 0.0
-        except Exception:
-            pass
+        positive_coverage_trade = positive_coverage_trade or has_positive_coverage_trade_evidence(row)
     strict_diag = rank_result.get("strict_diag", {}) if isinstance(rank_result, dict) else {}
     if not isinstance(strict_diag, dict):
         strict_diag = {}
@@ -635,7 +784,7 @@ def _is_zero_coverage_seed_group(*, rows: list[dict[str, str]], rank_result: dic
         variants_passing_all = int(float(strict_diag.get("variants_passing_all") or 0))
     except Exception:
         variants_passing_all = 0
-    return not coverage_positive and not trades_positive and not pnl_nonzero and variants_passing_all <= 0
+    return not positive_coverage_trade and variants_passing_all <= 0
 
 
 def _rank_result_has_zero_coverage_binding(rank_result: dict[str, Any]) -> bool:
@@ -765,18 +914,8 @@ def _hygiene_seed_queues(
     zero_coverage_rejected = 0
     covered_window_count = 0
     queue_results: list[dict[str, Any]] = []
-    run_index_groups: dict[str, list[dict[str, str]]] = {}
     run_index_path = aggregate_dir / "rollup" / "run_index.csv"
-    if run_index_path.exists():
-        try:
-            with run_index_path.open("r", encoding="utf-8", newline="") as handle:
-                for row in csv.DictReader(handle):
-                    run_group = str(row.get("run_group") or "").strip()
-                    if not run_group.startswith(f"{run_group_prefix}_"):
-                        continue
-                    run_index_groups.setdefault(run_group, []).append({k: (v or "").strip() for k, v in row.items()})
-        except Exception:
-            run_index_groups = {}
+    run_index_groups = _load_run_index_groups(run_index_path, run_group_prefix=f"{run_group_prefix}_")
     for queue_path in sorted(aggregate_dir.glob(f"{run_group_prefix}_*/run_queue.csv")):
         rows = _load_queue_rows(queue_path)
         legacy_reason = ""
@@ -799,6 +938,9 @@ def _hygiene_seed_queues(
                     coverage_verified=False,
                     coverage_reason=legacy_reason,
                     ready_buffer_excluded=True,
+                    seed_feasibility_status="blocked",
+                    seed_feasibility_reason=legacy_reason,
+                    lineage_positive_evidence=False,
                 )
                 _decorate_queue_metadata(
                     queue_path=queue_path,
@@ -808,6 +950,9 @@ def _hygiene_seed_queues(
                     coverage_verified=False,
                     coverage_reason=legacy_reason,
                     ready_buffer_excluded=True,
+                    seed_feasibility_status="blocked",
+                    seed_feasibility_reason=legacy_reason,
+                    lineage_positive_evidence=False,
                 )
                 _upsert_orphan_queue(
                     orphan_path=orphan_path,
@@ -848,16 +993,18 @@ def _hygiene_seed_queues(
         rows_after = int(prune_stats.get("rows_after", 0) or 0)
         queue_rel = _safe_rel(queue_path, app_root)
         run_group = queue_path.parent.name
+        group_rows = list(run_index_groups.get(run_group) or [])
         rank_result = _load_rank_result(queue_path.parent / "rank_result.json")
         zero_coverage_history = _is_zero_coverage_seed_group(
-            rows=list(run_index_groups.get(run_group) or []),
+            rows=group_rows,
             rank_result=rank_result,
         ) and _rank_result_has_zero_coverage_binding(rank_result)
         reason = ""
         if rows_after <= 0:
             reason = str(prune_stats.get("block_reason") or "queue_pruned_empty")
         elif zero_coverage_history:
-            reason = "zero_coverage_fail_closed"
+            dominant_zero_reason = _dominant_zero_reason(group_rows)
+            reason = dominant_zero_reason or "NO_RECENT_POSITIVE_COVERAGE_TRADE_EVIDENCE"
             zero_coverage_rejected += 1
         else:
             covered_window_count += 1
@@ -885,6 +1032,10 @@ def _hygiene_seed_queues(
                     },
                 )
         coverage_verified = bool(rows_after > 0) and not bool(reason)
+        lineage_recent_summary = dict(prune_stats.get("lineage_recent_summary") or {})
+        lineage_positive_evidence = bool(lineage_recent_summary.get("has_positive_coverage_trade_evidence"))
+        seed_feasibility_status = "blocked" if reason else "ok"
+        seed_feasibility_reason = str(reason or "").strip()
         queue_policy_path = _write_queue_policy_sidecar(
             queue_path=queue_path,
             app_root=app_root,
@@ -899,6 +1050,9 @@ def _hygiene_seed_queues(
             coverage_verified=coverage_verified,
             coverage_reason=str(reason or "coverage_verified"),
             ready_buffer_excluded=bool(reason),
+            seed_feasibility_status=seed_feasibility_status,
+            seed_feasibility_reason=seed_feasibility_reason,
+            lineage_positive_evidence=lineage_positive_evidence,
         )
         _decorate_queue_metadata(
             queue_path=queue_path,
@@ -908,6 +1062,9 @@ def _hygiene_seed_queues(
             coverage_verified=coverage_verified,
             coverage_reason=str(reason or "coverage_verified"),
             ready_buffer_excluded=bool(reason),
+            seed_feasibility_status=seed_feasibility_status,
+            seed_feasibility_reason=seed_feasibility_reason,
+            lineage_positive_evidence=lineage_positive_evidence,
         )
         queue_results.append(
             {
@@ -1028,6 +1185,9 @@ def _write_queue_policy_sidecar(
     coverage_verified: bool = True,
     coverage_reason: str = "",
     ready_buffer_excluded: bool = False,
+    seed_feasibility_status: str = "unknown",
+    seed_feasibility_reason: str = "",
+    lineage_positive_evidence: bool = False,
 ) -> Path:
     queue_dir = queue_path.parent
     sidecar_path = queue_dir / "queue_policy.json"
@@ -1086,6 +1246,9 @@ def _write_queue_policy_sidecar(
         "coverage_verified": bool(coverage_verified),
         "coverage_reason": str(coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")).strip(),
         "ready_buffer_excluded": bool(ready_buffer_excluded),
+        "seed_feasibility_status": str(seed_feasibility_status or "unknown").strip(),
+        "seed_feasibility_reason": str(seed_feasibility_reason or "").strip(),
+        "lineage_positive_evidence": bool(lineage_positive_evidence),
         **selector_evidence,
     }
     sidecar_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
@@ -1101,6 +1264,9 @@ def _decorate_queue_metadata(
     coverage_verified: bool = True,
     coverage_reason: str = "",
     ready_buffer_excluded: bool = False,
+    seed_feasibility_status: str = "unknown",
+    seed_feasibility_reason: str = "",
+    lineage_positive_evidence: bool = False,
 ) -> None:
     if not queue_path.exists():
         return
@@ -1142,6 +1308,9 @@ def _decorate_queue_metadata(
             coverage_reason or ("coverage_verified" if coverage_verified else "coverage_unverified")
         ).strip()
         meta["ready_buffer_excluded"] = bool(ready_buffer_excluded)
+        meta["seed_feasibility_status"] = str(seed_feasibility_status or "unknown").strip()
+        meta["seed_feasibility_reason"] = str(seed_feasibility_reason or "").strip()
+        meta["lineage_positive_evidence"] = bool(lineage_positive_evidence)
         for key, default_value in selector_evidence.items():
             if key in {"promotion_potential", "pre_rank_score"}:
                 try:
@@ -1169,6 +1338,7 @@ def _load_directive(path: Path) -> dict[str, Any]:
 
 
 def _load_impossibility_pruner(path: Path) -> dict[str, Any]:
+    micro_caps = micro_broad_search_caps()
     if not path.exists():
         return {"active": False, "reason": "missing"}
     try:
@@ -1213,15 +1383,12 @@ def _load_impossibility_pruner(path: Path) -> dict[str, Any]:
         "dominant_count": dominant_count,
         "total": total,
         "dominant_ratio": dominant_ratio,
-        # conservative defaults for impossible-config streaks
-        "max_changed_keys_cap": 2,
-        "dedupe_distance_floor": 0.02,
-        "num_variants_cap": 64,
-        "policy_scale": "micro",
+        **micro_caps,
     }
 
 
 def _load_search_blacklist(path: Path) -> dict[str, Any]:
+    micro_caps = micro_broad_search_caps()
     if not path.exists():
         return {"active": False, "reason": "missing"}
     try:
@@ -1245,10 +1412,10 @@ def _load_search_blacklist(path: Path) -> dict[str, Any]:
         "dominant_code": str(stats.get("dominant_code") or ""),
         "dominant_ratio": float(stats.get("dominant_ratio") or 0.0),
         "total": int(stats.get("total_coded") or 0),
-        "max_changed_keys_cap": int(caps.get("max_changed_keys_cap") or 4),
-        "dedupe_distance_floor": float(caps.get("dedupe_distance_floor") or 0.02),
-        "num_variants_cap": int(caps.get("num_variants_cap") or 64),
-        "policy_scale": str(caps.get("policy_scale") or "auto"),
+        "max_changed_keys_cap": int(caps.get("max_changed_keys_cap") or micro_caps["max_changed_keys_cap"]),
+        "dedupe_distance_floor": float(caps.get("dedupe_distance_floor") or micro_caps["dedupe_distance_floor"]),
+        "num_variants_cap": int(caps.get("num_variants_cap") or micro_caps["num_variants_cap"]),
+        "policy_scale": str(caps.get("policy_scale") or micro_caps["policy_scale"]),
         "blocked_evo_uids_count": int(len(list(payload.get("blocked_evo_uids", []) or []))),
     }
 
@@ -1997,6 +2164,10 @@ def main() -> int:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             run_group = f"{run_group_prefix}_{timestamp}"
             run_index_path = _resolve_under_root(str(args.run_index), app_root)
+            run_index_groups_all = _load_run_index_groups(run_index_path)
+            quarantine_by_group = _load_recent_quarantine_by_group(
+                aggregate_dir / ".autonomous" / "deterministic_quarantine.json"
+            )
             window_coverage = _assess_window_data_coverage(app_root / "data_downloaded", list(args.window or []))
             snapshot["window_coverage"] = window_coverage
             if not bool(window_coverage.get("ok")):
@@ -2075,6 +2246,7 @@ def main() -> int:
             effective_max_changed_keys = int(args.max_changed_keys)
             effective_dedupe_distance = float(args.dedupe_distance)
             effective_policy_scale = str(args.policy_scale)
+            micro_caps = micro_broad_search_caps()
             effective_repair_mode = bool(args.repair_mode)
             effective_repair_max_neighbors = max(1, int(args.repair_max_neighbors))
             effective_include_stress = bool(args.include_stress)
@@ -2161,25 +2333,25 @@ def main() -> int:
                 try:
                     effective_max_changed_keys = min(
                         int(effective_max_changed_keys),
-                        int(directive_pruner.get("max_changed_keys_cap", effective_max_changed_keys)),
+                        int(directive_pruner.get("max_changed_keys_cap", micro_caps["max_changed_keys_cap"])),
                     )
                 except Exception:
                     pass
                 try:
                     effective_dedupe_distance = max(
                         float(effective_dedupe_distance),
-                        float(directive_pruner.get("dedupe_distance_floor", effective_dedupe_distance)),
+                        float(directive_pruner.get("dedupe_distance_floor", micro_caps["dedupe_distance_floor"])),
                     )
                 except Exception:
                     pass
                 try:
                     effective_num_variants = min(
                         int(effective_num_variants),
-                        int(directive_pruner.get("num_variants_cap", effective_num_variants)),
+                        int(directive_pruner.get("num_variants_cap", micro_caps["num_variants_cap"])),
                     )
                 except Exception:
                     pass
-                pscale = str(directive_pruner.get("policy_scale", "")).strip()
+                pscale = str(directive_pruner.get("policy_scale", micro_caps["policy_scale"])).strip()
                 if pscale in {"auto", "micro", "macro"}:
                     effective_policy_scale = pscale
 
@@ -2844,11 +3016,16 @@ def main() -> int:
                 queue_path=queue_path,
                 app_root=app_root,
                 lineage_uid=_decision_lineage_uid(decision_payload),
+                decision_payload=decision_payload,
+                run_index_groups=run_index_groups_all,
+                quarantine_by_group=quarantine_by_group,
             )
             snapshot["queue_prune"] = dict(queue_prune)
             if int(queue_prune.get("rows_after", 0)) <= 0:
                 block_reason = str(queue_prune.get("block_reason") or "queue_pruned_empty")
                 queue_rel = _safe_rel(queue_path, app_root)
+                lineage_recent_summary = dict(queue_prune.get("lineage_recent_summary") or {})
+                lineage_positive_evidence = bool(lineage_recent_summary.get("has_positive_coverage_trade_evidence"))
                 queue_policy_path = _write_queue_policy_sidecar(
                     queue_path=queue_path,
                     app_root=app_root,
@@ -2863,6 +3040,9 @@ def main() -> int:
                     coverage_verified=False,
                     coverage_reason=block_reason,
                     ready_buffer_excluded=True,
+                    seed_feasibility_status="blocked",
+                    seed_feasibility_reason=block_reason,
+                    lineage_positive_evidence=lineage_positive_evidence,
                 )
                 _decorate_queue_metadata(
                     queue_path=queue_path,
@@ -2872,6 +3052,9 @@ def main() -> int:
                     coverage_verified=False,
                     coverage_reason=block_reason,
                     ready_buffer_excluded=True,
+                    seed_feasibility_status="blocked",
+                    seed_feasibility_reason=block_reason,
+                    lineage_positive_evidence=lineage_positive_evidence,
                 )
                 _upsert_orphan_queue(
                     orphan_path=orphan_path,
@@ -2917,6 +3100,11 @@ def main() -> int:
                 parent_diversity_depth=parent_diversity_depth,
                 confirm_replay_hints=confirm_replay_hints,
                 decision_payload=decision_payload,
+                seed_feasibility_status="ok",
+                seed_feasibility_reason="",
+                lineage_positive_evidence=bool(
+                    dict(queue_prune.get("lineage_recent_summary") or {}).get("has_positive_coverage_trade_evidence")
+                ),
             )
             _decorate_queue_metadata(
                 queue_path=queue_path,
@@ -2926,6 +3114,11 @@ def main() -> int:
                 coverage_verified=True,
                 coverage_reason="coverage_verified",
                 ready_buffer_excluded=False,
+                seed_feasibility_status="ok",
+                seed_feasibility_reason="",
+                lineage_positive_evidence=bool(
+                    dict(queue_prune.get("lineage_recent_summary") or {}).get("has_positive_coverage_trade_evidence")
+                ),
             )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(

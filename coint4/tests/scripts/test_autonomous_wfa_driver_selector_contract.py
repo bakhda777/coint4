@@ -12,6 +12,7 @@ from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "optimization" / "autonomous_wfa_driver.sh"
 FULLSPAN_CONTRACT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "optimization" / "fullspan_contract.py"
+SEARCH_QUALITY_CONTRACT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "optimization" / "_search_quality_contract.py"
 
 
 def _extract_embedded_python(function_name: str) -> str:
@@ -36,13 +37,19 @@ def _write_queue(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow(row)
 
 
-def test_find_candidate_prefers_planned_over_stalled_only_even_with_higher_urgency(tmp_path: Path) -> None:
-    app_root = tmp_path
-    (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
-    (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
-        FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"),
+def _prepare_opt_scripts(app_root: Path) -> None:
+    opt_dir = app_root / "scripts" / "optimization"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    (opt_dir / "fullspan_contract.py").write_text(FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    (opt_dir / "_search_quality_contract.py").write_text(
+        SEARCH_QUALITY_CONTRACT_PATH.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+
+
+def test_find_candidate_prefers_planned_over_stalled_only_even_with_higher_urgency(tmp_path: Path) -> None:
+    app_root = tmp_path
+    _prepare_opt_scripts(app_root)
 
     queue_root = app_root / "artifacts" / "wfa" / "aggregate"
     queue_exec = queue_root / "exec_group" / "run_queue.csv"
@@ -109,11 +116,7 @@ def test_find_candidate_prefers_planned_over_stalled_only_even_with_higher_urgen
 
 def test_find_candidate_penalizes_high_stalled_share_queue(tmp_path: Path) -> None:
     app_root = tmp_path
-    (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
-    (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
-        FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
+    _prepare_opt_scripts(app_root)
 
     queue_root = app_root / "artifacts" / "wfa" / "aggregate"
     queue_high = queue_root / "high_stalled_share" / "run_queue.csv"
@@ -426,11 +429,7 @@ def test_trigger_confirm_fastlane_shortlist_excludes_stress_rows(tmp_path: Path)
 
 def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -> None:
     app_root = tmp_path
-    (app_root / "scripts" / "optimization").mkdir(parents=True, exist_ok=True)
-    (app_root / "scripts" / "optimization" / "fullspan_contract.py").write_text(
-        FULLSPAN_CONTRACT_PATH.read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
+    _prepare_opt_scripts(app_root)
 
     queue_root = app_root / "artifacts" / "wfa" / "aggregate"
     cold_queue = queue_root / "cold_group" / "run_queue.csv"
@@ -517,6 +516,81 @@ def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -
     assert pool_rows
     assert all(row["queue"] != str(cold_queue.relative_to(app_root)) for row in pool_rows)
     assert any(row["queue"] == str(hot_queue.relative_to(app_root)) for row in pool_rows)
+
+
+def test_find_candidate_skips_fail_closed_queue_state(tmp_path: Path) -> None:
+    app_root = tmp_path
+    _prepare_opt_scripts(app_root)
+
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    blocked_queue = queue_root / "blocked_group" / "run_queue.csv"
+    open_queue = queue_root / "open_group" / "run_queue.csv"
+    fullspan_state = app_root / "fullspan_state.json"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "blocked.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    (app_root / "configs" / "open.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    _write_queue(
+        blocked_queue,
+        [
+            {
+                "config_path": "configs/blocked.yaml",
+                "results_dir": "artifacts/wfa/runs/blocked_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    _write_queue(
+        open_queue,
+        [
+            {
+                "config_path": "configs/open.yaml",
+                "results_dir": "artifacts/wfa/runs/open_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+
+    fullspan_state.write_text(
+        json.dumps(
+            {
+                "queues": {
+                    str(blocked_queue.relative_to(app_root)): {
+                        "promotion_verdict": "ANALYZE",
+                        "cutover_permission": "FAIL_CLOSED",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    out_csv = app_root / "candidate.csv"
+    code = _extract_embedded_python("find_candidate") + "\nemit_scores()\n"
+    _run_embedded_python(
+        code,
+        [
+            str(queue_root),
+            str(out_csv),
+            "",
+            "",
+            "8",
+            str(fullspan_state),
+            "0.70",
+            "2",
+            "2",
+            "0.20",
+        ],
+        cwd=app_root,
+    )
+
+    with out_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert rows
+    assert rows[0]["queue"] == str(open_queue.relative_to(app_root))
 
 
 def test_ready_buffer_policy_hash_and_replay_fastlane_hooks_contract() -> None:

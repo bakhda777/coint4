@@ -75,3 +75,25 @@ def test_materialize_cold_fail_index_backfills_rejects(tmp_path: Path) -> None:
     assert summary["added"] == 1
     assert payload["entries"][0]["queue"] == "artifacts/wfa/aggregate/q1/run_queue.csv"
     assert payload["entries"][0]["gate_reason"] == "METRICS_MISSING"
+
+
+def test_build_directive_preserves_zero_coverage_reasons_and_micro_caps() -> None:
+    queues = {
+        "artifacts/wfa/aggregate/q1/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "ZERO_COVERAGE",
+            "strict_gate_reason": "",
+        }
+    }
+
+    directive = module.build_directive(queues, yield_state={})
+
+    assert directive["dominant_reason"] == "ZERO_COVERAGE"
+    assert directive["mode"] == "stability_focus"
+    assert directive["max_changed_keys"] == 3
+    assert directive["dedupe_distance"] == 0.04
+    assert directive["impossibility_pruner"]["reason"] == "ZERO_COVERAGE"
+    assert directive["impossibility_pruner"]["max_changed_keys_cap"] == 3
+    assert directive["impossibility_pruner"]["dedupe_distance_floor"] == 0.04
+    assert directive["impossibility_pruner"]["num_variants_cap"] == 48
+    assert directive["impossibility_pruner"]["policy_scale"] == "micro"
