@@ -225,7 +225,7 @@ def test_patch_ast_topup_fills_target_variants(tmp_path: Path, monkeypatch) -> N
     assert queue_path.exists()
     with queue_path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert len(rows) == 4  # 4 variants * holdout-only for one OOS window
+    assert len(rows) == 8  # 4 variants * paired holdout+stress for one OOS window
 
     decisions = sorted(decision_dir.glob("*.json"))
     assert decisions

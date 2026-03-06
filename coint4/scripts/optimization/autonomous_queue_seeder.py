@@ -638,6 +638,47 @@ def _entry_matches_controller(entry: dict[str, Any], controller_group: str) -> b
     return True
 
 
+def _derive_planner_focus(
+    *,
+    user_contains: list[str],
+    directive_contains: list[str],
+    directive_winner_contains: list[str],
+    yield_governor: dict[str, Any],
+    controller_group: str,
+) -> dict[str, Any]:
+    winner_contains = _merge_unique(
+        list(directive_winner_contains),
+        _to_tokens((yield_governor.get("winner_proximate") or {}).get("contains", [])),
+    )
+    preferred_any = _merge_unique(
+        list(winner_contains),
+        _merge_unique(
+            list(directive_contains),
+            list(yield_governor.get("preferred_contains", []) or []),
+        ),
+    )
+    generic_contains = list(user_contains)
+    anchor_source = "user_contains"
+    if not generic_contains:
+        if winner_contains:
+            generic_contains = [winner_contains[0]]
+            anchor_source = "winner_proximate_anchor"
+        elif preferred_any:
+            generic_contains = [preferred_any[0]]
+            anchor_source = "preferred_anchor"
+        elif str(controller_group or "").strip():
+            generic_contains = [str(controller_group).strip()]
+            anchor_source = "controller_group_fallback"
+        else:
+            anchor_source = "empty"
+    return {
+        "generic_contains": generic_contains,
+        "winner_proximate_tokens": winner_contains,
+        "preferred_any_contains": preferred_any,
+        "anchor_source": anchor_source,
+    }
+
+
 def _extract_lineage_tokens(entry: dict[str, Any]) -> list[str]:
     out: list[str] = []
     for key in (
@@ -658,7 +699,7 @@ def _extract_lineage_tokens(entry: dict[str, Any]) -> list[str]:
 
 
 def _detect_supported_planner_args(*, python_bin: str, app_root: Path) -> set[str]:
-    wanted = {"--repair-mode", "--repair-max-neighbors", "--exclude-knob"}
+    wanted = {"--repair-mode", "--repair-max-neighbors", "--exclude-knob", "--winner-proximate-token"}
     cmd = [
         str(Path(str(python_bin)).expanduser()),
         "scripts/optimization/evolve_next_batch.py",
@@ -832,17 +873,20 @@ def main() -> int:
             if not isinstance(hard_fail_risk_policy, dict):
                 hard_fail_risk_policy = {}
 
-            contains = [token.strip() for token in list(args.contains or []) if token.strip()]
             directive_contains = [str(token).strip() for token in list(directive.get("contains", []) or []) if str(token).strip()]
-            contains = _merge_unique(directive_contains, contains)
             directive_winner = directive.get("winner_proximate", {})
             if not isinstance(directive_winner, dict):
                 directive_winner = {}
-            contains = _merge_unique(_to_tokens(directive_winner.get("contains", [])), contains)
-            contains = _merge_unique(_to_tokens((yield_governor.get("winner_proximate", {}) or {}).get("contains", [])), contains)
-            contains = _merge_unique(list(yield_governor.get("preferred_contains", []) or []), contains)
-            if not contains:
-                contains = [controller_group]
+            planner_focus = _derive_planner_focus(
+                user_contains=[token.strip() for token in list(args.contains or []) if token.strip()],
+                directive_contains=directive_contains,
+                directive_winner_contains=_to_tokens(directive_winner.get("contains", [])),
+                yield_governor=yield_governor,
+                controller_group=controller_group,
+            )
+            contains = list(planner_focus["generic_contains"])
+            winner_proximate_tokens = list(planner_focus["winner_proximate_tokens"])
+            preferred_any_contains = list(planner_focus["preferred_any_contains"])
 
             effective_num_variants = int(args.num_variants)
             effective_num_variants_floor = max(1, int(args.num_variants_floor))
@@ -1061,8 +1105,16 @@ def main() -> int:
                     surrogate_exclude_knobs = _merge_unique(surrogate_exclude_knobs, _to_tokens(conservative_knobs.get(key)))
 
             contains_before_surrogate = list(contains)
+            winner_tokens_before_surrogate = list(winner_proximate_tokens)
+            preferred_any_before_surrogate = list(preferred_any_contains)
             if surrogate_reject_lineages:
                 contains = [token for token in contains if token not in set(surrogate_reject_lineages)]
+                winner_proximate_tokens = [
+                    token for token in winner_proximate_tokens if token not in set(surrogate_reject_lineages)
+                ]
+                preferred_any_contains = [
+                    token for token in preferred_any_contains if token not in set(surrogate_reject_lineages)
+                ]
                 if not contains:
                     if controller_group and controller_group not in set(surrogate_reject_lineages):
                         contains = [controller_group]
@@ -1091,6 +1143,9 @@ def main() -> int:
                 "mode": str(directive.get("mode", "")),
                 "dominant_reason": str(directive.get("dominant_reason", "")),
                 "contains": contains,
+                "winner_proximate_tokens": winner_proximate_tokens,
+                "preferred_any_contains": preferred_any_contains,
+                "focus_anchor_source": str(planner_focus.get("anchor_source") or ""),
                 "policy_scale": effective_policy_scale,
                 "num_variants": effective_num_variants,
                 "num_variants_floor": effective_num_variants_floor,
@@ -1139,6 +1194,10 @@ def main() -> int:
                 "reject_lineages": surrogate_reject_lineages[:64],
                 "reject_reasons": surrogate_reject_reasons[:16],
                 "refine_reasons": surrogate_refine_reasons[:16],
+                "winner_tokens_before": winner_tokens_before_surrogate,
+                "winner_tokens_after": winner_proximate_tokens,
+                "preferred_any_before": preferred_any_before_surrogate,
+                "preferred_any_after": preferred_any_contains,
                 "contains_before": contains_before_surrogate,
                 "contains_after": contains,
                 "repair_mode_effective": bool(effective_repair_mode),
@@ -1178,6 +1237,8 @@ def main() -> int:
                 requested_planner_args.extend(["--repair-mode", "--repair-max-neighbors"])
             if effective_exclude_knobs:
                 requested_planner_args.append("--exclude-knob")
+            if winner_proximate_tokens:
+                requested_planner_args.append("--winner-proximate-token")
             snapshot["planner_arg_support"] = {
                 "supported": sorted(supported_planner_args),
                 "requested": requested_planner_args,
@@ -1218,6 +1279,8 @@ def main() -> int:
                 ]
                 for token in contains:
                     cmd.extend(["--contains", token])
+                for token in winner_proximate_tokens:
+                    cmd.extend(["--winner-proximate-token", token])
                 for raw in args.window:
                     if not raw:
                         continue
@@ -1387,6 +1450,9 @@ def main() -> int:
                 return 1
 
             queue_path = decision["queue_path"]
+            decision_payload = decision.get("decision_payload", {})
+            if not isinstance(decision_payload, dict):
+                decision_payload = {}
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(
                 {
@@ -1397,6 +1463,7 @@ def main() -> int:
                     "decision_path": _safe_rel(decision["decision_path"], app_root),
                     "queue_path": _safe_rel(queue_path, app_root),
                     "queue_rows_generated": len(queue_payload),
+                    "parent_resolution": dict(decision_payload.get("parent_resolution") or {}),
                     "reason": None,
                 }
             )

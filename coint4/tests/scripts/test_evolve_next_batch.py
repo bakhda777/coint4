@@ -57,6 +57,53 @@ def _write_run_index(path: Path, *, cfg_path: Path, run_group: str) -> None:
         )
 
 
+def _append_run_index_row(
+    path: Path,
+    *,
+    cfg_path: Path,
+    run_group: str,
+    variant: str,
+    sharpe: str = "1.4",
+) -> None:
+    base_id = f"{run_group}_{variant}_oos20220101_20221231"
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "run_id",
+                "run_group",
+                "config_path",
+                "results_dir",
+                "status",
+                "metrics_present",
+                "sharpe_ratio_abs",
+                "max_drawdown_on_equity",
+                "total_trades",
+                "total_pairs_traded",
+                "wf_zero_pair_steps_pct",
+                "tail_loss_worst_pair_share",
+                "tail_loss_worst_period_share",
+            ],
+        )
+        writer.writerow(
+            {
+                "run_id": f"holdout_{base_id}",
+                "run_group": run_group,
+                "config_path": str(cfg_path),
+                "results_dir": f"artifacts/wfa/runs/{run_group}/holdout_{base_id}",
+                "status": "completed",
+                "metrics_present": "true",
+                "sharpe_ratio_abs": sharpe,
+                "max_drawdown_on_equity": "-0.08",
+                "total_trades": "260",
+                "total_pairs_traded": "32",
+                "wf_zero_pair_steps_pct": "0.01",
+                "tail_loss_worst_pair_share": "0.20",
+                "tail_loss_worst_period_share": "0.25",
+            }
+        )
+
+
 def _write_base_config(path: Path) -> None:
     path.write_text(
         "\n".join(
@@ -186,6 +233,141 @@ def test_evolve_next_batch_writes_queue_and_decision(tmp_path: Path) -> None:
     assert payload["lineage"]["unique_uids"] >= 1
     assert payload["operators"][0]["kind"] in {"crossover_uniform_v1", "coordinate_sweep_v1"}
     assert state_path.exists()
+
+
+def test_evolve_next_batch_prefers_winner_parent_when_contains_disjoint_tokens(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_winner")
+    base_cfg = tmp_path / "base.yaml"
+    preferred_cfg = tmp_path / "preferred.yaml"
+    _write_base_config(base_cfg)
+    _write_base_config(preferred_cfg)
+    preferred_cfg.write_text(
+        preferred_cfg.read_text(encoding="utf-8").replace("max_active_positions: 16", "max_active_positions: 11"),
+        encoding="utf-8",
+    )
+    run_index = tmp_path / "run_index.csv"
+    _write_run_index(run_index, cfg_path=base_cfg, run_group="yield_rg")
+    _append_run_index_row(run_index, cfg_path=preferred_cfg, run_group="strict_rg", variant="seed", sharpe="2.1")
+
+    queue_root = tmp_path / "queue"
+    configs_root = tmp_path / "configs"
+    runs_root = tmp_path / "runs"
+    decision_dir = tmp_path / "decisions"
+    rc = module.main(
+        [
+            "--base-config",
+            str(base_cfg),
+            "--controller-group",
+            "ctrl_pref",
+            "--run-group",
+            "rg_pref_next",
+            "--run-index",
+            str(run_index),
+            "--contains",
+            "strict_rg",
+            "--contains",
+            "yield_rg",
+            "--winner-proximate-token",
+            "strict_rg",
+            "--winner-proximate-token",
+            "yield_rg",
+            "--num-variants",
+            "2",
+            "--dedupe-distance",
+            "0.0",
+            "--min-windows",
+            "1",
+            "--window",
+            "2022-01-01,2022-12-31",
+            "--queue-dir",
+            str(queue_root),
+            "--configs-dir",
+            str(configs_root),
+            "--runs-dir",
+            str(runs_root),
+            "--decision-dir",
+            str(decision_dir),
+        ]
+    )
+    assert rc == 0
+
+    decisions = sorted(decision_dir.glob("*.json"))
+    payload = json.loads(decisions[-1].read_text(encoding="utf-8"))
+    parent_resolution = payload["parent_resolution"]
+    assert parent_resolution["winner_proximate_requested"] is True
+    assert parent_resolution["winner_proximate_resolved"] is True
+    assert parent_resolution["preferred_parent_source"] == "winner_proximate_any_match"
+    assert payload["base_config_path"] == str(base_cfg)
+    assert payload["notes_md"].startswith("failure_mode=")
+    search_space = (queue_root / "rg_pref_next" / "search_space.md").read_text(encoding="utf-8")
+    assert "- parent_config: `" + str(preferred_cfg) + "`" in search_space
+    assert "- winner_proximate_requested: `True`" in search_space
+    assert "- winner_proximate_resolved: `True`" in search_space
+    assert "- preferred_parent_source: `winner_proximate_any_match`" in search_space
+    assert "- failure_mode: `balanced`" in search_space
+
+
+def test_evolve_next_batch_records_winner_fallback_reason_when_unresolved(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_winner_fallback")
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
+    run_index = tmp_path / "run_index.csv"
+    _write_run_index(run_index, cfg_path=base_cfg, run_group="other_rg")
+
+    queue_root = tmp_path / "queue"
+    configs_root = tmp_path / "configs"
+    runs_root = tmp_path / "runs"
+    decision_dir = tmp_path / "decisions"
+    rc = module.main(
+        [
+            "--base-config",
+            str(base_cfg),
+            "--controller-group",
+            "ctrl_fallback",
+            "--run-group",
+            "rg_fallback_next",
+            "--run-index",
+            str(run_index),
+            "--contains",
+            "strict_rg",
+            "--contains",
+            "yield_rg",
+            "--winner-proximate-token",
+            "strict_rg",
+            "--winner-proximate-token",
+            "yield_rg",
+            "--num-variants",
+            "2",
+            "--dedupe-distance",
+            "0.0",
+            "--min-windows",
+            "1",
+            "--window",
+            "2022-01-01,2022-12-31",
+            "--queue-dir",
+            str(queue_root),
+            "--configs-dir",
+            str(configs_root),
+            "--runs-dir",
+            str(runs_root),
+            "--decision-dir",
+            str(decision_dir),
+        ]
+    )
+    assert rc == 0
+
+    decisions = sorted(decision_dir.glob("*.json"))
+    payload = json.loads(decisions[-1].read_text(encoding="utf-8"))
+    parent_resolution = payload["parent_resolution"]
+    assert parent_resolution["winner_proximate_requested"] is True
+    assert parent_resolution["winner_proximate_resolved"] is False
+    assert parent_resolution["winner_proximate_fallback_reason"] == "no_matching_rows_for_any_winner_proximate_token"
+    assert parent_resolution["preferred_parent_source"] == "base_config_fallback"
+    search_space = (queue_root / "rg_fallback_next" / "search_space.md").read_text(encoding="utf-8")
+    assert "- parent_config: `" + str(base_cfg) + "`" in search_space
+    assert "- winner_proximate_resolved: `False`" in search_space
+    assert "- winner_proximate_fallback_reason: `no_matching_rows_for_any_winner_proximate_token`" in search_space
+    assert "- failure_mode: `cold_start`" in search_space
 
 
 def test_invalid_firewall_blocks_known_invalid_before_materialization(tmp_path: Path) -> None:

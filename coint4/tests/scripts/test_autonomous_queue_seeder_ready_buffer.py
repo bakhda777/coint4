@@ -128,3 +128,21 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["preferred_contains"] == ["rg_fast", "rg_broad"]
     assert state["winner_proximate"]["contains"] == ["rg_fast"]
     assert state["lane_weights"]["winner_proximate"] == 40
+
+
+def test_derive_planner_focus_separates_winner_tokens_from_generic_anchor() -> None:
+    focus = autonomous_queue_seeder._derive_planner_focus(
+        user_contains=[],
+        directive_contains=["strict_rg", "yield_rg"],
+        directive_winner_contains=["strict_rg"],
+        yield_governor={
+            "preferred_contains": ["yield_rg", "broad_rg"],
+            "winner_proximate": {"contains": ["strict_rg", "strict_rg_alt"]},
+        },
+        controller_group="autonomous_queue_seeder",
+    )
+
+    assert focus["generic_contains"] == ["strict_rg"]
+    assert focus["winner_proximate_tokens"] == ["strict_rg", "strict_rg_alt"]
+    assert focus["preferred_any_contains"] == ["strict_rg", "strict_rg_alt", "yield_rg", "broad_rg"]
+    assert focus["anchor_source"] == "winner_proximate_anchor"

@@ -131,6 +131,17 @@ class LlmPolicyPlan:
     payload: dict[str, Any] | None
 
 
+@dataclass(frozen=True, slots=True)
+class ParentResolution:
+    diagnostics: tuple[VariantDiagnostics, ...]
+    top_diag: VariantDiagnostics | None
+    winner_proximate_requested: bool
+    winner_proximate_tokens: tuple[str, ...]
+    winner_proximate_resolved: bool
+    preferred_parent_source: str
+    winner_proximate_fallback_reason: str
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -497,6 +508,64 @@ def _collect_seen_genomes(
         if len(candidates) >= max_items:
             break
     return candidates
+
+
+def _resolve_parent_diagnostics(
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    contains: Sequence[str],
+    winner_proximate_tokens: Sequence[str],
+    include_noncompleted: bool,
+) -> ParentResolution:
+    preferred_tokens = tuple(dict.fromkeys(str(token).strip() for token in winner_proximate_tokens if str(token).strip()))
+    generic_diagnostics = tuple(
+        build_variant_diagnostics(
+            rows,
+            contains=contains,
+            contains_mode="all",
+            include_noncompleted=include_noncompleted,
+        )
+    )
+    generic_top = generic_diagnostics[0] if generic_diagnostics else None
+    if not preferred_tokens:
+        return ParentResolution(
+            diagnostics=generic_diagnostics,
+            top_diag=generic_top,
+            winner_proximate_requested=False,
+            winner_proximate_tokens=(),
+            winner_proximate_resolved=False,
+            preferred_parent_source="generic_contains" if generic_top else "base_config",
+            winner_proximate_fallback_reason="",
+        )
+
+    preferred_diagnostics = tuple(
+        build_variant_diagnostics(
+            rows,
+            contains=preferred_tokens,
+            contains_mode="any",
+            include_noncompleted=include_noncompleted,
+        )
+    )
+    preferred_top = preferred_diagnostics[0] if preferred_diagnostics else None
+    if preferred_top is not None:
+        return ParentResolution(
+            diagnostics=preferred_diagnostics,
+            top_diag=preferred_top,
+            winner_proximate_requested=True,
+            winner_proximate_tokens=preferred_tokens,
+            winner_proximate_resolved=True,
+            preferred_parent_source="winner_proximate_any_match",
+            winner_proximate_fallback_reason="",
+        )
+    return ParentResolution(
+        diagnostics=generic_diagnostics,
+        top_diag=generic_top,
+        winner_proximate_requested=True,
+        winner_proximate_tokens=preferred_tokens,
+        winner_proximate_resolved=False,
+        preferred_parent_source="generic_contains_fallback" if generic_top else "base_config_fallback",
+        winner_proximate_fallback_reason="no_matching_rows_for_any_winner_proximate_token",
+    )
 
 
 def _load_patch_zoo_from_decisions(decisions_dir: Path, *, max_items: int = 200) -> list[dict[str, Any]]:
@@ -2791,6 +2860,7 @@ def _render_search_space_md(
     repair_max_neighbors: int,
     exclude_knobs: Sequence[str],
     repair_summary: Mapping[str, int],
+    parent_resolution: ParentResolution,
 ) -> str:
     lines = [
         f"# Evolution search space: `{run_group}`",
@@ -2798,6 +2868,11 @@ def _render_search_space_md(
         f"- controller_group: `{controller_group}`",
         f"- base_config: `{base_config_rel}`",
         f"- parent_config: `{parent_config_rel}`",
+        f"- winner_proximate_requested: `{parent_resolution.winner_proximate_requested}`",
+        f"- winner_proximate_resolved: `{parent_resolution.winner_proximate_resolved}`",
+        f"- preferred_parent_source: `{parent_resolution.preferred_parent_source}`",
+        f"- winner_proximate_tokens: `{','.join(parent_resolution.winner_proximate_tokens) or '-'}`",
+        f"- winner_proximate_fallback_reason: `{parent_resolution.winner_proximate_fallback_reason or '-'}`",
         f"- operator: `{operator_plan.operator_kind}`",
         f"- budget: `{operator_plan.budget}`",
         f"- failure_mode: `{failure.failure_mode}`",
@@ -2871,6 +2946,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="run_index filter token (repeatable). Defaults to --controller-group when omitted.",
+    )
+    parser.add_argument(
+        "--winner-proximate-token",
+        action="append",
+        default=[],
+        help="Preferred lineage/run_group token for explicit winner-proximate parent resolution (OR semantics, repeatable).",
     )
     parser.add_argument("--window", action="append", default=[], help="OOS window format: YYYY-MM-DD,YYYY-MM-DD (repeatable).")
     parser.add_argument(
@@ -3005,6 +3086,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     contains = [str(token).strip() for token in list(args.contains or []) if str(token).strip()]
     if not contains:
         contains = [str(args.controller_group).strip()]
+    winner_proximate_tokens = [
+        str(token).strip() for token in list(args.winner_proximate_token or []) if str(token).strip()
+    ]
 
     run_group = str(args.run_group or "").strip()
     controller_group = str(args.controller_group or "").strip()
@@ -3014,8 +3098,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("empty --controller-group")
 
     rows = _read_csv_rows(run_index_path)
-    diagnostics = build_variant_diagnostics(rows, contains=contains, include_noncompleted=bool(args.include_noncompleted))
-    top_diag = diagnostics[0] if diagnostics else None
+    parent_resolution = _resolve_parent_diagnostics(
+        rows=rows,
+        contains=contains,
+        winner_proximate_tokens=winner_proximate_tokens,
+        include_noncompleted=bool(args.include_noncompleted),
+    )
+    diagnostics = list(parent_resolution.diagnostics)
+    top_diag = parent_resolution.top_diag
 
     thresholds = FailureThresholds(
         min_windows=int(args.min_windows),
@@ -3410,6 +3500,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         repair_max_neighbors=int(args.repair_max_neighbors),
         exclude_knobs=sorted(exclude_knobs),
         repair_summary=repair_summary,
+        parent_resolution=parent_resolution,
     )
 
     decision_payload = {
@@ -3473,6 +3564,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "payload": llm_policy.payload,
         },
         "policy_scale": str(args.policy_scale),
+        "parent_resolution": {
+            "winner_proximate_requested": parent_resolution.winner_proximate_requested,
+            "winner_proximate_tokens": list(parent_resolution.winner_proximate_tokens),
+            "winner_proximate_resolved": parent_resolution.winner_proximate_resolved,
+            "preferred_parent_source": parent_resolution.preferred_parent_source,
+            "winner_proximate_fallback_reason": parent_resolution.winner_proximate_fallback_reason,
+        },
         "repair": {
             "mode": str(args.repair_mode),
             "max_neighbors": int(args.repair_max_neighbors),
@@ -3516,6 +3614,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "llm_used": llm_policy.used,
             "llm_source": llm_policy.source,
             "queue_path": _relative_to_root(queue_path, root=app_root),
+            "parent_resolution": {
+                "winner_proximate_requested": parent_resolution.winner_proximate_requested,
+                "winner_proximate_resolved": parent_resolution.winner_proximate_resolved,
+                "preferred_parent_source": parent_resolution.preferred_parent_source,
+                "winner_proximate_fallback_reason": parent_resolution.winner_proximate_fallback_reason,
+            },
             "repair_mode": str(args.repair_mode),
             "repair_summary": dict(repair_summary),
             "invalid_firewall_summary": dict(invalid_firewall_summary),
@@ -3541,6 +3645,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"[dry-run] ir_mode={args.ir_mode}")
         print(f"[dry-run] failure_mode={failure.failure_mode}")
         print(f"[dry-run] triggers={' | '.join(failure.triggers)}")
+        print(
+            "[dry-run] parent_resolution="
+            + json.dumps(
+                {
+                    "winner_proximate_requested": parent_resolution.winner_proximate_requested,
+                    "winner_proximate_tokens": list(parent_resolution.winner_proximate_tokens),
+                    "winner_proximate_resolved": parent_resolution.winner_proximate_resolved,
+                    "preferred_parent_source": parent_resolution.preferred_parent_source,
+                    "winner_proximate_fallback_reason": parent_resolution.winner_proximate_fallback_reason,
+                },
+                ensure_ascii=False,
+            )
+        )
         print(f"[dry-run] policy_scale={args.policy_scale}")
         print(f"[dry-run] repair_mode={args.repair_mode} max_neighbors={int(args.repair_max_neighbors)} exclude={sorted(exclude_knobs)}")
         print(f"[dry-run] repair_summary={json.dumps(repair_summary, ensure_ascii=False)}")

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
 FailureMode = Literal["dd", "trades", "zero_pair", "tail", "balanced", "cold_start"]
+ContainsMatchMode = Literal["all", "any"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +182,7 @@ def build_variant_diagnostics(
     rows: Sequence[Mapping[str, Any]],
     *,
     contains: Sequence[str],
+    contains_mode: ContainsMatchMode = "all",
     include_noncompleted: bool,
 ) -> list[VariantDiagnostics]:
     entries: list[_Entry] = []
@@ -198,7 +200,7 @@ def build_variant_diagnostics(
                 str(row.get("results_dir") or "").strip(),
             )
         )
-        if contains and not _matches_all(meta, contains):
+        if contains and not _matches(meta, contains, mode=contains_mode):
             continue
         entries.append(
             _Entry(
@@ -398,6 +400,21 @@ def _matches_all(text: str, needles: Iterable[str]) -> bool:
         if token and token not in hay:
             return False
     return True
+
+
+def _matches_any(text: str, needles: Iterable[str]) -> bool:
+    hay = str(text or "").lower()
+    for needle in needles:
+        token = str(needle or "").strip().lower()
+        if token and token in hay:
+            return True
+    return False
+
+
+def _matches(text: str, needles: Iterable[str], *, mode: ContainsMatchMode) -> bool:
+    if str(mode).strip().lower() == "any":
+        return _matches_any(text, needles)
+    return _matches_all(text, needles)
 
 
 def _to_float(value: Any) -> float | None:
