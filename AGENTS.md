@@ -94,6 +94,8 @@ Top-level:
 ## Артефакты и Git
 - Не коммитить тяжёлые артефакты из `coint4/artifacts/wfa/runs/` (equity curves, PNG, trade stats и т.п.).
 - В репозитории фиксируем: `coint4/configs/`, очереди `coint4/artifacts/wfa/aggregate/`, rollup `coint4/artifacts/wfa/aggregate/rollup/`, и `docs/`.
+- Каноническая опубликованная ветка на GitHub: `main`. Текущая рабочая версия и все последующие завершённые версии должны быть доведены до `origin/main`.
+- Ветки `feature/*`, `session/*`, `ralph-*` использовать только как временные рабочие. После завершения изменений их нужно fast-forward/merge в локальный `main` и пушить в `origin/main`; такие ветки не считаются канонической точкой публикации.
 
 ## Безопасность
 - Никаких ключей/токенов в репозитории. `SERVSPACE_API_KEY`, `BYBIT_API_KEY`, `BYBIT_API_SECRET` задавать через env или локальные `.env` (не коммитить).
