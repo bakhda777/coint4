@@ -686,7 +686,7 @@ def main() -> int:
         run_index_path=run_index_path,
         fullspan_state_path=fullspan_state_path,
         recent_queue_limit=200,
-        hard_block_active=parse_bool(existing_yield_state.get("hard_block_active"), False),
+        hard_block_active=parse_bool(existing_yield_state.get("hard_block_active")),
         hard_block_reason=str(existing_yield_state.get("hard_block_reason") or ""),
         existing_state=existing_yield_state,
     )
@@ -696,10 +696,6 @@ def main() -> int:
         "hard_block_until_epoch",
         "zero_coverage_seed_streak",
         "zero_coverage_seed_streak_reason",
-        "controlled_recovery_active",
-        "controlled_recovery_reason",
-        "controlled_recovery_attempts_remaining",
-        "controlled_recovery_variants_cap",
     ):
         if key in existing_yield_state:
             yield_state[key] = existing_yield_state[key]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -104,3 +105,92 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["planner-policy-inputs"]["search_quality"]["winner_proximate_positive_contains"] == ["strict_rg"]
     assert payload["planner-policy-inputs"]["search_quality"]["controlled_recovery_active"] is True
     assert payload["planner-policy-inputs"] == payload["planner_policy_inputs"]
+
+
+def test_rearm_controlled_recovery_if_eligible_updates_state(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
+                "controlled_recovery_active": False,
+                "controlled_recovery_attempts_remaining": 0,
+                "controlled_recovery_variants_cap": 8,
+                "winner_proximate_positive_contains": ["strict_rg"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    process_slo_state_path = tmp_path / "process_slo_state.json"
+    process_slo_state_path.write_text(
+        json.dumps(
+            {
+                "queue": {
+                    "dispatchable_pending": 0,
+                    "candidate_pool_status": "empty_expected",
+                },
+                "search_quality": {
+                    "winner_proximate_positive_contains": ["strict_rg"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.rearm_controlled_recovery_if_eligible(
+        state_path=state_path,
+        process_slo_state_path=process_slo_state_path,
+    )
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert result["eligible"] is True
+    assert result["updated"] is True
+    assert payload["controlled_recovery_active"] is True
+    assert payload["controlled_recovery_attempts_remaining"] == 2
+    assert payload["search_quality"]["controlled_recovery_active"] is True
+
+
+def test_rearm_controlled_recovery_if_eligible_rejects_non_empty_expected_pool(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
+                "controlled_recovery_active": False,
+                "controlled_recovery_attempts_remaining": 0,
+                "winner_proximate_positive_contains": ["strict_rg"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    process_slo_state_path = tmp_path / "process_slo_state.json"
+    process_slo_state_path.write_text(
+        json.dumps(
+            {
+                "queue": {
+                    "dispatchable_pending": 0,
+                    "candidate_pool_status": "empty_error",
+                },
+                "search_quality": {
+                    "winner_proximate_positive_contains": ["strict_rg"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = module.rearm_controlled_recovery_if_eligible(
+        state_path=state_path,
+        process_slo_state_path=process_slo_state_path,
+    )
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert result["eligible"] is False
+    assert result["updated"] is False
+    assert payload["controlled_recovery_attempts_remaining"] == 0

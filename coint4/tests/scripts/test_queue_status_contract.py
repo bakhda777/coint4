@@ -51,6 +51,56 @@ def test_process_slo_and_seeder_share_stalled_contract(tmp_path: Path) -> None:
     assert runnable_queue_count == 1
 
 
+def test_seeder_summary_excludes_queue_level_blocked_pending_rows(tmp_path: Path) -> None:
+    seeder_module = _load_module("autonomous_queue_seeder.py", tmp_path)
+
+    app_root = tmp_path / "app"
+    aggregate_root = app_root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (app_root / "configs").mkdir(parents=True)
+    (app_root / "configs/ok.yaml").write_text("alpha: 1\n", encoding="utf-8")
+
+    blocked_queue = aggregate_root / "blocked_q" / "run_queue.csv"
+    blocked_queue.parent.mkdir(parents=True)
+    blocked_queue.write_text(
+        "run_name,config_path,status\n"
+        "blocked,configs/ok.yaml,planned\n",
+        encoding="utf-8",
+    )
+    open_queue = aggregate_root / "open_q" / "run_queue.csv"
+    open_queue.parent.mkdir(parents=True)
+    open_queue.write_text(
+        "run_name,config_path,status\n"
+        "open,configs/ok.yaml,stalled\n"
+        "missing_cfg,configs/missing.yaml,planned\n",
+        encoding="utf-8",
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps(
+            {
+                "queues": {
+                    "artifacts/wfa/aggregate/blocked_q/run_queue.csv": {
+                        "promotion_verdict": "ANALYZE",
+                        "cutover_permission": "FAIL_CLOSED",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    total_pending, dispatchable_pending, executable_pending, runnable_queue_count, _scanned, _paths = (
+        seeder_module._summarize_queues(aggregate_root)
+    )
+
+    assert total_pending == 3
+    assert dispatchable_pending == 1
+    assert executable_pending == 2
+    assert runnable_queue_count == 2
+
+
 def test_hygiene_converts_legacy_header_only_seed_queue_to_blocked_orphan(tmp_path: Path) -> None:
     module = _load_module("autonomous_queue_seeder.py", tmp_path)
 

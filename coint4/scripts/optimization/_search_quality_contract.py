@@ -15,6 +15,7 @@ CONTROLLED_RECOVERY_REASON = "zero_coverage_seed_streak_with_positive_lineage"
 CONTROLLED_RECOVERY_HARD_BLOCK_REASON = "zero_coverage_seed_streak"
 CONTROLLED_RECOVERY_VARIANTS_CAP = 8
 CONTROLLED_RECOVERY_MAX_BATCHES = 2
+CONTROLLED_RECOVERY_EMPTY_POOL_STATUS = "empty_expected"
 
 CANONICAL_ZERO_EVIDENCE_REASONS = (
     "ZERO_OBSERVED_TEST_DAYS",
@@ -131,6 +132,39 @@ def build_controlled_recovery_state(
         "controlled_recovery_attempts_remaining": int(attempts_remaining if eligible else 0),
         "controlled_recovery_variants_cap": int(variants_cap),
     }
+
+
+def controlled_recovery_backlog_ready(
+    *,
+    dispatchable_pending: Any,
+    candidate_pool_status: Any,
+) -> bool:
+    return (
+        _to_int(dispatchable_pending, 0) <= 0
+        and str(candidate_pool_status or "").strip().lower() == CONTROLLED_RECOVERY_EMPTY_POOL_STATUS
+    )
+
+
+def controlled_recovery_rearm_eligible(
+    *,
+    hard_block_active: bool,
+    hard_block_reason: str,
+    winner_proximate_positive_contains: Iterable[Any] | None = None,
+    attempts_remaining: Any = 0,
+    dispatchable_pending: Any = 0,
+    candidate_pool_status: Any = "",
+) -> bool:
+    contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
+    return bool(
+        hard_block_active
+        and str(hard_block_reason or "").strip() == CONTROLLED_RECOVERY_HARD_BLOCK_REASON
+        and bool(contains)
+        and _to_int(attempts_remaining, 0) <= 0
+        and controlled_recovery_backlog_ready(
+            dispatchable_pending=dispatchable_pending,
+            candidate_pool_status=candidate_pool_status,
+        )
+    )
 
 
 def canonical_zero_evidence_reason(

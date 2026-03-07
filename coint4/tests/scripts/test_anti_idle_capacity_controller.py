@@ -164,6 +164,54 @@ def test_process_slo_detects_cpu_busy_without_queue_job(tmp_path: Path, monkeypa
     assert process_state["queue"]["idle_with_executable_pending"] is False
 
 
+def test_process_slo_normalizes_stale_empty_error_to_empty_expected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 0, "load1": 0.2}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(state_dir / "remote_runtime_state.json")
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps(
+            {
+                "queues": {
+                    "artifacts/wfa/aggregate/group_a/run_queue.csv": {
+                        "promotion_verdict": "ANALYZE",
+                        "cutover_permission": "FAIL_CLOSED",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "ready_queue_buffer.json").write_text(
+        json.dumps({"candidate_pool_status": "empty_error", "ready_count": 0, "entries": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["queue"]["dispatchable_pending"] == 0
+    assert process_state["queue"]["candidate_pool_status"] == "empty_expected"
+    assert process_state["kpi"]["candidate_pool_status"] == "empty_expected"
+
+
 def test_process_slo_treats_watcher_only_remote_queue_as_busy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "app"
     aggregate_root = root / "artifacts" / "wfa" / "aggregate"

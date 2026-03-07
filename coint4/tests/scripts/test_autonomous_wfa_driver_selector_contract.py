@@ -833,3 +833,75 @@ def test_early_stop_low_yield_queue_marks_coverage_unreachable(tmp_path: Path) -
         rows = list(csv.DictReader(handle))
     assert rows[0]["status"] == "completed"
     assert rows[1]["status"] == "skipped"
+
+
+def test_early_stop_low_yield_queue_skips_controlled_recovery_queue(tmp_path: Path) -> None:
+    queue_rel = "artifacts/wfa/aggregate/demo/run_queue.csv"
+    queue_path = tmp_path / queue_rel
+    run_index_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    run_index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_alpha_oos1",
+                "status": "planned",
+            },
+            {
+                "config_path": "configs/beta.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_beta_oos1",
+                "status": "planned",
+            },
+        ],
+    )
+    (queue_path.parent / "queue_policy.json").write_text(
+        json.dumps({"recovery_mode": "controlled"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    with run_index_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "run_id",
+                "status",
+                "metrics_present",
+                "coverage_ratio",
+                "total_trades",
+                "total_pairs_traded",
+                "max_drawdown_on_equity",
+                "total_pnl",
+                "tail_loss_worst_period_pnl",
+                "tail_loss_worst_pair_pnl",
+            ],
+        )
+        writer.writeheader()
+
+    code = _extract_embedded_python("early_stop_low_yield_queue")
+    proc = _run_embedded_python_capture(
+        code,
+        [
+            queue_rel,
+            str(queue_path),
+            str(run_index_path),
+            "8",
+            "0.75",
+            "0.70",
+            "6",
+            "12",
+            "0.80",
+            "6",
+            "3",
+            "0.95",
+        ],
+        cwd=tmp_path,
+    )
+    payload = json.loads(proc.stdout.strip())
+    assert payload["trigger"] is False
+    assert payload["recovery_mode"] == "controlled"
+
+    with queue_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["status"] for row in rows] == ["planned", "planned"]

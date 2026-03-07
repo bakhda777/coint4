@@ -18,9 +18,13 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _search_quality_contract import (
+    CONTROLLED_RECOVERY_MAX_BATCHES,
+    CONTROLLED_RECOVERY_REASON,
+    CONTROLLED_RECOVERY_VARIANTS_CAP,
     build_controlled_recovery_state,
     build_search_quality_state,
     canonical_zero_evidence_reason,
+    controlled_recovery_rearm_eligible,
     has_positive_coverage_trade_evidence,
     micro_broad_search_caps,
 )
@@ -68,6 +72,24 @@ def parse_int(value: Any, default: int = 0) -> int:
 
 def parse_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def _normalize_tokens(values: Any, *, limit: int = 8) -> list[str]:
+    if isinstance(values, str):
+        values = [part.strip() for part in values.split(",")]
+    if not isinstance(values, list):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        token = str(value or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        normalized.append(token)
+        if len(normalized) >= max(1, int(limit)):
+            break
+    return normalized
 
 
 def safe_rel(path: Path, root: Path) -> str:
@@ -482,6 +504,7 @@ def build_yield_governor_state(
         "lineages": len(lineages),
         "operators": len(operators),
     }
+
     preferred_contains_set = set(preferred_contains)
     winner_proximate_positive_lineage_count = sum(
         1
@@ -550,6 +573,11 @@ def build_yield_governor_state(
             "contains": preferred_contains,
             "reason": "strict_pass_or_high_yield_lineage",
         },
+        "hard_block_active": bool(hard_block_active),
+        "hard_block_reason": str(hard_block_reason or ""),
+        "hard_block_until_epoch": int(parse_int(existing_state.get("hard_block_until_epoch"), 0)),
+        "zero_coverage_seed_streak": int(parse_int(existing_state.get("zero_coverage_seed_streak"), 0)),
+        "zero_coverage_seed_streak_reason": str(existing_state.get("zero_coverage_seed_streak_reason") or ""),
         "replay_fastlane": replay_fastlane,
         "search_quality": search_quality,
         "positive_lineage_count": int(search_quality.get("positive_lineage_count", 0) or 0),
@@ -582,6 +610,94 @@ def build_yield_governor_state(
     }
 
 
+def rearm_controlled_recovery_if_eligible(
+    *,
+    state_path: Path,
+    process_slo_state_path: Path,
+    attempts: int = CONTROLLED_RECOVERY_MAX_BATCHES,
+    variants_cap: int = CONTROLLED_RECOVERY_VARIANTS_CAP,
+) -> dict[str, Any]:
+    payload = load_json(state_path, {})
+    if not isinstance(payload, dict):
+        payload = {}
+    process_slo = load_json(process_slo_state_path, {})
+    if not isinstance(process_slo, dict):
+        process_slo = {}
+    queue = process_slo.get("queue", {})
+    if not isinstance(queue, dict):
+        queue = {}
+    search_quality = process_slo.get("search_quality", {})
+    if not isinstance(search_quality, dict):
+        search_quality = {}
+
+    winner_tokens = _normalize_tokens(
+        search_quality.get("winner_proximate_positive_contains")
+        or payload.get("winner_proximate_positive_contains")
+        or [],
+    )
+    dispatchable_pending = parse_int(queue.get("dispatchable_pending"), 0)
+    candidate_pool_status = str(queue.get("candidate_pool_status") or "").strip().lower()
+    attempts_remaining = parse_int(payload.get("controlled_recovery_attempts_remaining"), 0)
+    hard_block_active = parse_bool(payload.get("hard_block_active"))
+    hard_block_reason = str(payload.get("hard_block_reason") or "").strip()
+
+    eligible = controlled_recovery_rearm_eligible(
+        hard_block_active=hard_block_active,
+        hard_block_reason=hard_block_reason,
+        winner_proximate_positive_contains=winner_tokens,
+        attempts_remaining=attempts_remaining,
+        dispatchable_pending=dispatchable_pending,
+        candidate_pool_status=candidate_pool_status,
+    )
+    result = {
+        "eligible": bool(eligible),
+        "updated": False,
+        "dispatchable_pending": int(dispatchable_pending),
+        "candidate_pool_status": candidate_pool_status,
+        "winner_proximate_positive_contains": list(winner_tokens),
+        "attempts_remaining_before": int(attempts_remaining),
+    }
+    if not eligible:
+        result["reason"] = "rearm_ineligible"
+        return result
+
+    attempts_target = max(1, int(attempts))
+    variants_target = max(1, int(variants_cap))
+    payload.update(
+        {
+            "controlled_recovery_active": True,
+            "controlled_recovery_reason": CONTROLLED_RECOVERY_REASON,
+            "controlled_recovery_attempts_remaining": attempts_target,
+            "controlled_recovery_variants_cap": variants_target,
+            "winner_proximate_positive_contains": list(winner_tokens),
+            "ts": utc_now_iso(),
+        }
+    )
+    nested_search_quality = payload.get("search_quality", {})
+    if not isinstance(nested_search_quality, dict):
+        nested_search_quality = {}
+    nested_search_quality.update(
+        {
+            "winner_proximate_positive_contains": list(winner_tokens),
+            "controlled_recovery_active": True,
+            "controlled_recovery_reason": CONTROLLED_RECOVERY_REASON,
+            "controlled_recovery_attempts_remaining": attempts_target,
+            "controlled_recovery_variants_cap": variants_target,
+        }
+    )
+    payload["search_quality"] = nested_search_quality
+    dump_json(state_path, payload)
+    result.update(
+        {
+            "updated": True,
+            "reason": "controlled_recovery_rearmed",
+            "attempts_remaining_after": attempts_target,
+            "variants_cap": variants_target,
+        }
+    )
+    return result
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build fail-safe yield governor state for autonomous queue seeding.")
     parser.add_argument("--root", default="", help="App root (`coint4/`).")
@@ -589,7 +705,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-index", default="artifacts/wfa/aggregate/rollup/run_index.csv")
     parser.add_argument("--fullspan-state", default="artifacts/wfa/aggregate/.autonomous/fullspan_decision_state.json")
     parser.add_argument("--output", default="artifacts/wfa/aggregate/.autonomous/yield_governor_state.json")
+    parser.add_argument(
+        "--process-slo-state",
+        default="artifacts/wfa/aggregate/.autonomous/process_slo_state.json",
+    )
     parser.add_argument("--recent-queue-limit", type=int, default=200)
+    parser.add_argument("--rearm-controlled-recovery", action="store_true")
+    parser.add_argument("--rearm-attempts", type=int, default=CONTROLLED_RECOVERY_MAX_BATCHES)
+    parser.add_argument("--rearm-variants-cap", type=int, default=CONTROLLED_RECOVERY_VARIANTS_CAP)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -601,6 +724,9 @@ def main() -> int:
     run_index_path = Path(args.run_index) if Path(args.run_index).is_absolute() else root / str(args.run_index)
     fullspan_state_path = Path(args.fullspan_state) if Path(args.fullspan_state).is_absolute() else root / str(args.fullspan_state)
     output_path = Path(args.output) if Path(args.output).is_absolute() else root / str(args.output)
+    process_slo_state_path = (
+        Path(args.process_slo_state) if Path(args.process_slo_state).is_absolute() else root / str(args.process_slo_state)
+    )
     existing_state = load_json(output_path, {})
     if not isinstance(existing_state, dict):
         existing_state = {}
@@ -619,6 +745,15 @@ def main() -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         dump_json(output_path, payload)
+    if args.rearm_controlled_recovery:
+        result = rearm_controlled_recovery_if_eligible(
+            state_path=output_path,
+            process_slo_state_path=process_slo_state_path,
+            attempts=max(1, int(args.rearm_attempts)),
+            variants_cap=max(1, int(args.rearm_variants_cap)),
+        )
+        if args.dry_run:
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

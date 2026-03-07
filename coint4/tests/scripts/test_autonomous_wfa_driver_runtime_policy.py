@@ -1019,6 +1019,105 @@ maybe_trigger_auto_seed candidate_empty_after_reconcile
     assert "--num-variants-floor" in seeder_args_text
 
 
+def test_maybe_trigger_auto_seed_requires_empty_expected_for_controlled_recovery(tmp_path: Path) -> None:
+    fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
+    seeder_python = tmp_path / ".venv" / "bin" / "python"
+    seeder_python.parent.mkdir(parents=True, exist_ok=True)
+    seeder_args = tmp_path / "seeder_args.txt"
+    seeder_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"" + str(seeder_args) + "\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    seeder_python.chmod(0o755)
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+LOG_FILE="{tmp_path / 'driver.log'}"
+AUTO_SEED_PENDING_THRESHOLD=96
+READY_BUFFER_REFILL_THRESHOLD=2
+AUTO_SEED_COOLDOWN_SEC=0
+AUTO_SEED_NUM_VARIANTS=64
+AUTO_SEED_NUM_VARIANTS_FLOOR=24
+REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC=90
+{fn}
+global_backlog_snapshot() {{
+  echo "0 0 0 0"
+}}
+candidate_pool_status_snapshot() {{
+  printf 'empty_error\\t0\\t0\\t0\\t0\\t0\\n'
+}}
+ready_buffer_depth() {{
+  echo "0"
+}}
+yield_governor_hard_block_snapshot() {{
+  printf '1\\tzero_coverage_seed_streak\\t0\\t8\\n'
+}}
+process_slo_remote_coverage_snapshot() {{
+  printf '1\\t0\\n'
+}}
+process_slo_controlled_recovery_snapshot() {{
+  printf '1\\tzero_coverage_seed_streak_with_positive_lineage\\t2\\t8\\n'
+}}
+reconcile_selector_backlog_before_seed() {{
+  return 0
+}}
+ensure_remote_runtime_snapshot() {{
+  return 0
+}}
+remote_runtime_snapshot_is_fresh() {{
+  echo "1"
+}}
+remote_runtime_state_value() {{
+  echo "1"
+}}
+remote_active_queue_jobs() {{
+  echo "0"
+}}
+remote_cpu_busy_without_queue_job() {{
+  echo "0"
+}}
+remote_work_active() {{
+  echo "0"
+}}
+fullspan_state_metric_get() {{
+  case "$1" in
+    last_seed_trigger_epoch) echo "0" ;;
+    auto_seed_hard_block) echo "0" ;;
+    auto_seed_block_reason) echo "" ;;
+    controlled_recovery_exhausted) echo "0" ;;
+    vps_infra_fail_closed) echo "0" ;;
+    infra_gate_status) echo "" ;;
+    startup_failure_code) echo "" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_metric_set() {{
+  printf 'SET:%s=%s\\n' "$1" "${{2:-}}"
+}}
+fullspan_state_metric_inc() {{
+  printf 'INC:%s=%s\\n' "$1" "${{2:-}}"
+}}
+set_infra_gate_state() {{
+  printf 'INFRA:%s|%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}" "${{5:-}}"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "${{1:-}}" "${{2:-}}" "${{3:-}}" "${{4:-}}"
+}}
+maybe_trigger_auto_seed candidate_empty_after_reconcile
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert "CONTROLLED_RECOVERY_TRIGGER" not in proc.stdout
+    assert "AUTO_SEED_HARD_BLOCK" in proc.stdout
+    assert not seeder_args.exists()
+
+
 def test_maybe_trigger_auto_seed_logs_controlled_recovery_exhausted_under_zero_coverage_hard_block(tmp_path: Path) -> None:
     fn = _extract_shell_function(_source(), "maybe_trigger_auto_seed")
     script = f"""#!/usr/bin/env bash

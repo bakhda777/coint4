@@ -25,9 +25,13 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _queue_status_contract import (
-    DISPATCHABLE_STATUSES,
     PENDING_LIKE_STATUSES,
+    load_fullspan_queue_state,
+    load_orphan_queue_cooldowns,
     normalize_queue_status,
+    queue_dispatch_block_reason,
+    queue_rel_path,
+    row_counts_dispatchable_pending,
     row_counts_executable,
 )
 from _search_quality_contract import (
@@ -37,6 +41,7 @@ from _search_quality_contract import (
     DETERMINISTIC_QUARANTINE_CODES,
     build_controlled_recovery_state,
     canonical_zero_evidence_reason,
+    controlled_recovery_backlog_ready,
     has_positive_coverage_trade_evidence,
     micro_broad_search_caps,
     normalize_search_quality_state,
@@ -695,6 +700,58 @@ def _decision_lineage_hints(decision_payload: dict[str, Any]) -> list[str]:
     return hints
 
 
+def _select_covered_recovery_windows(
+    *,
+    candidate_groups: Sequence[str],
+    run_index_groups: dict[str, list[dict[str, str]]] | None,
+    app_root: Path,
+    limit: int = 1,
+) -> list[str]:
+    windows: dict[str, tuple[tuple[str, float, float, float], str]] = {}
+    data_root = app_root / "data_downloaded"
+    seen_groups: set[str] = set()
+    ordered_groups: list[str] = []
+    for raw in list(candidate_groups or []):
+        token = str(raw or "").strip()
+        if not token or token in seen_groups:
+            continue
+        seen_groups.add(token)
+        ordered_groups.append(token)
+
+    for group in ordered_groups:
+        rows = list((run_index_groups or {}).get(group) or [])
+        for row in rows:
+            if not has_positive_coverage_trade_evidence(row):
+                continue
+            config_rel = str(row.get("config_path") or "").strip()
+            if not config_rel:
+                continue
+            try:
+                config_path = _resolve_under_root(config_rel, app_root)
+                payload = _load_yaml_config(config_path)
+            except Exception:
+                continue
+            start_date, end_date = _walk_forward_window(payload)
+            if not start_date or not end_date:
+                continue
+            window = f"{start_date},{end_date}"
+            coverage = _assess_window_data_coverage(data_root, [window])
+            if not bool(coverage.get("ok")):
+                continue
+            sort_key = (
+                end_date,
+                _as_float(row.get("coverage_ratio"), default=0.0, min_value=0.0) or 0.0,
+                _as_float(row.get("total_trades"), default=0.0, min_value=0.0) or 0.0,
+                _as_float(row.get("observed_test_days"), default=0.0, min_value=0.0) or 0.0,
+            )
+            existing = windows.get(window)
+            if existing is None or sort_key > existing[0]:
+                windows[window] = (sort_key, group)
+
+    selected = sorted(windows.items(), key=lambda item: item[1][0], reverse=True)
+    return [window for window, _meta in selected[: max(1, int(limit))]]
+
+
 def _load_recent_quarantine_by_group(path: Path, *, limit: int = 200) -> dict[str, dict[str, int]]:
     if not path.exists():
         return {}
@@ -1107,6 +1164,10 @@ def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, lis
     scanned = 0
     queue_paths: list[Path] = []
     app_root = aggregate_dir.parents[2] if len(aggregate_dir.parents) >= 3 else aggregate_dir
+    state_dir = aggregate_dir / ".autonomous"
+    fullspan_queues = load_fullspan_queue_state(state_dir / "fullspan_decision_state.json")
+    orphan_queues = load_orphan_queue_cooldowns(state_dir / "orphan_queues.csv")
+    current_epoch = datetime.now(timezone.utc).timestamp()
     if not aggregate_dir.exists():
         return (total_pending_like, dispatchable_pending, executable_pending, runnable_queue_count, scanned, queue_paths)
 
@@ -1119,6 +1180,13 @@ def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, lis
         legacy_reason = _legacy_header_only_queue_reason(queue_file)
         if legacy_reason:
             rows = []
+        queue_rel = queue_rel_path(queue_file, app_root)
+        blocked_reason = queue_dispatch_block_reason(
+            queue_rel=queue_rel,
+            fullspan_entry=fullspan_queues.get(queue_rel),
+            orphan_entry=orphan_queues.get(queue_rel),
+            now_epoch=current_epoch,
+        )
         queue_executable = 0
         for row in rows:
             status = normalize_queue_status(row.get("status"))
@@ -1127,9 +1195,8 @@ def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, lis
             if row_counts_executable(status, row.get("config_path"), app_root):
                 executable_pending += 1
                 queue_executable += 1
-            if status not in DISPATCHABLE_STATUSES:
-                continue
-            dispatchable_pending += 1
+            if not blocked_reason and row_counts_dispatchable_pending(status, row.get("config_path"), app_root):
+                dispatchable_pending += 1
         if queue_executable > 0:
             runnable_queue_count += 1
     return total_pending_like, dispatchable_pending, executable_pending, runnable_queue_count, scanned, queue_paths
@@ -1759,6 +1826,12 @@ def _normalize_decision_entries(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _planner_repair_mode_args(*, enabled: bool, supported_planner_args: set[str]) -> list[str]:
+    if not enabled or "--repair-mode" not in supported_planner_args:
+        return []
+    return ["--repair-mode", "validation_neighbor"]
+
+
 def _load_gate_surrogate_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {
@@ -2193,6 +2266,9 @@ def main() -> int:
                 runnable_queue_count=runnable_queue_count,
                 ready_buffer_state=ready_buffer_state,
             )
+            candidate_pool_status = "ready"
+            if int(ready_buffer_state.get("ready_depth", 0) or 0) <= 0:
+                candidate_pool_status = "empty_error" if dispatchable_pending > 0 else "empty_expected"
             snapshot = {
                 "ts": _utc_now_iso(),
                 "status": "skipped" if not seed_needed else "active",
@@ -2206,6 +2282,7 @@ def main() -> int:
                 "pending_threshold": int(args.pending_threshold),
                 "hygiene": dict(hygiene),
                 "ready_buffer_state_path": _safe_rel(ready_buffer_state_path, app_root),
+                "candidate_pool_status": str(candidate_pool_status),
                 "ready_queue_buffer": {
                     "exists": bool(ready_buffer_state.get("exists")),
                     "status": str(ready_buffer_state.get("status") or ""),
@@ -2340,6 +2417,10 @@ def main() -> int:
             controlled_recovery_reason = str(controlled_recovery_state.get("controlled_recovery_reason") or "")
             controlled_recovery_tokens = _to_tokens(
                 controlled_recovery_state.get("winner_proximate_positive_contains", [])
+            )
+            controlled_recovery_backlog_ok = controlled_recovery_backlog_ready(
+                dispatchable_pending=dispatchable_pending,
+                candidate_pool_status=candidate_pool_status,
             )
             controlled_recovery_triggered = False
             controlled_recovery_lineage_anchor = ""
@@ -2659,7 +2740,7 @@ def main() -> int:
             lane_selection_preferred_tokens = list(preferred_any_contains)
             lane_selection_generic_tokens = list(contains)
             lane_selection_replay_tokens = _to_tokens((directive.get("replay_fastlane") or {}).get("contains", []))
-            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0:
+            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and controlled_recovery_backlog_ok:
                 lane_selection_winner_tokens = list(controlled_recovery_tokens)
                 lane_selection_preferred_tokens = list(controlled_recovery_tokens)
                 lane_selection_generic_tokens = list(controlled_recovery_tokens or contains)
@@ -2697,7 +2778,7 @@ def main() -> int:
             confirm_replay_hints = list(lane_selection_payload.get("confirm_replay_hints") or [])
             confirm_replay_source = str(lane_selection_payload.get("confirm_replay_source") or "").strip()
             search_quality_state = dict(lane_selection_payload.get("search_quality") or {})
-            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0:
+            if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and controlled_recovery_backlog_ok:
                 selected_lane = "winner_proximate"
                 selected_lane_index = 0
                 contains = list(contains[:1] or lane_selection_winner_tokens[:1] or ["autonomous_queue_seeder"])
@@ -2906,7 +2987,9 @@ def main() -> int:
             snapshot["controlled_recovery_variants_cap"] = int(controlled_recovery_variants_cap)
             snapshot["controlled_recovery_triggered"] = bool(controlled_recovery_triggered)
             snapshot["controlled_recovery_lineage_anchor"] = str(controlled_recovery_lineage_anchor or "")
-            if hard_block_active and not (controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and dispatchable_pending <= 0):
+            if hard_block_active and not (
+                controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and controlled_recovery_backlog_ok
+            ):
                 snapshot.update(
                     {
                         "status": "skipped",
@@ -2949,6 +3032,22 @@ def main() -> int:
             for cfg in [base_config, *fallback_configs]:
                 if cfg not in planner_bases:
                     planner_bases.append(cfg)
+
+            effective_windows = [str(raw or "").strip() for raw in list(args.window or []) if str(raw or "").strip()]
+            if controlled_recovery_triggered and not effective_windows:
+                recovery_window_candidates = [
+                    str(controlled_recovery_lineage_anchor or "").strip(),
+                    *[str(token).strip() for token in list(winner_proximate_tokens or [])],
+                    *[str(token).strip() for token in list(contains or [])],
+                    *[str(token).strip() for token in list(preferred_any_contains or [])],
+                ]
+                effective_windows = _select_covered_recovery_windows(
+                    candidate_groups=recovery_window_candidates,
+                    run_index_groups=run_index_groups_all,
+                    app_root=app_root,
+                    limit=1,
+                )
+            snapshot["planner_windows"] = list(effective_windows)
 
             env = os.environ.copy()
             env["PYTHONPATH"] = f"{str((app_root / 'src'))}:{env.get('PYTHONPATH', '')}".rstrip(":")
@@ -3033,13 +3132,17 @@ def main() -> int:
                 if "--confirm-replay-hint" in supported_planner_args:
                     for hint in confirm_replay_hints[:8]:
                         cmd.extend(["--confirm-replay-hint", str(hint)])
-                for raw in args.window:
+                for raw in effective_windows:
                     if not raw:
                         continue
                     cmd.extend(["--window", raw])
                 cmd.append("--include-stress" if bool(effective_include_stress) else "--no-include-stress")
-                if bool(effective_repair_mode) and "--repair-mode" in supported_planner_args:
-                    cmd.append("--repair-mode")
+                cmd.extend(
+                    _planner_repair_mode_args(
+                        enabled=bool(effective_repair_mode),
+                        supported_planner_args=supported_planner_args,
+                    )
+                )
                 if bool(effective_repair_mode) and "--repair-max-neighbors" in supported_planner_args:
                     cmd.extend(["--repair-max-neighbors", str(int(effective_repair_max_neighbors))])
                 if "--exclude-knob" in supported_planner_args:
@@ -3151,13 +3254,17 @@ def main() -> int:
                 if "--confirm-replay-hint" in supported_planner_args:
                     for hint in confirm_replay_hints[:8]:
                         emergency_cmd.extend(["--confirm-replay-hint", str(hint)])
-                for raw in args.window:
+                for raw in effective_windows:
                     if not raw:
                         continue
                     emergency_cmd.extend(["--window", raw])
                 emergency_cmd.append("--include-stress" if bool(effective_include_stress) else "--no-include-stress")
-                if bool(effective_repair_mode) and "--repair-mode" in supported_planner_args:
-                    emergency_cmd.append("--repair-mode")
+                emergency_cmd.extend(
+                    _planner_repair_mode_args(
+                        enabled=bool(effective_repair_mode),
+                        supported_planner_args=supported_planner_args,
+                    )
+                )
                 if bool(effective_repair_mode) and "--repair-max-neighbors" in supported_planner_args:
                     emergency_cmd.extend(["--repair-max-neighbors", str(int(effective_repair_max_neighbors))])
                 if "--exclude-knob" in supported_planner_args:

@@ -1813,9 +1813,13 @@ if orphan_path.exists():
             if not queue:
                 continue
             try:
-                orphans[queue] = float(row.get("until_ts") or 0.0)
+                until_ts = float(row.get("until_ts") or 0.0)
             except Exception:
-                orphans[queue] = 0.0
+                until_ts = 0.0
+            orphans[queue] = {
+                "until_ts": until_ts,
+                "reason": str(row.get("reason") or "").strip(),
+            }
     except Exception:
         orphans = {}
 fullspan = load_json(fullspan_path, {})
@@ -1992,6 +1996,62 @@ if built_epoch > 0 and int(time.time()) - built_epoch > max_age_sec:
 entries = data.get("entries", []) if isinstance(data, dict) else []
 if not isinstance(entries, list):
     raise SystemExit(1)
+fullspan = {}
+if fullspan_path.exists():
+    try:
+        fullspan = json.loads(fullspan_path.read_text(encoding="utf-8"))
+    except Exception:
+        fullspan = {}
+fullspan_queues = fullspan.get("queues", {}) if isinstance(fullspan, dict) else {}
+orphans = {}
+orphan_path = root_dir / "artifacts" / "wfa" / "aggregate" / ".autonomous" / "orphan_queues.csv"
+if orphan_path.exists():
+    try:
+        for row in csv.DictReader(orphan_path.open(newline="", encoding="utf-8")):
+            queue = str(row.get("queue") or "").strip()
+            if not queue:
+                continue
+            try:
+                until_ts = float(row.get("until_ts") or 0.0)
+            except Exception:
+                until_ts = 0.0
+            orphans[queue] = {
+                "until_ts": until_ts,
+                "reason": str(row.get("reason") or "").strip(),
+            }
+    except Exception:
+        orphans = {}
+
+def entry_is_true(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts: float) -> str:
+    entry = state_entry if isinstance(state_entry, dict) else {}
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
+    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+        return "FULLSPAN_REJECT"
+    if cutover_permission == "FAIL_CLOSED":
+        return "FAIL_CLOSED"
+    if entry_is_true(entry.get("low_yield_fail_closed")):
+        return "FAIL_CLOSED"
+    for state_key in ("startup_state", "coverage_state", "queue_state"):
+        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
+            return "FAIL_CLOSED"
+    orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
+    try:
+        orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
+    except Exception:
+        orphan_until = 0.0
+    if orphan_until > now_ts:
+        orphan_reason = str(orphan_payload.get("reason") or "").strip().lower()
+        if "fail_closed" in orphan_reason:
+            return "FAIL_CLOSED"
+        return "ORPHAN_COOLDOWN"
+    return ""
+
 selected = None
 stale_skips = 0
 for entry in entries:
@@ -2005,6 +2065,11 @@ for entry in entries:
         continue
     queue_path = root_dir / queue
     if not queue_path.exists():
+        stale_skips += 1
+        continue
+    state_entry = fullspan_queues.get(queue, {})
+    orphan_entry = orphans.get(queue, {})
+    if queue_block_reason(queue, state_entry, orphan_entry, time.time()):
         stale_skips += 1
         continue
     try:
@@ -2132,6 +2197,63 @@ except Exception:
 if built_epoch > 0 and int(time.time()) - built_epoch > max_age_sec:
     raise SystemExit(24)
 entries = data.get("entries", []) if isinstance(data, dict) else []
+fullspan_path = root_dir / "artifacts" / "wfa" / "aggregate" / ".autonomous" / "fullspan_decision_state.json"
+fullspan = {}
+if fullspan_path.exists():
+    try:
+        fullspan = json.loads(fullspan_path.read_text(encoding="utf-8"))
+    except Exception:
+        fullspan = {}
+fullspan_queues = fullspan.get("queues", {}) if isinstance(fullspan, dict) else {}
+orphans = {}
+orphan_path = root_dir / "artifacts" / "wfa" / "aggregate" / ".autonomous" / "orphan_queues.csv"
+if orphan_path.exists():
+    try:
+        for row in csv.DictReader(orphan_path.open(newline="", encoding="utf-8")):
+            queue = str(row.get("queue") or "").strip()
+            if not queue:
+                continue
+            try:
+                until_ts = float(row.get("until_ts") or 0.0)
+            except Exception:
+                until_ts = 0.0
+            orphans[queue] = {
+                "until_ts": until_ts,
+                "reason": str(row.get("reason") or "").strip(),
+            }
+    except Exception:
+        orphans = {}
+
+def entry_is_true(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts: float) -> str:
+    entry = state_entry if isinstance(state_entry, dict) else {}
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
+    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+        return "FULLSPAN_REJECT"
+    if cutover_permission == "FAIL_CLOSED":
+        return "FAIL_CLOSED"
+    if entry_is_true(entry.get("low_yield_fail_closed")):
+        return "FAIL_CLOSED"
+    for state_key in ("startup_state", "coverage_state", "queue_state"):
+        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
+            return "FAIL_CLOSED"
+    orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
+    try:
+        orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
+    except Exception:
+        orphan_until = 0.0
+    if orphan_until > now_ts:
+        orphan_reason = str(orphan_payload.get("reason") or "").strip().lower()
+        if "fail_closed" in orphan_reason:
+            return "FAIL_CLOSED"
+        return "ORPHAN_COOLDOWN"
+    return ""
+
 selected = None
 for entry in entries:
     if not isinstance(entry, dict):
@@ -2143,6 +2265,10 @@ for entry in entries:
         continue
     queue_path = root_dir / queue
     if not queue_path.exists():
+        continue
+    state_entry = fullspan_queues.get(queue, {})
+    orphan_entry = orphans.get(queue, {})
+    if queue_block_reason(queue, state_entry, orphan_entry, time.time()):
         continue
     pending = 0
     for row in csv.DictReader(queue_path.open(newline="", encoding="utf-8")):
@@ -2232,6 +2358,42 @@ for entry in entries:
 if changed:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
+}
+
+control_plane_python_bin() {
+  local py_bin="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
+  if [[ -z "$py_bin" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$py_bin"
+}
+
+refresh_control_plane_guard_state() {
+  local py_bin
+  py_bin="$(control_plane_python_bin)" || return 1
+  "$py_bin" "$ROOT_DIR/scripts/optimization/process_slo_guard_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
+  "$py_bin" "$ROOT_DIR/scripts/optimization/vps_capacity_controller_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
+}
+
+reconcile_selector_backlog_before_seed() {
+  local reason="${1:-candidate_empty}"
+  : > "$CANDIDATE_FILE"
+  rm -f "$READY_BUFFER_POOL_FILE"
+  ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+  if ! candidate_file_has_rows; then
+    find_candidate 1
+  fi
+  if ! candidate_file_has_rows; then
+    cleanup_orphans
+    find_candidate 0
+  fi
+  if ! candidate_file_has_rows; then
+    ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+    ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1 || true
+  fi
+  refresh_control_plane_guard_state || true
+  log "selector_backlog_reconcile reason=$reason"
 }
 
 process_slo_idle_with_executable_pending() {
@@ -4903,6 +5065,21 @@ except Exception:
     print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(0)
 
+queue_policy = {}
+queue_policy_path = queue_path.parent / "queue_policy.json"
+if queue_policy_path.exists():
+    try:
+        queue_policy = json.loads(queue_policy_path.read_text(encoding="utf-8"))
+    except Exception:
+        queue_policy = {}
+if not isinstance(queue_policy, dict):
+    queue_policy = {}
+recovery_mode = str(queue_policy.get("recovery_mode") or "").strip().lower()
+if recovery_mode == "controlled":
+    payload["recovery_mode"] = recovery_mode
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(0)
+
 run_index = {}
 try:
     with run_index_path.open(newline="", encoding="utf-8") as handle:
@@ -6321,6 +6498,40 @@ maybe_trigger_auto_seed() {
   fullspan_state_metric_set "controlled_recovery_attempts_remaining" "$controlled_recovery_attempts_remaining"
   fullspan_state_metric_set "controlled_recovery_variants_cap" "$controlled_recovery_variants_cap"
 
+  case "$reason" in
+    candidate_empty|candidate_parse_empty|candidate_empty_after_reconcile|candidate_parse_empty_after_reconcile)
+      if [[ "$candidate_pool_status" != "ready" ]]; then
+        reconcile_selector_backlog_before_seed "$reason" || true
+        read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+        planned_dispatchable="${planned_dispatchable:-0}"
+        dispatchable_pending="${dispatchable_pending:-0}"
+        no_dispatchable_queues="${no_dispatchable_queues:-0}"
+        executable_pending_raw="${executable_pending_raw:-0}"
+        fullspan_state_metric_set "global_planned_dispatchable" "$planned_dispatchable"
+        fullspan_state_metric_set "global_pending_dispatchable" "$dispatchable_pending"
+        fullspan_state_metric_set "global_planned_exec" "$planned_dispatchable"
+        fullspan_state_metric_set "global_pending_exec" "$executable_pending_raw"
+        fullspan_state_metric_set "global_pending_exec_raw" "$executable_pending_raw"
+        fullspan_state_metric_set "global_no_dispatchable_queue_count" "$no_dispatchable_queues"
+        fullspan_state_metric_set "global_no_op_queue_count" "$no_dispatchable_queues"
+        ready_depth="$(ready_buffer_depth)"
+        [[ "$ready_depth" =~ ^[0-9]+$ ]] || ready_depth=0
+        fullspan_state_metric_set "ready_buffer_depth" "$ready_depth"
+        IFS=$'\t' read -r candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending <<< "$(candidate_pool_status_snapshot)"
+        fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
+        fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
+        IFS=$'\t' read -r controlled_recovery_active controlled_recovery_reason controlled_recovery_attempts_remaining controlled_recovery_variants_cap <<< "$(process_slo_controlled_recovery_snapshot)"
+        [[ "$controlled_recovery_active" =~ ^[01]$ ]] || controlled_recovery_active=0
+        [[ "$controlled_recovery_attempts_remaining" =~ ^[0-9]+$ ]] || controlled_recovery_attempts_remaining=0
+        [[ "$controlled_recovery_variants_cap" =~ ^[0-9]+$ ]] || controlled_recovery_variants_cap=0
+        fullspan_state_metric_set "controlled_recovery_active" "$controlled_recovery_active"
+        fullspan_state_metric_set "controlled_recovery_reason" "$controlled_recovery_reason"
+        fullspan_state_metric_set "controlled_recovery_attempts_remaining" "$controlled_recovery_attempts_remaining"
+        fullspan_state_metric_set "controlled_recovery_variants_cap" "$controlled_recovery_variants_cap"
+      fi
+      ;;
+  esac
+
   IFS=$'\t' read -r yield_block_active yield_block_reason yield_block_until yield_block_streak <<< "$(yield_governor_hard_block_snapshot "$now_epoch")"
   [[ "$yield_block_active" =~ ^[0-9]+$ ]] || yield_block_active=0
   [[ "$yield_block_until" =~ ^[0-9]+$ ]] || yield_block_until=0
@@ -6444,7 +6655,7 @@ maybe_trigger_auto_seed() {
     if (( zero_coverage_reason_present > 0 && non_zero_coverage_reason_present == 0 )); then
       controlled_recovery_zero_coverage_only=1
     fi
-    if (( controlled_recovery_zero_coverage_only > 0 && controlled_recovery_active > 0 && controlled_recovery_attempts_remaining > 0 && dispatchable_pending <= 8 )); then
+    if (( controlled_recovery_zero_coverage_only > 0 && controlled_recovery_active > 0 && controlled_recovery_attempts_remaining > 0 && dispatchable_pending == 0 )) && [[ "$candidate_pool_status" == "empty_expected" ]]; then
       controlled_recovery_override=1
       if (( controlled_recovery_variants_cap > 0 )); then
         effective_num_variants="$controlled_recovery_variants_cap"

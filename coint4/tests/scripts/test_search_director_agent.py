@@ -147,3 +147,49 @@ def test_build_directive_preserves_zero_coverage_reasons_and_micro_caps() -> Non
     assert directive["impossibility_pruner"]["policy_scale"] == "micro"
     assert directive["search_quality"]["broad_search_allowed"] is True
     assert directive["search_quality"]["seed_generation_mode"] == "broad_search_micro"
+
+
+def test_existing_yield_state_does_not_force_stale_controlled_recovery_fields(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    state_dir = app_root / "artifacts" / "wfa" / "aggregate" / ".autonomous"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    fullspan_state_path = state_dir / "fullspan_decision_state.json"
+    fullspan_state_path.write_text(json.dumps({"queues": {}}, ensure_ascii=False), encoding="utf-8")
+    run_index_path = app_root / "artifacts" / "wfa" / "aggregate" / "rollup" / "run_index.csv"
+    run_index_path.parent.mkdir(parents=True, exist_ok=True)
+    run_index_path.write_text(
+        "run_id,run_group,metrics_present,observed_test_days,coverage_ratio,total_trades,total_pairs_traded\n",
+        encoding="utf-8",
+    )
+    gate_state_path = state_dir / "gate_surrogate_state.json"
+    gate_state_path.write_text(json.dumps({"queues": {}}, ensure_ascii=False), encoding="utf-8")
+    yield_state_path = state_dir / "yield_governor_state.json"
+    yield_state_path.write_text(
+        json.dumps(
+            {
+                "hard_block_active": False,
+                "hard_block_reason": "",
+                "controlled_recovery_active": True,
+                "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                "controlled_recovery_attempts_remaining": 2,
+                "controlled_recovery_variants_cap": 8,
+                "winner_proximate_positive_contains": ["stale_rg"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    output_path = state_dir / "search_director_directive.json"
+
+    import sys as _sys
+
+    prev_argv = list(_sys.argv)
+    try:
+        _sys.argv = ["search_director_agent.py", "--root", str(app_root)]
+        assert module.main() == 0
+    finally:
+        _sys.argv = prev_argv
+
+    directive = json.loads(output_path.read_text(encoding="utf-8"))
+    assert directive["search_quality"]["controlled_recovery_active"] is False
+    assert directive["search_quality"]["controlled_recovery_attempts_remaining"] == 0

@@ -313,6 +313,17 @@ def test_select_seed_lane_rotates_controlled_recovery_winner_anchor() -> None:
     assert second["contains"] == ["strict_alt"]
 
 
+def test_planner_repair_mode_args_supplies_validation_neighbor() -> None:
+    assert autonomous_queue_seeder._planner_repair_mode_args(
+        enabled=True,
+        supported_planner_args={"--repair-mode"},
+    ) == ["--repair-mode", "validation_neighbor"]
+    assert autonomous_queue_seeder._planner_repair_mode_args(
+        enabled=False,
+        supported_planner_args={"--repair-mode"},
+    ) == []
+
+
 def test_queue_policy_sidecar_and_metadata_include_controlled_recovery_fields(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     queue_path = app_root / "artifacts" / "wfa" / "aggregate" / "autonomous_seed_demo" / "run_queue.csv"
@@ -503,6 +514,55 @@ def test_assess_window_data_coverage_fail_closed_on_missing_months(tmp_path: Pat
     assert coverage["missing_months"] == ["2025-09", "2025-10"]
     assert coverage["windows"][0]["ok"] is True
     assert coverage["windows"][1]["ok"] is False
+
+
+def test_select_covered_recovery_windows_prefers_latest_positive_covered_window(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    data_root = app_root / "data_downloaded"
+    for token in ["2024-05", "2024-06", "2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12", "2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06", "2025-07"]:
+        year, month = token.split("-")
+        (data_root / f"year={year}" / f"month={month}").mkdir(parents=True, exist_ok=True)
+
+    cfg_dir = app_root / "configs" / "evolution" / "anchor"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    older_cfg = cfg_dir / "older.yaml"
+    older_cfg.write_text(
+        "walk_forward:\n  start_date: 2024-05-01\n  end_date: 2025-06-30\n",
+        encoding="utf-8",
+    )
+    uncovered_cfg = cfg_dir / "uncovered.yaml"
+    uncovered_cfg.write_text(
+        "walk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-12-31\n",
+        encoding="utf-8",
+    )
+
+    windows = autonomous_queue_seeder._select_covered_recovery_windows(
+        candidate_groups=["winner_anchor"],
+        run_index_groups={
+            "winner_anchor": [
+                {
+                    "config_path": "configs/evolution/anchor/uncovered.yaml",
+                    "metrics_present": "1",
+                    "observed_test_days": "75",
+                    "coverage_ratio": "1.0",
+                    "total_trades": "100",
+                    "total_pairs_traded": "10",
+                },
+                {
+                    "config_path": "configs/evolution/anchor/older.yaml",
+                    "metrics_present": "1",
+                    "observed_test_days": "75",
+                    "coverage_ratio": "1.0",
+                    "total_trades": "200",
+                    "total_pairs_traded": "12",
+                },
+            ]
+        },
+        app_root=app_root,
+        limit=1,
+    )
+
+    assert windows == ["2024-05-01,2025-06-30"]
 
 
 def test_prune_seed_queue_filters_missing_coverage_and_duplicates(tmp_path: Path) -> None:

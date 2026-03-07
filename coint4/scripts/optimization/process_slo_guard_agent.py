@@ -998,13 +998,12 @@ def main() -> int:
             and not remote_work_active
         )
         candidate_pool_status = str(ready_buffer_state.get("candidate_pool_status") or "").strip().lower()
-        if not candidate_pool_status:
-            if candidate_pool_ready_count > 0:
-                candidate_pool_status = "ready"
-            elif dispatchable_pending_rows > 0:
-                candidate_pool_status = "empty_error"
-            else:
-                candidate_pool_status = "empty_expected"
+        if candidate_pool_ready_count > 0:
+            candidate_pool_status = "ready"
+        elif dispatchable_pending_rows > 0:
+            candidate_pool_status = "empty_error"
+        else:
+            candidate_pool_status = "empty_expected"
 
         no_runner_since_epoch = parse_int(prev_state.get("no_runner_since_epoch"), 0)
         if dispatchable_pending_rows > 0 and local_runner_count <= 0:
