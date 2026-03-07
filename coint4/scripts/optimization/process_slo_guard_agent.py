@@ -289,6 +289,7 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
             "lineages": [],
             "winner_proximate": {},
             "winner_proximate_positive_contains": [],
+            "controlled_recovery_contains": [],
             "controlled_recovery_active": False,
             "controlled_recovery_reason": "",
             "controlled_recovery_attempts_remaining": 0,
@@ -305,6 +306,11 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
         winner_proximate_positive_contains = winner_proximate.get("contains")
     if not isinstance(winner_proximate_positive_contains, list):
         winner_proximate_positive_contains = []
+    controlled_recovery_contains = data.get("controlled_recovery_contains")
+    if controlled_recovery_contains is None:
+        controlled_recovery_contains = data.get("search_quality", {}).get("controlled_recovery_contains") if isinstance(data.get("search_quality"), dict) else []
+    if not isinstance(controlled_recovery_contains, list):
+        controlled_recovery_contains = []
     return {
         "hard_block_active": parse_bool(data.get("hard_block_active"), False),
         "hard_block_reason": str(data.get("hard_block_reason") or ""),
@@ -322,6 +328,7 @@ def read_yield_governor_state(path: Path) -> dict[str, Any]:
         "lineages": lineages,
         "winner_proximate": winner_proximate,
         "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_contains": controlled_recovery_contains,
         "controlled_recovery_active": parse_bool(data.get("controlled_recovery_active"), False),
         "controlled_recovery_reason": str(data.get("controlled_recovery_reason") or ""),
         "controlled_recovery_attempts_remaining": parse_int(
@@ -346,6 +353,7 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
             "quality_governor": {},
             "directive": {},
             "winner_proximate_positive_contains": [],
+            "controlled_recovery_contains": [],
             "controlled_recovery_active": False,
             "controlled_recovery_reason": "",
             "controlled_recovery_attempts_remaining": 0,
@@ -385,6 +393,13 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
         winner_proximate_positive_contains = directive.get("winner_proximate_tokens")
     if not isinstance(winner_proximate_positive_contains, list):
         winner_proximate_positive_contains = []
+    controlled_recovery_contains = data.get("controlled_recovery_contains")
+    if controlled_recovery_contains is None:
+        controlled_recovery_contains = quality_governor.get("controlled_recovery_contains")
+    if controlled_recovery_contains is None:
+        controlled_recovery_contains = directive.get("controlled_recovery_contains")
+    if not isinstance(controlled_recovery_contains, list):
+        controlled_recovery_contains = []
     return {
         "covered_window_count": covered_window_count,
         "coverage_verified_ready_count": coverage_verified_ready_count,
@@ -396,6 +411,7 @@ def read_queue_seeder_state(path: Path) -> dict[str, Any]:
         "quality_governor": quality_governor,
         "directive": directive,
         "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_contains": controlled_recovery_contains,
         "controlled_recovery_active": parse_bool(data.get("controlled_recovery_active"), False),
         "controlled_recovery_reason": str(data.get("controlled_recovery_reason") or ""),
         "controlled_recovery_attempts_remaining": parse_int(
@@ -479,6 +495,15 @@ def derive_search_quality_state(
         )
     if not winner_proximate_positive_contains:
         winner_proximate_positive_contains = _normalize_non_empty_tokens(winner_proximate.get("contains"))
+    controlled_recovery_contains = _normalize_non_empty_tokens(
+        yield_governor_state.get("controlled_recovery_contains"),
+    )
+    if not controlled_recovery_contains:
+        controlled_recovery_contains = _normalize_non_empty_tokens(
+            queue_seeder_state.get("controlled_recovery_contains"),
+        )
+    if not controlled_recovery_contains:
+        controlled_recovery_contains = list(winner_proximate_positive_contains)
 
     recent_seed_quality = queue_seeder_state.get("recent_seed_quality", {})
     if not isinstance(recent_seed_quality, dict):
@@ -547,6 +572,7 @@ def derive_search_quality_state(
         "zero_coverage_seed_streak": parse_int(yield_governor_state.get("zero_coverage_seed_streak"), 0),
         "zero_coverage_seed_streak_reason": str(yield_governor_state.get("zero_coverage_seed_streak_reason") or ""),
         "winner_proximate_positive_contains": winner_proximate_positive_contains,
+        "controlled_recovery_contains": controlled_recovery_contains,
         "controlled_recovery_active": bool(controlled_recovery_active),
         "controlled_recovery_reason": controlled_recovery_reason,
         "controlled_recovery_attempts_remaining": max(0, int(controlled_recovery_attempts_remaining)),
@@ -1004,6 +1030,26 @@ def main() -> int:
             candidate_pool_status = "empty_error"
         else:
             candidate_pool_status = "empty_expected"
+
+        if infra_gate_reason:
+            remote_recovery_signal = bool(
+                remote_reachable
+                or remote_work_active
+                or remote_queue_job_count > 0
+                or remote_active_queue_jobs > 0
+                or top_level_queue_jobs > 0
+                or watch_queue_count > 0
+                or remote_child_process_count > 0
+            )
+            if remote_recovery_signal and "infra_recovery_mode_remote_unreachable_no_coverage_ready" in infra_gate_reason:
+                parts = [
+                    part.strip()
+                    for part in str(infra_gate_reason).split(",")
+                    if str(part or "").strip() and str(part or "").strip() != "infra_recovery_mode_remote_unreachable_no_coverage_ready"
+                ]
+                infra_gate_reason = ",".join(parts)
+                if not infra_gate_reason and infra_gate_status == "hard_block":
+                    infra_gate_status = "ok"
 
         no_runner_since_epoch = parse_int(prev_state.get("no_runner_since_epoch"), 0)
         if dispatchable_pending_rows > 0 and local_runner_count <= 0:

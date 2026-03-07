@@ -641,7 +641,7 @@ def decide_queue(
             apply_contribution(contributions, "queue_error_ratio", 0.20)
             risk += 0.20
 
-        if skipped_ratio >= 0.80 and queue_completed == 0:
+        if skipped_ratio >= 0.80 and queue_completed == 0 and queue_pending > 0:
             apply_contribution(contributions, "queue_skipped_dominant", 0.20)
             risk += 0.20
 

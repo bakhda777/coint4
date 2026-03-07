@@ -101,6 +101,37 @@ def test_seeder_summary_excludes_queue_level_blocked_pending_rows(tmp_path: Path
     assert runnable_queue_count == 2
 
 
+def test_skipped_only_queue_does_not_count_as_dispatchable_or_executable(tmp_path: Path) -> None:
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    seeder_module = _load_module("autonomous_queue_seeder.py", tmp_path)
+
+    app_root = tmp_path / "app"
+    aggregate_root = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_dir = aggregate_root / "skipped_q"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs/ok.yaml").write_text("alpha: 1\n", encoding="utf-8")
+    (queue_dir / "run_queue.csv").write_text(
+        "run_name,config_path,status\n"
+        "skipped_a,configs/ok.yaml,skipped\n"
+        "skipped_b,configs/ok.yaml,skipped\n",
+        encoding="utf-8",
+    )
+
+    stats = process_module.queue_stats(aggregate_root=aggregate_root, app_root=app_root)
+    queue_stats = stats["per_queue"]["artifacts/wfa/aggregate/skipped_q/run_queue.csv"]
+    _, dispatchable_pending, executable_pending, runnable_queue_count, _, _ = seeder_module._summarize_queues(
+        aggregate_root
+    )
+
+    assert queue_stats["pending"] == 0
+    assert queue_stats["dispatchable_pending"] == 0
+    assert queue_stats["executable_pending"] == 0
+    assert dispatchable_pending == 0
+    assert executable_pending == 0
+    assert runnable_queue_count == 0
+
+
 def test_hygiene_converts_legacy_header_only_seed_queue_to_blocked_orphan(tmp_path: Path) -> None:
     module = _load_module("autonomous_queue_seeder.py", tmp_path)
 

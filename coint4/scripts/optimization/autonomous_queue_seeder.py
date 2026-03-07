@@ -1097,27 +1097,61 @@ def _hygiene_seed_queues(
         lineage_positive_evidence = bool(lineage_recent_summary.get("has_positive_coverage_trade_evidence"))
         seed_feasibility_status = "blocked" if reason else "ok"
         seed_feasibility_reason = str(reason or "").strip()
+        existing_policy = _existing_queue_policy_inputs(queue_path)
+        preserve_recovery_identity = bool(
+            coverage_verified
+            and not reason
+            and str(existing_policy.get("recovery_mode") or "").strip().lower() == "controlled"
+        )
+        planner_policy_hash = "coverage_hygiene"
+        selected_lane = "hygiene"
+        selected_lane_index = 0
+        token_rotation = 0
+        parent_rotation_offset = 0
+        parent_diversity_depth = 0
+        confirm_replay_hints: list[str] = []
+        decision_payload: dict[str, Any] = {}
+        recovery_mode = ""
+        recovery_reason = ""
+        recovery_lineage_anchor = ""
+        if preserve_recovery_identity:
+            planner_policy_hash = str(existing_policy.get("planner_policy_hash") or "").strip() or "coverage_hygiene"
+            selected_lane = str(existing_policy.get("selected_lane") or "").strip() or "winner_proximate"
+            selected_lane_index = int(existing_policy.get("selected_lane_index") or 0)
+            token_rotation = int(existing_policy.get("token_rotation") or 0)
+            parent_rotation_offset = int(existing_policy.get("parent_rotation_offset") or 0)
+            parent_diversity_depth = int(existing_policy.get("parent_diversity_depth") or 0)
+            confirm_replay_hints = list(existing_policy.get("confirm_replay_hints") or [])
+            raw_decision_payload = existing_policy.get("decision_payload")
+            if isinstance(raw_decision_payload, dict):
+                decision_payload = raw_decision_payload
+            recovery_mode = str(existing_policy.get("recovery_mode") or "").strip()
+            recovery_reason = str(existing_policy.get("recovery_reason") or "").strip()
+            recovery_lineage_anchor = str(existing_policy.get("recovery_lineage_anchor") or "").strip()
         queue_policy_path = _write_queue_policy_sidecar(
             queue_path=queue_path,
             app_root=app_root,
-            planner_policy_hash="coverage_hygiene",
-            selected_lane="hygiene",
-            selected_lane_index=0,
-            token_rotation=0,
-            parent_rotation_offset=0,
-            parent_diversity_depth=0,
-            confirm_replay_hints=[],
-            decision_payload={},
+            planner_policy_hash=planner_policy_hash,
+            selected_lane=selected_lane,
+            selected_lane_index=selected_lane_index,
+            token_rotation=token_rotation,
+            parent_rotation_offset=parent_rotation_offset,
+            parent_diversity_depth=parent_diversity_depth,
+            confirm_replay_hints=confirm_replay_hints,
+            decision_payload=decision_payload,
             coverage_verified=coverage_verified,
             coverage_reason=str(reason or "coverage_verified"),
             ready_buffer_excluded=bool(reason),
             seed_feasibility_status=seed_feasibility_status,
             seed_feasibility_reason=seed_feasibility_reason,
             lineage_positive_evidence=lineage_positive_evidence,
+            recovery_mode=recovery_mode,
+            recovery_reason=recovery_reason,
+            recovery_lineage_anchor=recovery_lineage_anchor,
         )
         _decorate_queue_metadata(
             queue_path=queue_path,
-            planner_policy_hash="coverage_hygiene",
+            planner_policy_hash=planner_policy_hash,
             queue_policy_path=queue_policy_path,
             app_root=app_root,
             coverage_verified=coverage_verified,
@@ -1126,6 +1160,9 @@ def _hygiene_seed_queues(
             seed_feasibility_status=seed_feasibility_status,
             seed_feasibility_reason=seed_feasibility_reason,
             lineage_positive_evidence=lineage_positive_evidence,
+            recovery_mode=recovery_mode,
+            recovery_reason=recovery_reason,
+            recovery_lineage_anchor=recovery_lineage_anchor,
         )
         queue_results.append(
             {
@@ -1138,10 +1175,14 @@ def _hygiene_seed_queues(
                 "blocked_rows_written": int(prune_stats.get("blocked_rows_written", 0) or 0),
                 "promotion_potential": 0.0,
                 "pre_rank_score": 0.0,
-                "gate_status": "UNKNOWN",
-                "gate_reason": str(reason or "coverage_verified"),
-                "strict_gate_status": "UNKNOWN",
-                "strict_gate_reason": str(reason or "coverage_verified"),
+                "gate_status": str(existing_policy.get("decision_payload", {}).get("gate_status") or "UNKNOWN"),
+                "gate_reason": str(reason or existing_policy.get("decision_payload", {}).get("gate_reason") or "coverage_verified"),
+                "strict_gate_status": str(
+                    existing_policy.get("decision_payload", {}).get("strict_gate_status") or "UNKNOWN"
+                ),
+                "strict_gate_reason": str(
+                    reason or existing_policy.get("decision_payload", {}).get("strict_gate_reason") or "coverage_verified"
+                ),
             }
         )
     return {
@@ -1408,6 +1449,96 @@ def _decorate_queue_metadata(
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def _load_queue_policy_payload(queue_path: Path) -> dict[str, Any]:
+    policy_path = queue_path.parent / "queue_policy.json"
+    if not policy_path.exists():
+        return {}
+    try:
+        payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_first_row_metadata(queue_path: Path) -> dict[str, Any]:
+    rows = _load_queue_rows(queue_path)
+    if not rows:
+        return {}
+    raw_meta = str(rows[0].get("metadata_json") or "").strip()
+    if not raw_meta:
+        return {}
+    try:
+        payload = json.loads(raw_meta)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _existing_queue_policy_inputs(queue_path: Path) -> dict[str, Any]:
+    sidecar = _load_queue_policy_payload(queue_path)
+    metadata = _load_first_row_metadata(queue_path)
+    parent_diversification = sidecar.get("parent_diversification", {})
+    if not isinstance(parent_diversification, dict):
+        parent_diversification = {}
+    parent_resolution = sidecar.get("parent_resolution", {})
+    if not isinstance(parent_resolution, dict):
+        parent_resolution = {}
+    confirm_replay_hints = sidecar.get("confirm_replay_hints", [])
+    if not isinstance(confirm_replay_hints, list):
+        confirm_replay_hints = []
+    selected_lane = str(sidecar.get("seed_lane") or metadata.get("seed_lane") or "").strip()
+    selected_lane_index = _as_int(
+        sidecar.get("seed_lane_index", metadata.get("seed_lane_index")),
+        default=0,
+        min_value=0,
+    )
+    token_rotation = _as_int(sidecar.get("token_rotation"), default=0, min_value=0)
+    parent_rotation_offset = _as_int(
+        sidecar.get("parent_rotation_offset", parent_diversification.get("rotation_offset")),
+        default=0,
+        min_value=0,
+    )
+    parent_diversity_depth = _as_int(
+        sidecar.get("parent_diversity_depth", parent_diversification.get("depth")),
+        default=0,
+        min_value=0,
+    )
+    planner_policy_hash = str(
+        sidecar.get("planner_policy_hash")
+        or metadata.get("planner_policy_hash")
+        or metadata.get("buffer_policy_version")
+        or ""
+    ).strip()
+    planner_hash = str(sidecar.get("planner_hash") or "").strip()
+    recovery_mode = str(sidecar.get("recovery_mode") or metadata.get("recovery_mode") or "").strip()
+    recovery_reason = str(sidecar.get("recovery_reason") or metadata.get("recovery_reason") or "").strip()
+    recovery_lineage_anchor = str(
+        sidecar.get("recovery_lineage_anchor") or metadata.get("recovery_lineage_anchor") or ""
+    ).strip()
+    return {
+        "planner_policy_hash": planner_policy_hash,
+        "selected_lane": selected_lane,
+        "selected_lane_index": int(selected_lane_index or 0),
+        "token_rotation": int(token_rotation or 0),
+        "parent_rotation_offset": int(parent_rotation_offset or 0),
+        "parent_diversity_depth": int(parent_diversity_depth or 0),
+        "confirm_replay_hints": [str(token).strip() for token in confirm_replay_hints if str(token).strip()][:8],
+        "decision_payload": {
+            "planner_hashes": {"planner_hash": planner_hash},
+            "lane_selection": {
+                "seed_lane": selected_lane,
+                "seed_lane_index": int(selected_lane_index or 0),
+                "confirm_replay_hints": [str(token).strip() for token in confirm_replay_hints if str(token).strip()][:8],
+            },
+            "parent_diversification": parent_diversification,
+            "parent_resolution": parent_resolution,
+        },
+        "recovery_mode": recovery_mode,
+        "recovery_reason": recovery_reason,
+        "recovery_lineage_anchor": recovery_lineage_anchor,
+    }
 
 
 def _load_directive(path: Path) -> dict[str, Any]:
@@ -1904,6 +2035,7 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "zero_evidence_lineage_count": 0,
             "winner_proximate_positive_lineage_count": 0,
             "winner_proximate_positive_contains": [],
+            "controlled_recovery_contains": [],
             "broad_search_allowed": True,
             "seed_generation_mode": "broad_search_micro",
             "controlled_recovery_active": False,
@@ -1915,6 +2047,7 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "zero_evidence_lineage_count": 0,
         "winner_proximate_positive_lineage_count": 0,
         "winner_proximate_positive_contains": [],
+        "controlled_recovery_contains": [],
         "broad_search_allowed": True,
         "seed_generation_mode": "broad_search_micro",
         "controlled_recovery_active": False,
@@ -2014,6 +2147,9 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             ),
             "winner_proximate_positive_contains": _to_tokens(
                 search_quality.get("winner_proximate_positive_contains", payload.get("winner_proximate_positive_contains", []))
+            ),
+            "controlled_recovery_contains": _to_tokens(
+                search_quality.get("controlled_recovery_contains", payload.get("controlled_recovery_contains", []))
             ),
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
             "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
@@ -2386,11 +2522,15 @@ def main() -> int:
                 hard_block_active=hard_block_active,
                 hard_block_reason=str(yield_governor.get("hard_block_reason") or ""),
                 winner_proximate_positive_contains=yield_governor.get("winner_proximate_positive_contains", []),
+                controlled_recovery_contains=yield_governor.get("controlled_recovery_contains", []),
                 existing_state=yield_governor,
             )
             controlled_recovery_updates = {
                 "winner_proximate_positive_contains": list(
                     controlled_recovery_state.get("winner_proximate_positive_contains", []) or []
+                ),
+                "controlled_recovery_contains": list(
+                    controlled_recovery_state.get("controlled_recovery_contains", []) or []
                 ),
                 "controlled_recovery_active": bool(controlled_recovery_state.get("controlled_recovery_active")),
                 "controlled_recovery_reason": str(controlled_recovery_state.get("controlled_recovery_reason") or ""),
@@ -2416,7 +2556,8 @@ def main() -> int:
             )
             controlled_recovery_reason = str(controlled_recovery_state.get("controlled_recovery_reason") or "")
             controlled_recovery_tokens = _to_tokens(
-                controlled_recovery_state.get("winner_proximate_positive_contains", [])
+                controlled_recovery_state.get("controlled_recovery_contains")
+                or controlled_recovery_state.get("winner_proximate_positive_contains", [])
             )
             controlled_recovery_backlog_ok = controlled_recovery_backlog_ready(
                 dispatchable_pending=dispatchable_pending,
@@ -2805,6 +2946,7 @@ def main() -> int:
                     "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
                     "controlled_recovery_variants_cap": int(controlled_recovery_variants_cap),
                     "winner_proximate_positive_contains": list(controlled_recovery_tokens),
+                    "controlled_recovery_contains": list(controlled_recovery_tokens),
                     "broad_search_allowed": False,
                     "seed_generation_mode": "winner_proximate_only",
                 }
@@ -2945,6 +3087,9 @@ def main() -> int:
                 "winner_proximate_positive_contains": list(
                     yield_governor.get("winner_proximate_positive_contains", []) or []
                 )[:8],
+                "controlled_recovery_contains": list(
+                    yield_governor.get("controlled_recovery_contains", []) or []
+                )[:8],
                 "controlled_recovery_active": bool(controlled_recovery_active),
                 "controlled_recovery_reason": str(controlled_recovery_reason or ""),
                 "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
@@ -2979,6 +3124,7 @@ def main() -> int:
                 "controlled_recovery_active": bool(controlled_recovery_active),
                 "controlled_recovery_reason": str(controlled_recovery_reason or ""),
                 "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
+                "controlled_recovery_contains": list(controlled_recovery_tokens),
                 "winner_proximate_positive_contains": list(controlled_recovery_tokens),
             }
             snapshot["controlled_recovery_active"] = bool(controlled_recovery_active)
@@ -3465,22 +3611,6 @@ def main() -> int:
                 recovery_lineage_anchor=str(controlled_recovery_lineage_anchor or ""),
             )
             controlled_recovery_attempts_after = controlled_recovery_attempts_remaining
-            if controlled_recovery_triggered:
-                controlled_recovery_attempts_after = max(0, int(controlled_recovery_attempts_remaining) - 1)
-                _persist_yield_governor_state(
-                    yield_governor_path,
-                    {
-                        "controlled_recovery_active": bool(controlled_recovery_attempts_after > 0),
-                        "controlled_recovery_reason": (
-                            str(controlled_recovery_reason or CONTROLLED_RECOVERY_REASON)
-                            if controlled_recovery_attempts_after > 0
-                            else ""
-                        ),
-                        "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_after),
-                        "controlled_recovery_variants_cap": int(controlled_recovery_variants_cap),
-                        "winner_proximate_positive_contains": list(controlled_recovery_tokens),
-                    },
-                )
             queue_payload = _load_queue_rows(queue_path)
             snapshot.update(
                 {

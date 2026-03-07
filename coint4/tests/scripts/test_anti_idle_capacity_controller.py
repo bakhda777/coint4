@@ -551,6 +551,7 @@ def test_process_slo_exposes_search_quality_counters_for_control_plane(
                 "controlled_recovery_attempts_remaining": 2,
                 "controlled_recovery_variants_cap": 8,
                 "winner_proximate_positive_contains": ["positive_alpha", "positive_gamma"],
+                "controlled_recovery_contains": ["positive_alpha"],
                 "lineages": [
                     {
                         "lineage_uid": "positive_alpha",
@@ -613,6 +614,7 @@ def test_process_slo_exposes_search_quality_counters_for_control_plane(
         "positive_alpha",
         "positive_gamma",
     ]
+    assert process_state["search_quality"]["controlled_recovery_contains"] == ["positive_alpha"]
     assert process_state["search_quality"]["controlled_recovery_active"] is True
     assert process_state["search_quality"]["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
     assert process_state["search_quality"]["controlled_recovery_attempts_remaining"] == 2
@@ -623,6 +625,60 @@ def test_process_slo_exposes_search_quality_counters_for_control_plane(
     assert process_state["runtime"]["seed_generation_mode"] == "micro"
     assert process_state["kpi"]["positive_lineage_count"] == 2
     assert process_state["kpi"]["zero_evidence_lineage_count"] == 1
+
+
+def test_process_slo_clears_stale_remote_unreachable_infra_reason_after_remote_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "app"
+    aggregate_root = root / "artifacts" / "wfa" / "aggregate"
+    state_dir = aggregate_root / ".autonomous"
+    queue_path = aggregate_root / "group_a" / "run_queue.csv"
+
+    config_rel = "configs/sample.yaml"
+    config_abs = root / config_rel
+    config_abs.parent.mkdir(parents=True, exist_ok=True)
+    config_abs.write_text("name: sample\n", encoding="utf-8")
+    _write_queue(queue_path, config_path=config_rel, status="planned")
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "capacity_controller_state.json").write_text(
+        json.dumps({"remote": {"reachable": True, "runner_count": 1, "load1": 0.4}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    _write_remote_runtime_state(
+        state_dir / "remote_runtime_state.json",
+        reachable=True,
+        top_level_queue_jobs=1,
+        remote_queue_job_count=1,
+        remote_active_queue_jobs=1,
+        remote_runner_count=1,
+        remote_work_active=True,
+    )
+    (state_dir / "fullspan_decision_state.json").write_text(
+        json.dumps(
+            {
+                "runtime_metrics": {
+                    "infra_gate_status": "hard_block",
+                    "infra_gate_reason": "infra_recovery_mode_remote_unreachable_no_coverage_ready",
+                    "auto_seed_blocked": 1,
+                    "auto_seed_block_reason": "infra_recovery_mode_remote_unreachable_no_coverage_ready",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    process_module = _load_module("process_slo_guard_agent.py", tmp_path)
+    monkeypatch.setattr(process_module, "detect_local_runner_count", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["process_slo_guard_agent.py", "--root", str(root)])
+    assert process_module.main() == 0
+
+    process_state = json.loads((state_dir / "process_slo_state.json").read_text(encoding="utf-8"))
+    assert process_state["infra_gate_reason"] == ""
+    assert process_state["runtime"]["infra_gate_reason"] == ""
 
 
 def test_process_slo_falls_back_to_queue_seeder_state_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

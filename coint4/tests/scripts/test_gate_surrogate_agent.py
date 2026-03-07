@@ -143,6 +143,55 @@ def test_decide_queue_without_idle_slot_keeps_refine_for_fresh_backlog_queue() -
     assert payload["evidence"]["cold_start_idle_slot_override"] is False
 
 
+def test_decide_queue_skipped_only_queue_does_not_trigger_skipped_dominant_refine() -> None:
+    payload, _lineages, _validation_error = gate_surrogate_agent.decide_queue(
+        queue_key="artifacts/wfa/aggregate/autonomous_seed_skipped/run_queue.csv",
+        queue_rows=8,
+        queue_status={"skipped": 8},
+        run_group="autonomous_seed_skipped",
+        run_index_entry=None,
+        fullspan_entry={
+            "promotion_verdict": "ANALYZE",
+            "contract_reason": "METRICS_MISSING",
+            "contract_windows_total": 0,
+            "contract_windows_passed": 0,
+        },
+        quarantine_entry=None,
+        quarantine_active=True,
+        reject_threshold=0.75,
+        refine_threshold=0.45,
+    )
+
+    assert payload["decision"] == "allow"
+    assert payload["reason"] != "queue_skipped_dominant"
+    assert payload["risk_score"] < 0.45
+
+
+def test_decide_queue_keeps_skipped_dominant_when_pending_work_remains() -> None:
+    payload, _lineages, _validation_error = gate_surrogate_agent.decide_queue(
+        queue_key="artifacts/wfa/aggregate/autonomous_seed_mixed/run_queue.csv",
+        queue_rows=10,
+        queue_status={"planned": 1, "skipped": 9},
+        run_group="autonomous_seed_mixed",
+        run_index_entry={
+            "rows": 10,
+            "status": {"planned": 1, "skipped": 9},
+            "metrics_missing": 0,
+            "completed": 0,
+            "completed_zero_activity": 0,
+            "completed_informative": 0,
+        },
+        fullspan_entry=None,
+        quarantine_entry=None,
+        quarantine_active=False,
+        reject_threshold=0.75,
+        refine_threshold=0.45,
+    )
+
+    assert payload["decision"] == "refine"
+    assert payload["reason"] == "queue_skipped_dominant"
+
+
 def test_resolve_idle_slot_signal_prefers_process_slo_flag() -> None:
     signal = gate_surrogate_agent.resolve_idle_slot_signal(
         {

@@ -96,6 +96,7 @@ def test_build_search_quality_state_enables_controlled_recovery_for_positive_zer
     )
 
     assert payload["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["controlled_recovery_contains"] == ["strict_rg"]
     assert payload["controlled_recovery_active"] is True
     assert payload["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
     assert payload["controlled_recovery_attempts_remaining"] == 2
@@ -116,5 +117,22 @@ def test_normalize_search_quality_state_does_not_activate_controlled_recovery_wi
 
     assert payload["winner_proximate_positive_lineage_count"] == 1
     assert payload["winner_proximate_positive_contains"] == []
+    assert payload["controlled_recovery_contains"] == []
     assert payload["controlled_recovery_active"] is False
     assert payload["controlled_recovery_attempts_remaining"] == 0
+
+
+def test_build_search_quality_state_uses_explicit_controlled_recovery_subset() -> None:
+    payload = module.build_search_quality_state(
+        positive_lineage_count=2,
+        zero_evidence_lineage_count=3,
+        winner_proximate_positive_lineage_count=2,
+        winner_proximate_positive_contains=["strict_rg", "poisoned_rg"],
+        controlled_recovery_contains=["strict_rg"],
+        hard_block_active=True,
+        hard_block_reason="zero_coverage_seed_streak",
+    )
+
+    assert payload["winner_proximate_positive_contains"] == ["strict_rg", "poisoned_rg"]
+    assert payload["controlled_recovery_contains"] == ["strict_rg"]
+    assert payload["controlled_recovery_active"] is True

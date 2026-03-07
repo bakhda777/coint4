@@ -5702,6 +5702,137 @@ print(("1" if verified else "0") + "\t" + reason + "\t" + str(policy_path))
 PY
 }
 
+queue_recovery_policy_snapshot() {
+  local queue_rel="$1"
+  python3 - "$ROOT_DIR" "$queue_rel" <<'PY'
+import csv
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+queue_path = root / queue_rel
+policy_path = queue_path.parent / "queue_policy.json"
+
+payload = {}
+if policy_path.exists():
+    try:
+        payload = json.loads(policy_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+
+mode = str(payload.get("recovery_mode") or "").strip().lower()
+reason = str(payload.get("recovery_reason") or "").strip()
+anchor = str(payload.get("recovery_lineage_anchor") or "").strip()
+
+if (not mode or not anchor or not reason) and queue_path.exists():
+    try:
+        rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
+    except Exception:
+        rows = []
+    if rows:
+        raw_meta = str(rows[0].get("metadata_json") or "").strip()
+        if raw_meta:
+            try:
+                meta = json.loads(raw_meta)
+            except Exception:
+                meta = {}
+            if isinstance(meta, dict):
+                if not mode:
+                    mode = str(meta.get("recovery_mode") or "").strip().lower()
+                if not reason:
+                    reason = str(meta.get("recovery_reason") or "").strip()
+                if not anchor:
+                    anchor = str(meta.get("recovery_lineage_anchor") or "").strip()
+
+print(mode + "\t" + reason + "\t" + anchor + "\t" + str(policy_path))
+PY
+}
+
+consume_controlled_recovery_attempt() {
+  local queue_rel="$1"
+  local recovery_mode="" recovery_reason="" recovery_anchor="" recovery_policy_path=""
+  IFS=$'\t' read -r recovery_mode recovery_reason recovery_anchor recovery_policy_path <<< "$(queue_recovery_policy_snapshot "$queue_rel")"
+  if [[ "$recovery_mode" != "controlled" ]]; then
+    return 0
+  fi
+
+  local consumed="0"
+  consumed="$(fullspan_state_get "$queue_rel" "controlled_recovery_dispatch_consumed" "0")"
+  [[ "$consumed" =~ ^[01]$ ]] || consumed=0
+  if [[ "$consumed" == "1" ]]; then
+    return 0
+  fi
+
+  local consume_payload=""
+  consume_payload="$(python3 - "$YIELD_GOVERNOR_STATE_FILE" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+
+try:
+    attempts_before = int(float(payload.get("controlled_recovery_attempts_remaining") or 0))
+except Exception:
+    attempts_before = 0
+try:
+    variants_cap = int(float(payload.get("controlled_recovery_variants_cap") or 0))
+except Exception:
+    variants_cap = 0
+attempts_after = max(0, attempts_before - 1) if attempts_before > 0 else attempts_before
+
+if attempts_before > 0:
+    payload["controlled_recovery_attempts_remaining"] = attempts_after
+    payload["controlled_recovery_active"] = bool(attempts_after > 0)
+    payload["controlled_recovery_reason"] = (
+        str(payload.get("controlled_recovery_reason") or "").strip() if attempts_after > 0 else ""
+    )
+    nested = payload.get("search_quality", {})
+    if not isinstance(nested, dict):
+        nested = {}
+    nested["controlled_recovery_attempts_remaining"] = attempts_after
+    nested["controlled_recovery_active"] = bool(attempts_after > 0)
+    nested["controlled_recovery_variants_cap"] = variants_cap
+    nested["controlled_recovery_reason"] = (
+        str(nested.get("controlled_recovery_reason") or payload.get("controlled_recovery_reason") or "").strip()
+        if attempts_after > 0
+        else ""
+    )
+    payload["search_quality"] = nested
+    payload["ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+print(f"{attempts_before}\t{attempts_after}\t{variants_cap}")
+PY
+)"
+  local attempts_before="0" attempts_after="0" variants_cap="0"
+  IFS=$'\t' read -r attempts_before attempts_after variants_cap <<< "$consume_payload"
+  [[ "$attempts_before" =~ ^[0-9]+$ ]] || attempts_before=0
+  [[ "$attempts_after" =~ ^[0-9]+$ ]] || attempts_after=0
+  if (( attempts_before <= 0 )); then
+    return 0
+  fi
+
+  fullspan_state_queue_set "$queue_rel" "controlled_recovery_dispatch_consumed" "1"
+  fullspan_state_metric_set "controlled_recovery_attempts_remaining" "$attempts_after"
+  log "controlled_recovery_attempt_consumed queue=$queue_rel anchor=${recovery_anchor:-unknown} attempts_before=$attempts_before attempts_after=$attempts_after policy_path=${recovery_policy_path:-none}"
+  log_decision_note "$queue_rel" "CONTROLLED_RECOVERY_ATTEMPT_CONSUMED" "anchor=${recovery_anchor:-unknown} attempts_before=$attempts_before attempts_after=$attempts_after policy_path=${recovery_policy_path:-none}" "count_actual_remote_dispatch"
+}
+
 set_infra_gate_state() {
   local status="$1"
   local reason="${2:-}"
@@ -7593,6 +7724,7 @@ start_queue() {
       "startup_confirmed_epoch" "$(date +%s)" \
       "startup_failure_code" "" \
       "startup_failure_reason" ""
+    consume_controlled_recovery_attempt "$queue_rel" || true
     log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0} startup_code=${startup_code:-REMOTE_RUN_STARTED}"
     log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict startup_code=${startup_code:-REMOTE_RUN_STARTED}"
   else

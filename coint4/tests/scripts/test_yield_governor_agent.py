@@ -85,6 +85,7 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["zero_evidence_lineage_count"] == 0
     assert payload["winner_proximate_positive_lineage_count"] == 1
     assert payload["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["controlled_recovery_contains"] == ["strict_rg"]
     assert payload["broad_search_allowed"] is False
     assert payload["seed_generation_mode"] == "winner_proximate_only"
     assert payload["controlled_recovery_active"] is True
@@ -103,6 +104,7 @@ def test_build_yield_governor_state_prefers_strict_and_high_yield(tmp_path: Path
     assert payload["planner-policy-inputs"]["search_quality"]["positive_lineage_count"] == 1
     assert payload["planner-policy-inputs"]["search_quality"]["broad_search_allowed"] is False
     assert payload["planner-policy-inputs"]["search_quality"]["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["planner-policy-inputs"]["search_quality"]["controlled_recovery_contains"] == ["strict_rg"]
     assert payload["planner-policy-inputs"]["search_quality"]["controlled_recovery_active"] is True
     assert payload["planner-policy-inputs"] == payload["planner_policy_inputs"]
 
@@ -150,6 +152,7 @@ def test_rearm_controlled_recovery_if_eligible_updates_state(tmp_path: Path) -> 
     assert result["updated"] is True
     assert payload["controlled_recovery_active"] is True
     assert payload["controlled_recovery_attempts_remaining"] == 2
+    assert payload["controlled_recovery_contains"] == ["strict_rg"]
     assert payload["search_quality"]["controlled_recovery_active"] is True
 
 
@@ -194,3 +197,77 @@ def test_rearm_controlled_recovery_if_eligible_rejects_non_empty_expected_pool(t
     assert result["eligible"] is False
     assert result["updated"] is False
     assert payload["controlled_recovery_attempts_remaining"] == 0
+
+
+def test_build_yield_governor_state_filters_controlled_recovery_contains_by_deterministic_quarantine(tmp_path: Path) -> None:
+    root = tmp_path
+    aggregate_dir = root / "artifacts" / "wfa" / "aggregate"
+    run_index_path = aggregate_dir / "rollup" / "run_index.csv"
+    fullspan_state_path = aggregate_dir / ".autonomous" / "fullspan_decision_state.json"
+    quarantine_path = aggregate_dir / ".autonomous" / "deterministic_quarantine.json"
+
+    queue_dir = aggregate_dir / "autonomous_seed_demo"
+    _write_csv(
+        queue_dir / "run_queue.csv",
+        [
+            {
+                "config_path": "configs/demo.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_autonomous_seed_demo_v001",
+                "status": "completed",
+                "lineage_uid": "lineage-good",
+                "operator_id": "op_good",
+                "metadata_json": "",
+            }
+        ],
+    )
+    _write_csv(
+        run_index_path,
+        [
+            {
+                "run_id": "holdout_autonomous_seed_demo_v001",
+                "run_group": "strict_rg",
+                "metrics_present": "true",
+                "observed_test_days": "75",
+                "coverage_ratio": "1.0",
+                "total_trades": "500",
+                "total_pairs_traded": "30",
+                "max_drawdown_on_equity": "0.05",
+                "total_pnl": "100",
+                "tail_loss_worst_period_pnl": "-50",
+            }
+        ],
+    )
+    fullspan_state_path.parent.mkdir(parents=True, exist_ok=True)
+    fullspan_state_path.write_text(
+        '{"queues":{"artifacts/wfa/aggregate/demo/run_queue.csv":{"promotion_verdict":"PROMOTE_PENDING_CONFIRM","strict_pass_count":1,"top_run_group":"strict_rg"}}}',
+        encoding="utf-8",
+    )
+    quarantine_path.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "queue": "artifacts/wfa/aggregate/strict_rg/run_queue.csv",
+                        "code": "MAX_VAR_MULTIPLIER_INVALID",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = module.build_yield_governor_state(
+        root=root,
+        aggregate_dir=aggregate_dir,
+        run_index_path=run_index_path,
+        fullspan_state_path=fullspan_state_path,
+        recent_queue_limit=20,
+        hard_block_active=True,
+        hard_block_reason="zero_coverage_seed_streak",
+        existing_state={"controlled_recovery_attempts_remaining": 2},
+    )
+
+    assert payload["winner_proximate_positive_contains"] == ["strict_rg"]
+    assert payload["controlled_recovery_contains"] == []
+    assert payload["controlled_recovery_active"] is False

@@ -21,6 +21,7 @@ from _search_quality_contract import (
     CONTROLLED_RECOVERY_MAX_BATCHES,
     CONTROLLED_RECOVERY_REASON,
     CONTROLLED_RECOVERY_VARIANTS_CAP,
+    DETERMINISTIC_QUARANTINE_CODES,
     build_controlled_recovery_state,
     build_search_quality_state,
     canonical_zero_evidence_reason,
@@ -234,6 +235,47 @@ def _collect_replay_fastlane(queues_state: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _load_recent_quarantine_by_group(path: Path, *, limit: int = 200) -> dict[str, dict[str, int]]:
+    payload = load_json(path, {})
+    if not isinstance(payload, dict):
+        return {}
+    entries = payload.get("entries", [])
+    if not isinstance(entries, list):
+        return {}
+    grouped: dict[str, dict[str, int]] = {}
+    for entry in entries[-max(1, int(limit)) :]:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get("queue") or "").strip()
+        code = str(entry.get("code") or "").strip().upper()
+        if not queue or not code:
+            continue
+        run_group = Path(queue).parent.name
+        counters = grouped.setdefault(run_group, {})
+        counters[code] = int(counters.get(code, 0) or 0) + 1
+    return grouped
+
+
+def _filter_controlled_recovery_contains(
+    tokens: list[str],
+    *,
+    quarantine_by_group: Mapping[str, Mapping[str, Any]] | None = None,
+) -> list[str]:
+    grouped = quarantine_by_group if isinstance(quarantine_by_group, Mapping) else {}
+    filtered: list[str] = []
+    for token in tokens:
+        token_text = str(token or "").strip()
+        if not token_text:
+            continue
+        counts = grouped.get(token_text, {})
+        if isinstance(counts, Mapping) and any(
+            parse_int(counts.get(code), 0) > 0 for code in sorted(DETERMINISTIC_QUARANTINE_CODES)
+        ):
+            continue
+        filtered.append(token_text)
+    return filtered
+
+
 def _build_planner_policy_inputs(
     *,
     lane_weights: Mapping[str, Any],
@@ -269,6 +311,11 @@ def _build_planner_policy_inputs(
             "winner_proximate_positive_contains": [
                 str(token).strip()
                 for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+                if str(token).strip()
+            ][:8],
+            "controlled_recovery_contains": [
+                str(token).strip()
+                for token in list(search_quality.get("controlled_recovery_contains", []) or [])
                 if str(token).strip()
             ][:8],
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
@@ -318,6 +365,7 @@ def build_yield_governor_state(
     queues_state = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
     if not isinstance(queues_state, dict):
         queues_state = {}
+    quarantine_by_group = _load_recent_quarantine_by_group(aggregate_dir / ".autonomous" / "deterministic_quarantine.json")
 
     queue_paths = sorted(
         (path for path in aggregate_dir.glob("*/run_queue.csv") if not path.parent.name.startswith(".")),
@@ -526,11 +574,16 @@ def build_yield_governor_state(
             break
     if winner_tokens and winner_proximate_positive_lineage_count <= 0:
         winner_proximate_positive_lineage_count = 1
+    controlled_recovery_contains = _filter_controlled_recovery_contains(
+        winner_proximate_positive_contains,
+        quarantine_by_group=quarantine_by_group,
+    )
     search_quality = build_search_quality_state(
         positive_lineage_count=sum(1 for entry in lineages if bool(entry.get("has_positive_evidence"))),
         zero_evidence_lineage_count=sum(1 for entry in lineages if bool(entry.get("zero_evidence"))),
         winner_proximate_positive_lineage_count=winner_proximate_positive_lineage_count,
         winner_proximate_positive_contains=winner_proximate_positive_contains,
+        controlled_recovery_contains=controlled_recovery_contains,
         hard_block_active=bool(hard_block_active),
         hard_block_reason=str(hard_block_reason or ""),
         existing_state=existing_state,
@@ -555,6 +608,7 @@ def build_yield_governor_state(
         hard_block_active=bool(hard_block_active),
         hard_block_reason=str(hard_block_reason or ""),
         winner_proximate_positive_contains=winner_proximate_positive_contains,
+        controlled_recovery_contains=controlled_recovery_contains,
         existing_state=existing_state,
     )
 
@@ -586,6 +640,7 @@ def build_yield_governor_state(
             search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
         ),
         "winner_proximate_positive_contains": list(search_quality.get("winner_proximate_positive_contains", []) or []),
+        "controlled_recovery_contains": list(search_quality.get("controlled_recovery_contains", []) or []),
         "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
         "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         "controlled_recovery_active": bool(controlled_recovery.get("controlled_recovery_active")),
@@ -631,7 +686,9 @@ def rearm_controlled_recovery_if_eligible(
         search_quality = {}
 
     winner_tokens = _normalize_tokens(
-        search_quality.get("winner_proximate_positive_contains")
+        search_quality.get("controlled_recovery_contains")
+        or payload.get("controlled_recovery_contains")
+        or search_quality.get("winner_proximate_positive_contains")
         or payload.get("winner_proximate_positive_contains")
         or [],
     )
@@ -645,6 +702,7 @@ def rearm_controlled_recovery_if_eligible(
         hard_block_active=hard_block_active,
         hard_block_reason=hard_block_reason,
         winner_proximate_positive_contains=winner_tokens,
+        controlled_recovery_contains=winner_tokens,
         attempts_remaining=attempts_remaining,
         dispatchable_pending=dispatchable_pending,
         candidate_pool_status=candidate_pool_status,
@@ -655,6 +713,7 @@ def rearm_controlled_recovery_if_eligible(
         "dispatchable_pending": int(dispatchable_pending),
         "candidate_pool_status": candidate_pool_status,
         "winner_proximate_positive_contains": list(winner_tokens),
+        "controlled_recovery_contains": list(winner_tokens),
         "attempts_remaining_before": int(attempts_remaining),
     }
     if not eligible:
@@ -670,6 +729,7 @@ def rearm_controlled_recovery_if_eligible(
             "controlled_recovery_attempts_remaining": attempts_target,
             "controlled_recovery_variants_cap": variants_target,
             "winner_proximate_positive_contains": list(winner_tokens),
+            "controlled_recovery_contains": list(winner_tokens),
             "ts": utc_now_iso(),
         }
     )
@@ -679,6 +739,7 @@ def rearm_controlled_recovery_if_eligible(
     nested_search_quality.update(
         {
             "winner_proximate_positive_contains": list(winner_tokens),
+            "controlled_recovery_contains": list(winner_tokens),
             "controlled_recovery_active": True,
             "controlled_recovery_reason": CONTROLLED_RECOVERY_REASON,
             "controlled_recovery_attempts_remaining": attempts_target,

@@ -389,6 +389,85 @@ def test_queue_policy_sidecar_and_metadata_include_controlled_recovery_fields(tm
     assert metadata["recovery_lineage_anchor"] == "strict_rg"
 
 
+def test_hygiene_seed_queues_preserves_fresh_controlled_recovery_identity(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    aggregate_dir = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_dir = aggregate_dir / "autonomous_seed_20260307_094316"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = queue_dir / "run_queue.csv"
+    queue_path.write_text(
+        "\n".join(
+            [
+                "run_name,config_path,status,metadata_json",
+                'valid,configs/valid_holdout.yaml,planned,"{""planner_policy_hash"":""policy_deadbeef"",""recovery_mode"":""controlled"",""recovery_reason"":""zero_coverage_seed_streak"",""recovery_lineage_anchor"":""strict_rg"",""lineage_positive_evidence"":true}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    valid_cfg = app_root / "configs" / "valid_holdout.yaml"
+    valid_cfg.parent.mkdir(parents=True, exist_ok=True)
+    valid_cfg.write_text(
+        "metadata:\n  evo_hash: evo_a\n  lineage_uid: line_a\nwalk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-07-31\n",
+        encoding="utf-8",
+    )
+    (app_root / "data_downloaded" / "year=2025" / "month=07").mkdir(parents=True, exist_ok=True)
+    autonomous_queue_seeder._write_queue_policy_sidecar(
+        queue_path=queue_path,
+        app_root=app_root,
+        planner_policy_hash="policy_deadbeef",
+        selected_lane="winner_proximate",
+        selected_lane_index=0,
+        token_rotation=2,
+        parent_rotation_offset=3,
+        parent_diversity_depth=5,
+        confirm_replay_hints=["confirm_rg"],
+        decision_payload={
+            "planner_hashes": {"planner_hash": "planner_cafebabe"},
+            "lane_selection": {
+                "seed_lane": "winner_proximate",
+                "seed_lane_index": 0,
+                "confirm_replay_hints": ["confirm_rg"],
+            },
+            "parent_diversification": {"rotation_offset": 3, "depth": 5},
+            "parent_resolution": {"winner_proximate_tokens": ["strict_rg"]},
+        },
+        coverage_verified=True,
+        coverage_reason="coverage_verified",
+        ready_buffer_excluded=False,
+        seed_feasibility_status="ok",
+        seed_feasibility_reason="",
+        lineage_positive_evidence=True,
+        recovery_mode="controlled",
+        recovery_reason="zero_coverage_seed_streak",
+        recovery_lineage_anchor="strict_rg",
+    )
+
+    hygiene = autonomous_queue_seeder._hygiene_seed_queues(
+        aggregate_dir=aggregate_dir,
+        app_root=app_root,
+        run_group_prefix="autonomous_seed",
+        orphan_path=aggregate_dir / ".autonomous" / "orphan_queues.csv",
+    )
+
+    assert hygiene["reviewed"] == 1
+    assert hygiene["orphaned"] == 0
+    queue_policy = json.loads((queue_dir / "queue_policy.json").read_text(encoding="utf-8"))
+    rows = autonomous_queue_seeder._load_queue_rows(queue_path)
+    metadata = json.loads(rows[0]["metadata_json"])
+
+    assert queue_policy["planner_policy_hash"] == "policy_deadbeef"
+    assert queue_policy["seed_lane"] == "winner_proximate"
+    assert queue_policy["recovery_mode"] == "controlled"
+    assert queue_policy["recovery_reason"] == "zero_coverage_seed_streak"
+    assert queue_policy["recovery_lineage_anchor"] == "strict_rg"
+    assert queue_policy["winner_proximate_tokens"] == ["strict_rg"]
+    assert metadata["planner_policy_hash"] == "policy_deadbeef"
+    assert metadata["recovery_mode"] == "controlled"
+    assert metadata["recovery_reason"] == "zero_coverage_seed_streak"
+    assert metadata["recovery_lineage_anchor"] == "strict_rg"
+
+
 def test_load_yield_governor_state_backfills_replay_fastlane_from_legacy_confirm_fields(tmp_path: Path) -> None:
     state_path = tmp_path / "yield_governor_state.json"
     state_path.write_text(

@@ -1232,6 +1232,83 @@ process_slo_controlled_recovery_snapshot
     assert proc.stdout.strip() == "1\tzero_coverage_seed_streak_with_positive_lineage\t2\t8"
 
 
+def test_consume_controlled_recovery_attempt_decrements_budget_only_on_dispatch(tmp_path: Path) -> None:
+    snapshot_fn = _extract_shell_function(_source(), "queue_recovery_policy_snapshot")
+    consume_fn = _extract_shell_function(_source(), "consume_controlled_recovery_attempt")
+    queue_path = tmp_path / "artifacts" / "wfa" / "aggregate" / "autonomous_seed_demo" / "run_queue.csv"
+    queue_path.parent.mkdir(parents=True, exist_ok=True)
+    queue_path.write_text(
+        "run_name,config_path,status\n"
+        "valid,configs/demo.yaml,planned\n",
+        encoding="utf-8",
+    )
+    (queue_path.parent / "queue_policy.json").write_text(
+        json.dumps(
+            {
+                "recovery_mode": "controlled",
+                "recovery_reason": "zero_coverage_seed_streak",
+                "recovery_lineage_anchor": "strict_rg",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    yield_state_path = tmp_path / "yield_governor_state.json"
+    yield_state_path.write_text(
+        json.dumps(
+            {
+                "controlled_recovery_active": True,
+                "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                "controlled_recovery_attempts_remaining": 2,
+                "controlled_recovery_variants_cap": 8,
+                "search_quality": {
+                    "controlled_recovery_active": True,
+                    "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+                    "controlled_recovery_attempts_remaining": 2,
+                    "controlled_recovery_variants_cap": 8,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    script = f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="{tmp_path}"
+YIELD_GOVERNOR_STATE_FILE="{yield_state_path}"
+{snapshot_fn}
+{consume_fn}
+fullspan_state_get() {{
+  case "$2" in
+    controlled_recovery_dispatch_consumed) echo "0" ;;
+    *) echo "0" ;;
+  esac
+}}
+fullspan_state_queue_set() {{
+  printf 'QSET:%s|%s|%s\\n' "$1" "$2" "$3"
+}}
+fullspan_state_metric_set() {{
+  printf 'METRIC:%s=%s\\n' "$1" "$2"
+}}
+log() {{
+  printf 'LOG:%s\\n' "$*"
+}}
+log_decision_note() {{
+  printf 'NOTE:%s|%s|%s|%s\\n' "$1" "$2" "$3" "$4"
+}}
+consume_controlled_recovery_attempt "artifacts/wfa/aggregate/autonomous_seed_demo/run_queue.csv"
+"""
+    proc = subprocess.run(["bash", "-lc", script], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    payload = json.loads(yield_state_path.read_text(encoding="utf-8"))
+    assert payload["controlled_recovery_attempts_remaining"] == 1
+    assert payload["search_quality"]["controlled_recovery_attempts_remaining"] == 1
+    assert "QSET:artifacts/wfa/aggregate/autonomous_seed_demo/run_queue.csv|controlled_recovery_dispatch_consumed|1" in proc.stdout
+    assert "METRIC:controlled_recovery_attempts_remaining=1" in proc.stdout
+    assert "LOG:controlled_recovery_attempt_consumed queue=artifacts/wfa/aggregate/autonomous_seed_demo/run_queue.csv anchor=strict_rg attempts_before=2 attempts_after=1" in proc.stdout
+
+
 def test_process_slo_remote_coverage_snapshot_prefers_queue_remote_reachable_with_fallback(tmp_path: Path) -> None:
     fn = _extract_shell_function(_source(), "process_slo_remote_coverage_snapshot")
     state_dir = tmp_path / "state"

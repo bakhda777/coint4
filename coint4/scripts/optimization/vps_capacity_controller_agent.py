@@ -215,6 +215,7 @@ def read_process_slo_controlled_recovery(path: Path) -> dict[str, Any]:
             "attempts_remaining": 0,
             "variants_cap": 0,
             "winner_proximate_positive_contains": [],
+            "controlled_recovery_contains": [],
             "candidate_pool_status": "",
         }
     search_quality = data.get("search_quality", {})
@@ -243,6 +244,10 @@ def read_process_slo_controlled_recovery(path: Path) -> dict[str, Any]:
         ),
         "winner_proximate_positive_contains": _normalize_token_list(
             search_quality.get("winner_proximate_positive_contains"),
+        ),
+        "controlled_recovery_contains": _normalize_token_list(
+            search_quality.get("controlled_recovery_contains")
+            or search_quality.get("winner_proximate_positive_contains"),
         ),
         "candidate_pool_status": str(
             queue.get("candidate_pool_status") or data.get("candidate_pool_status") or ""
@@ -480,6 +485,7 @@ def main() -> int:
                 "winner_proximate_positive_contains": list(
                     controlled_recovery.get("winner_proximate_positive_contains") or []
                 ),
+                "controlled_recovery_contains": list(controlled_recovery.get("controlled_recovery_contains") or []),
             },
             "remote_runtime_state_file": str(remote_runtime_state_path),
             "policy": policy,

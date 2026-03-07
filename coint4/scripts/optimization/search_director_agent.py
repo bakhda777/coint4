@@ -225,6 +225,11 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
                 for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
                 if str(token).strip()
             ][:8],
+            "controlled_recovery_contains": [
+                str(token).strip()
+                for token in list(search_quality.get("controlled_recovery_contains", []) or [])
+                if str(token).strip()
+            ][:8],
             "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
             "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
             "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
@@ -366,6 +371,7 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
             search_quality.get("winner_proximate_positive_lineage_count", 0) or 0
         ),
         "winner_proximate_positive_contains": list(search_quality.get("winner_proximate_positive_contains", []) or []),
+        "controlled_recovery_contains": list(search_quality.get("controlled_recovery_contains", []) or []),
         "broad_search_allowed": bool(search_quality.get("broad_search_allowed")),
         "seed_generation_mode": str(search_quality.get("seed_generation_mode") or "broad_search_micro").strip(),
         "controlled_recovery_active": bool(search_quality.get("controlled_recovery_active")),
@@ -473,7 +479,11 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
     if bool(search_quality.get("controlled_recovery_active")):
         controlled_contains = [
             str(token).strip()
-            for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+            for token in list(
+                search_quality.get("controlled_recovery_contains")
+                or search_quality.get("winner_proximate_positive_contains", [])
+                or []
+            )
             if str(token).strip()
         ][:8]
         controlled_variants_cap = max(1, parse_int(search_quality.get("controlled_recovery_variants_cap"), 8))
@@ -701,9 +711,12 @@ def main() -> int:
             yield_state[key] = existing_yield_state[key]
     if "winner_proximate_positive_contains" in existing_yield_state and not yield_state.get("winner_proximate_positive_contains"):
         yield_state["winner_proximate_positive_contains"] = list(existing_yield_state.get("winner_proximate_positive_contains") or [])
+    if "controlled_recovery_contains" in existing_yield_state and not yield_state.get("controlled_recovery_contains"):
+        yield_state["controlled_recovery_contains"] = list(existing_yield_state.get("controlled_recovery_contains") or [])
     if isinstance(yield_state.get("search_quality"), dict):
         for key in (
             "winner_proximate_positive_contains",
+            "controlled_recovery_contains",
             "controlled_recovery_active",
             "controlled_recovery_reason",
             "controlled_recovery_attempts_remaining",

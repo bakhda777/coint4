@@ -97,19 +97,34 @@ def _normalize_tokens(value: Iterable[Any] | Any, *, limit: int = 8) -> list[str
     return out
 
 
+def _explicit_tokens_or_none(value: Iterable[Any] | Any | None, *, limit: int = 8) -> list[str] | None:
+    if value is None:
+        return None
+    return _normalize_tokens(value, limit=limit)
+
+
 def build_controlled_recovery_state(
     *,
     hard_block_active: bool,
     hard_block_reason: str,
     winner_proximate_positive_contains: Iterable[Any] | None = None,
+    controlled_recovery_contains: Iterable[Any] | None = None,
     existing_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
+    winner_contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
     existing = existing_state if isinstance(existing_state, Mapping) else {}
+    nested = existing.get("search_quality", {}) if isinstance(existing.get("search_quality"), Mapping) else {}
+    controlled_contains = _explicit_tokens_or_none(controlled_recovery_contains, limit=8)
+    if controlled_contains is None:
+        controlled_contains = _explicit_tokens_or_none(nested.get("controlled_recovery_contains"), limit=8)
+    if controlled_contains is None:
+        controlled_contains = _explicit_tokens_or_none(existing.get("controlled_recovery_contains"), limit=8)
+    if controlled_contains is None:
+        controlled_contains = list(winner_contains)
     eligible = (
         bool(hard_block_active)
         and str(hard_block_reason or "").strip() == CONTROLLED_RECOVERY_HARD_BLOCK_REASON
-        and bool(contains)
+        and bool(controlled_contains)
     )
     attempts_key_present = "controlled_recovery_attempts_remaining" in existing
     attempts_remaining = _to_int(
@@ -126,7 +141,8 @@ def build_controlled_recovery_state(
     reason = str(existing.get("controlled_recovery_reason") or CONTROLLED_RECOVERY_REASON).strip() or CONTROLLED_RECOVERY_REASON
     active = bool(eligible and attempts_remaining > 0)
     return {
-        "winner_proximate_positive_contains": contains,
+        "winner_proximate_positive_contains": winner_contains,
+        "controlled_recovery_contains": controlled_contains,
         "controlled_recovery_active": bool(active),
         "controlled_recovery_reason": reason if eligible else "",
         "controlled_recovery_attempts_remaining": int(attempts_remaining if eligible else 0),
@@ -150,11 +166,14 @@ def controlled_recovery_rearm_eligible(
     hard_block_active: bool,
     hard_block_reason: str,
     winner_proximate_positive_contains: Iterable[Any] | None = None,
+    controlled_recovery_contains: Iterable[Any] | None = None,
     attempts_remaining: Any = 0,
     dispatchable_pending: Any = 0,
     candidate_pool_status: Any = "",
 ) -> bool:
-    contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
+    contains = _explicit_tokens_or_none(controlled_recovery_contains, limit=8)
+    if contains is None:
+        contains = _normalize_tokens(winner_proximate_positive_contains or [], limit=8)
     return bool(
         hard_block_active
         and str(hard_block_reason or "").strip() == CONTROLLED_RECOVERY_HARD_BLOCK_REASON
@@ -251,6 +270,7 @@ def build_search_quality_state(
     zero_evidence_lineage_count: int,
     winner_proximate_positive_lineage_count: int = 0,
     winner_proximate_positive_contains: Iterable[Any] | None = None,
+    controlled_recovery_contains: Iterable[Any] | None = None,
     broad_search_allowed: bool | None = None,
     seed_generation_mode: str = "",
     hard_block_active: bool = False,
@@ -269,6 +289,7 @@ def build_search_quality_state(
         hard_block_active=hard_block_active,
         hard_block_reason=hard_block_reason,
         winner_proximate_positive_contains=winner_positive_contains,
+        controlled_recovery_contains=controlled_recovery_contains,
         existing_state=existing_state,
     )
     return {
@@ -276,6 +297,7 @@ def build_search_quality_state(
         "zero_evidence_lineage_count": zero_evidence,
         "winner_proximate_positive_lineage_count": winner_positive,
         "winner_proximate_positive_contains": winner_positive_contains,
+        "controlled_recovery_contains": list(controlled_recovery["controlled_recovery_contains"]),
         "broad_search_allowed": bool(broad_allowed),
         "seed_generation_mode": mode,
         "controlled_recovery_active": bool(controlled_recovery["controlled_recovery_active"]),
@@ -335,6 +357,12 @@ def normalize_search_quality_state(
         ),
         limit=8,
     )
+    controlled_recovery_raw: Any | None = None
+    if "controlled_recovery_contains" in nested:
+        controlled_recovery_raw = nested.get("controlled_recovery_contains")
+    elif "controlled_recovery_contains" in source:
+        controlled_recovery_raw = source.get("controlled_recovery_contains")
+    controlled_recovery_contains = _explicit_tokens_or_none(controlled_recovery_raw, limit=8)
     broad_raw = nested.get("broad_search_allowed")
     if broad_raw is None:
         broad_raw = source.get("broad_search_allowed")
@@ -345,6 +373,7 @@ def normalize_search_quality_state(
         zero_evidence_lineage_count=zero_evidence,
         winner_proximate_positive_lineage_count=winner_positive,
         winner_proximate_positive_contains=winner_positive_contains,
+        controlled_recovery_contains=controlled_recovery_contains,
         broad_search_allowed=broad_allowed,
         seed_generation_mode=mode,
         hard_block_active=_to_bool(source.get("hard_block_active")),
