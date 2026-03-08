@@ -1,3 +1,0 @@
-base_config: configs/prod_final_budget1000.yaml
-pair_selection:
-  max_pairs: 22

@@ -123,6 +123,15 @@ coint4/artifacts/**
 !coint4/artifacts/wfa/aggregate/rollup/run_index.json
 !coint4/artifacts/wfa/aggregate/rollup/run_index.md
 
+# Ephemeral autonomous search batches stay local/runtime-only until explicitly curated.
+coint4/artifacts/wfa/aggregate/autonomous_seed_*/
+coint4/artifacts/wfa/aggregate/autonomous_seed_check_*/
+coint4/configs/evolution/autonomous_seed_*/
+coint4/configs/evolution/autonomous_seed_check_*/
+coint4/artifacts/wfa/aggregate/autonomous_queue_seeder/decisions/evo_autonomous_queue_seeder_autonomous_seed_*.json
+coint4/artifacts/wfa/aggregate/.autonomous/run_*.log
+coint4/artifacts/wfa/aggregate/.autonomous/driver*.log
+
 # Quarantine demos (must stay untracked; commit guardrail forbids nested aggregate paths).
 coint4/artifacts/wfa/aggregate/_quarantine_demo/**
 coint4/outputs/
@@ -143,9 +152,13 @@ logs/
 # Autopilot local outputs (do not commit runtime snapshots/reports)
 .ai_autopilot/autopilot_loop.lock
 docs/*latest*
+!docs/best_params_latest.yaml
 coint4/artifacts/optimization_state/**
 coint4/artifacts/wfa/aggregate/**/logs/**
 coint4/artifacts/wfa/aggregate/rollup/**
+!coint4/artifacts/wfa/aggregate/rollup/run_index.csv
+!coint4/artifacts/wfa/aggregate/rollup/run_index.json
+!coint4/artifacts/wfa/aggregate/rollup/run_index.md
 
 # Papers pipeline local runtime outputs (do not commit)
 papers/.locks/
