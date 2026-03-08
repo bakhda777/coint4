@@ -64,7 +64,7 @@ DEFAULT_KNOB_SPACE: list[dict[str, Any]] = [
     {"key": "portfolio.risk_per_position_pct", "type": "float", "min": 0.003, "max": 0.03, "step": 0.001, "round_to": 4, "weight": 2.0, "norm": "range"},
     {"key": "portfolio.max_active_positions", "type": "int", "min": 4, "max": 40, "step": 1, "weight": 1.5, "norm": "range"},
     {"key": "backtest.portfolio_daily_stop_pct", "type": "float", "min": 0.005, "max": 0.08, "step": 0.002, "round_to": 4, "weight": 1.5, "norm": "range"},
-    {"key": "backtest.max_var_multiplier", "type": "float", "min": 0.9, "max": 1.2, "step": 0.005, "round_to": 4, "weight": 1.5, "norm": "range"},
+    {"key": "backtest.max_var_multiplier", "type": "float", "min": 1.0, "max": 1.2, "step": 0.005, "round_to": 4, "weight": 1.5, "norm": "range"},
     {"key": "backtest.pair_stop_loss_usd", "type": "float", "min": 1.0, "max": 30.0, "step": 0.5, "round_to": 3, "weight": 1.0, "norm": "range"},
     {"key": "backtest.pair_stop_loss_zscore", "type": "float", "min": 1.0, "max": 6.0, "step": 0.1, "round_to": 3, "weight": 1.0, "norm": "range"},
     {"key": "backtest.stop_loss_multiplier", "type": "float", "min": 1.0, "max": 6.0, "step": 0.1, "round_to": 3, "weight": 1.0, "norm": "range"},
@@ -72,7 +72,7 @@ DEFAULT_KNOB_SPACE: list[dict[str, Any]] = [
     {"key": "backtest.zscore_entry_threshold", "type": "float", "min": 0.6, "max": 3.0, "step": 0.05, "round_to": 3, "weight": 1.8, "norm": "range"},
     {"key": "backtest.zscore_exit", "type": "float", "min": 0.02, "max": 1.2, "step": 0.02, "round_to": 3, "weight": 1.2, "norm": "range"},
     {"key": "backtest.rolling_window", "type": "int", "min": 24, "max": 240, "step": 12, "weight": 1.2, "norm": "range"},
-    # AppConfig.backtest.cooldown_hours is int (strict). Keep evolution knob int to avoid fractional values that fail
+    # Keep the evolution knob integer by policy even though runtime config accepts fractional hours.
     # pydantic validation on the runner.
     {"key": "backtest.cooldown_hours", "type": "int", "min": 0, "max": 24, "step": 1, "weight": 1.2, "norm": "range"},
     {"key": "backtest.min_spread_move_sigma", "type": "float", "min": 0.0, "max": 1.2, "step": 0.05, "round_to": 3, "weight": 1.0, "norm": "range"},
@@ -2754,8 +2754,8 @@ def _preflight_validate_materialized_candidate(
         max_var_multiplier = float(backtest_block.get("max_var_multiplier"))
     except Exception:  # noqa: BLE001
         max_var_multiplier = None
-    if max_var_multiplier is not None and max_var_multiplier <= 1.0:
-        return "MAX_VAR_MULTIPLIER_INVALID", f"backtest.max_var_multiplier={max_var_multiplier:.6f} <= 1.0"
+    if max_var_multiplier is not None and max_var_multiplier < 1.0:
+        return "MAX_VAR_MULTIPLIER_INVALID", f"backtest.max_var_multiplier={max_var_multiplier:.6f} < 1.0"
 
     if enforce_app_config_validation:
         try:

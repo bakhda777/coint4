@@ -656,8 +656,8 @@ class BasePairBacktester:
         if self.var_confidence <= 0 or self.var_confidence >= 1.0:
             raise ValueError(f"var_confidence ({self.var_confidence}) must be between 0 and 1")
         
-        if self.max_var_multiplier <= 1.0:
-            raise ValueError(f"max_var_multiplier ({self.max_var_multiplier}) must be greater than 1.0")
+        if self.max_var_multiplier < 1.0:
+            raise ValueError(f"max_var_multiplier ({self.max_var_multiplier}) must be at least 1.0")
 
     def _calculate_ols_with_cache(self, y_win: pd.Series, x_win: pd.Series) -> tuple[float, float, float]:
         """Calculate OLS regression with caching for optimization.

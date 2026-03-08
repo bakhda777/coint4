@@ -10,6 +10,7 @@ VPS_WFA_QUEUE ?= artifacts/wfa/aggregate/20260215_baseline_queue10/run_queue.csv
 LOOP_USE_CODEX_EXEC ?= 1
 LOOP_PLANNER_MODE ?= evolution
 LOOP_RESUME ?= 1
+LOOP_PLAN_REPEAT ?= 0
 LOOP_EVOLUTION_NUM_VARIANTS ?= 12
 CODEX_ENV_FILE ?= /etc/coint4/codex.env
 # codex auth mode for loop targets:
@@ -30,6 +31,12 @@ else
 LOOP_RESUME_FLAG :=
 endif
 
+ifeq ($(LOOP_PLAN_REPEAT),1)
+LOOP_PLAN_REPEAT_FLAG := --until-done
+else
+LOOP_PLAN_REPEAT_FLAG :=
+endif
+
 define _ensure_venv
 	@test -x "$(COINT4_VENV_BIN)/$(1)" || ( \
 		echo "Missing $(COINT4_VENV_BIN)/$(1). Run: make setup" >&2; \
@@ -46,8 +53,9 @@ help:
 	@echo "  make test-slow   Run pytest -m slow"
 	@echo "  make lint        Run minimal ruff lint (syntax/undefined names)"
 	@echo "  make ci          Run lint + test (local CI parity)"
-	@echo "  make loop        Closed loop (autonomous_optimize --until-done; planner mode configurable)"
-	@echo "  make loop-once   One closed-loop pass (autonomous_optimize --once; planner mode configurable)"
+	@echo "  make loop        Online WFA driver (canonical autonomous runtime via autonomous_wfa_driver.sh)"
+	@echo "  make loop-plan   Offline planner loop (single-pass by default; autonomous_optimize.py)"
+	@echo "  make loop-once   Deprecated alias for the single-pass planner run"
 	@echo "  make loop-api-power Legacy one-shot baseline via API power-cycle wrapper"
 	@echo "  make preflight-loop Run loop preflight (remote policy + secrets + SSH + hygiene/lint/test)"
 	@echo "  make hygiene     Fail if heavy/generated files are accidentally tracked in Git"
@@ -58,10 +66,12 @@ help:
 	@echo "Notes:"
 	@echo "  - Most commands use coint4/.venv/bin/* directly (no need for 'poetry run')."
 	@echo "  - 'make setup' requires Poetry to be installed."
-	@echo "  - loop auth mode: LOOP_CODEX_AUTH_MODE=subscription|api-key|auto (default: subscription)."
+	@echo "  - `make loop` is the canonical online entrypoint; `make loop-plan` is planner-only."
+	@echo "  - loop-plan auth mode: LOOP_CODEX_AUTH_MODE=subscription|api-key|auto (default: subscription)."
 	@echo "  - planner mode: LOOP_PLANNER_MODE=evolution|legacy (default: evolution)."
-	@echo "  - loop resume: LOOP_RESUME=1|0 (default: 1; resume if state=done)."
-	@echo "  - evolution: LOOP_EVOLUTION_NUM_VARIANTS=<n> (default: 12; variants per batch)."
+	@echo "  - planner resume: LOOP_RESUME=1|0 (default: 1; resume if state=done)."
+	@echo "  - planner repeat: LOOP_PLAN_REPEAT=1 for repeated in-process planner passes."
+	@echo "  - evolution planner: LOOP_EVOLUTION_NUM_VARIANTS=<n> (default: 12; variants per batch)."
 
 .PHONY: setup
 setup:
@@ -92,7 +102,17 @@ lint:
 ci: lint test
 
 .PHONY: loop
-loop: loop-closed
+loop: loop-driver
+
+.PHONY: loop-driver
+loop-driver:
+	@$(call _ensure_venv,python)
+	@cd $(COINT4_DIR) && set -euo pipefail; \
+		if [[ -r "$(CODEX_ENV_FILE)" ]]; then set -a; . "$(CODEX_ENV_FILE)"; set +a; fi; \
+		HOME="$(LOOP_HOME)" PYTHONPATH=src bash scripts/optimization/autonomous_wfa_driver.sh
+
+.PHONY: loop-plan
+loop-plan: loop-closed
 
 .PHONY: loop-closed
 loop-closed:
@@ -102,17 +122,12 @@ loop-closed:
 		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
 		HOME="$(LOOP_HOME)" \
 		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
-		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --until-done $(LOOP_RESUME_FLAG) --planner-mode "$(LOOP_PLANNER_MODE)" --evolution-num-variants "$(LOOP_EVOLUTION_NUM_VARIANTS)" $(LOOP_CODEX_FLAG)
+		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py $(LOOP_PLAN_REPEAT_FLAG) $(LOOP_RESUME_FLAG) --planner-mode "$(LOOP_PLANNER_MODE)" --evolution-num-variants "$(LOOP_EVOLUTION_NUM_VARIANTS)" $(LOOP_CODEX_FLAG)
 
 .PHONY: loop-once
 loop-once:
-	@$(call _ensure_venv,python)
-	@cd $(COINT4_DIR) && set -euo pipefail; \
-		if [[ -r "$(CODEX_ENV_FILE)" ]]; then set -a; . "$(CODEX_ENV_FILE)"; set +a; fi; \
-		if [[ "$(LOOP_CODEX_AUTH_MODE)" == "subscription" ]]; then unset OPENAI_API_KEY; fi; \
-		HOME="$(LOOP_HOME)" \
-		COINT4_CODEX_AUTH_MODE="$(LOOP_CODEX_AUTH_MODE)" \
-		PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_optimize.py --once $(LOOP_RESUME_FLAG) --planner-mode "$(LOOP_PLANNER_MODE)" --evolution-num-variants "$(LOOP_EVOLUTION_NUM_VARIANTS)" $(LOOP_CODEX_FLAG)
+	@echo "loop-once is deprecated; use 'make loop-plan' for the default single-pass planner run or 'make loop-plan LOOP_PLAN_REPEAT=1' for repeated planner passes." >&2
+	@$(MAKE) --no-print-directory loop-plan
 
 .PHONY: loop-api-power
 loop-api-power:

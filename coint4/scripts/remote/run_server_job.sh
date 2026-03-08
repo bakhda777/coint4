@@ -61,6 +61,11 @@ SKIP_POWER=${SKIP_POWER:-"0"}
 ACTIVE_BATCH_STOP_GUARD=${ACTIVE_BATCH_STOP_GUARD:-"1"}
 ALLOW_STOP_DURING_ACTIVE_BATCH=${ALLOW_STOP_DURING_ACTIVE_BATCH:-"0"}
 ACTIVE_BATCH_GUARD_SEC=${ACTIVE_BATCH_GUARD_SEC:-"3600"}
+SSH_READY_TIMEOUT_SEC=${SSH_READY_TIMEOUT_SEC:-"900"}
+SSH_READY_POLL_SEC=${SSH_READY_POLL_SEC:-"5"}
+SSH_ACTIVE_FORCE_CYCLE_AFTER_SEC=${SSH_ACTIVE_FORCE_CYCLE_AFTER_SEC:-"180"}
+SSH_ACTIVE_FORCE_CYCLE_MAX_ATTEMPTS=${SSH_ACTIVE_FORCE_CYCLE_MAX_ATTEMPTS:-"1"}
+SSH_FORCE_CYCLE_SHUTDOWN_WAIT_SEC=${SSH_FORCE_CYCLE_SHUTDOWN_WAIT_SEC:-"20"}
 
 # Optional preflight guard (idempotency): run once after SSH is ready, but before any update/sync/stop.
 # If the command prints PREFLIGHT_MATCH and exits 0, this script exits 0 immediately (no side effects).
@@ -237,6 +242,144 @@ start_server() {
   api_post "servers/${SERVER_ID}/power/on" "{\"server_id\":\"${SERVER_ID}\"}" || true
 }
 
+provider_server_state() {
+  if [[ -z "$API_KEY" ]]; then
+    echo ""
+    return 0
+  fi
+
+  local sid tmp_servers_json
+  sid="${SERVER_ID}"
+  if [[ -z "$sid" ]]; then
+    sid="$(resolve_server_id || true)"
+  fi
+  if [[ -z "$sid" ]]; then
+    echo ""
+    return 0
+  fi
+  SERVER_ID="$sid"
+
+  tmp_servers_json="$(mktemp)"
+  api_get "servers" >"$tmp_servers_json"
+  python3 - "$sid" "$SERVER_IP" "$tmp_servers_json" <<'PY'
+import json
+import sys
+
+target_sid = sys.argv[1].strip() or None
+target_ip = sys.argv[2].strip() or None
+servers_path = sys.argv[3]
+
+IP_KEYS = ("ip", "public_ip", "ipv4", "address", "ip_address")
+NESTED_KEYS = ("network", "networks", "addresses", "interfaces", "nics")
+
+
+def _as_list(v):
+    if isinstance(v, list):
+        return v
+    if isinstance(v, dict):
+        return list(v.values())
+    return []
+
+
+def collect_ips(srv):
+    ips = []
+    for k in IP_KEYS:
+        v = srv.get(k)
+        if isinstance(v, str):
+            ips.append(v)
+        elif isinstance(v, list):
+            ips.extend([x for x in v if isinstance(x, str)])
+
+    for k in NESTED_KEYS:
+        v = srv.get(k)
+        for item in _as_list(v):
+            if isinstance(item, str):
+                ips.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            for kk in IP_KEYS:
+                vv = item.get(kk)
+                if isinstance(vv, str):
+                    ips.append(vv)
+
+    out = []
+    for ip in ips:
+        if ip and ip not in out:
+            out.append(ip)
+    return out
+
+
+def get_id(srv):
+    for key in ("id", "uuid", "server_id", "serverId"):
+        v = srv.get(key)
+        if isinstance(v, (str, int)) and str(v):
+            return str(v)
+    return None
+
+
+try:
+    with open(servers_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    print("")
+    raise SystemExit(0)
+
+if isinstance(data, dict):
+    data = data.get("data") or data.get("items") or data.get("servers") or data
+
+if isinstance(data, dict):
+    data = list(data.values())
+
+if not isinstance(data, list):
+    print("")
+    raise SystemExit(0)
+
+for srv in data:
+    if not isinstance(srv, dict):
+        continue
+    sid = get_id(srv)
+    if target_sid and sid == target_sid:
+      print(str(srv.get("state") or srv.get("status") or "").strip().lower())
+      raise SystemExit(0)
+    if target_ip and target_ip in collect_ips(srv):
+      print(str(srv.get("state") or srv.get("status") or "").strip().lower())
+      raise SystemExit(0)
+print("")
+PY
+  rm -f "$tmp_servers_json"
+}
+
+force_cycle_server() {
+  if [[ "$SKIP_POWER" == "1" || -z "$API_KEY" ]]; then
+    return 1
+  fi
+
+  local sid shutdown_wait
+  sid="${SERVER_ID}"
+  if [[ -z "$sid" ]]; then
+    sid="$(resolve_server_id || true)"
+  fi
+  if [[ -z "$sid" ]]; then
+    echo "[server] force-cycle skipped: server id unresolved" >&2
+    return 1
+  fi
+  SERVER_ID="$sid"
+
+  shutdown_wait="$SSH_FORCE_CYCLE_SHUTDOWN_WAIT_SEC"
+  [[ "$shutdown_wait" =~ ^[0-9]+$ ]] || shutdown_wait=20
+  if (( shutdown_wait < 0 )); then
+    shutdown_wait=0
+  fi
+
+  echo "[server] force-cycling ${SERVER_ID}"
+  api_post "servers/${SERVER_ID}/power/shutdown" "{\"server_id\":\"${SERVER_ID}\"}" || true
+  if (( shutdown_wait > 0 )); then
+    sleep "$shutdown_wait"
+  fi
+  api_post "servers/${SERVER_ID}/power/on" "{\"server_id\":\"${SERVER_ID}\"}" || true
+}
+
 stop_server() {
   if [[ "$STOP_AFTER" != "1" ]]; then
     return 0
@@ -306,18 +449,52 @@ PY
 
 wait_for_ssh() {
   echo "[server] waiting for SSH on ${SERVER_USER}@${SERVER_IP}"
-  local start_ts
+  local start_ts timeout_sec poll_sec force_after_sec force_attempts_max force_attempts elapsed provider_state
+  timeout_sec="$SSH_READY_TIMEOUT_SEC"
+  [[ "$timeout_sec" =~ ^[0-9]+$ ]] || timeout_sec=900
+  if (( timeout_sec < 1 )); then
+    timeout_sec=1
+  fi
+  poll_sec="$SSH_READY_POLL_SEC"
+  [[ "$poll_sec" =~ ^[0-9]+$ ]] || poll_sec=5
+  if (( poll_sec < 1 )); then
+    poll_sec=1
+  fi
+  force_after_sec="$SSH_ACTIVE_FORCE_CYCLE_AFTER_SEC"
+  [[ "$force_after_sec" =~ ^[0-9]+$ ]] || force_after_sec=180
+  if (( force_after_sec < 0 )); then
+    force_after_sec=0
+  fi
+  force_attempts_max="$SSH_ACTIVE_FORCE_CYCLE_MAX_ATTEMPTS"
+  [[ "$force_attempts_max" =~ ^[0-9]+$ ]] || force_attempts_max=1
+  if (( force_attempts_max < 0 )); then
+    force_attempts_max=0
+  fi
+  force_attempts=0
   start_ts=$(date +%s)
   while true; do
     if ssh "${SSH_OPTS[@]}" "${SERVER_USER}@${SERVER_IP}" "echo ok" >/dev/null 2>&1; then
       echo "[server] SSH ready"
       return 0
     fi
-    sleep 5
-    if [[ $(( $(date +%s) - start_ts )) -gt 900 ]]; then
-      echo "SSH not ready after 15 minutes." >&2
+
+    elapsed=$(( $(date +%s) - start_ts ))
+    if [[ "$SKIP_POWER" != "1" && -n "$API_KEY" ]] && (( force_attempts < force_attempts_max )) && (( elapsed >= force_after_sec )); then
+      provider_state="$(provider_server_state)"
+      if [[ "$provider_state" == "active" ]]; then
+        force_attempts=$((force_attempts + 1))
+        echo "[server] provider active but SSH not ready after ${elapsed}s; force-cycle attempt ${force_attempts}/${force_attempts_max}"
+        if ! force_cycle_server; then
+          echo "[server] provider active force-cycle failed" >&2
+        fi
+      fi
+    fi
+
+    if (( elapsed >= timeout_sec )); then
+      echo "SSH not ready after ${timeout_sec} seconds." >&2
       return 1
     fi
+    sleep "$poll_sec"
   done
 }
 

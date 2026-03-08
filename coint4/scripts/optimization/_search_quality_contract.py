@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import time
 from typing import Any, Iterable, Mapping
 
 
@@ -16,6 +17,7 @@ CONTROLLED_RECOVERY_HARD_BLOCK_REASON = "zero_coverage_seed_streak"
 CONTROLLED_RECOVERY_VARIANTS_CAP = 8
 CONTROLLED_RECOVERY_MAX_BATCHES = 2
 CONTROLLED_RECOVERY_EMPTY_POOL_STATUS = "empty_expected"
+CONTROLLED_BROAD_REARM_DELAY_SEC = 600
 
 CANONICAL_ZERO_EVIDENCE_REASONS = (
     "ZERO_OBSERVED_TEST_DAYS",
@@ -126,20 +128,46 @@ def build_controlled_recovery_state(
         and str(hard_block_reason or "").strip() == CONTROLLED_RECOVERY_HARD_BLOCK_REASON
         and bool(controlled_contains)
     )
+    attempts_raw = existing.get("controlled_recovery_attempts_remaining")
     attempts_key_present = "controlled_recovery_attempts_remaining" in existing
+    if not attempts_key_present and isinstance(nested, Mapping):
+        attempts_key_present = "controlled_recovery_attempts_remaining" in nested
+        attempts_raw = nested.get("controlled_recovery_attempts_remaining")
     attempts_remaining = _to_int(
-        existing.get("controlled_recovery_attempts_remaining"),
+        attempts_raw,
         CONTROLLED_RECOVERY_MAX_BATCHES,
     )
     if not attempts_key_present:
         attempts_remaining = CONTROLLED_RECOVERY_MAX_BATCHES
     attempts_remaining = max(0, attempts_remaining)
+    variants_raw = existing.get("controlled_recovery_variants_cap")
+    if "controlled_recovery_variants_cap" not in existing and isinstance(nested, Mapping):
+        variants_raw = nested.get("controlled_recovery_variants_cap")
     variants_cap = max(
         1,
-        _to_int(existing.get("controlled_recovery_variants_cap"), CONTROLLED_RECOVERY_VARIANTS_CAP),
+        _to_int(variants_raw, CONTROLLED_RECOVERY_VARIANTS_CAP),
     )
-    reason = str(existing.get("controlled_recovery_reason") or CONTROLLED_RECOVERY_REASON).strip() or CONTROLLED_RECOVERY_REASON
+    reason_raw = existing.get("controlled_recovery_reason")
+    if (reason_raw is None or str(reason_raw).strip() == "") and isinstance(nested, Mapping):
+        reason_raw = nested.get("controlled_recovery_reason")
+    reason = str(reason_raw or CONTROLLED_RECOVERY_REASON).strip() or CONTROLLED_RECOVERY_REASON
     active = bool(eligible and attempts_remaining > 0)
+    nested_rearm_after = 0
+    if isinstance(nested, Mapping):
+        nested_rearm_after = _to_int(nested.get("controlled_broad_rearm_after_epoch"), 0)
+    existing_rearm_after = max(
+        0,
+        _to_int(existing.get("controlled_broad_rearm_after_epoch"), 0),
+        nested_rearm_after,
+    )
+    controlled_broad_rearm_after_epoch = 0
+    if eligible and attempts_remaining <= 0:
+        now_epoch = max(0, int(time.time()))
+        target_rearm_after = now_epoch + CONTROLLED_BROAD_REARM_DELAY_SEC
+        if existing_rearm_after > 0:
+            controlled_broad_rearm_after_epoch = int(min(existing_rearm_after, target_rearm_after))
+        else:
+            controlled_broad_rearm_after_epoch = int(target_rearm_after)
     return {
         "winner_proximate_positive_contains": winner_contains,
         "controlled_recovery_contains": controlled_contains,
@@ -147,6 +175,7 @@ def build_controlled_recovery_state(
         "controlled_recovery_reason": reason if eligible else "",
         "controlled_recovery_attempts_remaining": int(attempts_remaining if eligible else 0),
         "controlled_recovery_variants_cap": int(variants_cap),
+        "controlled_broad_rearm_after_epoch": int(controlled_broad_rearm_after_epoch),
     }
 
 
@@ -304,6 +333,7 @@ def build_search_quality_state(
         "controlled_recovery_reason": str(controlled_recovery["controlled_recovery_reason"]),
         "controlled_recovery_attempts_remaining": int(controlled_recovery["controlled_recovery_attempts_remaining"]),
         "controlled_recovery_variants_cap": int(controlled_recovery["controlled_recovery_variants_cap"]),
+        "controlled_broad_rearm_after_epoch": int(controlled_recovery["controlled_broad_rearm_after_epoch"]),
     }
 
 

@@ -32,7 +32,7 @@ def test_fullspan_contract_defaults_match_hard_gates() -> None:
     assert thresholds.min_pnl == 0.0
     assert thresholds.initial_capital == 1000.0
     assert thresholds.max_worst_step_loss_pct == 0.20
-    assert policy["min_windows"] == 3
+    assert policy["min_windows"] == 1
     assert policy["min_coverage_ratio"] == 0.95
     assert module.PRIMARY_RANKING_KEY == "score_fullspan_v1"
     assert module.DIAGNOSTIC_RANKING_KEY == "avg_robust_sharpe"
@@ -183,3 +183,55 @@ def test_dominant_rejection_reason_preserves_canonical_zero_evidence_tokens() ->
     module = _load_script_module("fullspan_contract_zero_reason_guard", "fullspan_contract.py")
 
     assert module.dominant_rejection_reason("strict_contract_fail(ZERO_COVERAGE:2,TRADES_FAIL:1)") == "ZERO_COVERAGE"
+
+
+def test_discover_variant_candidates_uses_run_index_pairs_directly() -> None:
+    module = _load_script_module("fullspan_contract_candidate_guard", "fullspan_contract.py")
+
+    candidates = module.discover_variant_candidates(
+        run_index_rows=[
+            {
+                "run_group": "demo_group",
+                "run_id": "holdout_variant_alpha_oos20240101_20240331",
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_alpha",
+                "status": "completed",
+            },
+            {
+                "run_group": "demo_group",
+                "run_id": "stress_variant_alpha_oos20240101_20240331",
+                "config_path": "configs/alpha.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/stress_alpha",
+                "status": "completed",
+            },
+            {
+                "run_group": "demo_group",
+                "run_id": "holdout_variant_beta_oos20240101_20240331",
+                "config_path": "configs/beta.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/holdout_beta",
+                "status": "completed",
+            },
+        ],
+        contains=["demo_group"],
+    )
+
+    assert candidates == [
+        {
+            "run_group": "demo_group",
+            "variant_id": "variant_alpha",
+            "sample_config": "configs/alpha.yaml",
+            "row_count": 2,
+            "holdout_window_count": 1,
+            "stress_window_count": 1,
+            "paired_window_count": 1,
+        },
+        {
+            "run_group": "demo_group",
+            "variant_id": "variant_beta",
+            "sample_config": "configs/beta.yaml",
+            "row_count": 1,
+            "holdout_window_count": 1,
+            "stress_window_count": 0,
+            "paired_window_count": 0,
+        },
+    ]

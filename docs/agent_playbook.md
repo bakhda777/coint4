@@ -1,174 +1,76 @@
 # Agent Playbook (coint4)
 
 ## 1) Source of truth
-- Перед любым решением все агенты читают `docs/project_context.md`.
-- Если `project_context` и текущие артефакты расходятся, приоритет у фактических артефактов запуска:
-  - `coint4/artifacts/wfa/aggregate/<run_group>/run_queue.csv`
-  - `coint4/artifacts/wfa/aggregate/rollup/run_index.csv`
-  - `coint4/artifacts/wfa/runs*/<run_group>/<run_id>/strategy_metrics.csv`
+- Перед любым решением читать `docs/project_context.md` и текущие machine artifacts.
+- Если документация и runtime расходятся, приоритет у machine truth:
+  - metrics truth: `coint4/artifacts/wfa/aggregate/rollup/run_index.csv`
+  - promotion truth: `coint4/artifacts/wfa/aggregate/.autonomous/fullspan_decision_state.json`
+  - remote execution truth: `coint4/artifacts/wfa/aggregate/.autonomous/remote_runtime_state.json`
+- `docs/optimization_state.md` и `docs/best_params_latest.yaml` являются производными snapshot-файлами.
+- `coint4/artifacts/wfa/aggregate/.autonomous/candidate.csv` это scratchpad селектора, а не source of truth.
 
-## 2) Итерационный цикл
-`baseline -> batch -> ranking -> decision memo -> stop criteria`
+## 2) Канонические entrypoints
+- Online runtime: `make loop` -> `coint4/scripts/optimization/autonomous_wfa_driver.sh`
+- Planner-only path: `make loop-plan` -> `coint4/scripts/optimization/autonomous_optimize.py`
+- Local -> VPS launch adapter: `coint4/scripts/optimization/run_wfa_queue_powered.py`
+- Remote worker: `coint4/scripts/optimization/run_wfa_queue.py`
+- Canonical postprocess / winner evaluation: `coint4/scripts/optimization/run_fullspan_decision_cycle.py`
+- Manual/debug only: `coint4/scripts/optimization/watch_wfa_queue.sh`
 
-### Step A: baseline
-- Ответственный: `orchestrator` (+ `research` по запросу).
-- Что делаем:
-  - фиксируем baseline-конфиг и baseline objective/gates;
-  - проверяем, что метрики и окна WFA не меняются внутри итерации.
-- Артефакты:
-  - baseline config path в `docs/optimization_state.md`;
-  - ссылка на активный конфиг цикла (сейчас: `coint4/configs/autopilot/budget1000_batch_loop_bridge11_20260217.yaml`).
+## 3) Итерационный цикл
+`plan -> queue dispatch -> sync status -> rebuild rollup -> fullspan decision cycle -> decision memo`
 
-### Step B: batch
-- Ответственный: `backtest`/`ops`.
-- Что делаем:
-  - генерируем и запускаем очередь прогонов;
-  - выполняем queue/watch через `scripts/optimization/run_wfa_queue_powered.py`;
-  - после выполнения обязательно прогоняем единый postprocess: `sync_queue_status.py -> build_run_index.py -> rank_multiwindow_robust_runs.py --fullspan-policy-v1`.
-  - heavy запуск делаем только вручную через `coint4/scripts/batch/run_heavy_queue.sh` (policy: `docs/operating_mode_no_exec.md`).
-- Обязательные команды:
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --postprocess true`
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --dry-run --statuses planned,stalled --parallel 1`
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/sync_queue_status.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv`
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/rank_multiwindow_robust_runs.py --run-index artifacts/wfa/aggregate/rollup/run_index.csv --contains <group_or_tag> --fullspan-policy-v1 --min-windows 1 --min-trades 200 --min-pairs 20 --max-dd-pct 0.50 --min-pnl 0 --initial-capital 1000 --tail-quantile 0.20 --tail-q-soft-loss-pct 0.03 --tail-worst-soft-loss-pct 0.10 --tail-q-penalty 2.0 --tail-worst-penalty 1.0 --tail-worst-gate-pct 0.20`
+### Step A: planning
+- Ответственный: `orchestrator` / `research`.
+- Planner генерирует следующий batch и handoff, но не считается каноническим online runtime.
+- Для planner-only режима использовать `make loop-plan`.
 
-### Powered execution
-- Для реальных запусков всегда используем:
-  `PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py`.
-- Для запуска используйте только `run_wfa_queue_powered.py`; все логи смотрите по пути из `powered: log_file=...` в stderr/stdout запуска.
-- В powered-run не используйте `tee`/внешние пересылки логов: внутренний лог-файл скрипта всегда создаётся автоматически и содержит диагностику.
-- Пример команды запуска:
-  - `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --parallel 1 --postprocess true`
-- Проверки после запуска:
-  - `grep -R \"canonical_metrics.json\" artifacts/wfa/runs/<run_group>` (для проверенных completed run)
-  - `PYTHONPATH=src ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup`
-- Результирующие логи запуска:
-  - `artifacts/wfa/aggregate/<group>/logs/powered_run_YYYYMMDD_HHMMSS.log`
+### Step B: queue execution
+- Ответственный: `ops`.
+- Канонический запуск очереди идёт через `autonomous_wfa_driver.sh` или `run_wfa_queue_powered.py`.
+- Тяжёлые WFA/optimization runs выполнять только на `85.198.90.128`.
+- `watch_wfa_queue.sh` оставлен для manual/debug сценариев и исторической совместимости.
 
-### Run queue (canonical postprocess)
-- Оба режима (`run_wfa_queue.py` и `watch_wfa_queue.sh`) считаются каноничными для queue-run.
-- Запускаем queue через `scripts/optimization/run_wfa_queue.py`.
-- В `run_wfa_queue.py` флаг `--postprocess` включён по-умолчанию (`true`).
-- После каждого `completed run` внутри очереди (код возврата 0 и наличие `strategy_metrics.csv`) выполняется постпроцесс:
-  - `config_snapshot.yaml`
-  - `git_commit.txt`
-  - `canonical_metrics.json`
-- После завершения очереди (когда нет `planned/running`) очередь пересобирает `artifacts/wfa/aggregate/rollup/run_index.csv` через `scripts/optimization/build_run_index.py`.
-- Независимо от режима запуска (watch/powered/manual) блок считается завершённым только после явной цепочки:
-  - `sync_queue_status.py` для соответствующего `run_queue.csv`;
-  - `build_run_index.py` для rollup;
-  - `rank_multiwindow_robust_runs.py --fullspan-policy-v1` для финального verdict.
-- В рамках `decision memo` отмечаем:
-  - что именно запускали, какой run_group и с какими параметрами;
-  - выигравшие конфиги и метрики;
-  - что переносим в следующую итерацию и почему.
+Базовая команда powered-run:
+- `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --postprocess true`
 
-### Step C: ranking
-- Ответственный: `research` + `risk`.
-- Что делаем:
-  - ранжируем по fullspan-контракту `score_fullspan_v1`;
-  - проверяем risk-gates.
-- Базовая команда:
-  - `PYTHONPATH=coint4/src coint4/.venv/bin/python coint4/scripts/optimization/rank_multiwindow_robust_runs.py --run-index coint4/artifacts/wfa/aggregate/rollup/run_index.csv --fullspan-policy-v1 --min-windows 1 --min-trades 200 --min-pairs 20 --max-dd-pct 0.50 --min-pnl 0 --initial-capital 1000 --tail-quantile 0.20 --tail-q-soft-loss-pct 0.03 --tail-worst-soft-loss-pct 0.10 --tail-q-penalty 2.0 --tail-worst-penalty 1.0 --tail-worst-gate-pct 0.20`
+### Step C: canonical postprocess
+- После выполнения очереди canonical chain всегда одна:
+  - `sync_queue_status.py`
+  - `build_run_index.py`
+  - `run_fullspan_decision_cycle.py`
+- Финальный winner/evidence определяется только из `run_index.csv` через `fullspan_v1`.
+- `rank_multiwindow_robust_runs.py` остаётся diagnostic/research инструментом и не является final promotion gate.
+
+Базовая команда:
+- `cd coint4 && PYTHONPATH=src ./.venv/bin/python scripts/optimization/run_fullspan_decision_cycle.py --queue artifacts/wfa/aggregate/<group>/run_queue.csv --contains <group_or_tag>`
 
 ### Step D: decision memo
 - Ответственный: `orchestrator`.
-- Что делаем:
-  - фиксируем, что запускали, кто победил, почему, и что дальше.
-- Куда пишем:
-  - `docs/optimization_runs_YYYYMMDD.md` (дневник итераций),
-  - `docs/optimization_state.md` (текущее состояние/следующий шаг).
+- После каждого блока прогонов обновлять:
+  - `docs/optimization_state.md`
+  - `docs/optimization_runs_YYYYMMDD.md`
 
-### Step E: stop criteria
-- Ответственный: `orchestrator` (+ `risk` на валидацию).
-- Источник критериев остановки: `coint4/configs/autopilot/budget1000_batch_loop_bridge11_20260217.yaml`, секция `search`.
-- На текущем bridge11:
-  - `search.max_rounds = 5`
-  - `search.no_improvement_rounds = 2`
-  - `search.min_improvement = 0.02`
-  - `search.require_all_knobs_before_stop = true`
-  - `search.min_queue_entries = 60`
-- Дополнительные gates (не для остановки цикла, а для pass кандидата):
-  - `selection.min_windows = 3`
-  - `selection.min_trades = 200`
-  - `selection.min_pairs = 20`
-  - `selection.max_dd_pct = 0.14`
-  - `selection.dd_target_pct = 0.09`
-  - `selection.dd_penalty = 18.0`
+## 4) Winner contract
+- Final promotion / live cutover определяется только `fullspan_v1`.
+- Канонические strict defaults:
+  - `min_windows=1`
+  - `min_trades=200`
+  - `min_pairs=20`
+  - `max_dd_pct=0.20`
+  - `min_pnl=0`
+  - `tail_worst_gate_pct=0.20`
+- Primary ranking key в fullspan-режиме: `score_fullspan_v1`.
+- `avg_robust_sharpe` допустим только как diagnostic key.
+- `PROMOTE_ELIGIBLE` и `ALLOW_PROMOTE` выставляет только `promotion_gatekeeper_agent.py`.
 
-## 3) Decision memo template
-Использовать этот шаблон в `docs/optimization_runs_YYYYMMDD.md`:
+## 5) Invariants
+- Нельзя менять определение метрик и окна WFA внутри активного цикла без отдельного решения.
+- Нельзя логировать секреты, ключи, токены.
+- Heavy artifacts в `coint4/artifacts/wfa/runs/**` не коммитятся.
+- `docs/best_params_latest.yaml` не должен откатываться к placeholder после публикации winner.
 
-```md
-## Decision Memo: <iteration_id>
-
-Date (UTC): <YYYY-MM-DDTHH:MM:SSZ>
-Owner: orchestrator
-Source context: docs/project_context.md
-
-### Baseline
-- Config: <path to baseline config>
-- Frozen WFA/metrics contract: <unchanged / approved change ref>
-
-### Batch executed
-- Run group(s): <group1, group2, ...>
-- Queue file(s): <path(s)>
-- Host: <hostname/ip>
-- ALLOW_HEAVY_RUN: <1|0|n/a>
-- Result: <success|fail>
-- Commands:
-  - `<command 1>`
-  - `<command 2>`
-- Execution notes: <short>
-
-### Postprocess
-- sync_queue_status: <done yes/no + command>
-- build_run_index: <done yes/no + command>
-- ranker_fullspan_v1: <done yes/no + command>
-- Source of truth: `artifacts/wfa/aggregate/rollup/run_index.csv`
-
-### Ranking summary
-- Candidate 1: <variant/run_id> | worst_robust_sh=<...> | worst_dd=<...> | windows=<...> | trades_min=<...> | pairs_min=<...>
-- Candidate 2: ...
-- Candidate 3: ...
-
-### Risk verdict
-- PASS/FAIL per candidate with one-line reason.
-
-### Decision
-- Winner: <variant/run_id>
-- Why: <2-4 bullets>
-- Promote to baseline next round: <yes/no + path>
-
-### Next actions
-1. <concrete next step>
-2. <concrete next step>
-3. <optional>
-
-### Stop criteria check
-- max_rounds reached: <yes/no>
-- no_improvement_rounds reached: <yes/no>
-- min_improvement satisfied: <yes/no>
-- require_all_knobs_before_stop satisfied: <yes/no>
-```
-
-## 4) Invariants
-- Нельзя менять определение метрик (Sharpe/DD/PnL) и окна WFA внутри активной итерации без отдельного решения владельца.
-- Нельзя логировать/печатать секреты, ключи, токены.
-- Heavy artifacts в `coint4/artifacts/wfa/runs*/` не коммитятся.
-
-## 5) Autonomous Autopilot (systemd)
-- Один автономный цикл запускается скриптом:
-  - `coint4/scripts/optimization/autonomous_optimize.py`
-- Цикл: `batch -> powered run -> rollup -> rank -> next batch`, до stop-criteria.
-- Итоговые артефакты:
-  - `docs/best_params_latest.yaml`
-  - `docs/final_report_latest.md`
-- Состояние и основной лог:
-  - `coint4/artifacts/optimization_state/autonomous_state.json`
-  - `coint4/artifacts/optimization_state/autonomous_service.log`
-- Проверка статуса systemd:
-  - `systemctl status coint4-autopilot.timer`
-  - `systemctl status coint4-autopilot.service`
-  - `journalctl -u coint4-autopilot.service -n 200 --no-pager`
+## 6) Planner role
+- `autonomous_optimize.py` это planner-only модуль для offline batch planning и supervised handoff.
+- По умолчанию planner идёт single-pass; repeated in-process режим нужен только при явном `--until-done` или `make loop-plan LOOP_PLAN_REPEAT=1`.
+- Если нужен online autonomous runtime, использовать только `make loop`.

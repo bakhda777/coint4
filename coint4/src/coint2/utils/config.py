@@ -274,7 +274,7 @@ class BacktestConfig(BaseModel):
     time_stop_multiplier: float | None = None
     zscore_exit: float | None = None
     take_profit_multiplier: float | None = None
-    cooldown_hours: int = 0
+    cooldown_hours: float = Field(default=0.0, ge=0.0)
     wait_for_candle_close: bool = False
     min_volatility: float = Field(default=0.001, ge=0.0)
     slippage_stress_multiplier: float = Field(default=1.0, ge=0.0)
@@ -285,7 +285,7 @@ class BacktestConfig(BaseModel):
     volatility_lookback: int = Field(default=96, ge=10)
     adaptive_thresholds: bool = True
     var_confidence: float = Field(default=0.05, gt=0.0, lt=1.0)
-    max_var_multiplier: float = Field(default=3.0, gt=1.0)
+    max_var_multiplier: float = Field(default=3.0, ge=1.0)
     
     # NEW: Enhanced entry/exit rules
     zscore_entry_threshold: float = Field(default=2.3, gt=0.0)  # New higher entry threshold
@@ -403,8 +403,8 @@ class BacktestConfig(BaseModel):
         if self.var_confidence <= 0 or self.var_confidence >= 1.0:
             raise ValueError("`var_confidence` must be between 0 and 1")
         
-        if self.max_var_multiplier <= 1.0:
-            raise ValueError("`max_var_multiplier` must be greater than 1.0")
+        if self.max_var_multiplier < 1.0:
+            raise ValueError("`max_var_multiplier` must be >= 1.0")
 
         if (
             self.portfolio_deleverage_start_pct is not None

@@ -74,7 +74,7 @@ def test_main_skips_invalid_proposal_before_materialization(tmp_path: Path, monk
         module,
         parent_cfg=parent_cfg,
         candidate_id="invalid_mvm",
-        overrides={"backtest.max_var_multiplier": 1.0},
+        overrides={"backtest.max_var_multiplier": 0.995},
     )
     monkeypatch.setattr(module, "_generate_proposals", lambda **_kwargs: [invalid_candidate])
 
@@ -118,6 +118,38 @@ def test_main_skips_invalid_proposal_before_materialization(tmp_path: Path, monk
     state = module._load_invalid_proposal_index(invalid_state_path)
     assert len(state["entries"]) == 1
     assert state["entries"][0]["code"] == "MAX_VAR_MULTIPLIER_INVALID"
+
+
+def test_neutral_max_var_multiplier_passes_preflight_firewall(tmp_path: Path) -> None:
+    module = _load_script(f"{tmp_path.name}_neutral")
+    base_cfg = tmp_path / "base.yaml"
+    _write_base_config(base_cfg)
+    parent_cfg = module.load_effective_yaml_config(base_cfg)
+    neutral_candidate = _build_candidate(
+        module,
+        parent_cfg=parent_cfg,
+        candidate_id="neutral_mvm",
+        overrides={"backtest.max_var_multiplier": 1.0},
+    )
+    invalid_state_path = tmp_path / ".autonomous" / "invalid_proposal_index.json"
+
+    accepted, summary, state = module.filter_invalid_proposals_before_materialization(
+        proposals=[neutral_candidate],
+        app_root=tmp_path,
+        invalid_index_path=invalid_state_path,
+        parent_cfg=parent_cfg,
+        windows=[("2022-01-01", "2022-12-31")],
+        include_stress=True,
+        ir_mode="knob",
+        persist_state=True,
+    )
+
+    assert len(accepted) == 1
+    assert accepted[0].candidate_id == "neutral_mvm"
+    assert summary["skipped_invalid"] == 0
+    assert summary["codes"] == {}
+    assert state["entries"] == []
+    assert not invalid_state_path.exists()
 
 
 def test_repeated_invalid_fingerprint_is_quarantined(tmp_path: Path) -> None:

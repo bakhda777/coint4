@@ -51,7 +51,7 @@ def test_process_slo_and_seeder_share_stalled_contract(tmp_path: Path) -> None:
     assert runnable_queue_count == 1
 
 
-def test_seeder_summary_excludes_queue_level_blocked_pending_rows(tmp_path: Path) -> None:
+def test_seeder_summary_keeps_cutover_fail_closed_queue_runnable_for_search(tmp_path: Path) -> None:
     seeder_module = _load_module("autonomous_queue_seeder.py", tmp_path)
 
     app_root = tmp_path / "app"
@@ -96,7 +96,7 @@ def test_seeder_summary_excludes_queue_level_blocked_pending_rows(tmp_path: Path
     )
 
     assert total_pending == 3
-    assert dispatchable_pending == 1
+    assert dispatchable_pending == 2
     assert executable_pending == 2
     assert runnable_queue_count == 2
 
@@ -230,7 +230,7 @@ def test_queue_dispatch_block_reason_distinguishes_reject_fail_closed_and_orphan
             },
             now_epoch=now_epoch,
         )
-        == "FAIL_CLOSED"
+        == ""
     )
 
     assert (
@@ -249,4 +249,21 @@ def test_queue_dispatch_block_reason_distinguishes_reject_fail_closed_and_orphan
             now_epoch=now_epoch,
         )
         == "FAIL_CLOSED"
+    )
+
+
+def test_queue_dispatch_block_reason_ignores_transient_startup_fail_closed_without_orphan(tmp_path: Path) -> None:
+    module = _load_module("_queue_status_contract.py", tmp_path)
+
+    assert (
+        module.queue_dispatch_block_reason(
+            queue_rel="artifacts/wfa/aggregate/demo/run_queue.csv",
+            fullspan_entry={
+                "promotion_verdict": "ANALYZE",
+                "startup_state": "fail_closed",
+                "startup_failure_code": "MANIFEST_MISMATCH",
+            },
+            now_epoch=1_777_000_000.0,
+        )
+        == ""
     )

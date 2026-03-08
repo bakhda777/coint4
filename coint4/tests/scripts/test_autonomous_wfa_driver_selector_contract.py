@@ -24,12 +24,16 @@ def _extract_embedded_python(function_name: str) -> str:
 
 
 def _run_embedded_python(code: str, argv: list[str], cwd: Path) -> None:
-    proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True)
+    env = dict(**os.environ)
+    env.setdefault("AUTONOMOUS_SIMPLE_CONTROL_PLANE", "0")
+    proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True, env=env)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
 
 
 def _run_embedded_python_capture(code: str, argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True)
+    env = dict(**os.environ)
+    env.setdefault("AUTONOMOUS_SIMPLE_CONTROL_PLANE", "0")
+    proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True, env=env)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     return proc
 
@@ -260,6 +264,73 @@ def test_fallback_pending_candidate_handles_relative_root_skip_forms_and_mtime(t
     assert fourth["queue"] == second_queue
 
 
+def test_global_backlog_snapshot_excludes_active_cold_fail_queue(tmp_path: Path) -> None:
+    app_root = tmp_path
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    healthy_queue = queue_root / "healthy_group" / "run_queue.csv"
+    toxic_queue = queue_root / "toxic_group" / "run_queue.csv"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "healthy.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    (app_root / "configs" / "toxic.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+
+    _write_queue(
+        healthy_queue,
+        [
+            {
+                "config_path": "configs/healthy.yaml",
+                "results_dir": "artifacts/wfa/runs/healthy_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    _write_queue(
+        toxic_queue,
+        [
+            {
+                "config_path": "configs/toxic.yaml",
+                "results_dir": "artifacts/wfa/runs/toxic_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+
+    now_ts = time.time()
+    os.utime(healthy_queue, (now_ts - 30, now_ts - 30))
+    os.utime(toxic_queue, (now_ts - 30, now_ts - 30))
+    cold_fail_path = queue_root / ".autonomous" / "cold_fail_index.json"
+    cold_fail_path.parent.mkdir(parents=True, exist_ok=True)
+    cold_fail_path.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "queue": str(toxic_queue.relative_to(app_root)),
+                        "inserted_ts": now_ts,
+                        "until_ts": now_ts + 3600,
+                        "policy_version": "fullspan_v1",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    code = _extract_embedded_python("global_backlog_snapshot")
+    proc = _run_embedded_python_capture(
+        code,
+        [
+            str(queue_root),
+            str(app_root),
+            str(cold_fail_path),
+        ],
+        cwd=app_root,
+    )
+
+    assert proc.stdout.strip() == "1 1 0 1"
+
+
 def test_log_decision_note_writes_contract_fields_and_keeps_compat(tmp_path: Path) -> None:
     code = _extract_embedded_python("log_decision_note")
     notes_path = tmp_path / "decision_notes.jsonl"
@@ -368,6 +439,48 @@ def test_queue_start_confirmation_status_classifies_manifest_mismatch(tmp_path: 
     )
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     assert proc.stdout.strip() == "fail\tMANIFEST_MISMATCH\tmanifest_mismatch"
+
+
+def test_queue_start_confirmation_status_confirms_remote_handoff_marker(tmp_path: Path) -> None:
+    app_root = tmp_path
+    queue_rel = "artifacts/wfa/aggregate/demo/run_queue.csv"
+    queue_path = app_root / queue_rel
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/demo.yaml",
+                "results_dir": "artifacts/wfa/runs/demo/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    qlog = app_root / "startup.log"
+    qlog.write_text(
+        "powered: remote handoff confirmed queue=artifacts/wfa/aggregate/demo/run_queue.csv statuses=stalled\n",
+        encoding="utf-8",
+    )
+
+    code = _extract_embedded_python("queue_start_confirmation_status")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(app_root),
+            queue_rel,
+            str(qlog),
+            str(int(time.time())),
+            "180",
+            "120",
+            "420",
+        ],
+        cwd=app_root,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    assert proc.stdout.strip() == "confirmed\tREMOTE_HANDOFF_CONFIRMED\tpowered_remote_handoff_confirmed"
 
 
 def test_trigger_confirm_fastlane_shortlist_excludes_stress_rows(tmp_path: Path) -> None:
@@ -526,7 +639,7 @@ def test_find_candidate_skips_active_cold_fail_and_writes_pool(tmp_path: Path) -
     assert int(hot_row["executable_pending"]) == 1
 
 
-def test_find_candidate_skips_fail_closed_queue_state(tmp_path: Path) -> None:
+def test_find_candidate_ignores_cutover_fail_closed_for_search_backlog(tmp_path: Path) -> None:
     app_root = tmp_path
     _prepare_opt_scripts(app_root)
 
@@ -559,6 +672,9 @@ def test_find_candidate_skips_fail_closed_queue_state(tmp_path: Path) -> None:
             }
         ],
     )
+    now_ts = time.time()
+    os.utime(open_queue, (now_ts - 60.0, now_ts - 60.0))
+    os.utime(blocked_queue, (now_ts, now_ts))
 
     fullspan_state.write_text(
         json.dumps(
@@ -598,7 +714,172 @@ def test_find_candidate_skips_fail_closed_queue_state(tmp_path: Path) -> None:
         rows = list(csv.DictReader(handle))
 
     assert rows
-    assert rows[0]["queue"] == str(open_queue.relative_to(app_root))
+    assert rows[0]["queue"] == str(blocked_queue.relative_to(app_root))
+
+
+def test_find_candidate_ignores_transient_startup_fail_closed_state(tmp_path: Path) -> None:
+    app_root = tmp_path
+    _prepare_opt_scripts(app_root)
+
+    queue_root = app_root / "artifacts" / "wfa" / "aggregate"
+    queue_path = queue_root / "startup_retry_group" / "run_queue.csv"
+    fullspan_state = app_root / "fullspan_state.json"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "retry.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/retry.yaml",
+                "results_dir": "artifacts/wfa/runs/startup_retry_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    fullspan_state.write_text(
+        json.dumps(
+            {
+                "queues": {
+                    str(queue_path.relative_to(app_root)): {
+                        "promotion_verdict": "ANALYZE",
+                        "startup_state": "fail_closed",
+                        "startup_failure_code": "MANIFEST_MISMATCH",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    out_csv = app_root / "candidate.csv"
+    code = _extract_embedded_python("find_candidate") + "\nemit_scores()\n"
+    _run_embedded_python(
+        code,
+        [
+            str(queue_root),
+            str(out_csv),
+            "",
+            "",
+            "8",
+            str(fullspan_state),
+            "0.70",
+            "2",
+            "2",
+            "0.20",
+        ],
+        cwd=app_root,
+    )
+
+    with out_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert rows
+    assert rows[0]["queue"] == str(queue_path.relative_to(app_root))
+
+
+def test_ready_buffer_emit_candidate_ignores_transient_startup_fail_closed_state(tmp_path: Path) -> None:
+    app_root = tmp_path
+    queue_rel = "artifacts/wfa/aggregate/ready_retry_group/run_queue.csv"
+    queue_path = app_root / queue_rel
+    fullspan_state = app_root / "fullspan_state.json"
+    ready_buffer_state = app_root / "ready_buffer_state.json"
+    candidate_path = app_root / "candidate.csv"
+
+    (app_root / "configs").mkdir(parents=True, exist_ok=True)
+    (app_root / "configs" / "ready_retry.yaml").write_text("walk_forward:\n  max_steps: 5\n", encoding="utf-8")
+    _write_queue(
+        queue_path,
+        [
+            {
+                "config_path": "configs/ready_retry.yaml",
+                "results_dir": "artifacts/wfa/runs/ready_retry_group/run_01",
+                "status": "planned",
+            }
+        ],
+    )
+    ready_buffer_state.write_text(
+        json.dumps(
+            {
+                "planner_policy_hash": "",
+                "snapshot_hash": "",
+                "built_epoch": int(time.time()),
+                "entries": [
+                    {
+                        "queue": queue_rel,
+                        "claimed": False,
+                        "coverage_verified": True,
+                        "planned": 1,
+                        "running": 0,
+                        "stalled": 0,
+                        "failed": 0,
+                        "completed": 0,
+                        "total": 1,
+                        "urgency": 1.0,
+                        "mtime": int(queue_path.stat().st_mtime),
+                        "promotion_potential": "POSSIBLE",
+                        "gate_status": "OPEN",
+                        "gate_reason": "",
+                        "pre_rank_score": 1.0,
+                        "strict_gate_status": "UNKNOWN",
+                        "strict_gate_reason": "",
+                        "effective_planned_count": 1,
+                        "stalled_share": 0.0,
+                        "queue_yield_score": 1.0,
+                        "recent_yield": 0.0,
+                        "dispatch_block_reason": "",
+                        "queue_file_mtime": int(queue_path.stat().st_mtime),
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    fullspan_state.write_text(
+        json.dumps(
+            {
+                "queues": {
+                    queue_rel: {
+                        "promotion_verdict": "ANALYZE",
+                        "startup_state": "fail_closed",
+                        "startup_failure_code": "MANIFEST_MISMATCH",
+                    }
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    code = _extract_embedded_python("ready_buffer_emit_candidate")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(ready_buffer_state),
+            str(candidate_path),
+            "",
+            str(app_root / "ready_buffer_pool.json"),
+            str(app_root / "gate_surrogate_state.json"),
+            str(fullspan_state),
+            str(app_root),
+            "900",
+            "",
+            "",
+        ],
+        cwd=app_root,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    with candidate_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert rows
+    assert rows[0]["queue"] == queue_rel
 
 
 def test_ready_buffer_policy_hash_and_replay_fastlane_hooks_contract() -> None:

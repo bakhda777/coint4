@@ -154,6 +154,26 @@ class TestEnhancedRiskManagement:
         # VaR multiplier должен быть положительным и разумным
         assert var_multiplier > MIN_VAR_MULTIPLIER
         assert var_multiplier <= MAX_VAR_MULTIPLIER  # Не должен превышать базовый размер
+
+    @pytest.mark.unit
+    def test_neutral_max_var_multiplier_when_initializing_then_allowed(self):
+        dates = pd.date_range(START_DATE, periods=TEST_PERIODS, freq=FREQUENCY)
+        data = pd.DataFrame(
+            {
+                'S1': BASE_PRICE + np.cumsum(np.random.normal(0, NOISE_STD, TEST_PERIODS)),
+                'S2': BASE_PRICE + np.cumsum(np.random.normal(0, NOISE_STD, TEST_PERIODS)),
+            },
+            index=dates,
+        )
+
+        bt = PairBacktester(
+            data,
+            rolling_window=DEFAULT_ROLLING_WINDOW,
+            z_threshold=DEFAULT_Z_THRESHOLD,
+            max_var_multiplier=1.0,
+        )
+
+        assert bt.max_var_multiplier == pytest.approx(1.0)
         
     @pytest.mark.integration
     def test_enhanced_risk_management_when_integrated_then_works_together(self):

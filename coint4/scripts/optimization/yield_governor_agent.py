@@ -330,6 +330,10 @@ def _build_planner_policy_inputs(
                 1,
                 parse_int(search_quality.get("controlled_recovery_variants_cap"), 8),
             ),
+            "controlled_broad_rearm_after_epoch": max(
+                0,
+                parse_int(search_quality.get("controlled_broad_rearm_after_epoch"), 0),
+            ),
         },
         "preferred_contains": [str(token).strip() for token in preferred_contains if str(token).strip()][:12],
         "cooldown_contains": [str(token).strip() for token in cooldown_contains if str(token).strip()][:12],
@@ -649,6 +653,9 @@ def build_yield_governor_state(
             controlled_recovery.get("controlled_recovery_attempts_remaining", 0) or 0
         ),
         "controlled_recovery_variants_cap": int(controlled_recovery.get("controlled_recovery_variants_cap", 0) or 0),
+        "controlled_broad_rearm_after_epoch": int(
+            controlled_recovery.get("controlled_broad_rearm_after_epoch", 0) or 0
+        ),
         "lane_weights": lane_weights,
         "policy_overrides": {
             "num_variants_cap": int(micro_caps["num_variants_cap"]),
@@ -744,6 +751,7 @@ def rearm_controlled_recovery_if_eligible(
             "controlled_recovery_reason": CONTROLLED_RECOVERY_REASON,
             "controlled_recovery_attempts_remaining": attempts_target,
             "controlled_recovery_variants_cap": variants_target,
+            "controlled_broad_rearm_after_epoch": 0,
         }
     )
     payload["search_quality"] = nested_search_quality

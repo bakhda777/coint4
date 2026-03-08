@@ -8,6 +8,8 @@ import csv
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def _load_autonomous_module(tmp_path: Path):
     script_path = Path(__file__).resolve().parents[2] / "scripts/optimization/autonomous_optimize.py"
@@ -525,8 +527,35 @@ def test_decision_prompt_requires_pnl_and_dd_in_human_output(tmp_path: Path) -> 
     module = _load_autonomous_module(tmp_path)
     runner = _setup_runner(module, tmp_path)
     prompt = runner._decision_prompt({"evidence": {}})
+    assert "planner-only" in prompt
+    assert "не за канонический online runtime" in prompt
     assert "P&L" in prompt
     assert "DD" in prompt
+
+
+def test_build_decision_context_marks_planner_only_role(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+
+    context = runner._build_decision_context(runner._default_state())
+
+    assert context["planner_context"]["role"] == "offline_planner"
+    assert context["planner_context"]["default_invocation_mode"] == "single_pass"
+    assert context["runtime_constraints"]["canonical_online_runtime"] is False
+    assert "not the canonical online runtime launcher" in context["runtime_constraints"]["note"]
+
+
+def test_cli_help_describes_planner_only_role(tmp_path: Path, capsys) -> None:
+    module = _load_autonomous_module(tmp_path)
+
+    with pytest.raises(SystemExit) as exc_info:
+        module.parse_args(["--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Planner-only optimization orchestrator" in help_text
+    assert "Run one planner iteration (default behavior)." in help_text
+    assert "not the canonical online runtime" in help_text
 
 
 def test_until_done_keeps_loop_in_process_after_wait(tmp_path: Path, monkeypatch) -> None:
@@ -589,6 +618,44 @@ def test_invalid_codex_json_goes_wait_without_queue(tmp_path: Path, monkeypatch)
 
     queues = list((runner.app_root / "artifacts" / "wfa" / "aggregate").glob("*/run_queue*.csv"))
     assert not queues
+
+
+def test_run_defaults_to_single_pass_planner_mode(tmp_path: Path, monkeypatch) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    monkeypatch.setattr(runner, "_quarantine_demo_queues", lambda: None)
+    monkeypatch.setattr(runner, "_should_stop", lambda _state: (False, ""))
+
+    calls = {"n": 0}
+
+    def _fake_run_iteration(*, state):
+        calls["n"] += 1
+        state["status"] = "running"
+        state["last_iteration_phase"] = "planned"
+        runner._exit_after_iteration_wait = False
+        return state
+
+    monkeypatch.setattr(runner, "run_iteration", _fake_run_iteration)
+
+    rc = runner.run()
+
+    assert rc == 0
+    assert calls["n"] == 1
+    log_text = runner.main_log_path.read_text(encoding="utf-8")
+    assert "default single-pass planner mode" in log_text
+    assert "single pass complete" in log_text
+
+
+def test_write_best_params_preserves_existing_winner_when_new_source_missing(tmp_path: Path) -> None:
+    module = _load_autonomous_module(tmp_path)
+    runner = _setup_runner(module, tmp_path)
+    runner.best_params_path.write_text("portfolio:\n  initial_capital: 1000.0\n", encoding="utf-8")
+
+    runner.write_best_params({"status": "running"})
+
+    assert runner.best_params_path.read_text(encoding="utf-8") == "portfolio:\n  initial_capital: 1000.0\n"
+    log_text = runner.main_log_path.read_text(encoding="utf-8")
+    assert "preserved existing winner snapshot" in log_text
 
 
 def test_build_decision_context_has_completed_evidence(tmp_path: Path) -> None:

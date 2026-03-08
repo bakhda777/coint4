@@ -156,6 +156,120 @@ def test_fill_limit_pct_when_invalid_then_validation_error() -> None:
 
 
 @pytest.mark.unit
+def test_load_config_when_fractional_cooldown_hours_then_accepts_runtime_compatibility(tmp_path):
+    """Existing runtime configs may use fractional cooldown hours and should still load."""
+    data_dir = tmp_path / DATA_DIR_NAME
+    results_dir = tmp_path / RESULTS_DIR_NAME
+    data_dir.mkdir()
+    results_dir.mkdir()
+
+    config_file = tmp_path / "fractional_cooldown.yaml"
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "data_dir": str(data_dir),
+                "results_dir": str(results_dir),
+                "portfolio": {
+                    "initial_capital": DEFAULT_INITIAL_CAPITAL,
+                    "risk_per_position_pct": DEFAULT_RISK_PER_POSITION,
+                    "max_active_positions": DEFAULT_MAX_ACTIVE_POSITIONS,
+                },
+                "pair_selection": {
+                    "lookback_days": DEFAULT_LOOKBACK_DAYS,
+                    "coint_pvalue_threshold": DEFAULT_COINT_PVALUE_THRESHOLD,
+                    "ssd_top_n": DEFAULT_SSD_TOP_N,
+                    "min_half_life_days": DEFAULT_MIN_HALF_LIFE_DAYS,
+                    "max_half_life_days": DEFAULT_MAX_HALF_LIFE_DAYS,
+                    "min_mean_crossings": DEFAULT_MIN_MEAN_CROSSINGS,
+                    "max_hurst_exponent": DEFAULT_MAX_HURST_EXPONENT,
+                },
+                "backtest": {
+                    "timeframe": DEFAULT_TIMEFRAME,
+                    "rolling_window": DEFAULT_ROLLING_WINDOW,
+                    "zscore_threshold": DEFAULT_ZSCORE_THRESHOLD,
+                    "stop_loss_multiplier": DEFAULT_STOP_LOSS_MULTIPLIER,
+                    "time_stop_multiplier": DEFAULT_TIME_STOP_MULTIPLIER,
+                    "cooldown_hours": 4.5,
+                    "fill_limit_pct": DEFAULT_FILL_LIMIT_PCT,
+                    "commission_pct": DEFAULT_COMMISSION_PCT,
+                    "slippage_pct": DEFAULT_SLIPPAGE_PCT,
+                    "annualizing_factor": DEFAULT_ANNUALIZING_FACTOR,
+                },
+                "walk_forward": {
+                    "start_date": DEFAULT_START_DATE,
+                    "end_date": DEFAULT_END_DATE,
+                    "training_period_days": DEFAULT_TRAINING_PERIOD_DAYS,
+                    "testing_period_days": DEFAULT_TESTING_PERIOD_DAYS,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(config_file)
+
+    assert cfg.backtest.cooldown_hours == pytest.approx(4.5)
+
+
+@pytest.mark.unit
+def test_load_config_when_neutral_max_var_multiplier_then_accepts_runtime_compatibility(tmp_path):
+    """Neutral risk multiplier 1.0 is a valid runtime config and must not fail preflight."""
+    data_dir = tmp_path / DATA_DIR_NAME
+    results_dir = tmp_path / RESULTS_DIR_NAME
+    data_dir.mkdir()
+    results_dir.mkdir()
+
+    config_file = tmp_path / "neutral_max_var.yaml"
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "data_dir": str(data_dir),
+                "results_dir": str(results_dir),
+                "portfolio": {
+                    "initial_capital": DEFAULT_INITIAL_CAPITAL,
+                    "risk_per_position_pct": DEFAULT_RISK_PER_POSITION,
+                    "max_active_positions": DEFAULT_MAX_ACTIVE_POSITIONS,
+                },
+                "pair_selection": {
+                    "lookback_days": DEFAULT_LOOKBACK_DAYS,
+                    "coint_pvalue_threshold": DEFAULT_COINT_PVALUE_THRESHOLD,
+                    "ssd_top_n": DEFAULT_SSD_TOP_N,
+                    "min_half_life_days": DEFAULT_MIN_HALF_LIFE_DAYS,
+                    "max_half_life_days": DEFAULT_MAX_HALF_LIFE_DAYS,
+                    "min_mean_crossings": DEFAULT_MIN_MEAN_CROSSINGS,
+                    "max_hurst_exponent": DEFAULT_MAX_HURST_EXPONENT,
+                },
+                "backtest": {
+                    "timeframe": DEFAULT_TIMEFRAME,
+                    "rolling_window": DEFAULT_ROLLING_WINDOW,
+                    "zscore_threshold": DEFAULT_ZSCORE_THRESHOLD,
+                    "stop_loss_multiplier": DEFAULT_STOP_LOSS_MULTIPLIER,
+                    "time_stop_multiplier": DEFAULT_TIME_STOP_MULTIPLIER,
+                    "fill_limit_pct": DEFAULT_FILL_LIMIT_PCT,
+                    "commission_pct": DEFAULT_COMMISSION_PCT,
+                    "slippage_pct": DEFAULT_SLIPPAGE_PCT,
+                    "annualizing_factor": DEFAULT_ANNUALIZING_FACTOR,
+                    "max_var_multiplier": 1.0,
+                },
+                "walk_forward": {
+                    "start_date": DEFAULT_START_DATE,
+                    "end_date": DEFAULT_END_DATE,
+                    "training_period_days": DEFAULT_TRAINING_PERIOD_DAYS,
+                    "testing_period_days": DEFAULT_TESTING_PERIOD_DAYS,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(config_file)
+
+    assert cfg.backtest.max_var_multiplier == pytest.approx(1.0)
+
+
+@pytest.mark.unit
 def test_load_config_with_base_config_and_null_overrides(tmp_path, monkeypatch):
     """batch config with base_config should merge and keep base values for null overrides."""
     data_dir = tmp_path / DATA_DIR_NAME

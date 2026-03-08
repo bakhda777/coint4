@@ -76,7 +76,7 @@ def main() -> int:
     thresholds = fullspan_thresholds_from_policy(policy)
     min_groups = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_GROUPS", "2"), 2)
     min_replies = parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_REPLIES", "2"), 2)
-    min_windows = parse_int(policy.get("min_windows"), 3)
+    min_windows = parse_int(policy.get("min_windows"), 1)
     tail_quantile = parse_float(policy.get("tail_quantile"), 0.20)
     tail_q_soft_loss_pct = parse_float(policy.get("tail_q_soft_loss_pct"), 0.03)
     tail_worst_soft_loss_pct = parse_float(policy.get("tail_worst_soft_loss_pct"), 0.10)

@@ -20,6 +20,14 @@ def _extract_embedded_python() -> str:
     return match.group("body")
 
 
+def test_confirm_dispatch_agent_defers_to_driver_contract() -> None:
+    source = SCRIPT_PATH.read_text(encoding="utf-8")
+    assert 'CONFIRM_DISPATCH_ALLOW_WITH_DRIVER="${CONFIRM_DISPATCH_ALLOW_WITH_DRIVER:-0}"' in source
+    assert "driver_loop_active()" in source
+    assert "autonomous-wfa-driver.service" in source
+    assert "confirm_dispatch_agent_deferred reason=driver_active" in source
+
+
 def _run_embedded_python(code: str, argv: list[str], cwd: Path, env: dict[str, str]) -> None:
     proc = subprocess.run([sys.executable, "-c", code, *argv], cwd=cwd, capture_output=True, text=True, env=env)
     assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"

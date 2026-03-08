@@ -123,6 +123,51 @@ def test_sync_inputs_uploads_queue_and_configs(
     assert len(mk_mkdir_calls) == 3
 
 
+def test_sync_inputs_limits_config_sync_to_requested_statuses(
+    monkeypatch: pytest.MonkeyPatch, sample_queue: Path, tmp_path: Path
+) -> None:
+    module = _load_powered_module(sample_queue.parent)
+    project_root = tmp_path
+
+    (project_root / "configs").mkdir(parents=True, exist_ok=True)
+    cfg_a = project_root / "configs/a.yaml"
+    cfg_b = project_root / "configs/b.yaml"
+    cfg_a.write_text("a: 1\n", encoding="utf-8")
+    cfg_b.write_text("b: 2\n", encoding="utf-8")
+
+    scp_calls: list[str] = []
+
+    monkeypatch.setattr(module, "_run_remote_command", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(module, "_run_remote_mkdir", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        module,
+        "_run_scp_file",
+        lambda source, destination_user, destination_host, destination, *, port, log: scp_calls.append(
+            f"{source}->{destination_user}@{destination_host}:{destination}"
+        ),
+    )
+
+    module._sync_inputs(
+        host="85.198.90.128",
+        user="root",
+        queue_path=sample_queue,
+        remote_repo=Path("/remote/repo"),
+        remote_python="python3",
+        project_root=project_root,
+        bulk_configs=False,
+        force_remote_queue_overwrite=True,
+        statuses="stalled",
+        port=22,
+        log_path=tmp_path / "log.log",
+        log=lambda msg: None,
+    )
+
+    assert any("run_queue_mini.csv" in item for item in scp_calls)
+    assert any(str(cfg_b) in item for item in scp_calls)
+    assert all(str(cfg_a) not in item for item in scp_calls)
+    assert len(scp_calls) == 2
+
+
 def test_sync_inputs_skips_queue_upload_when_remote_has_progress(
     monkeypatch: pytest.MonkeyPatch, sample_queue: Path, tmp_path: Path
 ) -> None:
@@ -254,6 +299,17 @@ def test_no_retry_when_repo_not_found(tmp_path: Path, monkeypatch: pytest.Monkey
     assert exc_info.value.error_class == "REMOTE_REPO_NOT_FOUND"
     assert exc_info.value.fatal is True
     assert run_calls == ["run"]
+
+
+def test_classify_remote_error_recognizes_remote_handoff_failed(tmp_path: Path) -> None:
+    module = _load_powered_module(tmp_path)
+    error_class, fatal = module._classify_remote_error(
+        "queue-run",
+        9,
+        '{"ok": false, "error": "REMOTE_HANDOFF_FAILED", "queue": "artifacts/wfa/aggregate/demo/run_queue.csv"}',
+    )
+    assert error_class == "REMOTE_HANDOFF_FAILED"
+    assert fatal is False
 
 
 def test_dry_run_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
@@ -635,6 +691,26 @@ def test_sync_repo_code_uses_sha_verify_only_for_mismatched_subset(
     assert state["remote_git_identity_drift"] is True
 
 
+def test_manifest_sha_verify_ignores_mtime_drift_when_hash_matches(tmp_path: Path) -> None:
+    module = _load_powered_module(tmp_path)
+    local_manifest = {
+        "entries": [
+            {"path": "scripts/optimization/a.py", "size": 10, "mtime_ns": 1, "sha256": "abc"},
+        ]
+    }
+    remote_manifest = {
+        "entries": [
+            {"path": "scripts/optimization/a.py", "size": 10, "mtime_ns": 999, "sha256": "abc"},
+        ]
+    }
+
+    assert module._manifest_mismatched_paths(local_manifest, remote_manifest) == []
+    assert module._manifest_entries_digest(local_manifest["entries"], include_hash=True) == module._manifest_entries_digest(
+        remote_manifest["entries"],
+        include_hash=True,
+    )
+
+
 def test_sync_repo_code_prunes_remote_only_files_before_stream_when_parity_is_restored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -734,6 +810,74 @@ def test_sync_repo_code_treats_remote_git_head_drift_as_observability_only(
     assert sync_state["status"] == "skipped_manifest_match"
     assert sync_state["remote_git_identity_drift"] is True
     assert sync_state["manifest_mode"] == "fingerprint"
+
+
+def test_sync_code_include_paths_runtime_first_uses_runtime_subset(tmp_path: Path) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "scripts" / "optimization").mkdir(parents=True)
+    (tmp_path / "scripts" / "remote").mkdir(parents=True)
+    (tmp_path / "scripts" / "build_portfolio.py").write_text("print('x')\n", encoding="utf-8")
+    (tmp_path / "scripts" / "optimization" / "run_wfa_queue.py").write_text("print('x')\n", encoding="utf-8")
+    (tmp_path / "scripts" / "optimization" / "sync_queue_status.py").write_text("print('y')\n", encoding="utf-8")
+    (tmp_path / "scripts" / "remote" / "run_server_job.sh").write_text("echo x\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[tool.poetry]\nname='x'\n", encoding="utf-8")
+
+    assert module._sync_code_include_paths(tmp_path) == ["src", "scripts", "pyproject.toml"]
+    assert module._sync_code_include_paths(tmp_path, policy="runtime-first") == [
+        "src",
+        "scripts/optimization/run_wfa_queue.py",
+        "scripts/optimization/sync_queue_status.py",
+    ]
+
+
+def test_sync_repo_code_runtime_first_records_policy_and_subset_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "scripts" / "optimization").mkdir(parents=True)
+    (tmp_path / "scripts" / "optimization" / "run_wfa_queue.py").write_text("print('x')\n", encoding="utf-8")
+    (tmp_path / "scripts" / "optimization" / "sync_queue_status.py").write_text("print('z')\n", encoding="utf-8")
+    (tmp_path / "scripts" / "build_portfolio.py").write_text("print('y')\n", encoding="utf-8")
+
+    runtime_manifest = module._build_local_sync_manifest(
+        tmp_path,
+        module._sync_code_include_paths(tmp_path, policy="runtime-first"),
+        include_hash=False,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "_remote_sync_manifest",
+        lambda **_kwargs: {
+            "digest": runtime_manifest["digest"],
+            "count": runtime_manifest["count"],
+            "entries": runtime_manifest["entries"],
+            "mode": "fingerprint",
+        },
+    )
+    monkeypatch.setattr(module, "_git_head_revision", lambda *_args, **_kwargs: "local-head")
+    monkeypatch.setattr(module, "_remote_git_head_revision", lambda **_kwargs: "remote-head")
+    monkeypatch.setattr(module, "_local_paths_have_tracked_changes", lambda *_args, **_kwargs: False)
+
+    log_path = tmp_path / "powered.log"
+    module._sync_repo_code(
+        host="85.198.90.128",
+        user="root",
+        project_root=tmp_path,
+        remote_repo=Path("/remote/repo"),
+        port=22,
+        log_path=log_path,
+        log=lambda _msg: None,
+        sync_code_policy="runtime-first",
+    )
+
+    sync_state = json.loads(module._sync_code_state_path(log_path).read_text(encoding="utf-8"))
+    assert sync_state["policy"] == "runtime-first"
+    assert sync_state["status"] == "ok_runtime_subset_match"
+    assert sync_state["includes"] == ["src", "scripts/optimization/run_wfa_queue.py", "scripts/optimization/sync_queue_status.py"]
 
 
 def test_wait_for_completion_until_metrics_ready(
@@ -885,6 +1029,101 @@ def test_get_remote_queue_counts_maps_queue_missing_error_class(
     assert exc_info.value.fatal is True
 
 
+def test_wait_for_remote_handoff_confirms_via_remote_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    logs: list[str] = []
+    baseline = {
+        "ok": True,
+        "queue_exists": True,
+        "counts": {"planned": 1},
+        "total": 1,
+        "all_done": False,
+        "has_metrics": False,
+    }
+
+    monkeypatch.setattr(
+        module,
+        "_get_remote_queue_process_info",
+        lambda **_kwargs: {"ok": True, "count": 1, "pids": [4321]},
+    )
+    monkeypatch.setattr(module, "get_remote_queue_counts", lambda **_kwargs: dict(baseline))
+
+    result = module._wait_for_remote_handoff(
+        host="85.198.90.128",
+        user="root",
+        remote_repo=Path("/remote/repo"),
+        remote_python="python3",
+        queue_relative="artifacts/wfa/aggregate/group/run_queue.csv",
+        selected_statuses="planned",
+        baseline_payload=baseline,
+        log_path=tmp_path / "handoff.log",
+        port=22,
+        timeout_sec=5,
+        poll_sec=1,
+        log=lambda msg: logs.append(msg),
+    )
+
+    assert result["outcome"] == "REMOTE_HANDOFF_CONFIRMED"
+    assert result["reason"] == "remote_process_active"
+    assert result["process_count"] == 1
+    assert result["counts"] == {"planned": 1}
+    assert result["total"] == 1
+    assert result["all_done"] is False
+    assert result["has_metrics"] is False
+    assert any("REMOTE_HANDOFF_CONFIRMED" in entry for entry in logs)
+
+
+def test_wait_for_remote_handoff_fails_without_remote_activity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    logs: list[str] = []
+    baseline = {
+        "ok": True,
+        "queue_exists": True,
+        "counts": {"planned": 1},
+        "total": 1,
+        "all_done": False,
+        "has_metrics": False,
+    }
+
+    monkeypatch.setattr(
+        module,
+        "_get_remote_queue_process_info",
+        lambda **_kwargs: {"ok": True, "count": 0, "pids": []},
+    )
+    monkeypatch.setattr(module, "get_remote_queue_counts", lambda **_kwargs: dict(baseline))
+    clock = {"now": 0.0}
+
+    def _fake_time() -> float:
+        clock["now"] += 1.0
+        return clock["now"]
+
+    monkeypatch.setattr(module.time, "time", _fake_time)
+    monkeypatch.setattr(module.time, "sleep", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(module._PoweredFailure) as exc_info:
+        module._wait_for_remote_handoff(
+            host="85.198.90.128",
+            user="root",
+            remote_repo=Path("/remote/repo"),
+            remote_python="python3",
+            queue_relative="artifacts/wfa/aggregate/group/run_queue.csv",
+            selected_statuses="planned",
+            baseline_payload=baseline,
+            log_path=tmp_path / "handoff.log",
+            port=22,
+            timeout_sec=1,
+            poll_sec=1,
+            log=lambda msg: logs.append(msg),
+        )
+
+    assert exc_info.value.error_class == "REMOTE_HANDOFF_FAILED"
+    assert any("REMOTE_HANDOFF_FAILED" in entry for entry in logs)
+
+
 def test_run_powered_queue_waits_after_queue_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -987,16 +1226,219 @@ def test_run_powered_queue_logs_degraded_success_when_sync_back_fails(
     monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
     monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
     monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
     monkeypatch.setattr(module, "_run_remote_command", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(
         module,
-        "_sync_rollup_back",
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            module._PoweredFailure("sync-back", error_class="NETWORK", fatal=False)
+            module._PoweredFailure("queue-sync", error_class="NETWORK", fatal=False)
         ),
     )
     monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(module, "_remote_rank_and_sync", lambda *_args, **_kwargs: tmp_path / "rank.json")
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="planned",
+        parallel=1,
+        postprocess=True,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
+    assert "powered: degraded_success" in log_text
+    assert "queue_sync:NETWORK" in log_text
+
+
+def test_run_powered_queue_postprocess_false_fast_returns_with_queue_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,stalled\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_run_remote_command",
+        lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: events.append("queue_sync"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: events.append("handoff_confirmed")
+        or {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
+    monkeypatch.setattr(
+        module,
+        "_remote_rebuild_rollup",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("remote_rebuild_rollup must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_rollup_back",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sync_rollup_back must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_rank_and_sync",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("remote_rank_and_sync must be skipped")),
+    )
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="stalled",
+        parallel=1,
+        postprocess=False,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    assert "queue-run" in events
+    assert "handoff_confirmed" in events
+    assert "queue_sync" in events
+    assert events.index("queue_sync") > events.index("handoff_confirmed")
+    assert "remote-postprocess-queue" not in events
+    log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
+    assert "powered: postprocess skipped mode=fast_return" in log_text
+
+
+def test_run_powered_queue_fast_return_completed_queue_forces_completion_tail_without_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,planned\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_run_remote_command",
+        lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {
+            "outcome": "REMOTE_HANDOFF_CONFIRMED",
+            "reason": "queue_completed",
+            "all_done": True,
+            "has_metrics": False,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("queue_sync must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_postprocess_queue",
+        lambda *_args, **_kwargs: events.append("remote_postprocess"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_rebuild_rollup",
+        lambda *_args, **_kwargs: events.append("remote_rollup"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_rollup_back",
+        lambda *_args, **_kwargs: events.append("sync_rollup_back"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_rank_and_sync",
+        lambda *_args, **_kwargs: events.append("remote_rank") or (tmp_path / "rank.json"),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
 
     args = argparse.Namespace(
         queue=str(queue),
@@ -1033,9 +1475,279 @@ def test_run_powered_queue_logs_degraded_success_when_sync_back_fails(
 
     rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
     assert rc == 0
+    assert "queue-run" in events
+    assert "remote_postprocess" in events
+    assert "remote_rollup" not in events
+    assert "sync_rollup_back" in events
+    assert "remote_rank" in events
     log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
-    assert "powered: degraded_success" in log_text
-    assert "sync_back:NETWORK" in log_text
+    assert "powered: completion_tail_postprocess_required queue=run_queue.csv reason=all_done_without_metrics" in log_text
+    assert "powered: postprocess skipped mode=fast_return" not in log_text
+
+
+def test_run_powered_queue_fast_return_completed_queue_with_metrics_syncs_rollup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,planned\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_run_remote_command",
+        lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {
+            "outcome": "REMOTE_HANDOFF_CONFIRMED",
+            "reason": "queue_completed",
+            "all_done": True,
+            "has_metrics": True,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("queue_sync must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_postprocess_queue",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("remote_postprocess must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_rebuild_rollup",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("remote_rollup must be skipped")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_rollup_back",
+        lambda *_args, **_kwargs: events.append("sync_rollup_back"),
+    )
+    monkeypatch.setattr(
+        module,
+        "_remote_rank_and_sync",
+        lambda *_args, **_kwargs: events.append("remote_rank") or (tmp_path / "rank.json"),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="planned",
+        parallel=1,
+        postprocess=False,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    assert "queue-run" in events
+    assert "sync_rollup_back" in events
+    assert "remote_rank" in events
+    log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
+    assert "powered: completion_tail_sync_required queue=run_queue.csv reason=all_done_with_metrics" in log_text
+    assert "powered: postprocess skipped mode=fast_return" not in log_text
+
+
+def test_run_powered_queue_fast_return_auto_disables_postprocess_and_confirms_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,stalled\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_run_remote_command",
+        lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
+    monkeypatch.setattr(module, "_sync_active_remote_queue_back", lambda *_args, **_kwargs: events.append("queue_sync"))
+    monkeypatch.setattr(
+        module,
+        "_fetch_stalled_diagnostics",
+        lambda *_args, **_kwargs: events.append("stalled_diagnostics"),
+    )
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="stalled",
+        parallel=1,
+        postprocess=True,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    rc = module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+    assert rc == 0
+    assert "queue-run" in events
+    assert "queue_sync" in events
+    assert "stalled_diagnostics" in events
+    assert "remote-postprocess-queue" not in events
+    log_text = (tmp_path / "powered.log").read_text(encoding="utf-8")
+    assert "powered: postprocess auto_disabled mode=fast_return owner=local_driver" in log_text
+    assert "powered: remote handoff confirmed queue=run_queue.csv statuses=stalled" in log_text
+    assert "powered: postprocess skipped mode=fast_return" in log_text
+
+
+def test_run_powered_queue_fast_return_raises_when_handoff_not_confirmed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_powered_module(tmp_path)
+    queue = tmp_path / "run_queue.csv"
+    queue.write_text("run_name,config_path,status\nrun1,configs/a.yaml,planned\n", encoding="utf-8")
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs/a.yaml").write_text("k: v\n", encoding="utf-8")
+
+    events: list[str] = []
+
+    monkeypatch.setattr(module, "_safe_api_key", lambda *_args, **_kwargs: "dummy")
+    monkeypatch.setattr(module, "_safe_resolve_server_id_by_ip", lambda *_args, **_kwargs: "srv-1")
+    monkeypatch.setattr(module, "ensure_server_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_safe_power_off", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_resolve_remote_repo", lambda *_args, **_kwargs: Path("/remote/repo"))
+    monkeypatch.setattr(module, "_detect_remote_python", lambda *_args, **_kwargs: "python3")
+    monkeypatch.setattr(module, "_sync_inputs", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_run_remote_command",
+        lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            module._PoweredFailure("handoff missing", error_class="REMOTE_HANDOFF_FAILED", fatal=False)
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: events.append("queue_sync"),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
+
+    args = argparse.Namespace(
+        queue=str(queue),
+        compute_host="85.198.90.128",
+        serverspace_server_id=None,
+        ssh_user="root",
+        ssh_port=22,
+        preflight=False,
+        remote_repo="auto",
+        remote_repo_candidates=["/opt/coint4/coint4"],
+        bootstrap_repo=False,
+        bootstrap_remote_dir="/opt/coint4",
+        bootstrap_venv=False,
+        sync_inputs=False,
+        sync_configs_bulk=False,
+        force_remote_queue_overwrite=False,
+        probe_queue=False,
+        dry_run=False,
+        statuses="planned",
+        parallel=1,
+        postprocess=False,
+        max_retries=1,
+        backoff_seconds=0.0,
+        poweroff=True,
+        wait_completion=False,
+        wait_timeout_sec=300,
+        wait_poll_sec=1,
+        skip_power=False,
+        watchdog=False,
+        watchdog_stale_sec=900,
+        sync_code=False,
+        cleanup_remote_runs=False,
+    )
+
+    with pytest.raises(module._PoweredFailure) as exc_info:
+        module.run_powered_queue(args, project_root=tmp_path, log_path=tmp_path / "powered.log")
+
+    assert exc_info.value.error_class == "REMOTE_HANDOFF_FAILED"
+    assert "queue-run" in events
+    assert "queue_sync" not in events
+    assert "stalled_diag" not in events
 
 
 def test_run_powered_queue_skip_power_uses_ssh_preflight(
@@ -1135,6 +1847,11 @@ def test_parallel_auto_detects_nproc_and_pins_threads(
     monkeypatch.setattr(module, "_sync_rollup_back", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(module, "_remote_rank_and_sync", lambda *_args, **_kwargs: tmp_path / "rank.json")
     monkeypatch.setattr(module, "_run_with_retries", lambda fn, **_kwargs: fn())
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
 
     commands: dict[str, str] = {}
 
@@ -1352,6 +2069,11 @@ def test_auto_statuses_runs_planned_stalled_when_ready(
 
     monkeypatch.setattr(module, "_run_remote_command", _remote_cmd)
     monkeypatch.setattr(module, "_emit", lambda msg, _log_path, to_stderr=True: logs.append(msg))
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
 
     args = argparse.Namespace(
         queue=str(queue),
@@ -1453,6 +2175,11 @@ def test_auto_statuses_watchdog_reclassifies_stale_running_and_starts_queue_run(
         return 0
 
     monkeypatch.setattr(module, "_run_remote_command", _remote_cmd)
+    monkeypatch.setattr(
+        module,
+        "_wait_for_remote_handoff",
+        lambda **_kwargs: {"outcome": "REMOTE_HANDOFF_CONFIRMED", "reason": "remote_process_active"},
+    )
 
     args = argparse.Namespace(
         queue=str(queue),
@@ -1540,6 +2267,12 @@ def test_auto_statuses_skips_queue_run_when_only_running(
         "_run_remote_command",
         lambda *_args, **_kwargs: events.append(str(_kwargs.get("command_purpose") or "")) or 0,
     )
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: events.append("queue_sync"),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
     monkeypatch.setattr(module, "_remote_rebuild_rollup", lambda *_args, **_kwargs: events.append("remote_rollup"))
     monkeypatch.setattr(module, "_sync_rollup_back", lambda *_args, **_kwargs: events.append("sync_rollup_back"))
     monkeypatch.setattr(module, "_remote_rank_and_sync", lambda *_args, **_kwargs: events.append("remote_rank") or (tmp_path / "rank.json"))
@@ -1578,9 +2311,10 @@ def test_auto_statuses_skips_queue_run_when_only_running(
     assert rc == 0
     assert len(watchdog_calls) == 1
     assert "queue-run" not in events
-    assert "remote-postprocess-queue" in events
-    assert "sync_rollup_back" in events
-    assert "remote_rank" in events
+    assert "queue_sync" in events
+    assert "remote-postprocess-queue" not in events
+    assert "sync_rollup_back" not in events
+    assert "remote_rank" not in events
 
 
 def test_auto_statuses_completed_total_skips_queue_run_but_rollup_and_rank(
@@ -1619,6 +2353,12 @@ def test_auto_statuses_completed_total_skips_queue_run_but_rollup_and_rank(
 
     monkeypatch.setattr(module, "_run_remote_command", _remote_cmd)
     monkeypatch.setattr(module, "_wait_for_completion", lambda *_args, **_kwargs: events.append("wait_completion"))
+    monkeypatch.setattr(
+        module,
+        "_sync_active_remote_queue_back",
+        lambda *_args, **_kwargs: events.append("queue_sync"),
+    )
+    monkeypatch.setattr(module, "_fetch_stalled_diagnostics", lambda *_args, **_kwargs: events.append("stalled_diag"))
     monkeypatch.setattr(module, "_remote_rebuild_rollup", lambda *_args, **_kwargs: events.append("remote_rollup"))
     monkeypatch.setattr(module, "_sync_rollup_back", lambda *_args, **_kwargs: events.append("sync_rollup_back"))
     monkeypatch.setattr(module, "_remote_rank_and_sync", lambda *_args, **_kwargs: events.append("remote_rank") or (tmp_path / "rank.json"))
@@ -1655,6 +2395,7 @@ def test_auto_statuses_completed_total_skips_queue_run_but_rollup_and_rank(
     assert rc == 0
     assert "queue-run" not in events
     assert "wait_completion" not in events
-    assert "remote-postprocess-queue" in events
-    assert "sync_rollup_back" in events
-    assert "remote_rank" in events
+    assert "queue_sync" in events
+    assert "remote-postprocess-queue" not in events
+    assert "sync_rollup_back" not in events
+    assert "remote_rank" not in events

@@ -17,7 +17,7 @@ QUEUE=""
 PARALLEL=4
 COMPUTE_HOST=""
 SSH_USER=""
-POSTPROCESS="true"
+POSTPROCESS="false"
 WAIT_COMPLETION="false"
 MAX_RETRIES=2
 while [[ $# -gt 0 ]]; do
@@ -135,6 +135,7 @@ if [[ -n "$COMPUTE_HOST" ]]; then
     --queue "$QUEUE" \
     --compute-host "$COMPUTE_HOST" \
     ${SSH_USER_OPT:+$SSH_USER_OPT} \
+    --sync-code-policy runtime-first \
     --parallel "$PARALLEL" \
     --statuses stalled \
     --max-retries "$MAX_RETRIES" \
@@ -142,6 +143,8 @@ if [[ -n "$COMPUTE_HOST" ]]; then
     --wait-completion "$WAIT_COMPLETION" \
     --postprocess "$POSTPROCESS" \
     --poweroff false
+  PYTHONPATH=src "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/sync_queue_status.py" --queue "${QUEUE#$ROOT_DIR/}" >/dev/null 2>&1 || true
+  PYTHONPATH=src "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/build_run_index.py" --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status >/dev/null 2>&1 || true
 else
   echo "==> rerun stalled only (parallel=$PARALLEL)"
   ALLOW_HEAVY_RUN=1 "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/optimization/run_wfa_queue.py" \

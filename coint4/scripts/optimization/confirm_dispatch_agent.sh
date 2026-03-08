@@ -24,12 +24,27 @@ CONFIRM_LANE_MAX_REMOTE_RUNNERS="${CONFIRM_LANE_MAX_REMOTE_RUNNERS:-6}"
 POWEROFF_AFTER_RUN="${POWEROFF_AFTER_RUN:-true}"
 VPS_BATCH_SESSION_ENABLE="${VPS_BATCH_SESSION_ENABLE:-1}"
 CONFIRM_FASTLANE_UNIQUE_GROUPS="${CONFIRM_FASTLANE_UNIQUE_GROUPS:-1}"
+CONFIRM_DISPATCH_ALLOW_WITH_DRIVER="${CONFIRM_DISPATCH_ALLOW_WITH_DRIVER:-0}"
 
 mkdir -p "$STATE_DIR"
 
 log() {
   printf '%s | %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$LOG_FILE"
 }
+
+driver_loop_active() {
+  if systemctl --user is-active --quiet autonomous-wfa-driver.service >/dev/null 2>&1; then
+    return 0
+  fi
+  pgrep -f "scripts/optimization/autonomous_wfa_driver.sh" >/dev/null 2>&1
+}
+
+if [[ "$CONFIRM_DISPATCH_ALLOW_WITH_DRIVER" != "1" && "$CONFIRM_DISPATCH_ALLOW_WITH_DRIVER" != "true" ]]; then
+  if driver_loop_active; then
+    log "confirm_dispatch_agent_deferred reason=driver_active"
+    exit 0
+  fi
+fi
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then

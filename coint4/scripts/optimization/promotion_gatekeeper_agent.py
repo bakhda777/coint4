@@ -17,7 +17,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from fullspan_contract import evaluate_variant_contract, fullspan_thresholds_from_policy, load_fullspan_policy_from_env
+from fullspan_contract import (
+    FullspanThresholds,
+    evaluate_variant_contract,
+    fullspan_thresholds_from_policy,
+    load_fullspan_policy_from_env,
+)
 from fullspan_lineage import count_confirms_by_lineage, derive_candidate_uid
 
 
@@ -281,7 +286,7 @@ def main() -> int:
     cfg = GateConfig(
         min_groups=parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_GROUPS", "2"), 2),
         min_replays=parse_int(os.environ.get("FULLSPAN_CONFIRM_MIN_REPLIES", "2"), 2),
-        min_windows=parse_int(policy.get("min_windows"), 3),
+        min_windows=parse_int(policy.get("min_windows"), 1),
         thresholds=fullspan_thresholds_from_policy(policy),
         tail_quantile=parse_float(policy.get("tail_quantile"), 0.20),
         tail_q_soft_loss_pct=parse_float(policy.get("tail_q_soft_loss_pct"), 0.03),

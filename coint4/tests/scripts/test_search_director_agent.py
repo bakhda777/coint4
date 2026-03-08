@@ -193,3 +193,229 @@ def test_existing_yield_state_does_not_force_stale_controlled_recovery_fields(tm
     directive = json.loads(output_path.read_text(encoding="utf-8"))
     assert directive["search_quality"]["controlled_recovery_active"] is False
     assert directive["search_quality"]["controlled_recovery_attempts_remaining"] == 0
+
+
+def test_build_directive_activates_controlled_broad_recovery_after_stagnation() -> None:
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_q/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "METRICS_MISSING",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["broad_anchor"],
+        "search_quality": {
+            "positive_lineage_count": 3,
+            "zero_evidence_lineage_count": 9,
+            "winner_proximate_positive_lineage_count": 0,
+            "winner_proximate_positive_contains": ["positive_anchor"],
+            "controlled_recovery_contains": [],
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": 8,
+        },
+        "lane_weights": {"winner_proximate": 65, "broad_search": 15, "confirm_replay": 20},
+    }
+    runtime_metrics = {
+        "candidate_pool_status": "empty_expected",
+        "ready_buffer_depth": 0,
+        "global_pending_dispatchable": 0,
+        "remote_active_queue_jobs": 0,
+        "completed_with_metrics_stagnant_sec": 2400,
+        "no_progress_breaker_streak": 2,
+        "last_seed_trigger_epoch": int(module.datetime.now(module.timezone.utc).timestamp()) - 7200,
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
+
+    assert directive["mode"] == "controlled_broad_recovery"
+    assert directive["broad_search_allowed"] is True
+    assert directive["seed_generation_mode"] == "controlled_broad_micro"
+    assert directive["controlled_broad_active"] is True
+    assert directive["lane_weights"] == {
+        "winner_proximate": 0,
+        "confirm_replay": 0,
+        "broad_search": 100,
+    }
+    assert directive["num_variants"] == 24
+    assert directive["num_variants_floor"] == 16
+    assert directive["max_changed_keys"] == 3
+    assert directive["dedupe_distance"] == 0.04
+    assert directive["search_quality"]["controlled_broad_active"] is True
+    assert directive["search_quality"]["controlled_broad_contains"] == ["positive_anchor", "broad_anchor"]
+    assert directive["planner-policy-inputs"]["controlled_broad_recovery"]["enabled"] is True
+
+
+def test_build_directive_does_not_activate_controlled_broad_with_pending_backlog() -> None:
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_q/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "METRICS_MISSING",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["broad_anchor"],
+        "search_quality": {
+            "positive_lineage_count": 3,
+            "zero_evidence_lineage_count": 9,
+            "winner_proximate_positive_lineage_count": 0,
+            "winner_proximate_positive_contains": ["positive_anchor"],
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": False,
+        },
+    }
+    runtime_metrics = {
+        "candidate_pool_status": "empty_expected",
+        "ready_buffer_depth": 0,
+        "global_pending_dispatchable": 5,
+        "remote_active_queue_jobs": 0,
+        "completed_with_metrics_stagnant_sec": 2400,
+        "no_progress_breaker_streak": 2,
+        "last_seed_trigger_epoch": int(module.datetime.now(module.timezone.utc).timestamp()) - 7200,
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
+
+    assert directive["mode"] != "controlled_broad_recovery"
+    assert directive["controlled_broad_active"] is False
+    assert directive["search_quality"].get("controlled_broad_active", False) is False
+    assert directive["planner-policy-inputs"]["controlled_broad_recovery"]["enabled"] is False
+
+
+def test_build_directive_does_not_activate_controlled_broad_inside_cooldown() -> None:
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_q/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "METRICS_MISSING",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["broad_anchor"],
+        "search_quality": {
+            "positive_lineage_count": 3,
+            "zero_evidence_lineage_count": 9,
+            "winner_proximate_positive_lineage_count": 0,
+            "winner_proximate_positive_contains": ["positive_anchor"],
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": False,
+        },
+    }
+    runtime_metrics = {
+        "candidate_pool_status": "empty_expected",
+        "ready_buffer_depth": 0,
+        "global_pending_dispatchable": 0,
+        "remote_active_queue_jobs": 0,
+        "completed_with_metrics_stagnant_sec": 2400,
+        "no_progress_breaker_streak": 2,
+        "last_seed_trigger_epoch": int(module.datetime.now(module.timezone.utc).timestamp()) - 300,
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
+
+    assert directive["mode"] != "controlled_broad_recovery"
+    assert directive["controlled_broad_active"] is False
+    assert directive["search_quality"].get("controlled_broad_active", False) is False
+    assert directive["planner-policy-inputs"]["controlled_broad_recovery"]["enabled"] is False
+
+
+def test_build_directive_activates_controlled_broad_when_rearm_epoch_is_due() -> None:
+    now_epoch = int(module.datetime.now(module.timezone.utc).timestamp())
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_q/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "METRICS_MISSING",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["broad_anchor"],
+        "hard_block_active": True,
+        "hard_block_reason": "zero_coverage_seed_streak",
+        "search_quality": {
+            "positive_lineage_count": 3,
+            "zero_evidence_lineage_count": 9,
+            "winner_proximate_positive_lineage_count": 1,
+            "winner_proximate_positive_contains": ["positive_anchor"],
+            "controlled_recovery_contains": ["positive_anchor"],
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": 8,
+            "controlled_broad_rearm_after_epoch": now_epoch - 1,
+        },
+        "lane_weights": {"winner_proximate": 65, "broad_search": 15, "confirm_replay": 20},
+    }
+    runtime_metrics = {
+        "candidate_pool_status": "empty_expected",
+        "ready_buffer_depth": 0,
+        "global_pending_dispatchable": 0,
+        "remote_active_queue_jobs": 0,
+        "completed_with_metrics_stagnant_sec": 0,
+        "no_progress_breaker_streak": 0,
+        "last_seed_trigger_epoch": now_epoch - 300,
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
+
+    assert directive["mode"] == "controlled_broad_recovery"
+    assert directive["controlled_broad_active"] is True
+    assert directive["controlled_broad_reason"] == "controlled_broad_rearm_after_exhausted_recovery"
+    assert directive["controlled_broad_cooldown_sec"] == 600
+    assert directive["search_quality"]["controlled_broad_rearm_after_epoch"] == now_epoch - 1
+    assert directive["planner-policy-inputs"]["search_quality"]["controlled_broad_rearm_after_epoch"] == now_epoch - 1
+    assert directive["planner-policy-inputs"]["controlled_broad_recovery"]["rearm_after_epoch"] == now_epoch - 1
+    assert directive["planner-policy-inputs"]["controlled_broad_recovery"]["cooldown_sec"] == 600
+
+
+def test_build_directive_activates_controlled_broad_for_empty_expected_degraded() -> None:
+    now_epoch = int(module.datetime.now(module.timezone.utc).timestamp())
+    queues = {
+        "artifacts/wfa/aggregate/autonomous_seed_q/run_queue.csv": {
+            "promotion_verdict": "REJECT",
+            "rejection_reason": "METRICS_MISSING",
+        }
+    }
+    yield_state = {
+        "active": True,
+        "preferred_contains": ["broad_anchor"],
+        "hard_block_active": True,
+        "hard_block_reason": "zero_coverage_seed_streak",
+        "search_quality": {
+            "positive_lineage_count": 3,
+            "zero_evidence_lineage_count": 9,
+            "winner_proximate_positive_lineage_count": 1,
+            "winner_proximate_positive_contains": ["positive_anchor"],
+            "controlled_recovery_contains": ["positive_anchor"],
+            "broad_search_allowed": False,
+            "seed_generation_mode": "winner_proximate_only",
+            "controlled_recovery_active": False,
+            "controlled_recovery_reason": "zero_coverage_seed_streak_with_positive_lineage",
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_recovery_variants_cap": 8,
+            "controlled_broad_rearm_after_epoch": now_epoch - 1,
+        },
+    }
+    runtime_metrics = {
+        "candidate_pool_status": "empty_expected_degraded",
+        "ready_buffer_depth": 0,
+        "global_pending_dispatchable": 0,
+        "remote_active_queue_jobs": 0,
+        "completed_with_metrics_stagnant_sec": 0,
+        "no_progress_breaker_streak": 0,
+        "last_seed_trigger_epoch": now_epoch - 300,
+    }
+
+    directive = module.build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
+
+    assert directive["mode"] == "controlled_broad_recovery"
+    assert directive["controlled_broad_active"] is True

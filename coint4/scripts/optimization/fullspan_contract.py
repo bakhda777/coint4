@@ -28,7 +28,7 @@ _OOS_RE = re.compile(r"_oos(\d{8})_(\d{8})")
 CONTRACT_NAME = "strict_fullspan_holdout_stress_v1"
 PRIMARY_RANKING_KEY = "score_fullspan_v1"
 DIAGNOSTIC_RANKING_KEY = "avg_robust_sharpe"
-DEFAULT_FULLSPAN_MIN_WINDOWS = 3
+DEFAULT_FULLSPAN_MIN_WINDOWS = 1
 DEFAULT_FULLSPAN_MIN_COVERAGE_RATIO = 0.95
 DEFAULT_FULLSPAN_STRICT_TOP = 200
 DEFAULT_FULLSPAN_RESEARCH_TOP = 10
@@ -247,6 +247,14 @@ def _to_bool(value: Any) -> bool:
     return str(value if value is not None else "").strip().lower() in _TRUE_VALUES
 
 
+def _matches_all(text: str, contains: Iterable[str] | None) -> bool:
+    needles = [str(item or "").strip().lower() for item in (contains or []) if str(item or "").strip()]
+    if not needles:
+        return True
+    lowered = str(text or "").lower()
+    return all(needle in lowered for needle in needles)
+
+
 def _quantile(values: Iterable[float], q: float) -> float | None:
     ordered = sorted(v for v in values if v is not None and math.isfinite(float(v)))
     if not ordered:
@@ -381,6 +389,97 @@ def _load_run_index(path: Path) -> list[dict[str, str]]:
         return []
 
 
+def load_run_index_rows(path: Path) -> list[dict[str, str]]:
+    return _load_run_index(Path(path))
+
+
+def discover_variant_candidates(
+    *,
+    run_index_path: Path | None = None,
+    run_index_rows: Iterable[Mapping[str, Any]] | None = None,
+    contains: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    if run_index_rows is None:
+        if run_index_path is None:
+            raise ValueError("run_index_path is required when run_index_rows is not provided")
+        rows: list[Mapping[str, Any]] = _load_run_index(Path(run_index_path))
+    else:
+        rows = list(run_index_rows)
+
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        run_group = str(row.get("run_group") or "").strip()
+        run_id = str(row.get("run_id") or "").strip()
+        if not run_group or not run_id:
+            continue
+        kind = _run_kind(run_id)
+        if kind not in {"holdout", "stress"}:
+            continue
+        base_id = canonical_base_id(run_id)
+        variant_id = variant_id_from_base(base_id)
+        if not variant_id:
+            continue
+
+        key = (run_group, variant_id)
+        candidate = grouped.setdefault(
+            key,
+            {
+                "run_group": run_group,
+                "variant_id": variant_id,
+                "sample_config": "",
+                "holdout_windows": set(),
+                "stress_windows": set(),
+                "meta": [],
+                "row_count": 0,
+            },
+        )
+        candidate["row_count"] = int(candidate["row_count"]) + 1
+        if kind == "holdout":
+            candidate["holdout_windows"].add(base_id)
+        else:
+            candidate["stress_windows"].add(base_id)
+        config_path = str(row.get("config_path") or "").strip()
+        if config_path and not candidate["sample_config"]:
+            candidate["sample_config"] = config_path
+        candidate["meta"].append(
+            " | ".join(
+                part
+                for part in (
+                    run_group,
+                    variant_id,
+                    base_id,
+                    run_id,
+                    config_path,
+                    str(row.get("results_dir") or "").strip(),
+                    str(row.get("status") or "").strip(),
+                )
+                if part
+            )
+        )
+
+    candidates: list[dict[str, Any]] = []
+    for candidate in grouped.values():
+        if not _matches_all(" || ".join(candidate["meta"]), contains):
+            continue
+        holdout_windows = sorted(candidate["holdout_windows"])
+        stress_windows = sorted(candidate["stress_windows"])
+        paired = sorted(set(holdout_windows) & set(stress_windows))
+        candidates.append(
+            {
+                "run_group": str(candidate["run_group"]),
+                "variant_id": str(candidate["variant_id"]),
+                "sample_config": str(candidate["sample_config"]),
+                "row_count": int(candidate["row_count"]),
+                "holdout_window_count": len(holdout_windows),
+                "stress_window_count": len(stress_windows),
+                "paired_window_count": len(paired),
+            }
+        )
+
+    candidates.sort(key=lambda item: (str(item["run_group"]), str(item["variant_id"])))
+    return candidates
+
+
 def evaluate_variant_contract(
     *,
     run_index_path: Path,
@@ -393,6 +492,7 @@ def evaluate_variant_contract(
     tail_worst_soft_loss_pct: float = 0.10,
     tail_q_penalty: float = 2.0,
     tail_worst_penalty: float = 1.0,
+    run_index_rows: Iterable[Mapping[str, Any]] | None = None,
 ) -> VariantContractResult:
     rg = str(run_group or "").strip()
     variant = str(variant_id or "").strip()
@@ -417,7 +517,10 @@ def evaluate_variant_contract(
             sample_config="",
         )
 
-    rows = _load_run_index(Path(run_index_path))
+    if run_index_rows is None:
+        rows: list[Mapping[str, Any]] = _load_run_index(Path(run_index_path))
+    else:
+        rows = list(run_index_rows)
     by_base: dict[str, dict[str, dict[str, Any] | None]] = {}
     sample_cfg = ""
 

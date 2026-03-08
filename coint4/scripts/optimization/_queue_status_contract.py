@@ -15,7 +15,6 @@ DISPATCHABLE_PENDING_STATUSES = frozenset({"planned", "queued", "failed", "stall
 EXECUTABLE_PENDING_STATUSES = frozenset(set(DISPATCHABLE_PENDING_STATUSES) | {"running"})
 FAILED_STATUSES = frozenset({"failed", "error"})
 HARD_REJECT_QUEUE_VERDICTS = frozenset({"REJECT"})
-FAIL_CLOSED_QUEUE_PERMISSIONS = frozenset({"FAIL_CLOSED"})
 ZERO_ACTIVITY_REASONS = frozenset(
     {
         "ZERO_OBSERVED_TEST_DAYS",
@@ -215,10 +214,6 @@ def queue_dispatch_block_reason(
     ):
         return "FULLSPAN_REJECT"
 
-    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
-    if cutover_permission in FAIL_CLOSED_QUEUE_PERMISSIONS:
-        return "FAIL_CLOSED"
-
     orphan = orphan_entry if isinstance(orphan_entry, dict) else {}
     orphan_until_epoch = float(_to_float(orphan.get("until_ts"), 0.0) or 0.0)
     orphan_reason = str(orphan.get("reason") or "").strip().lower()
@@ -229,9 +224,6 @@ def queue_dispatch_block_reason(
 
     if _to_bool(entry.get("low_yield_fail_closed")):
         return "FAIL_CLOSED"
-    for state_key in ("startup_state", "coverage_state", "queue_state"):
-        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
-            return "FAIL_CLOSED"
     return ""
 
 

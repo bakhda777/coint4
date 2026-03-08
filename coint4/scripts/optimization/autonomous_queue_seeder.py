@@ -18,7 +18,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
@@ -36,6 +36,7 @@ from _queue_status_contract import (
 )
 from _search_quality_contract import (
     CANONICAL_ZERO_EVIDENCE_REASONS,
+    CONTROLLED_BROAD_REARM_DELAY_SEC,
     CONTROLLED_RECOVERY_REASON,
     CONTROLLED_RECOVERY_VARIANTS_CAP,
     DETERMINISTIC_QUARANTINE_CODES,
@@ -66,6 +67,31 @@ def _utc_now_iso() -> str:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+CONTROLLED_BROAD_NUM_VARIANTS = max(
+    4,
+    int(float(os.getenv("COINT4_CONTROLLED_BROAD_NUM_VARIANTS", "24"))),
+)
+CONTROLLED_BROAD_NUM_VARIANTS_FLOOR = max(
+    1,
+    min(
+        CONTROLLED_BROAD_NUM_VARIANTS,
+        int(float(os.getenv("COINT4_CONTROLLED_BROAD_NUM_VARIANTS_FLOOR", "16"))),
+    ),
+)
+CONTROLLED_BROAD_MAX_CHANGED_KEYS = max(
+    1,
+    int(float(os.getenv("COINT4_CONTROLLED_BROAD_MAX_CHANGED_KEYS", "3"))),
+)
+CONTROLLED_BROAD_DEDUPE_DISTANCE = max(
+    0.0,
+    float(os.getenv("COINT4_CONTROLLED_BROAD_DEDUPE_DISTANCE", "0.04")),
+)
+SEEDER_SKIP_RETRY_SEC = max(
+    60,
+    int(float(os.getenv("COINT4_QUEUE_SEEDER_SKIP_RETRY_SEC", "300"))),
+)
 
 
 def _load_args() -> argparse.Namespace:
@@ -752,6 +778,25 @@ def _select_covered_recovery_windows(
     return [window for window, _meta in selected[: max(1, int(limit))]]
 
 
+def _resolve_effective_seed_windows(
+    *,
+    explicit_windows: Sequence[str],
+    candidate_groups: Sequence[str],
+    run_index_groups: dict[str, list[dict[str, str]]] | None,
+    app_root: Path,
+    limit: int = 1,
+) -> list[str]:
+    windows = [str(raw or "").strip() for raw in list(explicit_windows or []) if str(raw or "").strip()]
+    if windows:
+        return windows
+    return _select_covered_recovery_windows(
+        candidate_groups=candidate_groups,
+        run_index_groups=run_index_groups,
+        app_root=app_root,
+        limit=limit,
+    )
+
+
 def _load_recent_quarantine_by_group(path: Path, *, limit: int = 200) -> dict[str, dict[str, int]]:
     if not path.exists():
         return {}
@@ -1244,15 +1289,17 @@ def _summarize_queues(aggregate_dir: Path) -> tuple[int, int, int, int, int, lis
 
 
 def _emit_state(state_path: Path, payload: dict[str, Any]) -> None:
+    normalized = _normalize_seeder_state_payload(payload)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with state_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        json.dump(normalized, handle, ensure_ascii=False, indent=2, sort_keys=True)
 
 
 def _append_log(log_path: Path, payload: dict[str, Any]) -> None:
+    normalized = _normalize_seeder_state_payload(payload)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False)
+        json.dump(normalized, handle, ensure_ascii=False)
         handle.write("\n")
 
 
@@ -1261,6 +1308,127 @@ def _safe_rel(path: Path, root: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except Exception:
         return path.as_posix()
+
+
+def _collect_empty_queue_refs(payload: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    def _push(value: Any) -> None:
+        ref = str(value or "").strip()
+        if not ref or ref in seen:
+            return
+        seen.add(ref)
+        refs.append(ref)
+
+    hygiene = payload.get("hygiene", {})
+    if isinstance(hygiene, dict):
+        for entry in list(hygiene.get("queues") or [])[:32]:
+            if not isinstance(entry, dict):
+                continue
+            queue_ref = str(entry.get("queue") or "").strip()
+            rows_after = _as_int(entry.get("rows_after"), default=None, min_value=0)
+            orphan_reason = str(entry.get("orphan_reason") or "").strip()
+            if queue_ref and ((rows_after is not None and rows_after <= 0) or orphan_reason):
+                _push(queue_ref)
+
+    queue_ref = str(payload.get("queue_path") or "").strip()
+    reason = str(payload.get("reason") or "").strip().lower()
+    if queue_ref and any(
+        token in reason
+        for token in (
+            "queue_pruned_empty",
+            "coverage",
+            "dedupe",
+            "empty",
+            "blocked",
+        )
+    ):
+        _push(queue_ref)
+
+    return refs[:16]
+
+
+def _skip_next_retry_epoch(payload: dict[str, Any], now_epoch: int) -> int:
+    hard_block_reason = str(payload.get("hard_block_reason") or "").strip()
+    reason = str(payload.get("reason") or "").strip()
+    if not hard_block_reason and reason.startswith("hard_block:"):
+        hard_block_reason = reason.split(":", 1)[1].strip()
+    yield_governor = payload.get("yield_governor", {})
+    if not hard_block_reason and isinstance(yield_governor, dict):
+        hard_block_reason = str(yield_governor.get("hard_block_reason") or "").strip()
+    controlled_recovery_attempts_remaining = _as_int(
+        payload.get("controlled_recovery_attempts_remaining"),
+        default=None,
+        min_value=0,
+    )
+    if controlled_recovery_attempts_remaining is None and isinstance(yield_governor, dict):
+        controlled_recovery_attempts_remaining = _as_int(
+            yield_governor.get("controlled_recovery_attempts_remaining"),
+            default=None,
+            min_value=0,
+        )
+    search_quality = payload.get("search_quality", {})
+    if controlled_recovery_attempts_remaining is None and isinstance(search_quality, dict):
+        controlled_recovery_attempts_remaining = _as_int(
+            search_quality.get("controlled_recovery_attempts_remaining"),
+            default=None,
+            min_value=0,
+        )
+    controlled_broad_rearm_after_epoch = _as_int(
+        payload.get("controlled_broad_rearm_after_epoch"),
+        default=0,
+        min_value=0,
+    ) or 0
+    if isinstance(yield_governor, dict):
+        controlled_broad_rearm_after_epoch = max(
+            int(controlled_broad_rearm_after_epoch),
+            int(_as_int(yield_governor.get("controlled_broad_rearm_after_epoch"), default=0, min_value=0) or 0),
+        )
+    if isinstance(search_quality, dict):
+        controlled_broad_rearm_after_epoch = max(
+            int(controlled_broad_rearm_after_epoch),
+            int(_as_int(search_quality.get("controlled_broad_rearm_after_epoch"), default=0, min_value=0) or 0),
+        )
+    zero_coverage_exhausted = (
+        hard_block_reason == "zero_coverage_seed_streak"
+        and controlled_recovery_attempts_remaining is not None
+        and int(controlled_recovery_attempts_remaining) <= 0
+    )
+    if zero_coverage_exhausted:
+        if controlled_broad_rearm_after_epoch > now_epoch:
+            return int(controlled_broad_rearm_after_epoch)
+        explicit = _as_int(payload.get("next_retry_epoch"), default=0, min_value=0) or 0
+        if explicit > 0:
+            return int(explicit)
+        return int(now_epoch + CONTROLLED_BROAD_REARM_DELAY_SEC)
+    explicit = _as_int(payload.get("next_retry_epoch"), default=0, min_value=0) or 0
+    if explicit > 0:
+        return int(explicit)
+    hard_block_until_epoch = _as_int(payload.get("hard_block_until_epoch"), default=0, min_value=0) or 0
+    if isinstance(yield_governor, dict):
+        hard_block_until_epoch = max(
+            int(hard_block_until_epoch),
+            int(_as_int(yield_governor.get("hard_block_until_epoch"), default=0, min_value=0) or 0),
+        )
+    if hard_block_until_epoch > now_epoch:
+        return int(hard_block_until_epoch)
+    return int(now_epoch + SEEDER_SKIP_RETRY_SEC)
+
+
+def _normalize_seeder_state_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload or {})
+    now_epoch = int(datetime.now(timezone.utc).timestamp())
+    status = str(normalized.get("status") or "").strip().lower()
+    result_kind = status if status in {"seeded", "skipped", "failed"} else ("skipped" if status == "active" else status)
+    empty_queue_refs = _collect_empty_queue_refs(normalized)
+    next_retry_epoch = 0
+    if result_kind == "skipped":
+        next_retry_epoch = _skip_next_retry_epoch(normalized, now_epoch)
+    normalized["result_kind"] = str(result_kind or status or "")
+    normalized["next_retry_epoch"] = int(next_retry_epoch)
+    normalized["empty_queue_refs"] = list(empty_queue_refs)
+    return normalized
 
 
 def _normalized_selector_evidence(decision_payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1551,6 +1719,81 @@ def _load_directive(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _controlled_broad_recovery_from_directive(directive: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(directive, dict):
+        return {"enabled": False}
+    payload = directive.get("controlled_broad_recovery", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    search_quality = directive.get("search_quality", {})
+    if not isinstance(search_quality, dict):
+        search_quality = {}
+
+    enabled = bool(
+        payload.get("enabled")
+        or search_quality.get("controlled_broad_active")
+        or str(directive.get("mode") or "").strip() == "controlled_broad_recovery"
+    )
+    contains = _to_tokens(payload.get("contains", []))
+    if not contains:
+        contains = _to_tokens(search_quality.get("controlled_broad_contains", []))
+    if not contains:
+        contains = _to_tokens(directive.get("contains", []))
+    return {
+        "enabled": enabled,
+        "reason": str(
+            payload.get("reason")
+            or search_quality.get("controlled_broad_reason")
+            or "stagnant_empty_backlog_no_strict_progress"
+        ).strip(),
+        "contains": contains,
+        "num_variants": int(
+            _as_int(
+                payload.get("num_variants"),
+                default=CONTROLLED_BROAD_NUM_VARIANTS,
+                min_value=1,
+            )
+            or CONTROLLED_BROAD_NUM_VARIANTS
+        ),
+        "num_variants_floor": int(
+            _as_int(
+                payload.get("num_variants_floor"),
+                default=CONTROLLED_BROAD_NUM_VARIANTS_FLOOR,
+                min_value=1,
+            )
+            or CONTROLLED_BROAD_NUM_VARIANTS_FLOOR
+        ),
+        "max_changed_keys": int(
+            _as_int(
+                payload.get("max_changed_keys"),
+                default=CONTROLLED_BROAD_MAX_CHANGED_KEYS,
+                min_value=1,
+            )
+            or CONTROLLED_BROAD_MAX_CHANGED_KEYS
+        ),
+        "dedupe_distance": float(
+            _as_float(
+                payload.get("dedupe_distance"),
+                default=CONTROLLED_BROAD_DEDUPE_DISTANCE,
+                min_value=0.0,
+            )
+            or CONTROLLED_BROAD_DEDUPE_DISTANCE
+        ),
+        "cooldown_sec": int(
+            _as_int(
+                payload.get("cooldown_sec"),
+                default=_as_int(
+                    search_quality.get("controlled_broad_cooldown_sec"),
+                    default=CONTROLLED_BROAD_REARM_DELAY_SEC,
+                    min_value=0,
+                ),
+                min_value=0,
+            )
+            or CONTROLLED_BROAD_REARM_DELAY_SEC
+        ),
+    }
+
+
 def _load_impossibility_pruner(path: Path) -> dict[str, Any]:
     micro_caps = micro_broad_search_caps()
     if not path.exists():
@@ -1705,6 +1948,20 @@ def _select_seed_lane(
     preferred_tokens = [str(token).strip() for token in list(preferred_any_contains or []) if str(token).strip()]
     generic_tokens = [str(token).strip() for token in list(generic_contains or []) if str(token).strip()]
     search_quality = normalize_search_quality_state(yield_governor, winner_proximate_contains=winner_tokens)
+    raw_search_quality = yield_governor.get("search_quality", {}) if isinstance(yield_governor, dict) else {}
+    if isinstance(raw_search_quality, dict) and bool(raw_search_quality.get("controlled_broad_active")):
+        search_quality = {
+            **dict(search_quality),
+            "broad_search_allowed": True,
+            "seed_generation_mode": str(raw_search_quality.get("seed_generation_mode") or "controlled_broad_micro").strip()
+            or "controlled_broad_micro",
+            "controlled_broad_active": True,
+            "controlled_broad_reason": str(raw_search_quality.get("controlled_broad_reason") or "").strip(),
+            "controlled_broad_contains": _to_tokens(raw_search_quality.get("controlled_broad_contains", [])),
+            "controlled_broad_cooldown_sec": int(
+                _as_int(raw_search_quality.get("controlled_broad_cooldown_sec"), default=0, min_value=0) or 0
+            ),
+        }
     broad_search_allowed = bool(search_quality.get("broad_search_allowed"))
     confirm_replay_source = "winner_fallback"
     confirm_replay_tokens = _to_tokens(directive_replay_fastlane_tokens or [])
@@ -2042,6 +2299,7 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
             "controlled_recovery_reason": "",
             "controlled_recovery_attempts_remaining": 0,
             "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
+            "controlled_broad_rearm_after_epoch": 0,
         },
         "positive_lineage_count": 0,
         "zero_evidence_lineage_count": 0,
@@ -2054,6 +2312,7 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
         "controlled_recovery_reason": "",
         "controlled_recovery_attempts_remaining": 0,
         "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
+        "controlled_broad_rearm_after_epoch": 0,
         "lane_weights": {},
         "policy_overrides": {},
     }
@@ -2165,6 +2424,9 @@ def _load_yield_governor_state(path: Path) -> dict[str, Any]:
                     min_value=1,
                 )
                 or CONTROLLED_RECOVERY_VARIANTS_CAP
+            ),
+            "controlled_broad_rearm_after_epoch": int(
+                _as_int(search_quality.get("controlled_broad_rearm_after_epoch"), default=0, min_value=0) or 0
             ),
             "lane_weights": {str(k): (_as_int(v, default=0, min_value=0) or 0) for k, v in lane_weights.items()},
             "policy_overrides": dict(policy_overrides),
@@ -2510,6 +2772,7 @@ def main() -> int:
                         "controlled_recovery_reason": "",
                         "controlled_recovery_attempts_remaining": 0,
                         "controlled_recovery_variants_cap": CONTROLLED_RECOVERY_VARIANTS_CAP,
+                        "controlled_broad_rearm_after_epoch": 0,
                     }
                 )
             _persist_yield_governor_state(yield_governor_path, yield_updates)
@@ -2541,6 +2804,9 @@ def main() -> int:
                     controlled_recovery_state.get("controlled_recovery_variants_cap", CONTROLLED_RECOVERY_VARIANTS_CAP)
                     or CONTROLLED_RECOVERY_VARIANTS_CAP
                 ),
+                "controlled_broad_rearm_after_epoch": int(
+                    controlled_recovery_state.get("controlled_broad_rearm_after_epoch", 0) or 0
+                ),
             }
             if any(yield_governor.get(key) != value for key, value in controlled_recovery_updates.items()):
                 _persist_yield_governor_state(yield_governor_path, controlled_recovery_updates)
@@ -2570,6 +2836,38 @@ def main() -> int:
             hard_fail_risk_policy = gate_surrogate.get("hard_fail_risk_policy", {})
             if not isinstance(hard_fail_risk_policy, dict):
                 hard_fail_risk_policy = {}
+            controlled_broad = _controlled_broad_recovery_from_directive(directive)
+            controlled_broad_active = bool(controlled_broad.get("enabled"))
+            controlled_broad_reason = str(controlled_broad.get("reason") or "").strip()
+            controlled_broad_contains = _to_tokens(controlled_broad.get("contains", []))
+            controlled_broad_num_variants = int(
+                _as_int(controlled_broad.get("num_variants"), default=CONTROLLED_BROAD_NUM_VARIANTS, min_value=1)
+                or CONTROLLED_BROAD_NUM_VARIANTS
+            )
+            controlled_broad_num_variants_floor = int(
+                _as_int(
+                    controlled_broad.get("num_variants_floor"),
+                    default=CONTROLLED_BROAD_NUM_VARIANTS_FLOOR,
+                    min_value=1,
+                )
+                or CONTROLLED_BROAD_NUM_VARIANTS_FLOOR
+            )
+            controlled_broad_max_changed_keys = int(
+                _as_int(
+                    controlled_broad.get("max_changed_keys"),
+                    default=CONTROLLED_BROAD_MAX_CHANGED_KEYS,
+                    min_value=1,
+                )
+                or CONTROLLED_BROAD_MAX_CHANGED_KEYS
+            )
+            controlled_broad_dedupe_distance = float(
+                _as_float(
+                    controlled_broad.get("dedupe_distance"),
+                    default=CONTROLLED_BROAD_DEDUPE_DISTANCE,
+                    min_value=0.0,
+                )
+                or CONTROLLED_BROAD_DEDUPE_DISTANCE
+            )
 
             directive_contains = [str(token).strip() for token in list(directive.get("contains", []) or []) if str(token).strip()]
             directive_winner = directive.get("winner_proximate", {})
@@ -2585,6 +2883,10 @@ def main() -> int:
             contains = list(planner_focus["generic_contains"])
             winner_proximate_tokens = list(planner_focus["winner_proximate_tokens"])
             preferred_any_contains = list(planner_focus["preferred_any_contains"])
+            if controlled_broad_active and controlled_broad_contains:
+                contains = list(controlled_broad_contains)
+                preferred_any_contains = _merge_unique(list(controlled_broad_contains), list(preferred_any_contains))
+                winner_proximate_tokens = []
 
             effective_num_variants = int(args.num_variants)
             effective_num_variants_floor = max(1, int(args.num_variants_floor))
@@ -2645,7 +2947,7 @@ def main() -> int:
                     )
             except Exception:
                 pass
-            if bool(zero_yield_signal.get("active")):
+            if bool(zero_yield_signal.get("active")) and not controlled_broad_active:
                 repair_variant_cap = max(4, min(int(effective_num_variants_floor), 8))
                 effective_repair_mode = True
                 effective_policy_scale = "micro"
@@ -2654,7 +2956,7 @@ def main() -> int:
                 effective_num_variants = min(int(effective_num_variants), int(repair_variant_cap))
                 effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), 8)
                 quality_actions.append("recent_zero_yield_signal")
-            if bool(recent_seed_quality.get("repair_mode")):
+            if bool(recent_seed_quality.get("repair_mode")) and not controlled_broad_active:
                 effective_repair_mode = True
                 effective_policy_scale = "micro"
                 effective_dedupe_distance = max(float(effective_dedupe_distance), 0.08)
@@ -2666,12 +2968,28 @@ def main() -> int:
                 )
                 effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
                 quality_actions.append("recent_seed_quality_repair")
-            if bool(recent_seed_quality.get("backlog_suppress")):
+            if bool(recent_seed_quality.get("backlog_suppress")) and not controlled_broad_active:
                 effective_include_stress = False
                 suppress_cap = max(4, min(int(effective_num_variants_floor), 12))
                 quality_variant_cap = suppress_cap if quality_variant_cap is None else min(int(quality_variant_cap), suppress_cap)
                 effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
                 quality_actions.append("recent_seed_quality_backlog_suppress")
+
+            if controlled_broad_active:
+                effective_num_variants = max(int(effective_num_variants), int(controlled_broad_num_variants))
+                effective_num_variants_floor = max(
+                    int(effective_num_variants_floor),
+                    int(controlled_broad_num_variants_floor),
+                )
+                effective_max_changed_keys = max(
+                    int(effective_max_changed_keys),
+                    int(controlled_broad_max_changed_keys),
+                )
+                effective_dedupe_distance = max(
+                    float(effective_dedupe_distance),
+                    float(controlled_broad_dedupe_distance),
+                )
+                quality_actions.append("controlled_broad_min_batch")
 
             directive_pruner = directive.get("impossibility_pruner", {})
             if isinstance(directive_pruner, dict) and bool(directive_pruner.get("enabled")):
@@ -2872,6 +3190,23 @@ def main() -> int:
                     effective_repair_max_neighbors = min(int(effective_repair_max_neighbors), int(surrogate_repair_max_neighbors))
 
             effective_exclude_knobs = _merge_unique(effective_exclude_knobs, surrogate_exclude_knobs)
+            if controlled_broad_active:
+                effective_policy_scale = "micro"
+                effective_repair_mode = False
+                effective_num_variants_floor = min(
+                    int(controlled_broad_num_variants),
+                    max(1, int(controlled_broad_num_variants_floor)),
+                )
+                effective_num_variants = min(int(effective_num_variants), int(controlled_broad_num_variants))
+                effective_max_changed_keys = min(
+                    int(effective_max_changed_keys),
+                    int(controlled_broad_max_changed_keys),
+                )
+                effective_dedupe_distance = max(
+                    float(effective_dedupe_distance),
+                    float(controlled_broad_dedupe_distance),
+                )
+                effective_include_stress = True
             effective_num_variants = max(int(effective_num_variants), int(effective_num_variants_floor))
             if quality_variant_cap is not None:
                 effective_num_variants = min(int(effective_num_variants), int(quality_variant_cap))
@@ -2881,6 +3216,27 @@ def main() -> int:
             lane_selection_preferred_tokens = list(preferred_any_contains)
             lane_selection_generic_tokens = list(contains)
             lane_selection_replay_tokens = _to_tokens((directive.get("replay_fastlane") or {}).get("contains", []))
+            if controlled_broad_active:
+                lane_selection_winner_tokens = []
+                lane_selection_replay_tokens = []
+                lane_selection_preferred_tokens = list(controlled_broad_contains or preferred_any_contains)
+                lane_selection_generic_tokens = list(controlled_broad_contains or contains)
+                lane_selection_yield_governor["replay_fastlane"] = {"enabled": False, "contains": [], "replay_ready_count": 0}
+                lane_selection_yield_governor["confirm_replay"] = {"enabled": False, "contains": [], "replay_ready_count": 0}
+                lane_selection_yield_governor["confirm_replay_contains"] = []
+                lane_selection_yield_governor["lane_weights"] = {
+                    "winner_proximate": 0,
+                    "confirm_replay": 0,
+                    "broad_search": 100,
+                }
+                lane_selection_yield_governor["search_quality"] = {
+                    **dict(yield_governor.get("search_quality") or {}),
+                    "broad_search_allowed": True,
+                    "seed_generation_mode": "controlled_broad_micro",
+                    "controlled_broad_active": True,
+                    "controlled_broad_reason": str(controlled_broad_reason or ""),
+                    "controlled_broad_contains": list(controlled_broad_contains),
+                }
             if controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and controlled_recovery_backlog_ok:
                 lane_selection_winner_tokens = list(controlled_recovery_tokens)
                 lane_selection_preferred_tokens = list(controlled_recovery_tokens)
@@ -2998,6 +3354,9 @@ def main() -> int:
                 "controlled_recovery_active": bool(controlled_recovery_triggered),
                 "controlled_recovery_reason": str(controlled_recovery_reason or ""),
                 "controlled_recovery_lineage_anchor": str(controlled_recovery_lineage_anchor or ""),
+                "controlled_broad_active": bool(controlled_broad_active),
+                "controlled_broad_reason": str(controlled_broad_reason or ""),
+                "controlled_broad_contains": list(controlled_broad_contains),
             }
             planner_policy_hash = _stable_hash(policy_fingerprint_payload, prefix="policy")
 
@@ -3023,6 +3382,9 @@ def main() -> int:
                 "controlled_recovery_active": bool(controlled_recovery_triggered),
                 "controlled_recovery_reason": str(controlled_recovery_reason or ""),
                 "controlled_recovery_lineage_anchor": str(controlled_recovery_lineage_anchor or ""),
+                "controlled_broad_active": bool(controlled_broad_active),
+                "controlled_broad_reason": str(controlled_broad_reason or ""),
+                "controlled_broad_contains": list(controlled_broad_contains),
             }
             snapshot["impossibility_pruner"] = {
                 "path": _safe_rel(impossibility_pruner_path, app_root),
@@ -3126,6 +3488,12 @@ def main() -> int:
                 "controlled_recovery_attempts_remaining": int(controlled_recovery_attempts_remaining),
                 "controlled_recovery_contains": list(controlled_recovery_tokens),
                 "winner_proximate_positive_contains": list(controlled_recovery_tokens),
+                "controlled_broad_rearm_after_epoch": int(
+                    yield_governor.get("controlled_broad_rearm_after_epoch", 0) or 0
+                ),
+                "controlled_broad_active": bool(controlled_broad_active),
+                "controlled_broad_reason": str(controlled_broad_reason or ""),
+                "controlled_broad_contains": list(controlled_broad_contains),
             }
             snapshot["controlled_recovery_active"] = bool(controlled_recovery_active)
             snapshot["controlled_recovery_reason"] = str(controlled_recovery_reason or "")
@@ -3133,9 +3501,15 @@ def main() -> int:
             snapshot["controlled_recovery_variants_cap"] = int(controlled_recovery_variants_cap)
             snapshot["controlled_recovery_triggered"] = bool(controlled_recovery_triggered)
             snapshot["controlled_recovery_lineage_anchor"] = str(controlled_recovery_lineage_anchor or "")
+            snapshot["controlled_broad_rearm_after_epoch"] = int(
+                yield_governor.get("controlled_broad_rearm_after_epoch", 0) or 0
+            )
+            snapshot["controlled_broad_active"] = bool(controlled_broad_active)
+            snapshot["controlled_broad_reason"] = str(controlled_broad_reason or "")
+            snapshot["controlled_broad_contains"] = list(controlled_broad_contains)
             if hard_block_active and not (
                 controlled_recovery_active and controlled_recovery_attempts_remaining > 0 and controlled_recovery_backlog_ok
-            ):
+            ) and not controlled_broad_active:
                 snapshot.update(
                     {
                         "status": "skipped",
@@ -3179,20 +3553,19 @@ def main() -> int:
                 if cfg not in planner_bases:
                     planner_bases.append(cfg)
 
-            effective_windows = [str(raw or "").strip() for raw in list(args.window or []) if str(raw or "").strip()]
-            if controlled_recovery_triggered and not effective_windows:
-                recovery_window_candidates = [
-                    str(controlled_recovery_lineage_anchor or "").strip(),
-                    *[str(token).strip() for token in list(winner_proximate_tokens or [])],
-                    *[str(token).strip() for token in list(contains or [])],
-                    *[str(token).strip() for token in list(preferred_any_contains or [])],
-                ]
-                effective_windows = _select_covered_recovery_windows(
-                    candidate_groups=recovery_window_candidates,
-                    run_index_groups=run_index_groups_all,
-                    app_root=app_root,
-                    limit=1,
-                )
+            recovery_window_candidates = [
+                str(controlled_recovery_lineage_anchor or "").strip(),
+                *[str(token).strip() for token in list(winner_proximate_tokens or [])],
+                *[str(token).strip() for token in list(contains or [])],
+                *[str(token).strip() for token in list(preferred_any_contains or [])],
+            ]
+            effective_windows = _resolve_effective_seed_windows(
+                explicit_windows=list(args.window or []),
+                candidate_groups=recovery_window_candidates,
+                run_index_groups=run_index_groups_all,
+                app_root=app_root,
+                limit=1,
+            )
             snapshot["planner_windows"] = list(effective_windows)
 
             env = os.environ.copy()
@@ -3546,11 +3919,14 @@ def main() -> int:
                     reason=block_reason,
                     cooldown_sec=21600,
                 )
+                human = "Queue seeder pruned all generated rows due to missing OOS coverage or duplicate seed signatures."
+                if block_reason == "MAX_VAR_MULTIPLIER_INVALID":
+                    human = "Queue seeder pruned all generated rows: backtest.max_var_multiplier fell below the runtime-safe floor."
                 snapshot.update(
                     {
                         "status": "failed",
                         "reason": block_reason,
-                        "human": "Queue seeder pruned all generated rows due to missing OOS coverage or duplicate seed signatures.",
+                        "human": human,
                         "queue_path": queue_rel,
                         "queue_policy_path": _safe_rel(queue_policy_path, app_root),
                     }

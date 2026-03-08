@@ -185,7 +185,144 @@ def test_load_yield_governor_state_is_fail_safe_and_extracts_fastlane(tmp_path: 
     assert state["controlled_recovery_reason"] == "zero_coverage_seed_streak_with_positive_lineage"
     assert state["controlled_recovery_attempts_remaining"] == 2
     assert state["controlled_recovery_variants_cap"] == 8
+    assert state["controlled_broad_rearm_after_epoch"] == 0
     assert state["lane_weights"]["winner_proximate"] == 40
+
+
+def test_controlled_broad_recovery_from_directive_normalizes_caps() -> None:
+    payload = autonomous_queue_seeder._controlled_broad_recovery_from_directive(
+        {
+            "mode": "controlled_broad_recovery",
+            "contains": ["fallback_anchor"],
+            "search_quality": {
+                "controlled_broad_active": True,
+                "controlled_broad_reason": "stagnant_empty_backlog_no_strict_progress",
+                "controlled_broad_contains": ["broad_rg"],
+                "controlled_broad_cooldown_sec": 1800,
+            },
+            "controlled_broad_recovery": {
+                "enabled": True,
+                "contains": ["broad_rg"],
+                "num_variants": 24,
+                "num_variants_floor": 16,
+                "max_changed_keys": 3,
+                "dedupe_distance": 0.04,
+                "cooldown_sec": 1800,
+            },
+        }
+    )
+
+    assert payload == {
+        "enabled": True,
+        "reason": "stagnant_empty_backlog_no_strict_progress",
+        "contains": ["broad_rg"],
+        "num_variants": 24,
+        "num_variants_floor": 16,
+        "max_changed_keys": 3,
+        "dedupe_distance": 0.04,
+        "cooldown_sec": 1800,
+    }
+
+
+def test_controlled_broad_active_bypasses_quality_micro_caps_in_source() -> None:
+    src = Path(autonomous_queue_seeder.__file__).read_text(encoding="utf-8")
+    assert 'if bool(zero_yield_signal.get("active")) and not controlled_broad_active:' in src
+    assert 'if bool(recent_seed_quality.get("repair_mode")) and not controlled_broad_active:' in src
+    assert 'if bool(recent_seed_quality.get("backlog_suppress")) and not controlled_broad_active:' in src
+    assert 'quality_actions.append("controlled_broad_min_batch")' in src
+
+
+def test_load_yield_governor_state_reads_controlled_broad_rearm_after_epoch(tmp_path: Path) -> None:
+    state_path = tmp_path / "yield_governor_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "active": True,
+                "hard_block_active": True,
+                "hard_block_reason": "zero_coverage_seed_streak",
+                "search_quality": {
+                    "positive_lineage_count": 2,
+                    "zero_evidence_lineage_count": 5,
+                    "winner_proximate_positive_lineage_count": 1,
+                    "winner_proximate_positive_contains": ["strict_rg"],
+                    "controlled_recovery_contains": ["strict_rg"],
+                    "broad_search_allowed": False,
+                    "seed_generation_mode": "winner_proximate_only",
+                    "controlled_recovery_active": False,
+                    "controlled_recovery_attempts_remaining": 0,
+                    "controlled_recovery_variants_cap": 8,
+                    "controlled_broad_rearm_after_epoch": 1772812345,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = autonomous_queue_seeder._load_yield_governor_state(state_path)
+
+    assert state["controlled_broad_rearm_after_epoch"] == 1772812345
+    assert state["search_quality"]["controlled_broad_rearm_after_epoch"] == 1772812345
+
+
+def test_normalize_seeder_state_payload_distinguishes_result_kinds_and_skip_fields() -> None:
+    skipped = autonomous_queue_seeder._normalize_seeder_state_payload(
+        {
+            "status": "skipped",
+            "reason": "hard_block:zero_coverage_seed_streak",
+            "hard_block_until_epoch": 1999999999,
+            "hygiene": {
+                "queues": [
+                    {
+                        "queue": "artifacts/wfa/aggregate/autonomous_seed_demo/run_queue.csv",
+                        "rows_after": 0,
+                        "orphan_reason": "queue_pruned_empty",
+                    },
+                    {
+                        "queue": "artifacts/wfa/aggregate/healthy/run_queue.csv",
+                        "rows_after": 3,
+                        "orphan_reason": "",
+                    },
+                ]
+            },
+        }
+    )
+    seeded = autonomous_queue_seeder._normalize_seeder_state_payload({"status": "seeded", "queue_path": "artifacts/wfa/aggregate/demo/run_queue.csv"})
+    failed = autonomous_queue_seeder._normalize_seeder_state_payload(
+        {
+            "status": "failed",
+            "reason": "queue_pruned_empty",
+            "queue_path": "artifacts/wfa/aggregate/demo_failed/run_queue.csv",
+        }
+    )
+
+    assert skipped["result_kind"] == "skipped"
+    assert skipped["next_retry_epoch"] == 1999999999
+    assert skipped["empty_queue_refs"] == ["artifacts/wfa/aggregate/autonomous_seed_demo/run_queue.csv"]
+    assert seeded["result_kind"] == "seeded"
+    assert seeded["next_retry_epoch"] == 0
+    assert seeded["empty_queue_refs"] == []
+    assert failed["result_kind"] == "failed"
+    assert failed["next_retry_epoch"] == 0
+    assert failed["empty_queue_refs"] == ["artifacts/wfa/aggregate/demo_failed/run_queue.csv"]
+
+
+def test_normalize_seeder_state_payload_prefers_controlled_broad_rearm_for_exhausted_zero_coverage() -> None:
+    future_rearm = 1_999_111_111
+    skipped = autonomous_queue_seeder._normalize_seeder_state_payload(
+        {
+            "status": "skipped",
+            "status_detail": "hard_block",
+            "reason": "hard_block:zero_coverage_seed_streak",
+            "next_retry_epoch": 1999999999,
+            "hard_block_until_epoch": 1999999999,
+            "controlled_recovery_attempts_remaining": 0,
+            "controlled_broad_rearm_after_epoch": future_rearm,
+        }
+    )
+
+    assert skipped["result_kind"] == "skipped"
+    assert skipped["next_retry_epoch"] == future_rearm
 
 
 def test_derive_planner_focus_separates_winner_tokens_from_generic_anchor() -> None:
@@ -249,6 +386,33 @@ def test_select_seed_lane_keeps_broad_search_blocked_when_positive_winner_exists
     assert selection["selected_lane"] == "winner_proximate"
     assert selection["search_quality"]["broad_search_allowed"] is False
     assert selection["search_quality"]["seed_generation_mode"] == "winner_proximate_only"
+
+
+def test_select_seed_lane_prefers_broad_search_for_controlled_broad_override() -> None:
+    selection = autonomous_queue_seeder._select_seed_lane(
+        winner_proximate_tokens=[],
+        preferred_any_contains=["broad_rg"],
+        generic_contains=["broad_rg", "broad_rg_alt"],
+        yield_governor={
+            "search_quality": {
+                "broad_search_allowed": True,
+                "seed_generation_mode": "controlled_broad_micro",
+                "controlled_broad_active": True,
+                "controlled_broad_reason": "stagnant_empty_backlog_no_strict_progress",
+                "controlled_broad_contains": ["broad_rg"],
+            },
+            "lane_weights": {"winner_proximate": 0, "broad_search": 100, "confirm_replay": 0},
+            "replay_fastlane": {"contains": []},
+            "confirm_replay": {"contains": []},
+            "confirm_replay_contains": [],
+        },
+        previous_state={},
+    )
+
+    assert selection["selected_lane"] == "broad_search"
+    assert selection["contains"] == ["broad_rg"]
+    assert selection["search_quality"]["broad_search_allowed"] is True
+    assert selection["search_quality"]["seed_generation_mode"] == "controlled_broad_micro"
 
 
 def test_select_seed_lane_rotates_controlled_recovery_winner_anchor() -> None:
@@ -629,6 +793,72 @@ def test_select_covered_recovery_windows_prefers_latest_positive_covered_window(
                 },
                 {
                     "config_path": "configs/evolution/anchor/older.yaml",
+                    "metrics_present": "1",
+                    "observed_test_days": "75",
+                    "coverage_ratio": "1.0",
+                    "total_trades": "200",
+                    "total_pairs_traded": "12",
+                },
+            ]
+        },
+        app_root=app_root,
+        limit=1,
+    )
+
+    assert windows == ["2024-05-01,2025-06-30"]
+
+
+def test_resolve_effective_seed_windows_prefers_covered_lineage_window_when_explicit_missing(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    data_root = app_root / "data_downloaded"
+    for token in [
+        "2024-05",
+        "2024-06",
+        "2024-07",
+        "2024-08",
+        "2024-09",
+        "2024-10",
+        "2024-11",
+        "2024-12",
+        "2025-01",
+        "2025-02",
+        "2025-03",
+        "2025-04",
+        "2025-05",
+        "2025-06",
+        "2025-07",
+    ]:
+        year, month = token.split("-")
+        (data_root / f"year={year}" / f"month={month}").mkdir(parents=True, exist_ok=True)
+
+    cfg_dir = app_root / "configs" / "evolution" / "anchor"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    covered_cfg = cfg_dir / "covered.yaml"
+    covered_cfg.write_text(
+        "walk_forward:\n  start_date: 2024-05-01\n  end_date: 2025-06-30\n",
+        encoding="utf-8",
+    )
+    uncovered_cfg = cfg_dir / "uncovered.yaml"
+    uncovered_cfg.write_text(
+        "walk_forward:\n  start_date: 2025-07-01\n  end_date: 2025-12-31\n",
+        encoding="utf-8",
+    )
+
+    windows = autonomous_queue_seeder._resolve_effective_seed_windows(
+        explicit_windows=[],
+        candidate_groups=["winner_anchor"],
+        run_index_groups={
+            "winner_anchor": [
+                {
+                    "config_path": "configs/evolution/anchor/uncovered.yaml",
+                    "metrics_present": "1",
+                    "observed_test_days": "75",
+                    "coverage_ratio": "1.0",
+                    "total_trades": "100",
+                    "total_pairs_traded": "10",
+                },
+                {
+                    "config_path": "configs/evolution/anchor/covered.yaml",
                     "metrics_present": "1",
                     "observed_test_days": "75",
                     "coverage_ratio": "1.0",

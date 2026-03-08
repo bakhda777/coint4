@@ -268,3 +268,165 @@ def test_sync_up_defaults_to_code_mode(tmp_path: Path) -> None:
     assert not (remote_repo / "scripts/data/untracked_orphan.py").exists()
     assert (remote_repo / "coint4/.venv/bin/python").exists()
     assert "syncing files (code)" in proc.stdout
+
+
+def _write_startup_recovery_stubs(bin_dir: Path, tmp_path: Path) -> tuple[Path, Path]:
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    curl_log = tmp_path / "curl.log"
+    power_on_count = tmp_path / "power_on_count.txt"
+    ssh_probe_count = tmp_path / "ssh_probe_count.txt"
+    power_on_count.write_text("0\n", encoding="utf-8")
+    ssh_probe_count.write_text("0\n", encoding="utf-8")
+
+    curl_stub = bin_dir / "curl"
+    curl_stub.write_text(
+        """#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+method = "GET"
+data = ""
+url = ""
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg == "-X":
+        method = args[i + 1]
+        i += 2
+        continue
+    if arg == "-d":
+        data = args[i + 1]
+        i += 2
+        continue
+    if arg.startswith("http://") or arg.startswith("https://"):
+        url = arg
+    i += 1
+
+log_path = Path(os.environ["CURL_LOG_FILE"])
+state_path = Path(os.environ["POWER_ON_COUNT_FILE"])
+count = int(state_path.read_text(encoding="utf-8").strip() or "0")
+with log_path.open("a", encoding="utf-8") as handle:
+    handle.write(f"{method} {url} {data}\\n")
+
+if method.upper() == "GET" and url.endswith("/servers"):
+    payload = [
+        {
+            "id": "srv-1",
+            "name": "demo",
+            "state": "Active",
+            "nics": [{"ip_address": "127.0.0.1"}],
+        }
+    ]
+    print(json.dumps(payload))
+    raise SystemExit(0)
+
+if "/power/on" in url:
+    state_path.write_text(f"{count + 1}\\n", encoding="utf-8")
+    raise SystemExit(0)
+
+if "/power/shutdown" in url:
+    raise SystemExit(0)
+
+raise SystemExit(0)
+""",
+        encoding="utf-8",
+    )
+    curl_stub.chmod(0o755)
+
+    ssh_stub = bin_dir / "ssh"
+    ssh_stub.write_text(
+        """#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+i = 0
+while i < len(args):
+    if args[i] in {"-i", "-o"}:
+        i += 2
+        continue
+    break
+
+if i < len(args):
+    i += 1
+cmd = " ".join(args[i:])
+
+power_on_count = int(Path(os.environ["POWER_ON_COUNT_FILE"]).read_text(encoding="utf-8").strip() or "0")
+probe_path = Path(os.environ["SSH_PROBE_COUNT_FILE"])
+probe_count = int(probe_path.read_text(encoding="utf-8").strip() or "0")
+probe_path.write_text(f"{probe_count + 1}\\n", encoding="utf-8")
+
+if cmd == "echo ok":
+    raise SystemExit(0 if power_on_count >= 2 else 255)
+
+raise SystemExit(0)
+""",
+        encoding="utf-8",
+    )
+    ssh_stub.chmod(0o755)
+
+    sleep_stub = bin_dir / "sleep"
+    sleep_stub.write_text(
+        """#!/usr/bin/env bash
+exit 0
+""",
+        encoding="utf-8",
+    )
+    sleep_stub.chmod(0o755)
+
+    return curl_log, ssh_probe_count
+
+
+def test_run_server_job_force_cycles_when_provider_active_but_ssh_not_ready(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    curl_log, ssh_probe_count = _write_startup_recovery_stubs(bin_dir, tmp_path)
+    dummy_key = tmp_path / "dummy_ed25519"
+    dummy_key.write_text("dummy\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+    env["SERVSPACE_API_KEY"] = "test-key"
+    env["SERVER_ID"] = "srv-1"
+    env["SERVER_IP"] = "127.0.0.1"
+    env["SERVER_USER"] = "root"
+    env["SSH_KEY"] = str(dummy_key)
+    env["LOCAL_REPO_DIR"] = str(tmp_path / "local_repo")
+    env["SERVER_REPO_DIR"] = str(tmp_path / "remote_repo")
+    env["SERVER_WORK_DIR"] = str(tmp_path / "remote_repo")
+    env["UPDATE_CODE"] = "0"
+    env["SYNC_UP"] = "0"
+    env["SYNC_BACK"] = "0"
+    env["STOP_AFTER"] = "0"
+    env["SKIP_POWER"] = "0"
+    env["SSH_READY_TIMEOUT_SEC"] = "5"
+    env["SSH_READY_POLL_SEC"] = "1"
+    env["SSH_ACTIVE_FORCE_CYCLE_AFTER_SEC"] = "0"
+    env["SSH_ACTIVE_FORCE_CYCLE_MAX_ATTEMPTS"] = "1"
+    env["SSH_FORCE_CYCLE_SHUTDOWN_WAIT_SEC"] = "0"
+    env["CURL_LOG_FILE"] = str(curl_log)
+    env["POWER_ON_COUNT_FILE"] = str(tmp_path / "power_on_count.txt")
+    env["SSH_PROBE_COUNT_FILE"] = str(ssh_probe_count)
+
+    proc = subprocess.run(
+        ["bash", str(SCRIPT_PATH), "true"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "provider active but SSH not ready after" in proc.stdout
+    assert "force-cycling srv-1" in proc.stdout
+    assert "[server] SSH ready" in proc.stdout
+    curl_events = curl_log.read_text(encoding="utf-8").splitlines()
+    assert sum("/power/on" in event for event in curl_events) == 2
+    assert sum("/power/shutdown" in event for event in curl_events) == 1

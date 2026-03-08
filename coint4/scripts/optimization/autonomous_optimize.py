@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Autonomous optimization loop: batch -> powered run -> rollup -> rank -> next batch."""
+"""Planner-first optimization loop for offline batch planning and supervised handoff."""
 
 from __future__ import annotations
 
@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+
+
+PLANNER_ROLE = "offline_planner"
+PLANNER_SCOPE = "offline batch planning with optional powered-run handoff"
 
 
 def _utc_now() -> str:
@@ -662,7 +666,7 @@ class AutonomousOptimizer:
             self._codex_auth_reason = "CODEX_AUTH_REQUIRED"
             self.log(
                 "autonomous: codex login required (subscription mode). "
-                "Run `codex login --device-auth` under the service user."
+                "Run `codex login --device-auth` under the planner user/session."
             )
             self._codex_auth_ready = False
             return False
@@ -1447,6 +1451,12 @@ class AutonomousOptimizer:
             "generated_at_utc": _utc_now(),
             "repo_root": str(self.repo_root),
             "app_root": str(self.app_root),
+            "planner_context": {
+                "role": PLANNER_ROLE,
+                "scope": PLANNER_SCOPE,
+                "canonical_online_runtime": "external_orchestrator",
+                "default_invocation_mode": "single_pass",
+            },
             "state": state,
             "trajectory_memory": self._trajectory_memory_tail(state, limit=20),
             "stop_policy": self.stop_policy,
@@ -1492,12 +1502,19 @@ class AutonomousOptimizer:
             },
             "recent_iteration_logs": recent_log_paths,
             "runtime_constraints": {
+                "role": "planner_handoff",
+                "scope": "execution settings for optional offline handoff only",
+                "canonical_online_runtime": False,
                 "must_use_powered_runner": _safe_rel(self.powered_runner, self.repo_root),
                 "compute_host": "85.198.90.128",
                 "parallel": 1,
                 "poweroff": True,
                 "postprocess": True,
                 "wait_completion": True,
+                "note": (
+                    "This module plans queues and may hand them off for execution, "
+                    "but it is not the canonical online runtime launcher."
+                ),
             },
             "guardrails": [
                 "No secrets in outputs.",
@@ -1510,7 +1527,9 @@ class AutonomousOptimizer:
     def _decision_prompt(self, context: Dict[str, Any]) -> str:
         payload = json.dumps(context, ensure_ascii=False, indent=2)
         return (
-            "Ты — decision engine для автономного оптимизатора coint4.\n"
+            "Ты — decision engine для planner-only оптимизатора coint4.\n"
+            "Этот модуль отвечает за offline planning и supervised handoff, "
+            "а не за канонический online runtime.\n"
             "Цель: максимизировать objective bridge11 (worst_robust_sharpe - dd_penalty) с учётом risk gates.\n"
             "Можешь менять параметры, фильтры, blacklist'ы и формировать следующий batch в пределах репозитория.\n"
             "Ограничения: не менять формулы метрик и окна WFA; не выводить секреты.\n"
@@ -1850,7 +1869,7 @@ class AutonomousOptimizer:
                 )
                 last_reason = classified or f"CODEX_EXEC_RC{proc_result.returncode}"
                 if last_reason == "CODEX_AUTH_REQUIRED":
-                    self.log("autonomous: codex auth required in runtime HOME; stop retries")
+                    self.log("autonomous: codex auth required in planner HOME; stop retries")
             elif not decision_json_path.exists():
                 last_reason = "CODEX_DECISION_MISSING"
             else:
@@ -2925,9 +2944,21 @@ class AutonomousOptimizer:
                 return cfg_path
         return None
 
+    def _best_params_has_published_winner(self) -> bool:
+        if not self.best_params_path.exists():
+            return False
+        try:
+            first_line = self.best_params_path.read_text(encoding="utf-8").splitlines()[0].strip()
+        except Exception:
+            return False
+        return bool(first_line) and first_line != "# No winner yet"
+
     def write_best_params(self, state: Dict[str, Any]) -> None:
         source = self._resolve_best_config_source(state)
         if source is None:
+            if self._best_params_has_published_winner():
+                self.log("autonomous: preserved existing winner snapshot (no new winner source available)")
+                return
             placeholder = (
                 "# No winner yet\n"
                 f"updated_utc: {_utc_now()}\n"
@@ -2943,10 +2974,12 @@ class AutonomousOptimizer:
     def _deterministic_report(self, state: Dict[str, Any], *, defaults_used: list[str]) -> str:
         progress = self._collect_decision_evidence(state, row_limit=200)
         lines = []
-        lines.append("# Autonomous Optimization Final Report")
+        lines.append("# Autonomous Optimization Planner Report")
         lines.append("")
         lines.append(f"- Updated (UTC): {_utc_now()}")
         lines.append(f"- Status: {state.get('status')}")
+        lines.append(f"- Role: {PLANNER_ROLE}")
+        lines.append("- Mode: offline planner with optional powered-run handoff")
         lines.append(f"- Iterations executed: {state.get('iteration')}")
         lines.append(f"- Current run_group: {state.get('current_run_group')}")
         lines.append(f"- Last error: {state.get('last_error') or 'none'}")
@@ -3054,7 +3087,7 @@ class AutonomousOptimizer:
                 "additionalProperties": False,
             }
             prompt = (
-                "Сформируй краткий markdown final report для автономного оптимизатора.\n"
+                "Сформируй краткий markdown final report для planner-only оптимизатора.\n"
                 f"State JSON: {json.dumps(state, ensure_ascii=False)}\n"
                 f"Policy JSON: {json.dumps(self.stop_policy, ensure_ascii=False)}\n"
                 "Укажи objective/gates/stop criteria и winner. Обязательно добавь P&L и DD по winner (или явно укажи, что данных нет)."
@@ -3959,8 +3992,13 @@ class AutonomousOptimizer:
             f"planner_mode={self._planner_mode()} "
             f"use_codex_exec={bool(self.args.use_codex_exec)} "
             f"wait_timeout_sec={int(self.args.wait_timeout_sec)} wait_poll_sec={int(self.args.wait_poll_sec)} "
-            f"local_rollup_rebuild={bool(self.args.local_rollup_rebuild)}"
+            f"local_rollup_rebuild={bool(self.args.local_rollup_rebuild)} "
+            f"planner_role={PLANNER_ROLE}"
         )
+        if bool(self.args.until_done):
+            self.log("autonomous: --until-done enables a repeated planner loop; canonical online runtime is external")
+        elif not bool(self.args.once):
+            self.log("autonomous: default single-pass planner mode; use --until-done only for supervised offline sessions")
 
         if state.get("status") == "done" and not bool(self.args.once):
             if bool(getattr(self.args, "resume", False)):
@@ -3972,8 +4010,6 @@ class AutonomousOptimizer:
                 return 0
 
         loop_forever = bool(self.args.until_done) and not bool(self.args.once)
-        if not bool(self.args.until_done) and not bool(self.args.once):
-            loop_forever = True
 
         try:
             while True:
@@ -4011,7 +4047,7 @@ class AutonomousOptimizer:
                             )
                         state = self.load_state()
                         continue
-                    self.log("autonomous: wait mode, exit 0 and continue on next timer/service run")
+                    self.log("autonomous: wait mode, exit 0 and continue on next planner invocation")
                     return 0
                 if bool(self.args.once):
                     self.log("autonomous: once mode complete")
@@ -4035,9 +4071,15 @@ class AutonomousOptimizer:
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Autonomous optimization orchestrator")
-    parser.add_argument("--once", action="store_true", help="Run only one iteration.")
-    parser.add_argument("--until-done", action="store_true", help="Run iterations until stop criteria.")
+    parser = argparse.ArgumentParser(
+        description="Planner-only optimization orchestrator for offline batch planning and supervised handoff"
+    )
+    parser.add_argument("--once", action="store_true", help="Run one planner iteration (default behavior).")
+    parser.add_argument(
+        "--until-done",
+        action="store_true",
+        help="Repeat planner iterations in-process until stop criteria; not the canonical online runtime.",
+    )
     parser.add_argument(
         "--resume",
         action="store_true",
@@ -4144,23 +4186,27 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         dest="evolution_llm_verify_semantic",
         help="Disable LLM semantic consistency verification in patch_ast mode.",
     )
-    parser.add_argument("--plan-only", action="store_true", help="Prepare/plan one iteration without powered run.")
+    parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Prepare the next planner iteration without handing it off to the powered runner.",
+    )
     parser.add_argument(
         "--wait-timeout-sec",
         type=int,
         default=21600,
-        help="Timeout (seconds) passed to powered runner wait-completion.",
+        help="Timeout (seconds) passed to optional powered-runner wait-completion.",
     )
     parser.add_argument(
         "--wait-poll-sec",
         type=int,
         default=60,
-        help="Polling interval (seconds) passed to powered runner wait-completion.",
+        help="Polling interval (seconds) passed to optional powered-runner wait-completion.",
     )
     parser.add_argument(
         "--local-rollup-rebuild",
         action="store_true",
-        help="Rebuild run_index locally after powered runner (default: disabled, rely on powered sync-back).",
+        help="Rebuild run_index locally after powered-runner handoff (default: rely on sync-back).",
     )
     return parser.parse_args(argv)
 

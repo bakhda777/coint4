@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -77,6 +78,33 @@ EXPLOIT_FIRST_LANE_WEIGHTS = {
     "confirm_replay": 20,
     "broad_search": 15,
 }
+CONTROLLED_BROAD_STAGNANT_SEC = max(
+    300,
+    parse_int(os.getenv("COINT4_CONTROLLED_BROAD_STAGNANT_SEC", "1800"), 1800),
+)
+CONTROLLED_BROAD_COOLDOWN_SEC = max(
+    300,
+    parse_int(os.getenv("COINT4_CONTROLLED_BROAD_COOLDOWN_SEC", "600"), 600),
+)
+CONTROLLED_BROAD_NUM_VARIANTS = max(
+    4,
+    parse_int(os.getenv("COINT4_CONTROLLED_BROAD_NUM_VARIANTS", "24"), 24),
+)
+CONTROLLED_BROAD_NUM_VARIANTS_FLOOR = max(
+    1,
+    min(
+        CONTROLLED_BROAD_NUM_VARIANTS,
+        parse_int(os.getenv("COINT4_CONTROLLED_BROAD_NUM_VARIANTS_FLOOR", "16"), 16),
+    ),
+)
+CONTROLLED_BROAD_MAX_CHANGED_KEYS = max(
+    1,
+    parse_int(os.getenv("COINT4_CONTROLLED_BROAD_MAX_CHANGED_KEYS", "3"), 3),
+)
+CONTROLLED_BROAD_DEDUPE_DISTANCE = max(
+    0.0,
+    parse_float(os.getenv("COINT4_CONTROLLED_BROAD_DEDUPE_DISTANCE", "0.04"), 0.04),
+)
 
 
 def canonical_reason(entry: dict[str, Any]) -> str:
@@ -192,6 +220,9 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
     search_quality = directive.get("search_quality", {})
     if not isinstance(search_quality, dict):
         search_quality = {}
+    controlled_broad = directive.get("controlled_broad_recovery", {})
+    if not isinstance(controlled_broad, dict):
+        controlled_broad = {}
     return {
         "version": max(1, parse_int(directive.get("version"), 1)),
         "policy_family": "exploit_first",
@@ -242,6 +273,51 @@ def _build_planner_policy_inputs(directive: dict[str, Any]) -> dict[str, Any]:
                 1,
                 parse_int(search_quality.get("controlled_recovery_variants_cap"), 8),
             ),
+            "controlled_broad_rearm_after_epoch": max(
+                0,
+                parse_int(search_quality.get("controlled_broad_rearm_after_epoch"), 0),
+            ),
+            "controlled_broad_active": bool(search_quality.get("controlled_broad_active")),
+            "controlled_broad_reason": str(search_quality.get("controlled_broad_reason") or "").strip(),
+            "controlled_broad_contains": [
+                str(token).strip()
+                for token in list(search_quality.get("controlled_broad_contains", []) or [])
+                if str(token).strip()
+            ][:8],
+            "controlled_broad_cooldown_sec": max(
+                0,
+                parse_int(search_quality.get("controlled_broad_cooldown_sec"), CONTROLLED_BROAD_COOLDOWN_SEC),
+            ),
+        },
+        "controlled_broad_recovery": {
+            "enabled": bool(controlled_broad.get("enabled")),
+            "reason": str(controlled_broad.get("reason") or "").strip(),
+            "contains": [
+                str(token).strip()
+                for token in list(controlled_broad.get("contains", []) or [])
+                if str(token).strip()
+            ][:8],
+            "num_variants": max(1, parse_int(controlled_broad.get("num_variants"), CONTROLLED_BROAD_NUM_VARIANTS)),
+            "num_variants_floor": max(
+                1,
+                parse_int(controlled_broad.get("num_variants_floor"), CONTROLLED_BROAD_NUM_VARIANTS_FLOOR),
+            ),
+            "max_changed_keys": max(
+                1,
+                parse_int(controlled_broad.get("max_changed_keys"), CONTROLLED_BROAD_MAX_CHANGED_KEYS),
+            ),
+            "dedupe_distance": round(
+                max(0.0, parse_float(controlled_broad.get("dedupe_distance"), CONTROLLED_BROAD_DEDUPE_DISTANCE)),
+                6,
+            ),
+            "cooldown_sec": max(
+                0,
+                parse_int(controlled_broad.get("cooldown_sec"), CONTROLLED_BROAD_COOLDOWN_SEC),
+            ),
+            "rearm_after_epoch": max(
+                0,
+                parse_int(controlled_broad.get("rearm_after_epoch"), 0),
+            ),
         },
         "yield_governor": {
             "active": bool(yield_governor.get("active")),
@@ -275,7 +351,94 @@ def _attach_policy_metadata(directive: dict[str, Any]) -> dict[str, Any]:
     return directive
 
 
-def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def _runtime_metric_int(runtime_metrics: dict[str, Any], key: str, default: int = 0) -> int:
+    if not isinstance(runtime_metrics, dict):
+        return int(default)
+    return max(0, parse_int(runtime_metrics.get(key), default))
+
+
+def _controlled_broad_recovery(
+    *,
+    contains: list[str],
+    proximate_tokens: list[str],
+    replay_fastlane: dict[str, Any],
+    search_quality: dict[str, Any],
+    runtime_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    if proximate_tokens:
+        return {"enabled": False}
+    if bool(replay_fastlane.get("enabled")):
+        return {"enabled": False}
+    if bool(search_quality.get("controlled_recovery_active")):
+        return {"enabled": False}
+    if _runtime_metric_int(runtime_metrics, "global_pending_dispatchable", 0) > 0:
+        return {"enabled": False}
+    if _runtime_metric_int(runtime_metrics, "remote_active_queue_jobs", 0) > 0:
+        return {"enabled": False}
+    if _runtime_metric_int(runtime_metrics, "ready_buffer_depth", 0) > 0:
+        return {"enabled": False}
+    if str(runtime_metrics.get("candidate_pool_status") or "").strip() not in {
+        "empty_expected",
+        "empty_expected_degraded",
+    }:
+        return {"enabled": False}
+    now_epoch = int(datetime.now(timezone.utc).timestamp())
+    controlled_broad_rearm_after_epoch = max(
+        0,
+        parse_int(search_quality.get("controlled_broad_rearm_after_epoch"), 0),
+    )
+    controlled_broad_rearm_due = (
+        controlled_broad_rearm_after_epoch > 0 and now_epoch >= controlled_broad_rearm_after_epoch
+    )
+    stagnant_sec = _runtime_metric_int(runtime_metrics, "completed_with_metrics_stagnant_sec", 0)
+    stale_streak = _runtime_metric_int(runtime_metrics, "no_progress_breaker_streak", 0)
+    if not controlled_broad_rearm_due and stagnant_sec < CONTROLLED_BROAD_STAGNANT_SEC and stale_streak < 2:
+        return {"enabled": False}
+    last_seed_epoch = _runtime_metric_int(runtime_metrics, "last_seed_trigger_epoch", 0)
+    if (
+        not controlled_broad_rearm_due
+        and last_seed_epoch > 0
+        and now_epoch - last_seed_epoch < CONTROLLED_BROAD_COOLDOWN_SEC
+    ):
+        return {"enabled": False}
+
+    broad_contains = _merge_unique(
+        [
+            str(token).strip()
+            for token in list(search_quality.get("controlled_recovery_contains", []) or [])
+            if str(token).strip()
+        ],
+        [
+            str(token).strip()
+            for token in list(search_quality.get("winner_proximate_positive_contains", []) or [])
+            if str(token).strip()
+        ],
+        limit=8,
+    )
+    broad_contains = _merge_unique(broad_contains, list(contains), limit=8)
+    return {
+        "enabled": bool(broad_contains or contains),
+        "reason": (
+            "controlled_broad_rearm_after_exhausted_recovery"
+            if controlled_broad_rearm_due
+            else "stagnant_empty_backlog_no_strict_progress"
+        ),
+        "contains": broad_contains or list(contains),
+        "num_variants": CONTROLLED_BROAD_NUM_VARIANTS,
+        "num_variants_floor": CONTROLLED_BROAD_NUM_VARIANTS_FLOOR,
+        "max_changed_keys": CONTROLLED_BROAD_MAX_CHANGED_KEYS,
+        "dedupe_distance": round(CONTROLLED_BROAD_DEDUPE_DISTANCE, 6),
+        "cooldown_sec": CONTROLLED_BROAD_COOLDOWN_SEC,
+        "rearm_after_epoch": int(controlled_broad_rearm_after_epoch),
+    }
+
+
+def build_directive(
+    queues: dict[str, Any],
+    yield_state: dict[str, Any] | None = None,
+    *,
+    runtime_metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     micro_caps = micro_broad_search_caps()
     reasons = Counter()
     run_group_hints: list[str] = []
@@ -335,6 +498,14 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
         lane_weights["broad_search"] = 0
     replay_fastlane = _collect_replay_fastlane(queues, yield_state=yield_state)
     contains = _merge_unique(proximate_tokens, _merge_unique(yield_winner_contains, yield_preferred_contains), limit=8) or contains
+    runtime_metrics = runtime_metrics if isinstance(runtime_metrics, dict) else {}
+    controlled_broad = _controlled_broad_recovery(
+        contains=contains,
+        proximate_tokens=proximate_tokens,
+        replay_fastlane=replay_fastlane,
+        search_quality=search_quality,
+        runtime_metrics=runtime_metrics,
+    )
 
     directive: dict[str, Any] = {
         "version": 1,
@@ -380,6 +551,12 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
             search_quality.get("controlled_recovery_attempts_remaining", 0) or 0
         ),
         "controlled_recovery_variants_cap": int(search_quality.get("controlled_recovery_variants_cap", 0) or 0),
+        "controlled_broad_rearm_after_epoch": int(search_quality.get("controlled_broad_rearm_after_epoch", 0) or 0),
+        "controlled_broad_active": False,
+        "controlled_broad_reason": "",
+        "controlled_broad_contains": [],
+        "controlled_broad_cooldown_sec": CONTROLLED_BROAD_COOLDOWN_SEC,
+        "controlled_broad_recovery": controlled_broad,
         "lane_weights": lane_weights,
     }
 
@@ -517,6 +694,60 @@ def build_directive(queues: dict[str, Any], yield_state: dict[str, Any] | None =
                 },
                 "lineage_priority": controlled_contains,
                 "lane_weights": lane_weights,
+            }
+        )
+    elif bool(controlled_broad.get("enabled")):
+        controlled_contains = [
+            str(token).strip() for token in list(controlled_broad.get("contains", []) or []) if str(token).strip()
+        ][:8]
+        directive.update(
+            {
+                "mode": "controlled_broad_recovery",
+                "contains": controlled_contains,
+                "policy_scale": "micro",
+                "num_variants": int(controlled_broad.get("num_variants", CONTROLLED_BROAD_NUM_VARIANTS)),
+                "num_variants_floor": int(
+                    controlled_broad.get("num_variants_floor", CONTROLLED_BROAD_NUM_VARIANTS_FLOOR)
+                ),
+                "max_changed_keys": int(
+                    controlled_broad.get("max_changed_keys", CONTROLLED_BROAD_MAX_CHANGED_KEYS)
+                ),
+                "dedupe_distance": float(
+                    controlled_broad.get("dedupe_distance", CONTROLLED_BROAD_DEDUPE_DISTANCE)
+                ),
+                "winner_proximate": {
+                    "enabled": False,
+                    "contains": [],
+                    "reason": "",
+                },
+                "broad_search_allowed": True,
+                "seed_generation_mode": "controlled_broad_micro",
+                "controlled_broad_active": True,
+                "controlled_broad_reason": str(
+                    controlled_broad.get("reason") or "stagnant_empty_backlog_no_strict_progress"
+                ),
+                "controlled_broad_contains": controlled_contains,
+                "controlled_broad_cooldown_sec": int(
+                    controlled_broad.get("cooldown_sec", CONTROLLED_BROAD_COOLDOWN_SEC)
+                ),
+                "lane_weights": {
+                    "winner_proximate": 0,
+                    "confirm_replay": 0,
+                    "broad_search": 100,
+                },
+                "search_quality": {
+                    **dict(search_quality),
+                    "broad_search_allowed": True,
+                    "seed_generation_mode": "controlled_broad_micro",
+                    "controlled_broad_active": True,
+                    "controlled_broad_reason": str(
+                        controlled_broad.get("reason") or "stagnant_empty_backlog_no_strict_progress"
+                    ),
+                    "controlled_broad_contains": controlled_contains,
+                    "controlled_broad_cooldown_sec": int(
+                        controlled_broad.get("cooldown_sec", CONTROLLED_BROAD_COOLDOWN_SEC)
+                    ),
+                },
             }
         )
 
@@ -686,6 +917,9 @@ def main() -> int:
     queues = fullspan_state.get("queues", {}) if isinstance(fullspan_state, dict) else {}
     if not isinstance(queues, dict):
         queues = {}
+    runtime_metrics = fullspan_state.get("runtime_metrics", {}) if isinstance(fullspan_state, dict) else {}
+    if not isinstance(runtime_metrics, dict):
+        runtime_metrics = {}
     gate_state = load_json(gate_state_path, {})
     existing_yield_state = load_json(yield_state_path, {})
     if not isinstance(existing_yield_state, dict):
@@ -725,7 +959,7 @@ def main() -> int:
             if key in yield_state:
                 yield_state["search_quality"][key] = yield_state[key]
 
-    directive = build_directive(queues, yield_state=yield_state)
+    directive = build_directive(queues, yield_state=yield_state, runtime_metrics=runtime_metrics)
     directive.update(build_gate_surrogate_overlay(gate_state))
     directive["ts"] = utc_now_iso()
     directive["source"] = "search_director_agent"

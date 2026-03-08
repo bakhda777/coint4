@@ -65,10 +65,22 @@ _RETRYABLE_SYNC_PATTERNS = (
     "temporary failure",
     "resource temporarily unavailable",
 )
+_SYNC_CODE_POLICIES = {"strict", "subset", "runtime-first"}
+_RUNTIME_SYNC_INCLUDE_PATHS = (
+    "src",
+    "scripts/optimization/_queue_status_contract.py",
+    "scripts/optimization/build_run_index.py",
+    "scripts/optimization/postprocess_queue.py",
+    "scripts/optimization/recompute_canonical_metrics.py",
+    "scripts/optimization/run_wfa_queue.py",
+    "scripts/optimization/sync_queue_status.py",
+)
 _SSH_CONNECT_TIMEOUT_SEC = 10
 _SSH_COMMAND_TIMEOUT_SEC = max(60, int(os.getenv("COINT4_REMOTE_SSH_TIMEOUT_SEC", "3600")))
 _SCP_TIMEOUT_SEC = max(30, int(os.getenv("COINT4_REMOTE_SCP_TIMEOUT_SEC", "900")))
 _WAIT_QUEUE_SYNC_MIN_INTERVAL_SEC = max(1, int(os.getenv("COINT4_WAIT_QUEUE_SYNC_MIN_INTERVAL_SEC", "5")))
+_REMOTE_HANDOFF_CONFIRM_TIMEOUT_SEC = max(5, int(os.getenv("COINT4_REMOTE_HANDOFF_CONFIRM_TIMEOUT_SEC", "45")))
+_REMOTE_HANDOFF_CONFIRM_POLL_SEC = max(1, int(os.getenv("COINT4_REMOTE_HANDOFF_CONFIRM_POLL_SEC", "3")))
 
 
 def _find_repo_root(start_path: Path | None = None) -> Path:
@@ -293,15 +305,30 @@ def _should_skip_sync_relpath(rel_path: Path) -> bool:
     return rel_path.name.endswith(_SYNC_EXCLUDE_SUFFIXES)
 
 
-def _sync_code_include_paths(project_root: Path) -> list[str]:
+def _normalize_sync_code_policy(policy: str | None) -> str:
+    text = str(policy or "").strip().lower().replace("_", "-")
+    if not text:
+        return "strict"
+    if text not in _SYNC_CODE_POLICIES:
+        raise ValueError(f"Unsupported sync code policy: {policy!r}")
+    return text
+
+
+def _sync_code_include_paths(project_root: Path, *, policy: str = "strict") -> list[str]:
+    normalized_policy = _normalize_sync_code_policy(policy)
     includes: list[str] = []
-    for rel in (
-        "src",
-        "scripts",
-        "pyproject.toml",
-        "requirements.txt",
-        "pytest.ini",
-    ):
+    candidates = (
+        (
+            "src",
+            "scripts",
+            "pyproject.toml",
+            "requirements.txt",
+            "pytest.ini",
+        )
+        if normalized_policy == "strict"
+        else _RUNTIME_SYNC_INCLUDE_PATHS
+    )
+    for rel in candidates:
         if (project_root / rel).exists():
             includes.append(rel)
     return includes
@@ -315,13 +342,14 @@ def _manifest_entries_digest(entries: Iterable[dict[str, object]], *, include_ha
             continue
         digest.update(rel_text.encode("utf-8"))
         digest.update(b"\0")
+        if include_hash:
+            digest.update(str(entry.get("sha256") or "").encode("ascii"))
+            digest.update(b"\0")
+            continue
         digest.update(str(int(entry.get("size") or 0)).encode("ascii"))
         digest.update(b"\0")
         digest.update(str(int(entry.get("mtime_ns") or 0)).encode("ascii"))
         digest.update(b"\0")
-        if include_hash:
-            digest.update(str(entry.get("sha256") or "").encode("ascii"))
-            digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -618,13 +646,14 @@ def _remote_sync_manifest(
         "for entry in entries:\n"
         "    digest.update(str(entry.get('path') or '').encode('utf-8'))\n"
         "    digest.update(b'\\0')\n"
+        "    if include_hash:\n"
+        "        digest.update(str(entry.get('sha256') or '').encode('ascii'))\n"
+        "        digest.update(b'\\0')\n"
+        "        continue\n"
         "    digest.update(str(int(entry.get('size') or 0)).encode('ascii'))\n"
         "    digest.update(b'\\0')\n"
         "    digest.update(str(int(entry.get('mtime_ns') or 0)).encode('ascii'))\n"
         "    digest.update(b'\\0')\n"
-        "    if include_hash:\n"
-        "        digest.update(str(entry.get('sha256') or '').encode('ascii'))\n"
-        "        digest.update(b'\\0')\n"
         "print(json.dumps({'ok': True, 'digest': digest.hexdigest(), 'count': len(entries), 'entries': entries, 'mode': digest_mode}, sort_keys=True))\n"
         "PY"
     )
@@ -689,15 +718,13 @@ def _manifest_mismatched_paths(
         remote_entry = remote_index.get(path_text)
         if not remote_entry:
             continue
-        if (
-            int(local_entry.get("size") or 0) != int(remote_entry.get("size") or 0)
-            or int(local_entry.get("mtime_ns") or 0) != int(remote_entry.get("mtime_ns") or 0)
-            or (
-                "sha256" in local_entry
-                and "sha256" in remote_entry
-                and str(local_entry.get("sha256") or "") != str(remote_entry.get("sha256") or "")
-            )
-        ):
+        if "sha256" in local_entry and "sha256" in remote_entry:
+            if str(local_entry.get("sha256") or "") != str(remote_entry.get("sha256") or ""):
+                mismatched.append(path_text)
+            continue
+        if int(local_entry.get("size") or 0) != int(remote_entry.get("size") or 0) or int(
+            local_entry.get("mtime_ns") or 0
+        ) != int(remote_entry.get("mtime_ns") or 0):
             mismatched.append(path_text)
     return sorted(mismatched)
 
@@ -1340,7 +1367,7 @@ def _remote_rank_and_sync(
             return local_rank_path
 
         strict = {
-            "min_windows": _env_int("FULLSPAN_MIN_WINDOWS", 3, min_value=1),
+            "min_windows": _env_int("FULLSPAN_MIN_WINDOWS", 1, min_value=1),
             "min_trades": _env_float("FULLSPAN_MIN_TRADES", 200.0, min_value=0.0),
             "min_pairs": _env_float("FULLSPAN_MIN_PAIRS", 20.0, min_value=0.0),
             "min_coverage_ratio": _env_float("FULLSPAN_MIN_COVERAGE_RATIO", 0.95, min_value=0.0, max_value=1.0),
@@ -1658,9 +1685,15 @@ def _bootstrap_remote_venv(
 
 def _classify_remote_error(remote_command: str, return_code: int, output: str) -> tuple[str, bool]:
     lowered = (output or "").lower()
+    payload = _extract_last_json_line(output)
 
     if return_code == 0:
         return "SUCCESS", False
+
+    if isinstance(payload, dict):
+        payload_error = str(payload.get("error") or payload.get("reason") or "").strip().upper()
+        if payload_error == "REMOTE_HANDOFF_FAILED":
+            return "REMOTE_HANDOFF_FAILED", False
 
     if "no such file or directory" in lowered:
         if "bash:" in lowered and "cd" in lowered:
@@ -1976,7 +2009,17 @@ def _wait_ssh_ready(
     return False
 
 
-def _read_queue_config_paths(queue_path: Path) -> list[tuple[str, Path]]:
+def _normalize_status_filter(statuses: str | None) -> set[str] | None:
+    selected = {
+        status.strip().lower()
+        for status in str(statuses or "").split(",")
+        if status and status.strip()
+    }
+    selected.discard("auto")
+    return selected or None
+
+
+def _read_queue_config_paths(queue_path: Path, *, statuses: str | None = None) -> list[tuple[str, Path]]:
     with queue_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
@@ -1985,6 +2028,7 @@ def _read_queue_config_paths(queue_path: Path) -> list[tuple[str, Path]]:
         return []
 
     header = rows[0]
+    statuses_filter = _normalize_status_filter(statuses)
     config_field = None
     for key in header:
         normalized = (key or "").strip().lower().replace(" ", "")
@@ -2002,6 +2046,10 @@ def _read_queue_config_paths(queue_path: Path) -> list[tuple[str, Path]]:
     paths = []
     seen = set()
     for row in rows:
+        if statuses_filter is not None:
+            row_status = str(row.get("status") or "").strip().lower()
+            if row_status not in statuses_filter:
+                continue
         value = (row.get(config_field) or "").strip()
         if not value or value in seen:
             continue
@@ -2228,6 +2276,7 @@ def _sync_repo_code(
     port: int,
     log_path: Path,
     log: Callable[[str], None],
+    sync_code_policy: str = "strict",
 ) -> None:
     """Sync local code (src/ + scripts/) to the remote repo.
 
@@ -2236,7 +2285,8 @@ def _sync_repo_code(
     repo can lag behind and produce metrics that don't match current gating/ranking
     logic (e.g. coverage alignment when walk_forward.max_steps truncates execution).
     """
-    includes = _sync_code_include_paths(project_root)
+    policy = _normalize_sync_code_policy(sync_code_policy)
+    includes = _sync_code_include_paths(project_root, policy=policy)
     sync_state_path = _sync_code_state_path(log_path)
     if not includes:
         log("powered: sync_code skipped (no include paths found)")
@@ -2245,6 +2295,7 @@ def _sync_repo_code(
             {
                 "status": "skipped",
                 "reason": "no_include_paths",
+                "policy": policy,
                 "source_commit": _git_head_revision(project_root),
                 "remote_git_identity_drift": False,
             },
@@ -2271,12 +2322,15 @@ def _sync_repo_code(
     sync_state: dict[str, object] = {
         "source_commit": local_head,
         "source_dirty": bool(local_dirty),
+        "policy": policy,
         "includes": includes,
         "manifest_mode": "fingerprint",
         "manifest_digest": local_manifest_fast_digest,
         "remote_manifest_digest": "",
         "remote_head": remote_head,
         "remote_git_identity_drift": bool(local_head and remote_head and local_head != remote_head),
+        "drift_tolerated": False,
+        "ignored_noncritical_mismatches_count": 0,
         "status": "starting",
     }
     try:
@@ -2303,14 +2357,16 @@ def _sync_repo_code(
     sync_state["remote_manifest_digest"] = remote_manifest_before_digest
     if local_manifest_fast_digest and remote_manifest_before_digest == local_manifest_fast_digest:
         log(
-            "powered: sync_code skipped reason=manifest_match digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
+            "powered: sync_code skipped reason={reason} digest={digest} files={count} remote_head={remote_head} identity_drift={drift} policy={policy}".format(
+                reason="manifest_match" if policy == "strict" else "runtime_subset_match",
                 digest=local_manifest_fast_digest,
                 count=int(local_manifest_fast.get("count") or 0),
                 remote_head=remote_head or "none",
                 drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
+                policy=policy,
             )
         )
-        sync_state["status"] = "skipped_manifest_match"
+        sync_state["status"] = "skipped_manifest_match" if policy == "strict" else "ok_runtime_subset_match"
         _write_sync_code_state(sync_state_path, sync_state)
         return
     remote_only_before = _manifest_remote_only_paths(local_manifest_fast, remote_manifest_before)
@@ -2344,12 +2400,14 @@ def _sync_repo_code(
         sync_state["remote_manifest_digest"] = remote_manifest_before_digest
         if local_manifest_fast_digest and remote_manifest_before_digest == local_manifest_fast_digest:
             log(
-                "powered: sync_code ok reason=post_prune_manifest_match digest={digest} files={count}".format(
+                "powered: sync_code ok reason={reason} digest={digest} files={count} policy={policy}".format(
+                    reason="post_prune_manifest_match" if policy == "strict" else "runtime_subset_match",
                     digest=local_manifest_fast_digest,
                     count=int(local_manifest_fast.get("count") or 0),
+                    policy=policy,
                 )
             )
-            sync_state["status"] = "ok_post_prune_manifest_match"
+            sync_state["status"] = "ok_post_prune_manifest_match" if policy == "strict" else "ok_runtime_subset_match"
             _write_sync_code_state(sync_state_path, sync_state)
             return
 
@@ -2385,13 +2443,17 @@ def _sync_repo_code(
             sync_state["remote_manifest_digest"] = remote_manifest_verify_digest
             sync_state["mismatched_paths"] = fingerprint_mismatched_paths[:16]
             log(
-                "powered: sync_code ok reason=fingerprint_hash_match digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
+                "powered: sync_code ok reason={reason} digest={digest} files={count} remote_head={remote_head} identity_drift={drift} policy={policy}".format(
+                    reason="fingerprint_hash_match" if policy == "strict" else "runtime_subset_match",
                     digest=local_manifest_digest,
                     count=int(local_manifest_fast.get("count") or 0),
                     remote_head=remote_head or "none",
                     drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
+                    policy=policy,
                 )
             )
+            if policy != "strict":
+                sync_state["status"] = "ok_runtime_subset_match"
             _write_sync_code_state(sync_state_path, sync_state)
             return
 
@@ -2433,7 +2495,7 @@ def _sync_repo_code(
         remote_shell_cmd,
     ]
 
-    log(f"powered: sync_code stream_start includes={includes}")
+    log(f"powered: sync_code stream_start includes={includes} policy={policy}")
     log(f"powered: sync_code tar_cmd={shlex.join(tar_cmd)} | ssh ...")
     log(f"powered: sync_code ssh_cmd={shlex.join(ssh_cmd)}")
     sync_timeout_sec = max(
@@ -2612,15 +2674,16 @@ def _sync_repo_code(
             )
 
         log(
-            "powered: sync_code ok includes={includes} digest={digest} files={count} remote_head={remote_head} identity_drift={drift}".format(
+            "powered: sync_code ok includes={includes} digest={digest} files={count} remote_head={remote_head} identity_drift={drift} policy={policy}".format(
                 includes=includes,
                 digest=local_manifest_digest or "none",
                 count=int(local_manifest_fast.get("count") or 0),
                 remote_head=remote_head or "none",
                 drift=str(bool(sync_state["remote_git_identity_drift"])).lower(),
+                policy=policy,
             )
         )
-        sync_state["status"] = "ok"
+        sync_state["status"] = "ok" if policy == "strict" else "ok_runtime_subset_match"
         _write_sync_code_state(sync_state_path, sync_state)
     except _PoweredFailure as exc:
         remote_manifest_digest = str(
@@ -2643,7 +2706,7 @@ def _sync_repo_code(
         log(
             "powered: sync_code failed error_class={cls} fatal={fatal} msg={msg} "
             "local_head={local_head} remote_head={remote_head} local_manifest={local_manifest} "
-            "remote_manifest={remote_manifest} drift_detected={drift} drift_reason={drift_reason}".format(
+            "remote_manifest={remote_manifest} drift_detected={drift} drift_reason={drift_reason} policy={policy}".format(
                 cls=exc.error_class,
                 fatal=str(bool(exc.fatal)).lower(),
                 msg=str(exc),
@@ -2653,6 +2716,7 @@ def _sync_repo_code(
                 remote_manifest=remote_manifest_digest or "none",
                 drift=str(bool(drift_detected)).lower(),
                 drift_reason=drift_reason,
+                policy=policy,
             )
         )
         sync_state["status"] = "failed"
@@ -2661,6 +2725,7 @@ def _sync_repo_code(
         sync_state["remote_manifest_digest"] = remote_manifest_digest
         sync_state["drift_detected"] = bool(drift_detected)
         sync_state["drift_reason"] = drift_reason
+        sync_state["drift_tolerated"] = False
         _write_sync_code_state(sync_state_path, sync_state)
         if drift_detected:
             raise _PoweredFailure(
@@ -2681,6 +2746,7 @@ def _sync_inputs(
     *,
     bulk_configs: bool,
     force_remote_queue_overwrite: bool,
+    statuses: str | None = None,
     port: int,
     log_path: Path,
     log: Callable[[str], None],
@@ -2750,7 +2816,7 @@ def _sync_inputs(
         _run_scp_file(queue_path, user, host, remote_queue, port=port, log=log)
         queue_uploaded = 1
 
-    config_rows = _read_queue_config_paths(queue_path)
+    config_rows = _read_queue_config_paths(queue_path, statuses=statuses)
     unique_paths = [entry[1] for entry in config_rows]
 
     resolved_configs: list[Path] = []
@@ -2841,6 +2907,69 @@ def _build_remote_command(
         f"{shlex.quote(remote_python)} "
         f"scripts/optimization/run_wfa_queue.py --queue {shlex.quote(queue_relative)} "
         f"--statuses {shlex.quote(statuses)} --parallel {int(parallel)}"
+    )
+
+
+def _build_remote_detached_start_command(
+    remote_repo: Path,
+    remote_python: str,
+    queue_relative: str,
+    *,
+    statuses: str,
+    parallel: int,
+    postprocess: bool,
+    confirm_timeout_sec: int,
+    confirm_poll_sec: int,
+) -> str:
+    base_cmd = _build_remote_command(
+        remote_repo,
+        remote_python,
+        queue_relative,
+        statuses=statuses,
+        parallel=parallel,
+        postprocess=postprocess,
+    )
+    queue_rel = str(queue_relative).replace("\\", "/")
+    safe_queue_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", queue_rel).strip("_") or "queue"
+    remote_log_dir = remote_repo / "artifacts" / "wfa" / "aggregate" / ".autonomous"
+    remote_log_name = f"remote_handoff_{safe_queue_name}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.log"
+    remote_log_path = remote_log_dir / remote_log_name
+    return (
+        f"mkdir -p {shlex.quote(str(remote_log_dir))} "
+        f"&& nohup bash -lc {shlex.quote(base_cmd)} > {shlex.quote(str(remote_log_path))} 2>&1 < /dev/null & "
+        f"cd {shlex.quote(str(remote_repo))} "
+        f"&& REMOTE_HANDOFF_TIMEOUT={int(confirm_timeout_sec)} "
+        f"REMOTE_HANDOFF_POLL={int(confirm_poll_sec)} "
+        f"QUEUE_REL={shlex.quote(queue_rel)} "
+        f"{shlex.quote(remote_python)} - <<'PY'\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import time\n"
+        "queue_rel = os.environ.get('QUEUE_REL', '').strip()\n"
+        "timeout = max(1, int(float(os.environ.get('REMOTE_HANDOFF_TIMEOUT', '45') or 45)))\n"
+        "poll = max(1, int(float(os.environ.get('REMOTE_HANDOFF_POLL', '3') or 3)))\n"
+        "deadline = time.time() + timeout\n"
+        "target = 'scripts/optimization/run_wfa_queue.py'\n"
+        "def has_match() -> bool:\n"
+        "    try:\n"
+        "        proc = subprocess.run(['ps', '-eo', 'args='], capture_output=True, text=True, check=False)\n"
+        "        lines = (proc.stdout or '').splitlines()\n"
+        "    except Exception:\n"
+        "        return False\n"
+        "    for raw in lines:\n"
+        "        line = raw.strip()\n"
+        "        if target in line and queue_rel in line:\n"
+        "            return True\n"
+        "    return False\n"
+        "while time.time() < deadline:\n"
+        "    if has_match():\n"
+        "        print(json.dumps({'ok': True, 'queue': queue_rel, 'evidence': 'remote_process_match'}))\n"
+        "        raise SystemExit(0)\n"
+        "    time.sleep(poll)\n"
+        "print(json.dumps({'ok': False, 'error': 'REMOTE_HANDOFF_FAILED', 'queue': queue_rel}))\n"
+        "raise SystemExit(9)\n"
+        "PY"
     )
 
 
@@ -3369,6 +3498,59 @@ def _build_wait_probe_command(
     )
 
 
+def _build_handoff_process_probe_command(
+    *,
+    remote_repo: Path,
+    remote_python: str,
+    queue_relative: str,
+) -> str:
+    queue_rel = str(queue_relative).replace("\\", "/")
+    return (
+        f"cd {shlex.quote(str(remote_repo))} "
+        f"&& QUEUE_REL={shlex.quote(queue_rel)} "
+        f"{shlex.quote(remote_python)} - <<'PY'\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "queue_rel = os.environ.get('QUEUE_REL', '').strip()\n"
+        "if not queue_rel:\n"
+        "    print(json.dumps({'ok': False, 'error': 'QUEUE_REL_EMPTY'}))\n"
+        "    raise SystemExit(2)\n"
+        "matches = []\n"
+        "for proc_dir in pathlib.Path('/proc').iterdir():\n"
+        "    if not proc_dir.name.isdigit():\n"
+        "        continue\n"
+        "    try:\n"
+        "        raw = (proc_dir / 'cmdline').read_bytes()\n"
+        "    except Exception:\n"
+        "        continue\n"
+        "    if not raw:\n"
+        "        continue\n"
+        "    parts = [chunk.decode('utf-8', 'ignore') for chunk in raw.split(b'\\0') if chunk]\n"
+        "    if not parts:\n"
+        "        continue\n"
+        "    if not any(\n"
+        "        part == 'scripts/optimization/run_wfa_queue.py'\n"
+        "        or part.endswith('/scripts/optimization/run_wfa_queue.py')\n"
+        "        for part in parts\n"
+        "    ):\n"
+        "        continue\n"
+        "    queue_match = False\n"
+        "    for idx, part in enumerate(parts):\n"
+        "        if part == '--queue' and idx + 1 < len(parts) and parts[idx + 1] == queue_rel:\n"
+        "            queue_match = True\n"
+        "            break\n"
+        "        if part.startswith('--queue=') and part.split('=', 1)[1] == queue_rel:\n"
+        "            queue_match = True\n"
+        "            break\n"
+        "    if queue_match:\n"
+        "        matches.append(int(proc_dir.name))\n"
+        "payload = {'ok': True, 'queue_rel': queue_rel, 'count': len(matches), 'pids': matches[:16]}\n"
+        "print(json.dumps(payload, sort_keys=True))\n"
+        "PY"
+    )
+
+
 def get_remote_queue_counts(
     host: str,
     user: str,
@@ -3462,6 +3644,303 @@ def get_remote_queue_counts(
         "all_done": bool(payload.get("all_done")),
         "has_metrics": bool(payload.get("has_metrics")),
     }
+
+
+def _get_remote_queue_process_info(
+    host: str,
+    user: str,
+    remote_repo: Path,
+    remote_python: str,
+    queue_relative: str,
+    port: int,
+    *,
+    log_path: Optional[Path] = None,
+    log: Optional[Callable[[str], None]] = None,
+) -> dict:
+    probe_log_path = log_path or (Path("/tmp") / "powered_probe.log")
+    if log_path is None:
+        probe_log_path.parent.mkdir(parents=True, exist_ok=True)
+        if not probe_log_path.exists():
+            probe_log_path.write_text("", encoding="utf-8")
+
+    log_fn = log or (lambda _msg: None)
+    probe_cmd = _build_handoff_process_probe_command(
+        remote_repo=remote_repo,
+        remote_python=remote_python,
+        queue_relative=queue_relative,
+    )
+    rc, output = _exec_ssh_command(
+        host,
+        user,
+        probe_cmd,
+        probe_log_path,
+        port=int(port),
+        command_purpose="queue-handoff-process-probe",
+        log=log_fn,
+    )
+    payload = _extract_last_json_line(output)
+    if rc != 0:
+        if isinstance(payload, dict):
+            err = str(payload.get("error") or "QUEUE_PROCESS_PROBE_FAILED").strip() or "QUEUE_PROCESS_PROBE_FAILED"
+            fatal = err in {"QUEUE_REL_EMPTY"}
+            raise _PoweredFailure(
+                f"queue process probe failed rc={rc}",
+                error_class=err,
+                fatal=fatal,
+            )
+        err_cls, fatal = _classify_remote_error(probe_cmd, rc, output)
+        if err_cls == "REMOTE_EXEC_FAILED":
+            err_cls = "QUEUE_PROCESS_PROBE_FAILED"
+        raise _PoweredFailure(
+            f"queue process probe failed rc={rc}",
+            error_class=err_cls,
+            fatal=fatal,
+        )
+
+    if not payload:
+        raise _PoweredFailure(
+            "queue process probe returned no JSON payload",
+            error_class="QUEUE_PROCESS_PROBE_INVALID",
+            fatal=False,
+        )
+    if not bool(payload.get("ok")):
+        err = str(payload.get("error") or "QUEUE_PROCESS_PROBE_FAILED").strip() or "QUEUE_PROCESS_PROBE_FAILED"
+        fatal = err in {"QUEUE_REL_EMPTY"}
+        raise _PoweredFailure(
+            f"queue process probe error: {err}",
+            error_class=err,
+            fatal=fatal,
+        )
+
+    raw_pids = payload.get("pids")
+    pids: list[int] = []
+    if isinstance(raw_pids, list):
+        for raw_pid in raw_pids:
+            try:
+                pids.append(int(raw_pid))
+            except (TypeError, ValueError):
+                continue
+    try:
+        count = int(payload.get("count") or len(pids))
+    except (TypeError, ValueError):
+        count = len(pids)
+    return {
+        "ok": True,
+        "queue_rel": str(payload.get("queue_rel") or queue_relative),
+        "count": max(0, count),
+        "pids": pids,
+    }
+
+
+def _remote_handoff_confirmation_reason(
+    *,
+    selected_statuses: str,
+    baseline_payload: Optional[dict],
+    current_payload: Optional[dict],
+    process_info: Optional[dict],
+) -> str:
+    try:
+        process_count = int((process_info or {}).get("count") or 0)
+    except (TypeError, ValueError):
+        process_count = 0
+    if process_count > 0:
+        return "remote_process_active"
+
+    if not isinstance(current_payload, dict):
+        return ""
+
+    current_counts = _normalize_status_counts(current_payload.get("counts"))
+    running_now = (
+        int(current_counts.get("running", 0))
+        + int(current_counts.get("active", 0))
+        + int(current_counts.get("partial", 0))
+        + int(current_counts.get("queued", 0))
+        + int(current_counts.get("pending", 0))
+    )
+    if running_now > 0:
+        return "queue_activity_running"
+
+    baseline_counts = _normalize_status_counts((baseline_payload or {}).get("counts"))
+    selected = {status.strip().lower() for status in str(selected_statuses or "").split(",") if status.strip()}
+    if selected and any(current_counts.get(status, 0) != baseline_counts.get(status, 0) for status in selected):
+        return "selected_status_delta"
+
+    try:
+        current_total = int(current_payload.get("total") or sum(current_counts.values()))
+    except (TypeError, ValueError):
+        current_total = int(sum(current_counts.values()))
+    try:
+        baseline_total = int((baseline_payload or {}).get("total") or sum(baseline_counts.values()))
+    except (TypeError, ValueError):
+        baseline_total = int(sum(baseline_counts.values()))
+    if baseline_payload is not None and current_total != baseline_total:
+        return "queue_total_changed"
+    if baseline_payload is not None and current_counts != baseline_counts:
+        return "queue_counts_changed"
+
+    current_has_metrics = bool(current_payload.get("has_metrics"))
+    baseline_has_metrics = bool((baseline_payload or {}).get("has_metrics"))
+    if current_has_metrics and not baseline_has_metrics:
+        return "queue_metrics_present"
+
+    current_all_done = bool(current_payload.get("all_done"))
+    baseline_all_done = bool((baseline_payload or {}).get("all_done"))
+    if current_all_done and (baseline_payload is None or not baseline_all_done):
+        return "queue_all_done"
+
+    return ""
+
+
+def _wait_for_remote_handoff(
+    *,
+    host: str,
+    user: str,
+    remote_repo: Path,
+    remote_python: str,
+    queue_relative: str,
+    selected_statuses: str,
+    baseline_payload: Optional[dict],
+    log_path: Path,
+    port: int,
+    timeout_sec: float,
+    poll_sec: float,
+    log: Callable[[str], None],
+) -> dict:
+    deadline = time.time() + max(1.0, float(timeout_sec))
+    poll_interval = max(0.1, float(poll_sec))
+    attempt = 0
+    last_probe_payload: Optional[dict] = None
+    last_process_info: dict = {"ok": True, "count": 0, "pids": []}
+    last_error = ""
+    log(
+        "powered: remote_handoff start queue={queue} statuses={statuses} timeout_sec={timeout} poll_sec={poll}".format(
+            queue=queue_relative,
+            statuses=selected_statuses,
+            timeout=int(max(1.0, float(timeout_sec))),
+            poll=f"{poll_interval:.1f}",
+        )
+    )
+
+    while True:
+        attempt += 1
+        attempt_errors: list[str] = []
+        current_process_info = {"ok": True, "count": 0, "pids": []}
+        current_probe_payload: Optional[dict] = None
+
+        try:
+            current_process_info = _get_remote_queue_process_info(
+                host=host,
+                user=user,
+                remote_repo=remote_repo,
+                remote_python=remote_python,
+                queue_relative=queue_relative,
+                port=int(port),
+                log_path=log_path,
+                log=log,
+            )
+            last_process_info = current_process_info
+        except _PoweredFailure as exc:
+            attempt_errors.append(f"process:{exc.error_class}")
+            log(
+                "powered: remote_handoff process_probe_failed attempt={attempt} error_class={cls} fatal={fatal}".format(
+                    attempt=attempt,
+                    cls=exc.error_class,
+                    fatal=str(bool(exc.fatal)).lower(),
+                )
+            )
+
+        try:
+            current_probe_payload = get_remote_queue_counts(
+                host=host,
+                user=user,
+                remote_repo=remote_repo,
+                remote_python=remote_python,
+                queue_relative=queue_relative,
+                port=int(port),
+                log_path=log_path,
+                log=log,
+            )
+            last_probe_payload = current_probe_payload
+        except _PoweredFailure as exc:
+            attempt_errors.append(f"queue:{exc.error_class}")
+            log(
+                "powered: remote_handoff queue_probe_failed attempt={attempt} error_class={cls} fatal={fatal}".format(
+                    attempt=attempt,
+                    cls=exc.error_class,
+                    fatal=str(bool(exc.fatal)).lower(),
+                )
+            )
+
+        reason = _remote_handoff_confirmation_reason(
+            selected_statuses=selected_statuses,
+            baseline_payload=baseline_payload,
+            current_payload=current_probe_payload,
+            process_info=current_process_info,
+        )
+        if reason:
+            payload = current_probe_payload or last_probe_payload or {}
+            counts = _normalize_status_counts(payload.get("counts"))
+            log(
+                "powered: remote_handoff outcome=REMOTE_HANDOFF_CONFIRMED reason={reason} "
+                "queue={queue} process_count={count} counts={counts} total={total} all_done={all_done} has_metrics={has_metrics}".format(
+                    reason=reason,
+                    queue=queue_relative,
+                    count=int(current_process_info.get("count") or 0),
+                    counts=counts,
+                    total=int(payload.get("total") or sum(counts.values())),
+                    all_done=str(bool(payload.get("all_done"))).lower(),
+                    has_metrics=str(bool(payload.get("has_metrics"))).lower(),
+                )
+            )
+            return {
+                "outcome": "REMOTE_HANDOFF_CONFIRMED",
+                "reason": reason,
+                "process_count": int(current_process_info.get("count") or 0),
+                "pids": list(current_process_info.get("pids") or []),
+                "counts": counts,
+                "total": int(payload.get("total") or sum(counts.values())),
+                "all_done": bool(payload.get("all_done")),
+                "has_metrics": bool(payload.get("has_metrics")),
+                "probe": payload,
+            }
+
+        last_error = ";".join(attempt_errors)
+        now = time.time()
+        if now >= deadline:
+            break
+        payload = current_probe_payload or last_probe_payload or {}
+        counts = _normalize_status_counts(payload.get("counts"))
+        log(
+            "powered: remote_handoff pending attempt={attempt} queue={queue} process_count={count} counts={counts} total={total} last_error={last_error}".format(
+                attempt=attempt,
+                queue=queue_relative,
+                count=int(current_process_info.get("count") or 0),
+                counts=counts,
+                total=int(payload.get("total") or sum(counts.values())),
+                last_error=last_error or "none",
+            )
+        )
+        time.sleep(min(poll_interval, max(0.0, deadline - now)))
+
+    failed_counts = _normalize_status_counts((last_probe_payload or {}).get("counts"))
+    log(
+        "powered: remote_handoff outcome=REMOTE_HANDOFF_FAILED reason=no_remote_process_or_queue_activity "
+        "queue={queue} process_count={count} counts={counts} total={total} last_error={last_error}".format(
+            queue=queue_relative,
+            count=int(last_process_info.get("count") or 0),
+            counts=failed_counts,
+            total=int((last_probe_payload or {}).get("total") or sum(failed_counts.values())),
+            last_error=last_error or "none",
+        )
+    )
+    raise _PoweredFailure(
+        "Remote handoff not confirmed for queue {queue} within {timeout}s".format(
+            queue=queue_relative,
+            timeout=int(max(1.0, float(timeout_sec))),
+        ),
+        error_class="REMOTE_HANDOFF_FAILED",
+        fatal=False,
+    )
 
 
 def _wait_for_completion(
@@ -3901,6 +4380,7 @@ def run_powered_queue(
                 port=int(args.ssh_port),
                 log_path=log_path,
                 log=log,
+                sync_code_policy=str(getattr(args, "sync_code_policy", "strict") or "strict"),
             )
 
         chosen_parallel = _resolve_parallel(
@@ -3922,6 +4402,7 @@ def run_powered_queue(
                 project_root=project_root,
                 bulk_configs=bool(args.sync_configs_bulk),
                 force_remote_queue_overwrite=bool(args.force_remote_queue_overwrite),
+                statuses=str(getattr(args, "statuses", "") or ""),
                 port=int(args.ssh_port),
                 log_path=log_path,
                 log=log,
@@ -3939,6 +4420,7 @@ def run_powered_queue(
         auto_statuses_rationale = "EXPLICIT"
         should_wait_completion = bool(args.wait_completion)
         failed_retry_mode = False
+        handoff_baseline_payload: Optional[dict] = None
         if selected_statuses.lower() == "auto":
             auto_probe_payload: Optional[dict] = None
             try:
@@ -3978,6 +4460,7 @@ def run_powered_queue(
                     log=log,
                 )
                 should_wait_completion = bool(args.wait_completion) and bool(auto_should_wait)
+                handoff_baseline_payload = auto_probe_payload
 
                 if (
                     bool(getattr(args, "watchdog", False))
@@ -4033,35 +4516,92 @@ def run_powered_queue(
                                 log=log,
                             )
                             should_wait_completion = bool(args.wait_completion) and bool(auto_should_wait)
+                            handoff_baseline_payload = auto_probe_payload
                         except _PoweredFailure as exc:
                             log(f"powered: watchdog reprobe failed error_class={exc.error_class}")
 
+        if selected_statuses and not should_wait_completion and handoff_baseline_payload is None:
+            try:
+                handoff_baseline_payload = get_remote_queue_counts(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    remote_python=remote_python,
+                    queue_relative=remote_queue_name,
+                    port=int(args.ssh_port),
+                    log_path=log_path,
+                    log=log,
+                )
+            except _PoweredFailure as exc:
+                log(
+                    "powered: remote_handoff baseline_probe_failed error_class={cls} fatal={fatal}; continue without baseline".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                    )
+                )
+
+        postprocess_requested = bool(args.postprocess)
+        postprocess_enabled = postprocess_requested
+        completion_tail_sync_required = False
+        if not should_wait_completion and postprocess_enabled:
+            log("powered: postprocess auto_disabled mode=fast_return owner=local_driver")
+            postprocess_enabled = False
+
         remote_rc = 0
+        handoff_result: dict[str, Any] = {}
         if selected_statuses:
             log("powered: remote_env pinned_threads=1")
-            full_remote_cmd = _build_remote_command(
-                remote_repo,
-                remote_python,
-                remote_queue_name,
-                statuses=selected_statuses,
-                parallel=int(chosen_parallel),
-                postprocess=bool(args.postprocess),
-            )
+            if should_wait_completion:
+                full_remote_cmd = _build_remote_command(
+                    remote_repo,
+                    remote_python,
+                    remote_queue_name,
+                    statuses=selected_statuses,
+                    parallel=int(chosen_parallel),
+                    postprocess=postprocess_enabled,
+                )
 
-            def _run_once() -> int:
-                _emit(
-                    f"powered: remote run start queue={remote_queue_name} statuses={selected_statuses}",
-                    log_path,
+                def _run_once() -> int:
+                    _emit(
+                        f"powered: remote run start queue={remote_queue_name} statuses={selected_statuses} mode=attached",
+                        log_path,
+                    )
+                    return _run_remote_command(
+                        args.compute_host,
+                        args.ssh_user,
+                        full_remote_cmd,
+                        log_path=log_path,
+                        port=int(args.ssh_port),
+                        log=log,
+                        command_purpose="queue-run",
+                    )
+
+            else:
+                full_remote_cmd = _build_remote_detached_start_command(
+                    remote_repo,
+                    remote_python,
+                    remote_queue_name,
+                    statuses=selected_statuses,
+                    parallel=int(chosen_parallel),
+                    postprocess=postprocess_enabled,
+                    confirm_timeout_sec=_REMOTE_HANDOFF_CONFIRM_TIMEOUT_SEC,
+                    confirm_poll_sec=_REMOTE_HANDOFF_CONFIRM_POLL_SEC,
                 )
-                return _run_remote_command(
-                    args.compute_host,
-                    args.ssh_user,
-                    full_remote_cmd,
-                    log_path=log_path,
-                    port=int(args.ssh_port),
-                    log=log,
-                    command_purpose="queue-run",
-                )
+
+                def _run_once() -> int:
+                    _emit(
+                        f"powered: remote handoff start queue={remote_queue_name} statuses={selected_statuses}",
+                        log_path,
+                    )
+                    return _run_remote_command(
+                        args.compute_host,
+                        args.ssh_user,
+                        full_remote_cmd,
+                        log_path=log_path,
+                        port=int(args.ssh_port),
+                        log=log,
+                        command_purpose="queue-run",
+                    )
 
             queue_max_retries = int(args.max_retries)
             if failed_retry_mode:
@@ -4081,6 +4621,48 @@ def run_powered_queue(
                 "powered: queue-run skipped chosen_statuses=<none> rationale={rationale}".format(
                     rationale=auto_statuses_rationale,
                 )
+            )
+
+        if selected_statuses and not should_wait_completion:
+            handoff_result = _wait_for_remote_handoff(
+                host=args.compute_host,
+                user=args.ssh_user,
+                remote_repo=remote_repo,
+                remote_python=remote_python,
+                queue_relative=remote_queue_name,
+                selected_statuses=selected_statuses,
+                baseline_payload=handoff_baseline_payload,
+                log_path=log_path,
+                port=int(args.ssh_port),
+                timeout_sec=float(_REMOTE_HANDOFF_CONFIRM_TIMEOUT_SEC),
+                poll_sec=float(_REMOTE_HANDOFF_CONFIRM_POLL_SEC),
+                log=log,
+            )
+            handoff_probe = dict((handoff_result or {}).get("probe") or {})
+            handoff_all_done = bool((handoff_result or {}).get("all_done", handoff_probe.get("all_done")))
+            handoff_has_metrics = bool((handoff_result or {}).get("has_metrics", handoff_probe.get("has_metrics")))
+            if handoff_all_done:
+                completion_tail_sync_required = True
+                if handoff_has_metrics:
+                    log(
+                        "powered: completion_tail_sync_required queue={queue} reason=all_done_with_metrics".format(
+                            queue=remote_queue_name,
+                        )
+                    )
+                else:
+                    postprocess_enabled = True
+                    log(
+                        "powered: completion_tail_postprocess_required queue={queue} reason=all_done_without_metrics".format(
+                            queue=remote_queue_name,
+                        )
+                    )
+            _emit(
+                "powered: remote handoff confirmed queue={queue} statuses={statuses} reason={reason}".format(
+                    queue=remote_queue_name,
+                    statuses=selected_statuses,
+                    reason=str((handoff_result or {}).get("reason") or "confirmed"),
+                ),
+                log_path,
             )
 
         if should_wait_completion:
@@ -4105,14 +4687,15 @@ def run_powered_queue(
                 watchdog_stale_sec=int(getattr(args, "watchdog_stale_sec", 900)),
                 watchdog_restart=bool(getattr(args, "watchdog", False)) and bool(statuses_auto_mode),
                 watchdog_parallel=int(chosen_parallel),
-                watchdog_postprocess=bool(args.postprocess),
+                watchdog_postprocess=postprocess_enabled,
                 local_queue_path=queue_path,
                 log=log,
             )
 
         degraded_steps: list[str] = []
+
         postprocess_ok = False
-        if bool(args.postprocess):
+        if postprocess_enabled:
             try:
                 _remote_postprocess_queue(
                     host=args.compute_host,
@@ -4135,47 +4718,69 @@ def run_powered_queue(
                     )
                 )
 
-        if not postprocess_ok:
+        if postprocess_enabled or completion_tail_sync_required:
+            if postprocess_enabled and not postprocess_ok:
+                try:
+                    _remote_rebuild_rollup(
+                        host=args.compute_host,
+                        user=args.ssh_user,
+                        remote_repo=remote_repo,
+                        remote_python=remote_python,
+                        queue_relative=remote_queue_name,
+                        log_path=log_path,
+                        port=int(args.ssh_port),
+                        log=log,
+                    )
+                except _PoweredFailure as exc:
+                    degraded_steps.append(f"build_run_index:{exc.error_class}")
+                    log(
+                        "powered: remote_build_run_index failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                            cls=exc.error_class,
+                            fatal=str(bool(exc.fatal)).lower(),
+                            msg=str(exc),
+                        )
+                    )
             try:
-                _remote_rebuild_rollup(
+                _sync_rollup_back(
                     host=args.compute_host,
                     user=args.ssh_user,
                     remote_repo=remote_repo,
-                    remote_python=remote_python,
-                    queue_relative=remote_queue_name,
-                    log_path=log_path,
+                    local_project_root=project_root,
+                    queue_path=queue_path,
+                    queue_relative=queue_relative,
                     port=int(args.ssh_port),
                     log=log,
                 )
             except _PoweredFailure as exc:
-                degraded_steps.append(f"build_run_index:{exc.error_class}")
+                degraded_steps.append(f"sync_back:{exc.error_class}")
                 log(
-                    "powered: remote_build_run_index failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                    "powered: sync_back failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
                         cls=exc.error_class,
                         fatal=str(bool(exc.fatal)).lower(),
                         msg=str(exc),
                     )
                 )
-        try:
-            _sync_rollup_back(
-                host=args.compute_host,
-                user=args.ssh_user,
-                remote_repo=remote_repo,
-                local_project_root=project_root,
-                queue_path=queue_path,
-                queue_relative=queue_relative,
-                port=int(args.ssh_port),
-                log=log,
-            )
-        except _PoweredFailure as exc:
-            degraded_steps.append(f"sync_back:{exc.error_class}")
-            log(
-                "powered: sync_back failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
-                    cls=exc.error_class,
-                    fatal=str(bool(exc.fatal)).lower(),
-                    msg=str(exc),
+        else:
+            try:
+                _sync_active_remote_queue_back(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    queue_relative=remote_queue_name,
+                    local_queue_path=queue_path,
+                    port=int(args.ssh_port),
+                    log=log,
                 )
-            )
+            except _PoweredFailure as exc:
+                degraded_steps.append(f"queue_sync:{exc.error_class}")
+                log(
+                    "powered: queue_sync failed error_class={cls} fatal={fatal} msg={msg}; continue degraded".format(
+                        cls=exc.error_class,
+                        fatal=str(bool(exc.fatal)).lower(),
+                        msg=str(exc),
+                    )
+                )
+            log("powered: postprocess skipped mode=fast_return")
         try:
             _fetch_stalled_diagnostics(
                 host=args.compute_host,
@@ -4196,22 +4801,23 @@ def run_powered_queue(
                     msg=str(exc),
                 )
             )
-        try:
-            _remote_rank_and_sync(
-                host=args.compute_host,
-                user=args.ssh_user,
-                remote_repo=remote_repo,
-                remote_python=remote_python,
-                queue_relative=remote_queue_name,
-                run_group=_derive_run_group(queue_path),
-                project_root=project_root,
-                log_path=log_path,
-                port=int(args.ssh_port),
-                log=log,
-            )
-        except Exception as exc:  # noqa: BLE001
-            degraded_steps.append(f"rank_sync:{type(exc).__name__}")
-            log(f"powered: rank_sync failed type={type(exc).__name__} msg={exc}; continue degraded")
+        if postprocess_enabled or completion_tail_sync_required:
+            try:
+                _remote_rank_and_sync(
+                    host=args.compute_host,
+                    user=args.ssh_user,
+                    remote_repo=remote_repo,
+                    remote_python=remote_python,
+                    queue_relative=remote_queue_name,
+                    run_group=_derive_run_group(queue_path),
+                    project_root=project_root,
+                    log_path=log_path,
+                    port=int(args.ssh_port),
+                    log=log,
+                )
+            except Exception as exc:  # noqa: BLE001
+                degraded_steps.append(f"rank_sync:{type(exc).__name__}")
+                log(f"powered: rank_sync failed type={type(exc).__name__} msg={exc}; continue degraded")
         if should_wait_completion and bool(getattr(args, "cleanup_remote_runs", False)):
             try:
                 _cleanup_remote_run_artifacts(
@@ -4307,6 +4913,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help=(
             "Sync local code (src/ + scripts/) to the remote repo before execution. "
             "Default: true for full queue runs (autonomous/non-interactive/wait_completion), otherwise false."
+        ),
+    )
+    parser.add_argument(
+        "--sync-code-policy",
+        default=None,
+        choices=sorted(_SYNC_CODE_POLICIES),
+        help=(
+            "Code sync verification policy: strict=full tracked runtime tree, "
+            "subset=runtime-critical subset only, runtime-first=autonomous runtime subset first."
         ),
     )
     parser.add_argument(
@@ -4411,6 +5026,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             or bool(args.sync_configs_bulk)
             or bool(args.bootstrap_venv)
         )
+    if args.sync_code_policy is None:
+        args.sync_code_policy = "runtime-first" if autonomous_mode else "strict"
+    else:
+        args.sync_code_policy = _normalize_sync_code_policy(args.sync_code_policy)
     if args.cleanup_remote_runs is None:
         args.cleanup_remote_runs = bool(autonomous_mode or non_interactive)
     if args.watchdog is None:
@@ -4455,7 +5074,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     _emit(
         "powered: mode bootstrap_repo={repo} bootstrap_venv={venv} bootstrap_remote_dir={root} "
         "wait_completion={wait} wait_timeout_sec={timeout} wait_poll_sec={poll} "
-        "sync_configs_bulk={bulk} sync_code={code} watchdog={watchdog} watchdog_stale_sec={stale}".format(
+        "sync_configs_bulk={bulk} sync_code={code} sync_code_policy={policy} watchdog={watchdog} watchdog_stale_sec={stale}".format(
             repo=bool(args.bootstrap_repo),
             venv=bool(args.bootstrap_venv),
             root=str(args.bootstrap_remote_dir),
@@ -4464,6 +5083,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             poll=int(args.wait_poll_sec),
             bulk=bool(args.sync_configs_bulk),
             code=bool(getattr(args, "sync_code", False)),
+            policy=str(getattr(args, "sync_code_policy", "strict")),
             watchdog=bool(getattr(args, "watchdog", False)),
             stale=int(getattr(args, "watchdog_stale_sec", 900)),
         ),

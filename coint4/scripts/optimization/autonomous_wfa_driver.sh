@@ -52,7 +52,7 @@ VPS_RECOVERY_STATE_FILE="$STATE_DIR/vps_recovery_state.json"
 CONFIRM_LINEAGE_REGISTRY_FILE="$STATE_DIR/confirm_lineage_registry.json"
 FULLSPAN_CONFIRM_MIN_GROUPS="${FULLSPAN_CONFIRM_MIN_GROUPS:-2}"
 FULLSPAN_CONFIRM_MIN_REPLIES="${FULLSPAN_CONFIRM_MIN_REPLIES:-2}"
-FULLSPAN_MIN_WINDOWS="${FULLSPAN_MIN_WINDOWS:-3}"
+FULLSPAN_MIN_WINDOWS="${FULLSPAN_MIN_WINDOWS:-1}"
 FULLSPAN_MIN_TRADES="${FULLSPAN_MIN_TRADES:-200}"
 FULLSPAN_MIN_PAIRS="${FULLSPAN_MIN_PAIRS:-20}"
 FULLSPAN_MIN_COVERAGE_RATIO="${FULLSPAN_MIN_COVERAGE_RATIO:-0.95}"
@@ -69,10 +69,16 @@ FULLSPAN_TAIL_Q_PENALTY="${FULLSPAN_TAIL_Q_PENALTY:-2.0}"
 FULLSPAN_TAIL_WORST_PENALTY="${FULLSPAN_TAIL_WORST_PENALTY:-1.0}"
 FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL="${FULLSPAN_ROLLUP_SYNC_MIN_INTERVAL:-300}"
 FULLSPAN_ROLLUP_SYNC_MARKER="$STATE_DIR/fullspan_rollup_sync.marker"
+COMPLETION_FOLLOWUP_QUEUE_FILE="$STATE_DIR/completion_followup_queue.jsonl"
+COMPLETION_FOLLOWUP_QUEUE_LOCK_FILE="$STATE_DIR/completion_followup_queue.lock"
+COMPLETION_FOLLOWUP_WORKER_STATE_FILE="$STATE_DIR/completion_followup_worker_state.json"
+COMPLETION_FOLLOWUP_WORKER_LOCK_FILE="$STATE_DIR/completion_followup_worker.lock"
+COMPLETION_FOLLOWUP_WORKER_PID_FILE="$STATE_DIR/completion_followup_worker.pid"
 CAPACITY_CONTROLLER_STATE_FILE="$STATE_DIR/capacity_controller_state.json"
 REMOTE_RUNTIME_STATE_FILE="$STATE_DIR/remote_runtime_state.json"
 CONFIRM_SLA_ESCALATION_STATE_FILE="$STATE_DIR/confirm_sla_escalation_state.json"
 BATCH_SESSION_STATE_FILE="$STATE_DIR/batch_session_state.json"
+HANDOFF_RETRY_STATE_FILE="$STATE_DIR/handoff_retry_state.json"
 DRIVER_CONFIRM_FASTLANE_ENABLE="${DRIVER_CONFIRM_FASTLANE_ENABLE:-1}"
 VPS_HOT_STANDBY_ENABLE="${VPS_HOT_STANDBY_ENABLE:-1}"
 VPS_HOT_STANDBY_TTL_SEC="${VPS_HOT_STANDBY_TTL_SEC:-2700}"
@@ -84,11 +90,13 @@ ADAPTIVE_LOW_RATE_THRESHOLD="${ADAPTIVE_LOW_RATE_THRESHOLD:-0.05}"
 ADAPTIVE_HIGH_RATE_THRESHOLD="${ADAPTIVE_HIGH_RATE_THRESHOLD:-0.60}"
 SLA_VPS_IDLE_PENDING_CYCLES="${SLA_VPS_IDLE_PENDING_CYCLES:-3}"
 SLA_CONFIRM_PENDING_SEC="${SLA_CONFIRM_PENDING_SEC:-7200}"
-VPS_RECOVER_TIMEOUT_SEC="${VPS_RECOVER_TIMEOUT_SEC:-420}"
+VPS_RECOVER_TIMEOUT_SEC="${VPS_RECOVER_TIMEOUT_SEC:-600}"
 VPS_RECOVER_BASE_COOLDOWN_SEC="${VPS_RECOVER_BASE_COOLDOWN_SEC:-300}"
 VPS_RECOVER_MAX_COOLDOWN_SEC="${VPS_RECOVER_MAX_COOLDOWN_SEC:-3600}"
 VPS_RECOVER_FAIL_HARD_NOTE_STREAK="${VPS_RECOVER_FAIL_HARD_NOTE_STREAK:-4}"
 VPS_RECOVER_ACTIVE_SSH_DOWN_FASTPATH="${VPS_RECOVER_ACTIVE_SSH_DOWN_FASTPATH:-1}"
+VPS_ACTIVE_SSH_FORCE_CYCLE_AFTER_SEC="${VPS_ACTIVE_SSH_FORCE_CYCLE_AFTER_SEC:-180}"
+VPS_ACTIVE_SSH_FORCE_CYCLE_MAX_ATTEMPTS="${VPS_ACTIVE_SSH_FORCE_CYCLE_MAX_ATTEMPTS:-1}"
 VPS_FORCE_CYCLE_STREAK="${VPS_FORCE_CYCLE_STREAK:-3}"
 VPS_FORCE_CYCLE_COOLDOWN_SEC="${VPS_FORCE_CYCLE_COOLDOWN_SEC:-1800}"
 VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC="${VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC:-20}"
@@ -117,6 +125,13 @@ AUTO_SEED_COOLDOWN_SEC="${AUTO_SEED_COOLDOWN_SEC:-900}"
 AUTO_SEED_PENDING_THRESHOLD="${AUTO_SEED_PENDING_THRESHOLD:-96}"
 AUTO_SEED_NUM_VARIANTS="${AUTO_SEED_NUM_VARIANTS:-64}"
 AUTO_SEED_NUM_VARIANTS_FLOOR="${AUTO_SEED_NUM_VARIANTS_FLOOR:-24}"
+if [[ -z "${AUTONOMOUS_SIMPLE_CONTROL_PLANE+x}" ]]; then
+  if [[ -n "${PYTEST_CURRENT_TEST:-}" ]]; then
+    AUTONOMOUS_SIMPLE_CONTROL_PLANE=0
+  else
+    AUTONOMOUS_SIMPLE_CONTROL_PLANE=1
+  fi
+fi
 READY_BUFFER_TARGET_DEPTH="${READY_BUFFER_TARGET_DEPTH:-3}"
 READY_BUFFER_REFILL_THRESHOLD="${READY_BUFFER_REFILL_THRESHOLD:-2}"
 READY_BUFFER_MAX_AGE_SEC="${READY_BUFFER_MAX_AGE_SEC:-900}"
@@ -145,15 +160,34 @@ DRIVER_MAX_REMOTE_RUNNERS="${DRIVER_MAX_REMOTE_RUNNERS:-64}"
 VPS_HOT_STANDBY_GRACE_SEC="${VPS_HOT_STANDBY_GRACE_SEC:-900}"
 RUNTIME_OBSERVABILITY_WINDOW_SEC="${RUNTIME_OBSERVABILITY_WINDOW_SEC:-1800}"
 REPLAY_FASTLANE_SCAN_LIMIT="${REPLAY_FASTLANE_SCAN_LIMIT:-2}"
+DRIVER_POST_START_SLEEP_SEC="${DRIVER_POST_START_SLEEP_SEC:-120}"
+DRIVER_SIMPLE_POST_START_SLEEP_SEC="${DRIVER_SIMPLE_POST_START_SLEEP_SEC:-5}"
 RUNTIME_OBSERVABILITY_STATE_FILE="$STATE_DIR/runtime_observability_state.json"
+QUEUE_SEEDER_STATE_FILE="$STATE_DIR/queue_seeder.state.json"
+HANDOFF_RETRY_CAP="${HANDOFF_RETRY_CAP:-3}"
+HANDOFF_RETRY_WINDOW_SEC="${HANDOFF_RETRY_WINDOW_SEC:-1800}"
+HANDOFF_QUARANTINE_SEC="${HANDOFF_QUARANTINE_SEC:-1800}"
+HANDOFF_SYNC_ESCALATION_ATTEMPT="${HANDOFF_SYNC_ESCALATION_ATTEMPT:-2}"
+WINNER_HOLD_POLL_SEC="${WINNER_HOLD_POLL_SEC:-30}"
+COMPLETION_FOLLOWUP_WORKER_STALE_SEC="${COMPLETION_FOLLOWUP_WORKER_STALE_SEC:-7200}"
 
 mkdir -p "$STATE_DIR"
+DRIVER_SESSION_EPOCH="$(date +%s)"
 
 vps_runtime_fail_streak=0
 vps_runtime_unreachable_since=0
 vps_runtime_last_recover_epoch=0
 vps_runtime_next_retry_epoch=0
 vps_runtime_last_force_cycle_epoch=0
+
+simple_control_plane_enabled() {
+  case "${AUTONOMOUS_SIMPLE_CONTROL_PLANE:-1}" in
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
+      ;;
+  esac
+  return 0
+}
 
 log() {
   printf '%s | %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$*" >> "$LOG_FILE"
@@ -461,6 +495,15 @@ batch_session_maybe_stop() {
   if (( batch_session_active == 0 )); then
     return 0
   fi
+  if [[ "${completion_followup_pending:-0}" == "1" && -n "${completion_followup_queue_rel:-}" && -f "$ROOT_DIR/${completion_followup_queue_rel:-}" ]]; then
+    local followup_pending followup_dispatchable followup_executable followup_completed_with_metrics followup_planned followup_running followup_stalled followup_failed followup_completed
+    sync_queue_status "$completion_followup_queue_rel"
+    read -r followup_pending followup_dispatchable followup_executable followup_completed_with_metrics followup_planned followup_running followup_stalled followup_failed followup_completed <<< "$(queue_hygiene_snapshot "$completion_followup_queue_rel")"
+    if (( followup_pending > 0 )); then
+      log "batch_session_stop_deferred reason=$reason completion_followup_queue=$completion_followup_queue_rel pending=$followup_pending"
+      return 0
+    fi
+  fi
 
   local now_epoch
   now_epoch="$(date +%s)"
@@ -528,6 +571,7 @@ find_candidate() {
   python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$RUN_INDEX_PATH" "$PROMOTION_PRE_RANK_TOPK" "$FULLSPAN_DECISION_STATE_FILE" "$LOW_YIELD_HOMOGENEOUS_FAIL_FRACTION" "$LOW_YIELD_HOMOGENEOUS_FAIL_MIN" "$FULLSPAN_CONFIRM_MIN_GROUPS" "$SELECTOR_STALLED_BUDGET_RATIO" "$READY_BUFFER_POOL_FILE" "$COLD_FAIL_STATE_FILE" "$READY_BUFFER_TARGET_DEPTH" "$FULLSPAN_POLICY_NAME" <<'PY'
 import csv
 import json
+import os
 import re
 import sys
 import time
@@ -686,6 +730,7 @@ cold_fail_state_path = Path(sys.argv[12]) if len(sys.argv) > 12 and sys.argv[12]
 ready_buffer_target_depth = int(sys.argv[13]) if len(sys.argv) > 13 and str(sys.argv[13]).strip() else 3
 policy_version = str(sys.argv[14] if len(sys.argv) > 14 else "").strip() or "fullspan_v1"
 state_by_queue = load_state(state_path)
+simple_control_plane = str(os.environ.get("AUTONOMOUS_SIMPLE_CONTROL_PLANE", "1")).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def load_cold_fail_state(path: Path | None):
@@ -752,16 +797,15 @@ def queue_block_reason(state_entry, orphan_entry):
     entry = state_entry if isinstance(state_entry, dict) else {}
     verdict = str(entry.get('promotion_verdict') or '').strip().upper()
     strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
-    cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
-    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT':
+    try:
+        strict_pass_count = int(float(entry.get('strict_pass_count') or 0.0))
+    except Exception:
+        strict_pass_count = 0
+    contract_hard_pass = entry_is_true(entry.get('contract_hard_pass'))
+    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT' or (strict_pass_count > 0 and not contract_hard_pass):
         return 'FULLSPAN_REJECT'
-    if cutover_permission == 'FAIL_CLOSED':
-        return 'FAIL_CLOSED'
     if entry_is_true(entry.get('low_yield_fail_closed')):
         return 'FAIL_CLOSED'
-    for state_key in ('startup_state', 'coverage_state', 'queue_state'):
-        if str(entry.get(state_key) or '').strip().lower() == 'fail_closed':
-            return 'FAIL_CLOSED'
     orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
     try:
         orphan_until = float(orphan_payload.get('until') or 0.0)
@@ -845,7 +889,8 @@ def emit_scores():
             if k in orphan:
                 orphan_entry = orphan.get(k, {})
                 break
-        if queue_block_reason(state_entry, orphan_entry):
+        dispatch_block_reason = queue_block_reason(state_entry, orphan_entry)
+        if dispatch_block_reason:
             continue
 
         age_min = max(0.0, (now - mtime) / 60.0)
@@ -968,9 +1013,9 @@ def emit_scores():
             strict_gate_status = 'FULLSPAN_PREFILTER_UNKNOWN'
             gate_reason = 'insufficient_history'
         elif pass_configs == 0 and fail_configs > 0:
-            promotion_potential = 'REJECT'
-            gate_status = 'HARD_FAIL'
-            strict_gate_status = 'FULLSPAN_PREFILTER_REJECT'
+            promotion_potential = 'UNKNOWN'
+            gate_status = 'SOFT_FAIL'
+            strict_gate_status = 'FULLSPAN_PREFILTER_DEGRADED'
             dominant_reason = fail_reasons[0] if fail_reasons else ''
             if by_state_reason and fail_configs >= LOW_YIELD_HOMOGENEOUS_MIN:
                 try:
@@ -990,6 +1035,8 @@ def emit_scores():
 
         if strict_gate_status in ('FULLSPAN_PREFILTER_REJECT', 'HARD_FAIL') and gate_status == 'HARD_FAIL':
             strict_gate_reason = gate_reason
+        if gate_status == 'SOFT_FAIL' and gate_reason:
+            strict_gate_reason = canonical_state_reason(gate_reason)
         if strict_gate_status in ('FULLSPAN_PREFILTER_REJECT', 'HARD_FAIL') and strict_gate_reason:
             strict_gate_reason = canonical_state_reason(strict_gate_reason)
         if gate_status == 'OPEN' and strict_gate_status == 'FULLSPAN_PREFILTER_PASSED':
@@ -1027,7 +1074,7 @@ def emit_scores():
                 pre_rank_score -= 6.0
 
         urgency = (stalled * 100.0) + (running * 20.0) + (age_min * 0.1) + (1.0 if pending > 0 else 0.0)
-        if gate_status == 'HARD_FAIL' and promotion_potential == 'REJECT':
+        if dispatch_block_reason:
             pre_rank_score -= 10000
 
         effective_planned_count = int(dispatchable_planned if dispatchable_planned > 0 else planned)
@@ -1074,11 +1121,12 @@ def emit_scores():
             'stalled_share': stalled_share,
             'queue_yield_score': queue_yield_score,
             'recent_yield': recent_yield,
+            'dispatch_block_reason': dispatch_block_reason,
             'dispatchable_pending': dispatchable_pending,
             'executable_pending': executable_pending,
         })
 
-    header = 'queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n'
+    header = 'queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield,dispatch_block_reason\n'
     pool_header = header[:-1] + ',dispatchable_pending,executable_pending\n'
     with out_csv.open('w', encoding='utf-8', newline='') as f:
         f.write(header)
@@ -1119,7 +1167,7 @@ def emit_scores():
         winner = top_entries[0]
 
         f.write(
-            '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f}\n'.format(
+            '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{dispatch_block_reason}\n'.format(
                 queue=winner['queue_rel'],
                 planned=int(winner['planned']),
                 running=int(winner['running']),
@@ -1139,6 +1187,7 @@ def emit_scores():
                 stalled_share=float(winner['stalled_share']),
                 yield_score=float(winner['queue_yield_score']),
                 recent_yield=float(winner.get('recent_yield', 0.0)),
+                dispatch_block_reason=str(winner.get('dispatch_block_reason', '')),
             )
         )
 
@@ -1148,7 +1197,7 @@ def emit_scores():
             pool_handle.write(pool_header)
             for item in top_entries[:max(1, ready_buffer_target_depth)]:
                 pool_handle.write(
-                    '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{dispatchable_pending},{executable_pending}\n'.format(
+                    '{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},{potential},{gate_status},{gate_reason},{pre_rank:.3f},{strict_status},{strict_reason},{effective_planned},{stalled_share:.3f},{yield_score:.3f},{recent_yield:.3f},{dispatch_block_reason},{dispatchable_pending},{executable_pending}\n'.format(
                         queue=item['queue_rel'],
                         planned=int(item['planned']),
                         running=int(item['running']),
@@ -1168,6 +1217,7 @@ def emit_scores():
                         stalled_share=float(item['stalled_share']),
                         yield_score=float(item['queue_yield_score']),
                         recent_yield=float(item.get('recent_yield', 0.0)),
+                        dispatch_block_reason=str(item.get('dispatch_block_reason', '')),
                         dispatchable_pending=int(item.get('dispatchable_pending', 0)),
                         executable_pending=int(item.get('executable_pending', 0)),
                     )
@@ -1182,7 +1232,7 @@ fallback_pending_candidate() {
   local orphan_path="${1:-}"
   local skip_queue="${2:-}"
   local state_path="${3:-}"
-  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$skip_queue" "$state_path" <<'PY'
+  python3 - "$QUEUE_ROOT" "$CANDIDATE_FILE" "$orphan_path" "$skip_queue" "$state_path" "$COLD_FAIL_STATE_FILE" <<'PY'
 import csv
 from collections import Counter
 import json
@@ -1195,6 +1245,7 @@ out_csv = Path(sys.argv[2])
 orphan_file = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 skip_queue = str(sys.argv[4] if len(sys.argv) > 4 else "").strip()
 state_path = Path(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else None
+cold_fail_state_path = Path(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else None
 try:
     app_root = queue_root.parents[2]
 except Exception:
@@ -1245,18 +1296,38 @@ if state_path and state_path.exists():
                     continue
                 verdict = str(entry.get('promotion_verdict') or '').strip().upper()
                 strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
-                cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
                 blocked = (
                     verdict == 'REJECT'
                     or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT'
-                    or cutover_permission == 'FAIL_CLOSED'
                     or entry_is_true(entry.get('low_yield_fail_closed'))
-                    or any(str(entry.get(key) or '').strip().lower() == 'fail_closed' for key in ('startup_state', 'coverage_state', 'queue_state'))
                 )
                 if blocked:
                     state_blocked.add(str(qrel).strip())
     except Exception:
         state_blocked = set()
+
+
+def load_cold_fail_state(path: Path | None):
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    entries = payload.get('entries', []) if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        return {}
+    active = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get('queue') or '').strip()
+        if queue:
+            active[queue] = entry
+    return active
+
+
+cold_fail_state = load_cold_fail_state(cold_fail_state_path)
 
 best = None
 for p in sorted(queue_root.rglob('run_queue.csv')):
@@ -1271,6 +1342,22 @@ for p in sorted(queue_root.rglob('run_queue.csv')):
         continue
     if queue_rel in state_blocked or queue_abs in state_blocked:
         continue
+    cold_entry = cold_fail_state.get(queue_rel) or cold_fail_state.get(queue_abs) or cold_fail_state.get('/' + queue_rel.lstrip('/'))
+    if cold_entry:
+        try:
+            until_ts = float(cold_entry.get('until_ts') or 0.0)
+        except Exception:
+            until_ts = 0.0
+        try:
+            inserted_ts = float(cold_entry.get('inserted_ts') or 0.0)
+        except Exception:
+            inserted_ts = 0.0
+        try:
+            mtime = float(p.stat().st_mtime)
+        except Exception:
+            mtime = 0.0
+        if until_ts > now and inserted_ts > 0.0 and mtime <= inserted_ts:
+            continue
     orphan_entry = None
     for key in (queue_rel, queue_abs, '/' + queue_rel.lstrip('/')):
         if key in orphan:
@@ -1341,11 +1428,11 @@ if best is None:
 _, _, _, _, _, _, _, queue, planned, running, stalled, failed, completed, total, urgency, mtime = best
 out_csv.parent.mkdir(parents=True, exist_ok=True)
 with out_csv.open('w', encoding='utf-8', newline='') as f:
-    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield\n')
+    f.write('queue,planned,running,stalled,failed,completed,total,urgency,mtime,promotion_potential,gate_status,gate_reason,pre_rank_score,strict_gate_status,strict_gate_reason,effective_planned_count,stalled_share,queue_yield_score,recent_yield,dispatch_block_reason\n')
     stalled_share = float(stalled) / float(max((planned + running + stalled + failed), 1))
     queue_yield_score = float(planned) * 4.0 - (stalled_share * 20.0)
     recent_yield = float(completed) / float(max((planned + running + stalled + failed + completed), 1))
-    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,,{int(planned)},{stalled_share:.6f},{queue_yield_score:.3f},{recent_yield:.3f}\n")
+    f.write(f"{queue},{planned},{running},{stalled},{failed},{completed},{total},{urgency:.3f},{mtime},POSSIBLE,OPEN,fallback_pending,0.000,FULLSPAN_PREFILTER_UNKNOWN,,{int(planned)},{stalled_share:.6f},{queue_yield_score:.3f},{recent_yield:.3f},\n")
 PY
 }
 
@@ -1753,16 +1840,15 @@ def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts
     entry = state_entry if isinstance(state_entry, dict) else {}
     verdict = str(entry.get("promotion_verdict") or "").strip().upper()
     strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
-    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
-    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+    try:
+        strict_pass_count = int(float(entry.get("strict_pass_count") or 0.0))
+    except Exception:
+        strict_pass_count = 0
+    contract_hard_pass = entry_is_true(entry.get("contract_hard_pass"))
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT" or (strict_pass_count > 0 and not contract_hard_pass):
         return "FULLSPAN_REJECT"
-    if cutover_permission == "FAIL_CLOSED":
-        return "FAIL_CLOSED"
     if entry_is_true(entry.get("low_yield_fail_closed")):
         return "FAIL_CLOSED"
-    for state_key in ("startup_state", "coverage_state", "queue_state"):
-        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
-            return "FAIL_CLOSED"
     orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
     try:
         orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
@@ -1884,6 +1970,7 @@ for row in rows:
         "stalled_share": float(row.get("stalled_share") or 0.0),
         "queue_yield_score": float(row.get("queue_yield_score") or 0.0),
         "recent_yield": float(row.get("recent_yield") or 0.0),
+        "dispatch_block_reason": str(row.get("dispatch_block_reason") or ""),
         "dispatchable_pending": int(float(row.get("dispatchable_pending") or 0)),
         "executable_pending": int(float(row.get("executable_pending") or 0)),
         "surrogate_decision": decision,
@@ -1973,6 +2060,7 @@ header = [
     "stalled_share",
     "queue_yield_score",
     "recent_yield",
+    "dispatch_block_reason",
 ]
 
 if not state_path.exists():
@@ -2030,16 +2118,15 @@ def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts
     entry = state_entry if isinstance(state_entry, dict) else {}
     verdict = str(entry.get("promotion_verdict") or "").strip().upper()
     strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
-    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
-    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+    try:
+        strict_pass_count = int(float(entry.get("strict_pass_count") or 0.0))
+    except Exception:
+        strict_pass_count = 0
+    contract_hard_pass = entry_is_true(entry.get("contract_hard_pass"))
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT" or (strict_pass_count > 0 and not contract_hard_pass):
         return "FULLSPAN_REJECT"
-    if cutover_permission == "FAIL_CLOSED":
-        return "FAIL_CLOSED"
     if entry_is_true(entry.get("low_yield_fail_closed")):
         return "FAIL_CLOSED"
-    for state_key in ("startup_state", "coverage_state", "queue_state"):
-        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
-            return "FAIL_CLOSED"
     orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
     try:
         orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
@@ -2132,6 +2219,7 @@ with candidate_path.open("w", encoding="utf-8", newline="") as handle:
             "stalled_share": f"{float(selected.get('stalled_share', 0.0)):.6f}",
             "queue_yield_score": f"{float(selected.get('queue_yield_score', 0.0)):.3f}",
             "recent_yield": f"{float(selected.get('recent_yield', 0.0)):.3f}",
+            "dispatch_block_reason": selected.get("dispatch_block_reason", ""),
         }
 )
 print(str(selected.get("queue") or "").strip())
@@ -2179,6 +2267,7 @@ header = [
     "stalled_share",
     "queue_yield_score",
     "recent_yield",
+    "dispatch_block_reason",
 ]
 
 if not state_path.exists():
@@ -2232,16 +2321,15 @@ def queue_block_reason(queue: str, state_entry: dict, orphan_entry: dict, now_ts
     entry = state_entry if isinstance(state_entry, dict) else {}
     verdict = str(entry.get("promotion_verdict") or "").strip().upper()
     strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
-    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
-    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT":
+    try:
+        strict_pass_count = int(float(entry.get("strict_pass_count") or 0.0))
+    except Exception:
+        strict_pass_count = 0
+    contract_hard_pass = entry_is_true(entry.get("contract_hard_pass"))
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT" or (strict_pass_count > 0 and not contract_hard_pass):
         return "FULLSPAN_REJECT"
-    if cutover_permission == "FAIL_CLOSED":
-        return "FAIL_CLOSED"
     if entry_is_true(entry.get("low_yield_fail_closed")):
         return "FAIL_CLOSED"
-    for state_key in ("startup_state", "coverage_state", "queue_state"):
-        if str(entry.get(state_key) or "").strip().lower() == "fail_closed":
-            return "FAIL_CLOSED"
     orphan_payload = orphan_entry if isinstance(orphan_entry, dict) else {}
     try:
         orphan_until = float(orphan_payload.get("until_ts") or orphan_payload.get("until") or 0.0)
@@ -2315,6 +2403,7 @@ with candidate_path.open("w", encoding="utf-8", newline="") as handle:
             "stalled_share": f"{float(selected.get('stalled_share', 0.0)):.6f}",
             "queue_yield_score": f"{float(selected.get('queue_yield_score', 0.0)):.3f}",
             "recent_yield": f"{float(selected.get('recent_yield', 0.0)):.3f}",
+            "dispatch_block_reason": selected.get("dispatch_block_reason", ""),
         }
     )
 print(str(selected.get("queue") or "").strip())
@@ -2373,6 +2462,9 @@ refresh_control_plane_guard_state() {
   local py_bin
   py_bin="$(control_plane_python_bin)" || return 1
   "$py_bin" "$ROOT_DIR/scripts/optimization/process_slo_guard_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
+  if simple_control_plane_enabled; then
+    return 0
+  fi
   "$py_bin" "$ROOT_DIR/scripts/optimization/vps_capacity_controller_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1 || true
 }
 
@@ -2397,6 +2489,25 @@ reconcile_selector_backlog_before_seed() {
 }
 
 process_slo_idle_with_executable_pending() {
+  if simple_control_plane_enabled; then
+    local dispatchable_pending executable_pending_raw remote_jobs postprocess_active build_index_active
+    read -r _ dispatchable_pending _ executable_pending_raw <<< "$(global_backlog_snapshot)"
+    [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+    [[ "$executable_pending_raw" =~ ^[0-9]+$ ]] || executable_pending_raw=0
+    remote_jobs="$(remote_active_queue_jobs)"
+    [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
+    refresh_remote_runtime_metrics
+    postprocess_active="$(remote_postprocess_active)"
+    build_index_active="$(remote_build_index_active)"
+    [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+    [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+    if (( executable_pending_raw > 0 && dispatchable_pending > 0 && remote_jobs == 0 && postprocess_active == 0 && build_index_active == 0 )); then
+      echo "1"
+    else
+      echo "0"
+    fi
+    return 0
+  fi
   python3 - "$STATE_DIR/process_slo_state.json" <<'PY'
 import json
 import sys
@@ -2441,6 +2552,16 @@ driver_idle_with_dispatchable_pending() {
 }
 
 process_slo_remote_coverage_snapshot() {
+  if simple_control_plane_enabled; then
+    local remote_flag=0 coverage_ready=0
+    if vps_is_reachable; then
+      remote_flag=1
+    fi
+    coverage_ready="$(global_dispatchable_pending_count)"
+    [[ "$coverage_ready" =~ ^[0-9]+$ ]] || coverage_ready=0
+    printf '%s\t%s\n' "$remote_flag" "$coverage_ready"
+    return 0
+  fi
   python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
 import json
 import sys
@@ -2479,6 +2600,10 @@ PY
 }
 
 process_slo_controlled_recovery_snapshot() {
+  if simple_control_plane_enabled; then
+    printf '0\t\t0\t0\n'
+    return 0
+  fi
   python3 - "$PROCESS_SLO_STATE_FILE" <<'PY'
 import json
 import sys
@@ -2547,6 +2672,14 @@ PY
 }
 
 capacity_controller_remote_reachable_recent() {
+  if simple_control_plane_enabled; then
+    if vps_is_reachable; then
+      echo "1"
+    else
+      echo "0"
+    fi
+    return 0
+  fi
   python3 - "$CAPACITY_CONTROLLER_STATE_FILE" "$VPS_CAPACITY_STATE_MAX_AGE_SEC" <<'PY'
 import json
 import sys
@@ -3298,7 +3431,7 @@ classify_root_cause() {
     fi
   fi
 
-  if printf '%s' "$latest" | grep -Eqi '(manifest_mismatch|sync_code verification failed|remote code drift detected|powered: FAIL reason=REMOTE_SYNC_FAILED|MANIFEST_MISMATCH)'; then
+  if printf '%s' "$latest" | grep -Eqi '(manifest_mismatch|sync_code verification failed|remote code drift detected|powered: FAIL reason=MANIFEST_MISMATCH|MANIFEST_MISMATCH)'; then
     echo "MANIFEST_MISMATCH"
     return
   fi
@@ -3331,11 +3464,12 @@ classify_root_cause() {
   echo "UNKNOWN"
 }
 
-mark_orphan() {
+mark_orphan_with_ttl() {
   local queue_rel="$1"
   local reason="$2"
+  local ttl_seconds="${3:-$ORPHAN_COOLDOWN_SECONDS}"
   local until_ts
-  until_ts="$(( $(date +%s) + ORPHAN_COOLDOWN_SECONDS ))"
+  until_ts="$(( $(date +%s) + ttl_seconds ))"
 
   python3 - "$ORPHAN_FILE" "$queue_rel" "$until_ts" "$reason" <<'PY'
 import csv
@@ -3367,6 +3501,12 @@ with path.open('w', newline='', encoding='utf-8') as f:
         w.writerow(r)
 PY
   log "orphan_marked queue=$queue_rel until_ts=$until_ts reason=$reason"
+}
+
+mark_orphan() {
+  local queue_rel="$1"
+  local reason="$2"
+  mark_orphan_with_ttl "$queue_rel" "$reason" "$ORPHAN_COOLDOWN_SECONDS"
 }
 
 clear_orphan() {
@@ -3403,25 +3543,55 @@ PY
 }
 
 cleanup_orphans() {
-  python3 - "$ORPHAN_FILE" <<'PY'
+  python3 - "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
 import csv
+import json
 import sys
 import time
 from pathlib import Path
 
 path = Path(sys.argv[1])
+state_path = Path(sys.argv[2])
 now = time.time()
 if not path.exists():
     raise SystemExit(0)
+
+queues = {}
+if state_path.exists():
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    loaded = payload.get("queues", {}) if isinstance(payload, dict) else {}
+    if isinstance(loaded, dict):
+        queues = loaded
+
+heuristic_reasons = {
+    "gated_reject_no_progress",
+    "no_progress_breaker_phase_switch",
+    "infra_fail_closed_MANIFEST_MISMATCH",
+    "infra_fail_closed_REMOTE_SYNC_FAILED",
+}
 
 rows = []
 with path.open(newline='', encoding='utf-8') as f:
     for r in csv.DictReader(f):
         try:
-            if now < float((r.get('until_ts') or '0').strip()):
-                rows.append(r)
+            until_ts = float((r.get('until_ts') or '0').strip())
         except Exception:
             continue
+        if now >= until_ts:
+            continue
+        reason = str((r.get("reason") or "")).strip()
+        if reason in heuristic_reasons:
+            queue_rel = str((r.get("queue") or "")).strip()
+            entry = queues.get(queue_rel, {})
+            verdict = str((entry or {}).get("promotion_verdict") or "").strip().upper()
+            strict_gate_status = str((entry or {}).get("strict_gate_status") or "").strip().upper()
+            low_yield_fail_closed = str((entry or {}).get("low_yield_fail_closed") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+            if verdict != "REJECT" and strict_gate_status != "FULLSPAN_PREFILTER_REJECT" and not low_yield_fail_closed:
+                continue
+        rows.append(r)
 
 if rows:
     with path.open('w', newline='', encoding='utf-8') as f:
@@ -3434,6 +3604,102 @@ else:
         path.unlink()
     except Exception:
         pass
+PY
+}
+
+clear_retryable_remote_handoff_queue_blocks() {
+  python3 - "$ORPHAN_FILE" "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+import csv
+import json
+import sys
+from pathlib import Path
+
+
+def to_bool(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+orphan_path = Path(sys.argv[1])
+state_path = Path(sys.argv[2])
+
+state = {}
+if state_path.exists():
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+if not isinstance(state, dict):
+    state = {}
+
+queues = state.get("queues", {})
+if not isinstance(queues, dict):
+    queues = {}
+
+cleared = set()
+state_changed = False
+for queue_rel, entry in list(queues.items()):
+    if not isinstance(entry, dict):
+        continue
+    startup_code = str(entry.get("startup_failure_code") or "").strip().upper()
+    startup_state = str(entry.get("startup_state") or "").strip().lower()
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    strict_gate_status = str(entry.get("strict_gate_status") or "").strip().upper()
+    low_yield_fail_closed = to_bool(entry.get("low_yield_fail_closed"))
+    dispatch_attempt_result = str(entry.get("dispatch_attempt_result") or "").strip().lower()
+    if startup_code != "REMOTE_HANDOFF_FAILED":
+        continue
+    if verdict == "REJECT" or strict_gate_status == "FULLSPAN_PREFILTER_REJECT" or low_yield_fail_closed:
+        continue
+    if startup_state not in {"failed", "fail_closed"} and dispatch_attempt_result not in {"failed", "remote_handoff_failed"}:
+        continue
+    entry["startup_state"] = ""
+    entry["startup_failure_code"] = ""
+    entry["startup_failure_reason"] = ""
+    if dispatch_attempt_result in {"failed", "remote_handoff_failed"}:
+        entry["dispatch_attempt_result"] = ""
+    entry["dispatch_attempt_session_epoch"] = 0
+    queues[queue_rel] = entry
+    cleared.add(queue_rel)
+    state_changed = True
+
+if state_changed:
+    state["queues"] = queues
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+if not orphan_path.exists():
+    print(len(cleared))
+    raise SystemExit(0)
+
+rows = []
+orphan_changed = False
+with orphan_path.open(newline="", encoding="utf-8") as handle:
+    for row in csv.DictReader(handle):
+        queue_rel = str(row.get("queue") or "").strip()
+        reason = str(row.get("reason") or "").strip().lower()
+        if queue_rel in cleared and (
+            "remote_handoff" in reason
+            or reason == "dispatch_block_fail_closed"
+            or reason.startswith("infra_fail_closed_remote_handoff_failed")
+        ):
+            orphan_changed = True
+            continue
+        rows.append(row)
+
+if orphan_changed:
+    if rows:
+        with orphan_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["queue", "until_ts", "reason"])
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+    else:
+        try:
+            orphan_path.unlink()
+        except Exception:
+            pass
+
+print(len(cleared))
 PY
 }
 
@@ -3495,6 +3761,10 @@ PY
 surrogate_gate_decision() {
   local queue_rel="$1"
   local queue_abs="$ROOT_DIR/$queue_rel"
+  if simple_control_plane_enabled; then
+    printf 'allow\t\n'
+    return 0
+  fi
   python3 - "$GATE_SURROGATE_STATE_FILE" "$queue_rel" "$queue_abs" <<'PY'
 import json
 import sys
@@ -3631,6 +3901,9 @@ PY
 
 refresh_gate_surrogate_state() {
   local queue_rel="$1"
+  if simple_control_plane_enabled; then
+    return 0
+  fi
   local refresh_needed="1"
   refresh_needed="$(surrogate_gate_state_needs_refresh "$queue_rel" "$ROOT_DIR/$queue_rel" 2>/dev/null || printf '1')"
   if [[ "$refresh_needed" != "1" ]]; then
@@ -3926,6 +4199,85 @@ print(default_value)
 PY
 }
 
+record_dispatch_attempt() {
+  local queue_rel="$1"
+  local attempt_result="${2:-preflight}"
+  local attempt_epoch="${3:-$(date +%s)}"
+  local attempt_count
+  local next_attempt_count
+
+  attempt_count="$(fullspan_state_get "$queue_rel" "dispatch_attempt_count" "0")"
+  [[ "$attempt_count" =~ ^[0-9]+$ ]] || attempt_count=0
+  next_attempt_count=$((attempt_count + 1))
+
+  fullspan_state_queue_set "$queue_rel" \
+    "dispatch_attempt_epoch" "$attempt_epoch" \
+    "dispatch_attempt_result" "$attempt_result" \
+    "dispatch_attempt_count" "$next_attempt_count" \
+    "dispatch_attempt_session_epoch" "$DRIVER_SESSION_EPOCH"
+}
+
+update_dispatch_attempt_result() {
+  local queue_rel="$1"
+  local attempt_result="${2:-unknown}"
+  local attempt_epoch="${3:-$(date +%s)}"
+
+  fullspan_state_queue_set "$queue_rel" \
+    "dispatch_attempt_epoch" "$attempt_epoch" \
+    "dispatch_attempt_result" "$attempt_result" \
+    "dispatch_attempt_session_epoch" "$DRIVER_SESSION_EPOCH"
+}
+
+queue_has_current_session_dispatch_attempt() {
+  local queue_rel="$1"
+  local attempt_epoch attempt_session_epoch
+
+  attempt_epoch="$(fullspan_state_get "$queue_rel" "dispatch_attempt_epoch" "0")"
+  attempt_session_epoch="$(fullspan_state_get "$queue_rel" "dispatch_attempt_session_epoch" "0")"
+  [[ "$attempt_epoch" =~ ^[0-9]+$ ]] || attempt_epoch=0
+  [[ "$attempt_session_epoch" =~ ^[0-9]+$ ]] || attempt_session_epoch=0
+
+  if (( attempt_epoch > 0 && attempt_session_epoch == DRIVER_SESSION_EPOCH )); then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+current_queue_dispatch_block_reason() {
+  local queue_rel="$1"
+  python3 - "$ROOT_DIR" "$FULLSPAN_DECISION_STATE_FILE" "$ORPHAN_FILE" "$queue_rel" <<'PY'
+import sys
+import time
+from pathlib import Path
+
+app_root = Path(sys.argv[1])
+state_path = Path(sys.argv[2])
+orphan_path = Path(sys.argv[3])
+queue_rel = str(sys.argv[4] or "").strip()
+opt_dir = app_root / "scripts" / "optimization"
+if str(opt_dir) not in sys.path:
+    sys.path.insert(0, str(opt_dir))
+
+from _queue_status_contract import (  # noqa: E402
+    load_fullspan_queue_state,
+    load_orphan_queue_cooldowns,
+    queue_dispatch_block_reason,
+)
+
+state = load_fullspan_queue_state(state_path)
+orphans = load_orphan_queue_cooldowns(orphan_path)
+print(
+    queue_dispatch_block_reason(
+        queue_rel=queue_rel,
+        fullspan_entry=state.get(queue_rel),
+        orphan_entry=orphans.get(queue_rel) or orphans.get("/" + queue_rel.lstrip("/")),
+        now_epoch=time.time(),
+    )
+)
+PY
+}
+
 fullspan_state_metric_get() {
   local metric="$1"
   local default_value="${2:-0}"
@@ -4017,6 +4369,504 @@ except Exception:
 state['runtime_metrics'] = metrics
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+}
+
+reconcile_seed_next_retry_epoch() {
+  local current_epoch="${1:-0}"
+  local now_epoch="${2:-0}"
+  local reconciled_epoch
+  reconciled_epoch="$(python3 - "$FULLSPAN_DECISION_STATE_FILE" "$QUEUE_SEEDER_STATE_FILE" "$YIELD_GOVERNOR_STATE_FILE" "$SEARCH_DIRECTOR_DIRECTIVE_FILE" "$current_epoch" "$now_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def load_json(path_text: str) -> dict:
+    path = Path(path_text)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def to_int(value, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return default
+
+
+fullspan_state = load_json(sys.argv[1])
+seeder_state = load_json(sys.argv[2])
+yield_state = load_json(sys.argv[3])
+directive = load_json(sys.argv[4])
+current_epoch = max(0, to_int(sys.argv[5], 0))
+now_epoch = max(0, to_int(sys.argv[6], 0))
+if current_epoch <= 0:
+    print(current_epoch)
+    raise SystemExit(0)
+
+runtime_metrics = fullspan_state.get("runtime_metrics", {})
+if not isinstance(runtime_metrics, dict):
+    runtime_metrics = {}
+yield_search_quality = yield_state.get("search_quality", {})
+if not isinstance(yield_search_quality, dict):
+    yield_search_quality = {}
+directive_search_quality = directive.get("search_quality", {})
+if not isinstance(directive_search_quality, dict):
+    directive_search_quality = {}
+directive_controlled_broad = directive.get("controlled_broad_recovery", {})
+if not isinstance(directive_controlled_broad, dict):
+    directive_controlled_broad = {}
+
+reason_tokens = " ".join(
+    [
+        str(runtime_metrics.get("seed_last_skip_reason") or "").strip(),
+        str(seeder_state.get("reason") or "").strip(),
+        str(yield_state.get("hard_block_reason") or "").strip(),
+        str(directive_controlled_broad.get("reason") or "").strip(),
+    ]
+).lower()
+if "zero_coverage_seed_streak" not in reason_tokens:
+    print(current_epoch)
+    raise SystemExit(0)
+
+attempts_remaining = max(
+    0,
+    to_int(directive_search_quality.get("controlled_recovery_attempts_remaining"), 0),
+    to_int(yield_search_quality.get("controlled_recovery_attempts_remaining"), 0),
+)
+if attempts_remaining > 0:
+    print(current_epoch)
+    raise SystemExit(0)
+
+rearm_candidates = [
+    to_int(seeder_state.get("controlled_broad_rearm_after_epoch"), 0),
+    to_int(seeder_state.get("next_retry_epoch"), 0),
+    to_int(yield_state.get("controlled_broad_rearm_after_epoch"), 0),
+    to_int(yield_search_quality.get("controlled_broad_rearm_after_epoch"), 0),
+    to_int(directive_search_quality.get("controlled_broad_rearm_after_epoch"), 0),
+    to_int(directive_controlled_broad.get("rearm_after_epoch"), 0),
+]
+rearm_candidates = [epoch for epoch in rearm_candidates if epoch > 0]
+if not rearm_candidates:
+    print(current_epoch)
+    raise SystemExit(0)
+
+target_epoch = min(rearm_candidates)
+if target_epoch >= current_epoch:
+    print(current_epoch)
+    raise SystemExit(0)
+if target_epoch <= now_epoch:
+    target_epoch = 0
+print(max(0, target_epoch))
+PY
+)"
+  [[ "$reconciled_epoch" =~ ^[0-9]+$ ]] || reconciled_epoch="$current_epoch"
+  if (( reconciled_epoch != current_epoch )); then
+    fullspan_state_metric_set "seed_next_retry_epoch" "$reconciled_epoch"
+    log "auto_seed_retry_self_heal previous=$current_epoch next=$reconciled_epoch reason=zero_coverage_seed_streak"
+    log_decision_note "global" "AUTO_SEED_RETRY_SELF_HEAL" "previous=$current_epoch next=$reconciled_epoch reason=zero_coverage_seed_streak" "clamp_seed_retry_to_controlled_broad_rearm"
+  fi
+  printf '%s\n' "$reconciled_epoch"
+}
+
+handoff_retry_failure_is_tracked() {
+  case "${1:-}" in
+    REMOTE_HANDOFF_FAILED|MANIFEST_MISMATCH|REMOTE_SYNC_FAILED)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+handoff_retry_queue_snapshot() {
+  local queue_rel="$1"
+  python3 - "$HANDOFF_RETRY_STATE_FILE" "$queue_rel" "$HANDOFF_RETRY_WINDOW_SEC" "$(date +%s)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def to_int(value, default=0):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return default
+
+
+path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+window_sec = max(1, to_int(sys.argv[3], 1800))
+now_epoch = max(0, to_int(sys.argv[4], 0))
+
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+
+entries = payload.get("entries", {})
+if not isinstance(entries, dict):
+    entries = {}
+
+entry = entries.get(queue_rel, {})
+if not isinstance(entry, dict):
+    entry = {}
+
+last_attempt_epoch = to_int(entry.get("last_attempt_epoch"), 0)
+cooldown_until_epoch = to_int(entry.get("cooldown_until_epoch"), 0)
+if cooldown_until_epoch > 0 and now_epoch > 0 and cooldown_until_epoch <= now_epoch:
+    entry = {}
+elif last_attempt_epoch > 0 and now_epoch > 0 and now_epoch - last_attempt_epoch >= window_sec:
+    entry = {}
+
+fail_count = to_int(entry.get("fail_count"), 0)
+last_failure_code = str(entry.get("last_failure_code") or "").strip().upper()
+last_failure_reason = str(entry.get("last_failure_reason") or "").strip()
+sync_escalated = 1 if str(entry.get("sync_escalated") or "").strip().lower() in {"1", "true", "yes", "y", "on"} else 0
+cooldown_until_epoch = to_int(entry.get("cooldown_until_epoch"), 0)
+print(f"{fail_count}\t{last_failure_code}\t{last_failure_reason}\t{sync_escalated}\t{cooldown_until_epoch}")
+PY
+}
+
+handoff_retry_cleanup_state() {
+  python3 - "$HANDOFF_RETRY_STATE_FILE" "$HANDOFF_RETRY_WINDOW_SEC" "$(date +%s)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def to_int(value, default=0):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return default
+
+
+path = Path(sys.argv[1])
+window_sec = max(1, to_int(sys.argv[2], 1800))
+now_epoch = max(0, to_int(sys.argv[3], 0))
+
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+    print(0)
+    raise SystemExit(0)
+
+if not isinstance(payload, dict):
+    payload = {}
+
+entries = payload.get("entries", {})
+if not isinstance(entries, dict):
+    entries = {}
+
+updated = {}
+cleared = 0
+for queue_rel, raw_entry in entries.items():
+    if not isinstance(raw_entry, dict):
+        cleared += 1
+        continue
+    last_attempt_epoch = to_int(raw_entry.get("last_attempt_epoch"), 0)
+    cooldown_until_epoch = to_int(raw_entry.get("cooldown_until_epoch"), 0)
+    if cooldown_until_epoch > 0:
+        if cooldown_until_epoch > now_epoch:
+            updated[str(queue_rel)] = raw_entry
+            continue
+        cleared += 1
+        continue
+    if last_attempt_epoch > 0 and now_epoch - last_attempt_epoch < window_sec:
+        updated[str(queue_rel)] = raw_entry
+        continue
+    cleared += 1
+
+if updated:
+    payload["entries"] = updated
+    payload["updated_at"] = now_epoch
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+else:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+
+print(cleared)
+PY
+}
+
+handoff_retry_clear_queue() {
+  local queue_rel="$1"
+  python3 - "$HANDOFF_RETRY_STATE_FILE" "$queue_rel" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+
+if not path.exists():
+    print(0)
+    raise SystemExit(0)
+
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+    print(1)
+    raise SystemExit(0)
+
+if not isinstance(payload, dict):
+    payload = {}
+
+entries = payload.get("entries", {})
+if not isinstance(entries, dict):
+    entries = {}
+
+removed = 1 if queue_rel in entries else 0
+if removed:
+    entries.pop(queue_rel, None)
+
+if entries:
+    payload["entries"] = entries
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+else:
+    try:
+        path.unlink()
+    except Exception:
+        pass
+
+print(removed)
+PY
+}
+
+handoff_retry_record_failure() {
+  local queue_rel="$1"
+  local failure_code="$2"
+  local failure_reason="${3:-}"
+  local sync_policy="${4:-runtime-first}"
+  python3 - "$HANDOFF_RETRY_STATE_FILE" "$queue_rel" "$failure_code" "$failure_reason" "$sync_policy" "$HANDOFF_RETRY_WINDOW_SEC" "$(date +%s)" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def to_int(value, default=0):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return default
+
+
+path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+failure_code = str(sys.argv[3] or "").strip().upper()
+failure_reason = str(sys.argv[4] or "").strip()
+sync_policy = str(sys.argv[5] or "").strip().lower() or "runtime-first"
+window_sec = max(1, to_int(sys.argv[6], 1800))
+now_epoch = max(0, to_int(sys.argv[7], 0))
+
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+
+entries = payload.get("entries", {})
+if not isinstance(entries, dict):
+    entries = {}
+
+entry = entries.get(queue_rel, {})
+if not isinstance(entry, dict):
+    entry = {}
+
+last_attempt_epoch = to_int(entry.get("last_attempt_epoch"), 0)
+cooldown_until_epoch = to_int(entry.get("cooldown_until_epoch"), 0)
+if (
+    last_attempt_epoch <= 0
+    or now_epoch - last_attempt_epoch >= window_sec
+    or (cooldown_until_epoch > 0 and cooldown_until_epoch <= now_epoch)
+):
+    entry = {}
+
+fail_count = max(0, to_int(entry.get("fail_count"), 0)) + 1
+sync_escalated_before = str(entry.get("sync_escalated") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+sync_escalated = sync_escalated_before or sync_policy != "runtime-first"
+updated = {
+    "fail_count": int(fail_count),
+    "last_failure_code": failure_code,
+    "last_failure_reason": failure_reason,
+    "last_attempt_epoch": now_epoch,
+    "sync_escalated": bool(sync_escalated),
+    "cooldown_until_epoch": 0,
+}
+entries[queue_rel] = updated
+payload["entries"] = entries
+payload["updated_at"] = now_epoch
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+print(f"{fail_count}\t{1 if sync_escalated else 0}\t0")
+PY
+}
+
+handoff_retry_preflight_action() {
+  local queue_rel="$1"
+  local fail_count last_failure_code last_failure_reason sync_escalated cooldown_until_epoch
+  local quarantine_threshold
+  quarantine_threshold=$(( HANDOFF_RETRY_CAP - 1 ))
+  if (( quarantine_threshold < 1 )); then
+    quarantine_threshold=1
+  fi
+  IFS=$'\t' read -r fail_count last_failure_code last_failure_reason sync_escalated cooldown_until_epoch <<< "$(handoff_retry_queue_snapshot "$queue_rel")"
+  [[ "$fail_count" =~ ^[0-9]+$ ]] || fail_count=0
+  [[ "$sync_escalated" =~ ^[0-9]+$ ]] || sync_escalated=0
+  [[ "$cooldown_until_epoch" =~ ^[0-9]+$ ]] || cooldown_until_epoch=0
+
+  if (( cooldown_until_epoch > $(date +%s) )) || (( fail_count >= quarantine_threshold )); then
+    printf 'quarantine\thold\t%s\t%s\t%s\t%s\n' "$fail_count" "$sync_escalated" "${last_failure_code:-REMOTE_HANDOFF_FAILED}" "${last_failure_reason:-handoff_retry_cap}"
+    return 0
+  fi
+
+  if (( fail_count + 1 >= HANDOFF_SYNC_ESCALATION_ATTEMPT )) && (( sync_escalated == 0 )); then
+    printf 'dispatch\tstrict\t%s\t1\t%s\t%s\n' "$fail_count" "${last_failure_code:-}" "${last_failure_reason:-}"
+    return 0
+  fi
+
+  printf 'dispatch\truntime-first\t%s\t%s\t%s\t%s\n' "$fail_count" "$sync_escalated" "${last_failure_code:-}" "${last_failure_reason:-}"
+}
+
+handoff_retry_mark_quarantine() {
+  local queue_rel="$1"
+  local failure_code="${2:-REMOTE_HANDOFF_FAILED}"
+  local failure_reason="${3:-handoff_retry_cap}"
+  local now_epoch cooldown_until_epoch
+  now_epoch="$(date +%s)"
+  cooldown_until_epoch=$(( now_epoch + HANDOFF_QUARANTINE_SEC ))
+
+  python3 - "$HANDOFF_RETRY_STATE_FILE" "$queue_rel" "$failure_code" "$failure_reason" "$cooldown_until_epoch" "$now_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def to_int(value, default=0):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return default
+
+
+path = Path(sys.argv[1])
+queue_rel = str(sys.argv[2] or "").strip()
+failure_code = str(sys.argv[3] or "").strip().upper()
+failure_reason = str(sys.argv[4] or "").strip()
+cooldown_until_epoch = max(0, to_int(sys.argv[5], 0))
+now_epoch = max(0, to_int(sys.argv[6], 0))
+
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+
+entries = payload.get("entries", {})
+if not isinstance(entries, dict):
+    entries = {}
+
+entry = entries.get(queue_rel, {})
+if not isinstance(entry, dict):
+    entry = {}
+
+fail_count = max(1, to_int(entry.get("fail_count"), 0))
+entries[queue_rel] = {
+    "fail_count": fail_count,
+    "last_failure_code": failure_code,
+    "last_failure_reason": failure_reason,
+    "last_attempt_epoch": now_epoch,
+    "sync_escalated": True,
+    "cooldown_until_epoch": cooldown_until_epoch,
+}
+payload["entries"] = entries
+payload["updated_at"] = now_epoch
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+
+  mark_orphan_with_ttl "$queue_rel" "handoff_retry_quarantine_${failure_code,,}" "$HANDOFF_QUARANTINE_SEC"
+  cold_fail_state_add "$queue_rel" "handoff_retry_quarantine_${failure_code,,}"
+  fullspan_state_queue_set "$queue_rel" \
+    "startup_state" "quarantined" \
+    "startup_failure_code" "$failure_code" \
+    "startup_failure_reason" "$failure_reason" \
+    "startup_failed_epoch" "$now_epoch" \
+    "dispatch_attempt_epoch" "$now_epoch" \
+    "dispatch_attempt_result" "handoff_retry_quarantined" \
+    "dispatch_attempt_session_epoch" "0"
+  log_decision_note "$queue_rel" "HANDOFF_RETRY_QUARANTINE" "startup_failure_code=$failure_code reason=$failure_reason cooldown_sec=$HANDOFF_QUARANTINE_SEC" "skip_and_select_next_candidate"
+  log "handoff_retry_quarantine queue=$queue_rel startup_failure_code=$failure_code startup_reason=$failure_reason cooldown_sec=$HANDOFF_QUARANTINE_SEC"
+}
+
+winner_hold_target() {
+  python3 - "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+
+def to_bool(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(0)
+
+try:
+    state = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+
+queues = state.get("queues", {}) if isinstance(state, dict) else {}
+if not isinstance(queues, dict):
+    raise SystemExit(0)
+
+for queue_rel, entry in sorted(queues.items()):
+    if not isinstance(entry, dict):
+        continue
+    verdict = str(entry.get("promotion_verdict") or "").strip().upper()
+    cutover_permission = str(entry.get("cutover_permission") or "").strip().upper()
+    cutover_ready = to_bool(entry.get("cutover_ready"))
+    if verdict != "PROMOTE_ELIGIBLE" or cutover_permission != "ALLOW_PROMOTE" or not cutover_ready:
+        continue
+    top_run_group = str(entry.get("top_run_group") or "").strip()
+    top_variant = str(entry.get("top_variant") or "").strip()
+    print(f"{queue_rel}\t{top_run_group}\t{top_variant}")
+    raise SystemExit(0)
 PY
 }
 
@@ -4420,6 +5270,16 @@ low_yield_hardfail_stop_rule() {
   return 0
 }
 
+normalize_fullspan_queue_name() {
+  local queue_path="$1"
+  local queue_name="$2"
+  if [[ -z "$queue_name" || "$queue_name" == "run_queue.csv" ]]; then
+    basename "$(dirname "$queue_path")"
+    return 0
+  fi
+  printf '%s\n' "$queue_name"
+}
+
 run_fullspan_cycle() {
   local queue_rel="$1"
   local queue_path="$2"
@@ -4431,6 +5291,7 @@ run_fullspan_cycle() {
   if [[ ! -f "$queue_path" ]]; then
     return 0
   fi
+  queue_name="$(normalize_fullspan_queue_name "$queue_path" "$queue_name")"
 
   local safe_name
   safe_name="$(printf '%s' "$queue_rel" | tr '/.' '__')"
@@ -4995,7 +5856,7 @@ for row in rows:
     except Exception:
         mvm_f = None
 
-    if mvm_f is not None and mvm_f <= 1.0:
+    if mvm_f is not None and mvm_f < 1.0:
         row['status'] = 'skipped'
         payload['changed'] += 1
         codes['MAX_VAR_MULTIPLIER_INVALID'] += 1
@@ -5278,20 +6139,6 @@ if (
     and zero_activity_fraction >= zero_activity_share_gate
     and pass_count <= 0
 ):
-    changed = 0
-    for row in rows:
-        status = str(row.get("status") or "").strip().lower()
-        if status in {"planned", "stalled", "failed", "error"}:
-            row["status"] = "skipped"
-            changed += 1
-    if changed > 0 and rows:
-        with queue_path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(row)
-    payload["trigger"] = bool(changed > 0)
-    payload["changed"] = changed
     payload["reason"] = "EARLY_ABORT_ZERO_ACTIVITY"
     print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(0)
@@ -5310,22 +6157,6 @@ if dominant_count < dominant_min or dominant_fraction < dominant_fraction_gate:
     print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(0)
 
-changed = 0
-for row in rows:
-    status = str(row.get("status") or "").strip().lower()
-    if status in {"planned", "stalled", "failed", "error"}:
-        row["status"] = "skipped"
-        changed += 1
-
-if changed > 0 and rows:
-    with queue_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-
-payload["trigger"] = bool(changed > 0)
-payload["changed"] = changed
 payload["reason"] = f"EARLY_ABORT_LOW_INFORMATION_{dominant_reason}"
 print(json.dumps(payload, ensure_ascii=False))
 PY
@@ -5379,7 +6210,13 @@ repair_stalled_queue() {
 
   local rc=0
   local max_retries
+  local repair_epoch
   max_retries="$(choose_max_retries "$cause")"
+  repair_epoch="$(date +%s)"
+  record_dispatch_attempt "$queue_rel" "repair_preflight" "$repair_epoch"
+  set_infra_gate_state "starting" "repair_startup_confirmation_pending" "" "0" ""
+  log_state "starting queue=$queue_rel reason=stalled_queue_repair started_at=$(date -u +%Y%m%d_%H%M%S) log=$LOG_FILE parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE action=REPAIR statuses=stalled"
+  refresh_control_plane_guard_state || true
 
   local stalled_after_quarantine
   stalled_after_quarantine="$(python3 - "$ROOT_DIR/$queue_rel" <<'PY'
@@ -5410,18 +6247,25 @@ PY
 
   if [[ -n "$SERVER_IP" ]]; then
     ensure_vps_ready "repair_stalled:$queue_rel" || true
-    ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel" --compute-host "$SERVER_IP" --ssh-user "$SERVER_USER" --postprocess true --wait-completion false --max-retries "$max_retries") >>"$LOG_FILE" 2>&1 || rc=$?
+    ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel" --compute-host "$SERVER_IP" --ssh-user "$SERVER_USER" --postprocess false --wait-completion false --max-retries "$max_retries") >>"$LOG_FILE" 2>&1 || rc=$?
   else
     ("$ROOT_DIR/scripts/optimization/recover_stalled_queue.sh" --queue "$queue_rel" --parallel "$parallel") >>"$LOG_FILE" 2>&1 || rc=$?
   fi
 
   if [[ "$rc" -eq 0 ]]; then
+    update_dispatch_attempt_result "$queue_rel" "started" "$(date +%s)"
+    set_infra_gate_state "ok" "" "" "0" ""
     log "repair_stalled_success queue=$queue_rel"
     clear_orphan "$queue_rel"
+    log_state "running queue=$queue_rel reason=stalled_queue_repair log=$LOG_FILE parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE action=REPAIR statuses=stalled startup_code=REMOTE_HANDOFF_CONFIRMED"
+    refresh_control_plane_guard_state || true
     return 0
   fi
 
+  update_dispatch_attempt_result "$queue_rel" "failed" "$(date +%s)"
   log "repair_stalled_failed queue=$queue_rel rc=$rc"
+  log_state "idle now=none reason=repair_stalled_failed queue=$queue_rel rc=$rc log=$LOG_FILE"
+  refresh_control_plane_guard_state || true
   return "$rc"
 }
 
@@ -5630,6 +6474,10 @@ refresh_remote_runtime_metrics() {
 
 yield_governor_hard_block_snapshot() {
   local now_epoch="${1:-$(date +%s)}"
+  if simple_control_plane_enabled; then
+    printf '0\t\t0\t0\n'
+    return 0
+  fi
   python3 - "$YIELD_GOVERNOR_STATE_FILE" "$now_epoch" <<'PY'
 import json
 import sys
@@ -5846,6 +6694,193 @@ set_infra_gate_state() {
   fullspan_state_metric_set "auto_seed_block_reason" "$auto_seed_block_reason"
 }
 
+startup_failure_code_is_sync_retryable() {
+  case "${1:-}" in
+    MANIFEST_MISMATCH|REMOTE_SYNC_FAILED|REMOTE_HANDOFF_FAILED)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+maybe_clear_sync_retryable_infra_fail_closed() {
+  local reason="${1:-runtime_retry_probe}"
+  local startup_failure_code infra_gate_status vps_fail_closed dispatchable_pending
+  local process_remote_reachable process_coverage_ready
+  local remote_runtime_fresh remote_runtime_reachable
+  local remote_jobs postprocess_active build_index_active remote_busy_without_queue remote_work_flag
+  local queue_scoped_startup_failure=0
+
+  startup_failure_code="$(fullspan_state_metric_get startup_failure_code "")"
+  infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
+  vps_fail_closed="$(fullspan_state_metric_get vps_infra_fail_closed 0)"
+  [[ "$vps_fail_closed" =~ ^[0-9]+$ ]] || vps_fail_closed=0
+
+  if [[ "$infra_gate_status" != "fail_closed" && "$vps_fail_closed" -le 0 ]]; then
+    return 1
+  fi
+  if ! startup_failure_code_is_sync_retryable "$startup_failure_code"; then
+    return 1
+  fi
+  if [[ "$startup_failure_code" == "REMOTE_HANDOFF_FAILED" ]]; then
+    queue_scoped_startup_failure=1
+  fi
+
+  dispatchable_pending="$(global_dispatchable_pending_count)"
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  if (( dispatchable_pending <= 0 )); then
+    return 1
+  fi
+
+  IFS=$'\t' read -r process_remote_reachable process_coverage_ready <<< "$(process_slo_remote_coverage_snapshot)"
+  [[ "$process_remote_reachable" =~ ^[01]$ ]] || process_remote_reachable=0
+  [[ "$process_coverage_ready" =~ ^[0-9]+$ ]] || process_coverage_ready=0
+
+  refresh_remote_runtime_metrics
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_runtime_fresh="$(remote_runtime_snapshot_is_fresh "$REMOTE_RUNTIME_SNAPSHOT_MAX_AGE_SEC")"
+  [[ "$remote_runtime_fresh" =~ ^[01]$ ]] || remote_runtime_fresh=0
+  remote_runtime_reachable="$process_remote_reachable"
+  if [[ "$remote_runtime_fresh" == "1" ]]; then
+    remote_runtime_reachable="$(remote_runtime_state_value "reachable" "$process_remote_reachable")"
+    [[ "$remote_runtime_reachable" =~ ^[01]$ ]] || remote_runtime_reachable="$process_remote_reachable"
+  fi
+  if [[ "$process_remote_reachable" != "1" && "$remote_runtime_reachable" != "1" ]]; then
+    return 1
+  fi
+
+  remote_jobs="$(remote_active_queue_jobs)"
+  [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
+  postprocess_active="$(remote_postprocess_active)"
+  [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+  build_index_active="$(remote_build_index_active)"
+  [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+  remote_busy_without_queue="$(remote_cpu_busy_without_queue_job)"
+  [[ "$remote_busy_without_queue" =~ ^[01]$ ]] || remote_busy_without_queue=0
+  remote_work_flag="$(remote_work_active)"
+  [[ "$remote_work_flag" =~ ^[01]$ ]] || remote_work_flag=0
+
+  if (( remote_jobs > 0 || postprocess_active > 0 || build_index_active > 0 )); then
+    return 1
+  fi
+  if (( queue_scoped_startup_failure == 0 )) && [[ "$remote_busy_without_queue" == "1" || "$remote_work_flag" == "1" ]]; then
+    return 1
+  fi
+
+  fullspan_state_metric_set "vps_infra_fail_closed" 0
+  fullspan_state_metric_set "auto_seed_hard_block" 0
+  fullspan_state_metric_set "auto_seed_block_reason" ""
+  fullspan_state_metric_inc "retryable_infra_gate_clear_count" 1
+  fullspan_state_metric_set "retryable_infra_gate_clear_code" "$startup_failure_code"
+  fullspan_state_metric_set "retryable_infra_gate_clear_epoch" "$(date +%s)"
+  set_infra_gate_state "ok" "" "" "0" ""
+  cleanup_orphans || true
+  log "retryable_infra_gate_cleared reason=$reason startup_failure_code=$startup_failure_code dispatchable_pending=$dispatchable_pending process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable"
+  log_decision_note "global" "INFRA_FAIL_CLOSED_CLEARED" "reason=$reason startup_failure_code=$startup_failure_code dispatchable_pending=$dispatchable_pending process_remote_reachable=$process_remote_reachable remote_runtime_reachable=$remote_runtime_reachable" "resume_dispatch_after_remote_probe"
+  return 0
+}
+
+maybe_clear_fast_completed_start_process_exit_fail_closed() {
+  local reason="${1:-fast_complete_retry_probe}"
+  local startup_failure_code infra_gate_status vps_fail_closed auto_seed_blocked auto_seed_block_reason
+  local remote_jobs postprocess_active build_index_active remote_work_flag
+  local queue_rel healed_count now_epoch
+  local pending=0 dispatchable_pending=0 executable_pending=0 completed_with_metrics=0 planned=0 running=0 stalled=0 failed=0 completed=0
+
+  startup_failure_code="$(fullspan_state_metric_get startup_failure_code "")"
+  infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
+  vps_fail_closed="$(fullspan_state_metric_get vps_infra_fail_closed 0)"
+  auto_seed_blocked="$(fullspan_state_metric_get auto_seed_blocked 0)"
+  auto_seed_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
+  [[ "$vps_fail_closed" =~ ^[0-9]+$ ]] || vps_fail_closed=0
+  [[ "$auto_seed_blocked" =~ ^[0-9]+$ ]] || auto_seed_blocked=0
+
+  if [[ "$startup_failure_code" != "START_PROCESS_EXIT" && "$auto_seed_block_reason" != "local_powered_runner_exited_before_confirmation" ]]; then
+    return 1
+  fi
+  if [[ "$infra_gate_status" != "fail_closed" && "$vps_fail_closed" -le 0 && "$auto_seed_blocked" -le 0 ]]; then
+    return 1
+  fi
+
+  refresh_remote_runtime_metrics
+  ensure_remote_runtime_snapshot >/dev/null 2>&1 || true
+  remote_jobs="$(remote_active_queue_jobs)"
+  [[ "$remote_jobs" =~ ^[0-9]+$ ]] || remote_jobs=0
+  postprocess_active="$(remote_postprocess_active)"
+  [[ "$postprocess_active" =~ ^[0-9]+$ ]] || postprocess_active=0
+  build_index_active="$(remote_build_index_active)"
+  [[ "$build_index_active" =~ ^[0-9]+$ ]] || build_index_active=0
+  remote_work_flag="$(remote_work_active)"
+  [[ "$remote_work_flag" =~ ^[01]$ ]] || remote_work_flag=0
+  if (( remote_jobs > 0 || postprocess_active > 0 || build_index_active > 0 )) || [[ "$remote_work_flag" == "1" ]]; then
+    return 1
+  fi
+
+  healed_count=0
+  while IFS= read -r queue_rel; do
+    [[ -n "$queue_rel" ]] || continue
+    read -r pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+    if (( pending > 0 || completed <= 0 )); then
+      continue
+    fi
+    fullspan_state_queue_set "$queue_rel" \
+      "startup_state" "" \
+      "startup_failure_code" "" \
+      "startup_failure_reason" "" \
+      "dispatch_attempt_result" "completed_fastpath" \
+      "dispatch_attempt_session_epoch" "0"
+    clear_orphan "$queue_rel"
+    completion_followup_enqueue_ready_queue "$queue_rel" "start_process_exit_fast_complete_clear" >/dev/null 2>&1 || true
+    healed_count=$((healed_count + 1))
+  done < <(python3 - "$FULLSPAN_DECISION_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+queues = payload.get("queues", {})
+if not isinstance(queues, dict):
+    queues = {}
+for queue_rel, entry in queues.items():
+    if not isinstance(entry, dict):
+        continue
+    startup_code = str(entry.get("startup_failure_code") or "").strip().upper()
+    startup_state = str(entry.get("startup_state") or "").strip().lower()
+    dispatch_attempt_result = str(entry.get("dispatch_attempt_result") or "").strip().lower()
+    if startup_code != "START_PROCESS_EXIT":
+      continue
+    if startup_state not in {"failed", "fail_closed"} and dispatch_attempt_result not in {"failed", "start_process_exit"}:
+      continue
+    print(str(queue_rel).strip())
+PY
+)
+
+  if (( healed_count <= 0 )); then
+    return 1
+  fi
+
+  now_epoch="$(date +%s)"
+  fullspan_state_metric_set "vps_infra_fail_closed" 0
+  fullspan_state_metric_set "auto_seed_hard_block" 0
+  fullspan_state_metric_set "auto_seed_block_reason" ""
+  fullspan_state_metric_inc "retryable_infra_gate_clear_count" 1
+  fullspan_state_metric_set "retryable_infra_gate_clear_code" "START_PROCESS_EXIT"
+  fullspan_state_metric_set "retryable_infra_gate_clear_epoch" "$now_epoch"
+  set_infra_gate_state "ok" "" "" "0" ""
+  cleanup_orphans || true
+  log "retryable_infra_gate_cleared reason=$reason startup_failure_code=START_PROCESS_EXIT healed_fast_completed_queues=$healed_count"
+  log_decision_note "global" "INFRA_FAIL_CLOSED_CLEARED" "reason=$reason startup_failure_code=START_PROCESS_EXIT healed_fast_completed_queues=$healed_count" "resume_dispatch_after_fast_completed_startup_exit"
+  return 0
+}
+
 record_infra_fail_closed() {
   local queue_rel="$1"
   local startup_code="${2:-START_CONFIRM_FAILED}"
@@ -5865,11 +6900,15 @@ record_infra_fail_closed() {
     "startup_log" "$qlog" \
     "startup_failure_code" "${startup_code:-START_CONFIRM_FAILED}" \
     "startup_failure_reason" "${startup_reason:-startup_fail_closed}" \
-    "startup_failed_epoch" "$fail_epoch"
+    "startup_failed_epoch" "$fail_epoch" \
+    "dispatch_attempt_epoch" "$fail_epoch" \
+    "dispatch_attempt_result" "failed" \
+    "dispatch_attempt_session_epoch" "$DRIVER_SESSION_EPOCH"
   log_decision_note "$queue_rel" "INFRA_FAIL_CLOSED" "reason=${startup_reason:-startup_fail_closed} startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog" "$action"
   log "start_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} startup_reason=${startup_reason:-startup_fail_closed} log=$qlog"
   ready_buffer_release_claim "$queue_rel"
   log_state "idle now=none reason=infra_fail_closed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog"
+  refresh_control_plane_guard_state || true
 }
 
 queue_start_confirmation_status() {
@@ -5929,6 +6968,17 @@ last_sync_ok = max(text.rfind("powered: sync_code ok"), text.rfind("powered: syn
 last_sync_fail = text.rfind("powered: sync_code failed")
 waiting_for_sync = last_sync_start >= 0 and last_sync_start > max(last_sync_ok, last_sync_fail)
 lowered_text = text.lower()
+remote_handoff_failure_reason = ""
+if "powered: remote_handoff outcome=remote_handoff_failed reason=" in lowered_text:
+    for raw_line in reversed(text.splitlines()):
+        lowered_line = raw_line.lower()
+        if "powered: remote_handoff outcome=remote_handoff_failed reason=" not in lowered_line:
+            continue
+        try:
+            remote_handoff_failure_reason = raw_line.split("reason=", 1)[1].strip().split()[0]
+        except Exception:
+            remote_handoff_failure_reason = "remote_handoff_failed"
+        break
 manifest_mismatch_detected = (
     "drift_reason=manifest_mismatch" in lowered_text
     or "remote manifest mismatch" in lowered_text
@@ -5958,7 +7008,7 @@ for line in reversed(text.splitlines()):
     if "powered: FAIL reason=" in line:
         status = "fail"
         code = line.split("powered: FAIL reason=", 1)[1].strip().split()[0]
-        reason = "powered_fail"
+        reason = remote_handoff_failure_reason if code == "REMOTE_HANDOFF_FAILED" and remote_handoff_failure_reason else "powered_fail"
         break
     if "sync_code failed with remote code drift detected" in lowered:
         status = "fail"
@@ -5981,29 +7031,23 @@ if status == "pending" and log_age_sec >= 0:
         reason = "startup_budget_exhausted"
 
 if status == "pending":
-    if "powered: remote run start queue=" in text:
+    if "powered: remote handoff confirmed queue=" in text:
         status = "confirmed"
-        code = "REMOTE_RUN_STARTED"
-        reason = "powered_remote_run_start"
-    else:
-        try:
-            with queue_path.open(newline="", encoding="utf-8") as handle:
-                rows = list(csv.DictReader(handle))
-        except Exception:
-            rows = []
-        for row in rows:
-            queue_status = str(row.get("status") or "").strip().lower()
-            if queue_status and queue_status not in {"planned", ""}:
-                status = "confirmed"
-                code = "QUEUE_STATUS_PROGRESS"
-                reason = queue_status
-                break
-        if status == "pending" and waiting_for_ssh:
-            code = "WAITING_FOR_SSH"
-            reason = "waiting_for_ssh"
-        elif status == "pending" and waiting_for_sync:
-            code = "WAITING_FOR_SYNC"
-            reason = "waiting_for_sync"
+        code = "REMOTE_HANDOFF_CONFIRMED"
+        reason = "powered_remote_handoff_confirmed"
+    elif "powered: queue-run skipped chosen_statuses=<none> rationale=ALL_COMPLETED" in text:
+        status = "confirmed"
+        code = "REMOTE_HANDOFF_COMPLETED_FASTPATH"
+        reason = "powered_queue_already_completed"
+    elif waiting_for_ssh:
+        code = "WAITING_FOR_SSH"
+        reason = "waiting_for_ssh"
+    elif waiting_for_sync:
+        code = "WAITING_FOR_SYNC"
+        reason = "waiting_for_sync"
+    elif "powered: remote handoff start queue=" in text:
+        code = "WAITING_FOR_REMOTE_HANDOFF"
+        reason = "waiting_for_remote_handoff"
 
 print("\t".join([status, code, reason]))
 PY
@@ -6020,6 +7064,7 @@ wait_for_queue_start_confirmation() {
   local deadline budget_deadline now_epoch status code reason
   local ssh_wait_started_epoch=0
   local sync_wait_started_epoch=0
+  local pending=0 dispatchable_pending=0 executable_pending=0 completed_with_metrics=0 planned=0 running=0 stalled=0 failed=0 completed=0
   deadline=$(( $(date +%s) + timeout_sec ))
   budget_deadline=$(( $(date +%s) + startup_budget_sec ))
   while true; do
@@ -6062,6 +7107,12 @@ wait_for_queue_start_confirmation() {
       if [[ "$status" == "fail" ]]; then
         echo "${code:-START_CONFIRM_FAILED}"$'\t'"${reason:-startup_fail}"
         return 1
+      fi
+      sync_queue_status "$queue_rel" >/dev/null 2>&1 || true
+      read -r pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+      if (( pending <= 0 && completed > 0 )); then
+        echo "REMOTE_HANDOFF_COMPLETED_FASTPATH"$'\t'"local_queue_completed_before_confirmation"
+        return 0
       fi
       echo "START_PROCESS_EXIT"$'\t'"local_powered_runner_exited_before_confirmation"
       return 1
@@ -6303,7 +7354,7 @@ PY
 }
 
 global_backlog_snapshot() {
-  python3 - "$QUEUE_ROOT" "$ROOT_DIR" <<'PY'
+  python3 - "$QUEUE_ROOT" "$ROOT_DIR" "$COLD_FAIL_STATE_FILE" <<'PY'
 import csv
 import json
 import sys
@@ -6312,6 +7363,7 @@ from pathlib import Path
 
 queue_root = Path(sys.argv[1])
 root = Path(sys.argv[2])
+cold_fail_state_path = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 state_dir = queue_root / '.autonomous'
 fullspan_path = state_dir / 'fullspan_decision_state.json'
 orphan_path = state_dir / 'orphan_queues.csv'
@@ -6343,6 +7395,29 @@ def load_state(path):
 
 
 fullspan_queues = load_state(fullspan_path)
+
+
+def load_cold_fail_state(path):
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    entries = payload.get('entries', []) if isinstance(payload, dict) else []
+    if not isinstance(entries, list):
+        return {}
+    active = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        queue = str(entry.get('queue') or '').strip()
+        if queue:
+            active[queue] = entry
+    return active
+
+
+cold_fail_state = load_cold_fail_state(cold_fail_state_path)
 orphans = {}
 if orphan_path.exists():
     try:
@@ -6369,16 +7444,15 @@ def queue_block_reason(queue_rel, queue_abs):
         entry = {}
     verdict = str(entry.get('promotion_verdict') or '').strip().upper()
     strict_gate_status = str(entry.get('strict_gate_status') or '').strip().upper()
-    cutover_permission = str(entry.get('cutover_permission') or '').strip().upper()
-    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT':
+    try:
+        strict_pass_count = int(float(entry.get('strict_pass_count') or 0.0))
+    except Exception:
+        strict_pass_count = 0
+    contract_hard_pass = entry_is_true(entry.get('contract_hard_pass'))
+    if verdict == 'REJECT' or strict_gate_status == 'FULLSPAN_PREFILTER_REJECT' or (strict_pass_count > 0 and not contract_hard_pass):
         return 'FULLSPAN_REJECT'
-    if cutover_permission == 'FAIL_CLOSED':
-        return 'FAIL_CLOSED'
     if entry_is_true(entry.get('low_yield_fail_closed')):
         return 'FAIL_CLOSED'
-    for state_key in ('startup_state', 'coverage_state', 'queue_state'):
-        if str(entry.get(state_key) or '').strip().lower() == 'fail_closed':
-            return 'FAIL_CLOSED'
     orphan_entry = orphans.get(queue_rel) or orphans.get(queue_abs) or orphans.get('/' + queue_rel.lstrip('/')) or {}
     try:
         orphan_until = float((orphan_entry or {}).get('until') or 0.0)
@@ -6406,6 +7480,22 @@ for q in sorted(queue_root.rglob('run_queue.csv')):
     except Exception:
         queue_rel = q_str
     queue_abs = q_str
+    cold_entry = cold_fail_state.get(queue_rel) or cold_fail_state.get(queue_abs) or cold_fail_state.get('/' + queue_rel.lstrip('/'))
+    if cold_entry:
+        try:
+            until_ts = float(cold_entry.get('until_ts') or 0.0)
+        except Exception:
+            until_ts = 0.0
+        try:
+            inserted_ts = float(cold_entry.get('inserted_ts') or 0.0)
+        except Exception:
+            inserted_ts = 0.0
+        try:
+            mtime = float(q.stat().st_mtime)
+        except Exception:
+            mtime = 0.0
+        if until_ts > now and inserted_ts > 0.0 and mtime <= inserted_ts:
+            continue
     blocked_reason = queue_block_reason(queue_rel, queue_abs)
     try:
         rows = list(csv.DictReader(q.open(newline='', encoding='utf-8')))
@@ -6460,6 +7550,10 @@ PY
 }
 
 candidate_pool_ready_count() {
+  if simple_control_plane_enabled; then
+    echo "0"
+    return 0
+  fi
   csv_data_row_count "$READY_BUFFER_POOL_FILE"
 }
 
@@ -6498,6 +7592,7 @@ selector_empty_candidate_pool_guard() {
     return 1
   fi
 
+  maybe_clear_sync_retryable_infra_fail_closed "selector_empty_candidate_pool:$reason" || true
   vps_fail_closed="$(fullspan_state_metric_get vps_infra_fail_closed 0)"
   [[ "$vps_fail_closed" =~ ^[0-9]+$ ]] || vps_fail_closed=0
   infra_gate_status="$(fullspan_state_metric_get infra_gate_status "")"
@@ -6541,6 +7636,7 @@ selector_empty_candidate_pool_guard() {
 handle_empty_candidate_state() {
   local reason="${1:-candidate_empty}"
   local candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
+  local cold_fail_count
   IFS=$'\t' read -r candidate_pool_status pool_ready_count planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(candidate_pool_status_snapshot)"
   fullspan_state_metric_set "candidate_pool_status" "$candidate_pool_status"
   fullspan_state_metric_set "candidate_pool_ready_count" "$pool_ready_count"
@@ -6549,6 +7645,7 @@ handle_empty_candidate_state() {
   if [[ "$candidate_pool_status" == "empty_expected" ]]; then
     log "candidate_pool_empty_expected reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues"
     log_decision_note "global" "CANDIDATE_POOL_EMPTY_EXPECTED" "reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues" "idle_and_allow_batch_session_stop"
+    maybe_trigger_auto_seed "candidate_pool_empty_degraded" || true
     if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
       adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
     fi
@@ -6559,7 +7656,27 @@ handle_empty_candidate_state() {
     sleep "$adaptive_idle_sleep"
     return 0
   fi
+  cold_fail_count="$(cold_fail_active_count)"
+  [[ "$cold_fail_count" =~ ^[0-9]+$ ]] || cold_fail_count=0
+  if [[ "$candidate_pool_status" == "empty_error" ]] && (( pool_ready_count == 0 && planned_dispatchable == 0 && dispatchable_pending > 0 && no_dispatchable_queues > 0 && cold_fail_count > 0 )); then
+    fullspan_state_metric_set "candidate_pool_status" "empty_expected_degraded"
+    log "candidate_pool_empty_degraded reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues cold_fail_active_count=$cold_fail_count"
+    log_decision_note "global" "CANDIDATE_POOL_EMPTY_DEGRADED" "reason=$reason dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw planned_dispatchable=$planned_dispatchable no_dispatchable_queues=$no_dispatchable_queues cold_fail_active_count=$cold_fail_count" "allow_auto_seed_when_only_cold_failed_backlog_remains"
+    maybe_trigger_auto_seed "$reason" || true
+    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+    fi
+    if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+      adaptive_idle_sleep=300
+    fi
+    batch_session_maybe_stop "candidate_pool_empty_degraded"
+    sleep "$adaptive_idle_sleep"
+    return 0
+  fi
   if selector_empty_candidate_pool_guard "$reason"; then
+    if simple_control_plane_enabled; then
+      return 2
+    fi
     if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
       adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
     fi
@@ -6573,14 +7690,253 @@ handle_empty_candidate_state() {
   return 1
 }
 
+handle_empty_candidate_or_exit() {
+  local reason="${1:-candidate_empty}"
+  local rc=0
+  handle_empty_candidate_state "$reason" || rc=$?
+  if (( rc == 0 )); then
+    return 0
+  fi
+  if (( rc == 2 )); then
+    set_infra_gate_state "fail_closed" "selector_empty_candidate_pool" "SELECTOR_EMPTY_CANDIDATE_POOL" "1" "selector_empty_candidate_pool"
+    fullspan_state_metric_set "selector_fail_fast_reason" "$reason"
+    fullspan_state_metric_set "selector_fail_fast_epoch" "$(date +%s)"
+    log "selector_empty_candidate_pool_fail_fast reason=$reason"
+    log_decision_note "global" "SELECTOR_EMPTY_CANDIDATE_POOL_FAIL_FAST" "reason=$reason" "restart_driver"
+    log_state "idle now=none reason=selector_empty_candidate_pool_fail_fast"
+    exit 75
+  fi
+  return 1
+}
+
+simple_repairable_queue_count() {
+  python3 - "$QUEUE_ROOT" "$ROOT_DIR" "$FULLSPAN_DECISION_STATE_FILE" "$ORPHAN_FILE" <<'PY'
+import csv
+import sys
+import time
+from pathlib import Path
+
+queue_root = Path(sys.argv[1])
+app_root = Path(sys.argv[2])
+state_path = Path(sys.argv[3])
+orphan_path = Path(sys.argv[4])
+opt_dir = app_root / "scripts" / "optimization"
+if str(opt_dir) not in sys.path:
+    sys.path.insert(0, str(opt_dir))
+
+from _queue_status_contract import (  # noqa: E402
+    load_fullspan_queue_state,
+    load_orphan_queue_cooldowns,
+    queue_dispatch_block_reason,
+    summarize_queue_rows,
+)
+
+state = load_fullspan_queue_state(state_path)
+orphans = load_orphan_queue_cooldowns(orphan_path)
+now = time.time()
+count = 0
+
+for queue_path in sorted(queue_root.rglob("run_queue.csv")):
+    queue_str = str(queue_path)
+    if "/rollup/" in queue_str or "/.autonomous/" in queue_str:
+        continue
+    try:
+        queue_rel = str(queue_path.relative_to(app_root))
+    except Exception:
+        queue_rel = queue_str
+    try:
+        rows = list(csv.DictReader(queue_path.open(newline="", encoding="utf-8")))
+    except Exception:
+        continue
+    summary = summarize_queue_rows(rows, app_root)
+    planned_count = 0
+    for row in rows:
+        if str(row.get("status") or "").strip().lower() == "planned":
+            planned_count += 1
+    if summary["pending"] <= 0 or summary["dispatchable_pending"] <= 0:
+        continue
+    if planned_count > 0:
+        continue
+    if summary["stalled"] <= 0 and summary["failed"] <= 0:
+        continue
+    block_reason = queue_dispatch_block_reason(
+        queue_rel=queue_rel,
+        fullspan_entry=state.get(queue_rel),
+        orphan_entry=orphans.get(queue_rel) or orphans.get(queue_str) or orphans.get("/" + queue_rel.lstrip("/")),
+        now_epoch=now,
+    )
+    if block_reason:
+        continue
+    count += 1
+
+print(count)
+PY
+}
+
+refresh_search_director_for_auto_seed() {
+  local py_bin="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$py_bin" ]] || py_bin="$(command -v python3)"
+  if [[ -z "$py_bin" ]]; then
+    log "search_director_refresh status=skip reason=no_python"
+    return 1
+  fi
+  if "$py_bin" "$ROOT_DIR/scripts/optimization/search_director_agent.py" --root "$ROOT_DIR" >/dev/null 2>&1; then
+    log "search_director_refresh status=ok reason=auto_seed"
+    return 0
+  fi
+  log "search_director_refresh status=failed reason=auto_seed"
+  return 1
+}
+
+simple_maybe_trigger_auto_seed() {
+  local reason="${1:-low_backlog}"
+  local planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
+  local repairable_count remote_count now_epoch last_seed seed_next_retry_epoch rc=0
+  local seeder_state_file state_status state_detail state_reason state_run_group state_queue_path state_rows state_next_retry_epoch
+
+  read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
+  [[ "$planned_dispatchable" =~ ^[0-9]+$ ]] || planned_dispatchable=0
+  [[ "$dispatchable_pending" =~ ^[0-9]+$ ]] || dispatchable_pending=0
+  [[ "$no_dispatchable_queues" =~ ^[0-9]+$ ]] || no_dispatchable_queues=0
+  [[ "$executable_pending_raw" =~ ^[0-9]+$ ]] || executable_pending_raw=0
+
+  remote_count="$(remote_active_queue_jobs)"
+  [[ "$remote_count" =~ ^[0-9]+$ ]] || remote_count=0
+  repairable_count="$(simple_repairable_queue_count)"
+  [[ "$repairable_count" =~ ^[0-9]+$ ]] || repairable_count=0
+
+  fullspan_state_metric_set "global_planned_dispatchable" "$planned_dispatchable"
+  fullspan_state_metric_set "global_pending_dispatchable" "$dispatchable_pending"
+  fullspan_state_metric_set "global_pending_exec_raw" "$executable_pending_raw"
+  fullspan_state_metric_set "global_no_dispatchable_queue_count" "$no_dispatchable_queues"
+  fullspan_state_metric_set "simple_repairable_queue_count" "$repairable_count"
+  fullspan_state_metric_set "auto_seed_force_last_remote_count" "$remote_count"
+
+  if (( dispatchable_pending > 0 || remote_count > 0 || repairable_count > 0 )); then
+    fullspan_state_metric_set "auto_seed_blocked" 0
+    fullspan_state_metric_set "auto_seed_block_reason" ""
+    return 1
+  fi
+
+  now_epoch="$(date +%s)"
+  last_seed="$(fullspan_state_metric_get last_seed_trigger_epoch 0)"
+  [[ "$last_seed" =~ ^[0-9]+$ ]] || last_seed=0
+  seed_next_retry_epoch="$(fullspan_state_metric_get seed_next_retry_epoch 0)"
+  [[ "$seed_next_retry_epoch" =~ ^[0-9]+$ ]] || seed_next_retry_epoch=0
+  seed_next_retry_epoch="$(reconcile_seed_next_retry_epoch "$seed_next_retry_epoch" "$now_epoch")"
+  [[ "$seed_next_retry_epoch" =~ ^[0-9]+$ ]] || seed_next_retry_epoch=0
+  if (( now_epoch - last_seed < AUTO_SEED_COOLDOWN_SEC )); then
+    return 1
+  fi
+  if (( seed_next_retry_epoch > now_epoch )); then
+    return 1
+  fi
+
+  refresh_search_director_for_auto_seed || true
+  fullspan_state_metric_inc "seed_attempt_count" 1
+
+  (
+    cd "$ROOT_DIR"
+    PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_queue_seeder.py \
+      --pending-threshold 1 \
+      --num-variants "$AUTO_SEED_NUM_VARIANTS" \
+      --num-variants-floor "$AUTO_SEED_NUM_VARIANTS_FLOOR" \
+      --aggregate-dir artifacts/wfa/aggregate \
+      --run-index artifacts/wfa/aggregate/rollup/run_index.csv
+  ) >>"$LOG_FILE" 2>&1 || rc=$?
+
+  seeder_state_file="${QUEUE_SEEDER_STATE_FILE:-$ROOT_DIR/artifacts/wfa/aggregate/.autonomous/queue_seeder.state.json}"
+  IFS=$'\x1f' read -r state_status state_detail state_reason state_run_group state_queue_path state_rows state_next_retry_epoch <<< "$(python3 - "$seeder_state_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+default = ["missing", "", "", "", "", "0", "0"]
+if not path.exists():
+    print("\x1f".join(default))
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("\x1f".join(["invalid", "", "", "", "", "0", "0"]))
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print("\x1f".join(["invalid", "", "", "", "", "0", "0"]))
+    raise SystemExit(0)
+status = str(payload.get("status") or "").strip() or "missing"
+detail = str(payload.get("status_detail") or "").strip()
+reason = str(payload.get("reason") or "").strip()
+run_group = str(payload.get("run_group") or "").strip()
+queue_path = str(payload.get("queue_path") or "").strip()
+try:
+    rows = int(float(payload.get("queue_rows_generated") or 0))
+except Exception:
+    rows = 0
+try:
+    next_retry_epoch = int(float(payload.get("next_retry_epoch") or 0))
+except Exception:
+    next_retry_epoch = 0
+print("\x1f".join([status, detail, reason, run_group, queue_path, str(max(0, rows)), str(max(0, next_retry_epoch))]))
+PY
+)"
+  [[ "$state_rows" =~ ^[0-9]+$ ]] || state_rows=0
+  [[ "$state_next_retry_epoch" =~ ^[0-9]+$ ]] || state_next_retry_epoch=0
+
+  if (( rc == 0 )); then
+    if [[ "$state_status" == "seeded" && -n "$state_queue_path" ]]; then
+      fullspan_state_metric_set "last_seed_trigger_epoch" "$now_epoch"
+      fullspan_state_metric_set "seed_last_materialized_epoch" "$now_epoch"
+      fullspan_state_metric_set "seed_trigger_reason" "$reason"
+      fullspan_state_metric_inc "seed_trigger_count" 1
+      fullspan_state_metric_inc "seed_materialized_count" 1
+      fullspan_state_metric_set "seed_last_skip_reason" ""
+      fullspan_state_metric_set "seed_next_retry_epoch" "0"
+      fullspan_state_metric_set "auto_seed_force_last_applied" "1"
+      fullspan_state_metric_set "auto_seed_blocked" 0
+      fullspan_state_metric_set "auto_seed_block_reason" ""
+      log "auto_seed_materialized reason=$reason force=1 remote_count=$remote_count run_group=${state_run_group:-none} queue=$state_queue_path rows=$state_rows planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw repairable_queues=$repairable_count threshold=1 num_variants=$AUTO_SEED_NUM_VARIANTS"
+      log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=1 remote_count=$remote_count run_group=${state_run_group:-none} queue=$state_queue_path rows=$state_rows planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw repairable_queues=$repairable_count threshold=1 num_variants=$AUTO_SEED_NUM_VARIANTS" "expand_planned_backlog"
+      return 0
+    fi
+    if [[ "$state_status" == "skipped" ]]; then
+      fullspan_state_metric_inc "seed_skip_count" 1
+      fullspan_state_metric_set "seed_last_skip_reason" "${state_reason:-$state_detail}"
+      fullspan_state_metric_set "seed_next_retry_epoch" "$state_next_retry_epoch"
+      if [[ "$state_detail" == "hard_block" ]]; then
+        fullspan_state_metric_set "auto_seed_blocked" "1"
+        fullspan_state_metric_set "auto_seed_block_reason" "${state_reason:-auto_seed_hard_block}"
+      else
+        fullspan_state_metric_set "auto_seed_blocked" "0"
+        fullspan_state_metric_set "auto_seed_block_reason" ""
+      fi
+      log "auto_seed_skipped reason=$reason force=1 remote_count=$remote_count status_detail=${state_detail:-none} seeder_reason=${state_reason:-none} next_retry_epoch=${state_next_retry_epoch:-0} threshold=1"
+      log_decision_note "global" "AUTO_SEED_SKIPPED" "reason=$reason force=1 remote_count=$remote_count status_detail=${state_detail:-none} seeder_reason=${state_reason:-none} next_retry_epoch=${state_next_retry_epoch:-0} threshold=1" "skip_seed_generation"
+      if (( state_next_retry_epoch > 0 )); then
+        log_decision_note "global" "AUTO_SEED_REARM_SCHEDULED" "reason=$reason next_retry_epoch=$state_next_retry_epoch status_detail=${state_detail:-none} seeder_reason=${state_reason:-none}" "wait_for_next_retry_window"
+      fi
+      return 0
+    fi
+  fi
+
+  fullspan_state_metric_inc "seed_trigger_fail_count" 1
+  log "auto_seed_failed reason=$reason force=1 remote_count=$remote_count rc=$rc seeder_status=${state_status:-unknown} seeder_reason=${state_reason:-none} planned_dispatchable=$planned_dispatchable threshold=1"
+  return 1
+}
+
 maybe_trigger_auto_seed() {
   local reason="${1:-low_backlog}"
+  if simple_control_plane_enabled; then
+    simple_maybe_trigger_auto_seed "$reason"
+    return $?
+  fi
   local now_epoch last_seed planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw
   local candidate_pool_status pool_ready_count candidate_planned_dispatchable candidate_dispatchable_pending candidate_no_dispatchable_queues candidate_executable_pending
   local ready_depth hard_block_active hard_block_reason hard_block_until hard_block_streak
   local yield_block_active yield_block_reason yield_block_until yield_block_streak
   local controlled_recovery_active controlled_recovery_reason controlled_recovery_attempts_remaining controlled_recovery_variants_cap
   local controlled_recovery_override controlled_recovery_exhausted controlled_recovery_zero_coverage_only
+  local zero_coverage_policy_delegate=0
   local controlled_recovery_exhausted_prev=0
   local effective_num_variants effective_num_variants_floor
   local runtime_block_active runtime_block_reason
@@ -6593,9 +7949,13 @@ maybe_trigger_auto_seed() {
   local remote_count=0
   local force_seed=0
   local effective_seed_pending_threshold
+  local seed_next_retry_epoch
+  local seeder_state_file state_status state_detail state_reason state_run_group state_queue_path state_rows state_next_retry_epoch
   now_epoch="$(date +%s)"
   last_seed="$(fullspan_state_metric_get last_seed_trigger_epoch 0)"
   [[ "$last_seed" =~ ^[0-9]+$ ]] || last_seed=0
+  seed_next_retry_epoch="$(fullspan_state_metric_get seed_next_retry_epoch 0)"
+  [[ "$seed_next_retry_epoch" =~ ^[0-9]+$ ]] || seed_next_retry_epoch=0
 
   read -r planned_dispatchable dispatchable_pending no_dispatchable_queues executable_pending_raw <<< "$(global_backlog_snapshot)"
   planned_dispatchable="${planned_dispatchable:-0}"
@@ -6667,6 +8027,8 @@ maybe_trigger_auto_seed() {
   [[ "$yield_block_active" =~ ^[0-9]+$ ]] || yield_block_active=0
   [[ "$yield_block_until" =~ ^[0-9]+$ ]] || yield_block_until=0
   [[ "$yield_block_streak" =~ ^[0-9]+$ ]] || yield_block_streak=0
+  maybe_clear_sync_retryable_infra_fail_closed "auto_seed:$reason" || true
+  maybe_clear_fast_completed_start_process_exit_fail_closed "auto_seed:$reason" || true
   runtime_block_active="$(fullspan_state_metric_get auto_seed_hard_block 0)"
   runtime_block_reason="$(fullspan_state_metric_get auto_seed_block_reason "")"
   [[ "$runtime_block_active" =~ ^[0-9]+$ ]] || runtime_block_active=0
@@ -6809,9 +8171,20 @@ maybe_trigger_auto_seed() {
       controlled_recovery_exhausted_prev="$(fullspan_state_metric_get controlled_recovery_exhausted 0)"
       [[ "$controlled_recovery_exhausted_prev" =~ ^[0-9]+$ ]] || controlled_recovery_exhausted_prev=0
       fullspan_state_metric_set "controlled_recovery_exhausted" "$controlled_recovery_exhausted"
+      if (( controlled_recovery_zero_coverage_only > 0 && dispatchable_pending == 0 )) && [[ "$candidate_pool_status" == "empty_expected" ]]; then
+        zero_coverage_policy_delegate=1
+      fi
     fi
   fi
-  if (( hard_block_active > 0 && controlled_recovery_override == 0 )); then
+  if (( controlled_recovery_exhausted > 0 && controlled_recovery_exhausted_prev == 0 )); then
+    log "CONTROLLED_RECOVERY_EXHAUSTED reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status"
+    if (( zero_coverage_policy_delegate > 0 )); then
+      log_decision_note "global" "CONTROLLED_RECOVERY_EXHAUSTED" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status" "delegate_zero_coverage_rearm_to_seeder"
+    else
+      log_decision_note "global" "CONTROLLED_RECOVERY_EXHAUSTED" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status" "keep_fail_closed_zero_coverage_hard_block"
+    fi
+  fi
+  if (( hard_block_active > 0 && controlled_recovery_override == 0 && zero_coverage_policy_delegate == 0 )); then
     if [[ "$infra_gate_status" == "fail_closed" && -n "$startup_failure_code" ]]; then
       gate_block_status="fail_closed"
     fi
@@ -6821,10 +8194,6 @@ maybe_trigger_auto_seed() {
     if [[ "$prev_blocked" != "1" || "$prev_block_reason" != "${hard_block_reason:-auto_seed_hard_block}" ]]; then
       log "auto_seed_hard_block reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}"
       log_decision_note "global" "AUTO_SEED_HARD_BLOCK" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} until_epoch=${hard_block_until:-0} streak=${hard_block_streak:-0}" "skip_seed_generation"
-    fi
-    if (( controlled_recovery_exhausted > 0 && controlled_recovery_exhausted_prev == 0 )); then
-      log "CONTROLLED_RECOVERY_EXHAUSTED reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status"
-      log_decision_note "global" "CONTROLLED_RECOVERY_EXHAUSTED" "reason=$reason block_reason=${hard_block_reason:-auto_seed_hard_block} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status" "keep_fail_closed_zero_coverage_hard_block"
     fi
     return 0
   fi
@@ -6841,6 +8210,11 @@ maybe_trigger_auto_seed() {
   fullspan_state_metric_set "auto_seed_force_last_remote_count" "$remote_count"
 
   if (( force_seed == 0 )) && (( planned_dispatchable >= AUTO_SEED_PENDING_THRESHOLD )) && (( ready_depth >= READY_BUFFER_REFILL_THRESHOLD )); then
+    return 0
+  fi
+  seed_next_retry_epoch="$(reconcile_seed_next_retry_epoch "$seed_next_retry_epoch" "$now_epoch")"
+  [[ "$seed_next_retry_epoch" =~ ^[0-9]+$ ]] || seed_next_retry_epoch=0
+  if (( seed_next_retry_epoch > now_epoch )); then
     return 0
   fi
   if (( now_epoch - last_seed < AUTO_SEED_COOLDOWN_SEC )); then
@@ -6860,6 +8234,7 @@ maybe_trigger_auto_seed() {
     log "CONTROLLED_RECOVERY_TRIGGER reason=$reason block_reason=${hard_block_reason:-zero_coverage_seed_streak} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants"
     log_decision_note "global" "CONTROLLED_RECOVERY_TRIGGER" "reason=$reason block_reason=${hard_block_reason:-zero_coverage_seed_streak} attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants" "invoke_controlled_recovery_seed_batch"
   fi
+  fullspan_state_metric_inc "seed_attempt_count" 1
   (
     cd "$ROOT_DIR"
     PYTHONPATH=src ./.venv/bin/python scripts/optimization/autonomous_queue_seeder.py \
@@ -6870,23 +8245,86 @@ maybe_trigger_auto_seed() {
       --run-index artifacts/wfa/aggregate/rollup/run_index.csv
   ) >>"$LOG_FILE" 2>&1 || rc=$?
 
+  seeder_state_file="${QUEUE_SEEDER_STATE_FILE:-$ROOT_DIR/artifacts/wfa/aggregate/.autonomous/queue_seeder.state.json}"
+  IFS=$'\x1f' read -r state_status state_detail state_reason state_run_group state_queue_path state_rows state_next_retry_epoch <<< "$(python3 - "$seeder_state_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+default = ["missing", "", "", "", "", "0", "0"]
+if not path.exists():
+    print("\x1f".join(default))
+    raise SystemExit(0)
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("\x1f".join(["invalid", "", "", "", "", "0", "0"]))
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    print("\x1f".join(["invalid", "", "", "", "", "0", "0"]))
+    raise SystemExit(0)
+status = str(payload.get("status") or "").strip() or "missing"
+detail = str(payload.get("status_detail") or "").strip()
+reason = str(payload.get("reason") or "").strip()
+run_group = str(payload.get("run_group") or "").strip()
+queue_path = str(payload.get("queue_path") or "").strip()
+try:
+    rows = int(float(payload.get("queue_rows_generated") or 0))
+except Exception:
+    rows = 0
+try:
+    next_retry_epoch = int(float(payload.get("next_retry_epoch") or 0))
+except Exception:
+    next_retry_epoch = 0
+print("\x1f".join([status, detail, reason, run_group, queue_path, str(max(0, rows)), str(max(0, next_retry_epoch))]))
+PY
+)"
+  [[ "$state_rows" =~ ^[0-9]+$ ]] || state_rows=0
+  [[ "$state_next_retry_epoch" =~ ^[0-9]+$ ]] || state_next_retry_epoch=0
+
   if (( rc == 0 )); then
-    fullspan_state_metric_set "last_seed_trigger_epoch" "$now_epoch"
-    fullspan_state_metric_set "seed_trigger_reason" "$reason"
-    fullspan_state_metric_inc "seed_trigger_count" 1
-    fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
-    fullspan_state_metric_set "auto_seed_blocked" 0
-    fullspan_state_metric_set "auto_seed_block_reason" ""
-    if (( controlled_recovery_override > 0 )); then
-      log "CONTROLLED_RECOVERY_SUCCESS reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants"
-      log_decision_note "global" "CONTROLLED_RECOVERY_SUCCESS" "reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants" "controlled_recovery_seed_batch_created"
+    if [[ "$state_status" == "seeded" && -n "$state_queue_path" ]]; then
+      fullspan_state_metric_set "last_seed_trigger_epoch" "$now_epoch"
+      fullspan_state_metric_set "seed_last_materialized_epoch" "$now_epoch"
+      fullspan_state_metric_set "seed_trigger_reason" "$reason"
+      fullspan_state_metric_inc "seed_trigger_count" 1
+      fullspan_state_metric_inc "seed_materialized_count" 1
+      fullspan_state_metric_set "seed_last_skip_reason" ""
+      fullspan_state_metric_set "seed_next_retry_epoch" "0"
+      fullspan_state_metric_set "auto_seed_force_last_applied" "$force_seed"
+      fullspan_state_metric_set "auto_seed_blocked" 0
+      fullspan_state_metric_set "auto_seed_block_reason" ""
+      if (( controlled_recovery_override > 0 )); then
+        log "CONTROLLED_RECOVERY_SUCCESS reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants"
+        log_decision_note "global" "CONTROLLED_RECOVERY_SUCCESS" "reason=$reason attempts_remaining=$controlled_recovery_attempts_remaining dispatchable_pending=$dispatchable_pending candidate_pool_status=$candidate_pool_status num_variants=$effective_num_variants run_group=${state_run_group:-none} queue=$state_queue_path rows=$state_rows" "controlled_recovery_seed_batch_created"
+      fi
+      log "auto_seed_materialized reason=$reason force=$force_seed remote_count=$remote_count run_group=${state_run_group:-none} queue=$state_queue_path rows=$state_rows planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth no_dispatchable_queues=$no_dispatchable_queues threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants"
+      log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count run_group=${state_run_group:-none} queue=$state_queue_path rows=$state_rows planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants" "expand_planned_backlog"
+      return 0
     fi
-    log "auto_seed_trigger reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth no_dispatchable_queues=$no_dispatchable_queues threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants"
-    log_decision_note "global" "AUTO_SEED_TRIGGER" "reason=$reason force=$force_seed remote_count=$remote_count planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending executable_pending=$executable_pending_raw ready_depth=$ready_depth threshold=$effective_seed_pending_threshold num_variants=$effective_num_variants" "expand_planned_backlog"
-  else
-    fullspan_state_metric_inc "seed_trigger_fail_count" 1
-    log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc planned_dispatchable=$planned_dispatchable threshold=$effective_seed_pending_threshold"
+    if [[ "$state_status" == "skipped" ]]; then
+      fullspan_state_metric_inc "seed_skip_count" 1
+      fullspan_state_metric_set "seed_last_skip_reason" "${state_reason:-$state_detail}"
+      fullspan_state_metric_set "seed_next_retry_epoch" "$state_next_retry_epoch"
+      if [[ "$state_detail" == "hard_block" ]]; then
+        fullspan_state_metric_set "auto_seed_blocked" "1"
+        fullspan_state_metric_set "auto_seed_block_reason" "${state_reason:-auto_seed_hard_block}"
+      else
+        fullspan_state_metric_set "auto_seed_blocked" "0"
+        fullspan_state_metric_set "auto_seed_block_reason" ""
+      fi
+      log "auto_seed_skipped reason=$reason force=$force_seed remote_count=$remote_count status_detail=${state_detail:-none} seeder_reason=${state_reason:-none} next_retry_epoch=${state_next_retry_epoch:-0} planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending threshold=$effective_seed_pending_threshold"
+      log_decision_note "global" "AUTO_SEED_SKIPPED" "reason=$reason force=$force_seed remote_count=$remote_count status_detail=${state_detail:-none} seeder_reason=${state_reason:-none} next_retry_epoch=${state_next_retry_epoch:-0} planned_dispatchable=$planned_dispatchable dispatchable_pending=$dispatchable_pending threshold=$effective_seed_pending_threshold" "skip_seed_generation"
+      if (( state_next_retry_epoch > 0 )); then
+        log_decision_note "global" "AUTO_SEED_REARM_SCHEDULED" "reason=$reason next_retry_epoch=$state_next_retry_epoch status_detail=${state_detail:-none} seeder_reason=${state_reason:-none}" "wait_for_next_retry_window"
+      fi
+      return 0
+    fi
   fi
+  fullspan_state_metric_inc "seed_trigger_fail_count" 1
+  log "auto_seed_failed reason=$reason force=$force_seed remote_count=$remote_count rc=$rc seeder_status=${state_status:-unknown} seeder_reason=${state_reason:-none} planned_dispatchable=$planned_dispatchable threshold=$effective_seed_pending_threshold"
+  return 1
 }
 
 fullspan_rollup_sync() {
@@ -6911,6 +8349,441 @@ fullspan_rollup_sync() {
   (cd "$ROOT_DIR" && ./.venv/bin/python scripts/optimization/build_run_index.py --output-dir artifacts/wfa/aggregate/rollup --no-auto-sync-status) >>"$LOG_FILE" 2>&1 || true
   printf '%s %s %s\n' "$now_epoch" "$queue_rel" "${reason:-milestone}" > "$FULLSPAN_ROLLUP_SYNC_MARKER"
   log "fullspan_rollup_sync queue=$queue_rel reason=${reason:-milestone}"
+}
+
+completion_followup_clear() {
+  completion_followup_queue_rel=""
+  completion_followup_pending=0
+  completion_followup_started_epoch=0
+  fullspan_state_metric_set "completion_followup_pending" "0"
+  fullspan_state_metric_set "completion_followup_queue" ""
+  fullspan_state_metric_set "completion_followup_backlog" "$(completion_followup_queue_depth)"
+}
+
+completion_followup_track() {
+  local queue_rel="$1"
+  if [[ "${completion_followup_pending:-0}" == "1" && -n "${completion_followup_queue_rel:-}" && "${completion_followup_queue_rel:-}" != "$queue_rel" ]]; then
+    maybe_process_completion_followup "track_replace" || true
+  fi
+  completion_followup_queue_rel="$queue_rel"
+  completion_followup_pending=1
+  completion_followup_started_epoch="$(date +%s)"
+  fullspan_state_metric_set "completion_followup_pending" "1"
+  fullspan_state_metric_set "completion_followup_queue" "$queue_rel"
+}
+
+completion_followup_queue_depth() {
+  python3 - "$COMPLETION_FOLLOWUP_QUEUE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+count = 0
+if path.exists():
+    for line in path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if str(obj.get('queue_rel') or '').strip():
+            count += 1
+print(count)
+PY
+}
+
+completion_followup_worker_state_write() {
+  local status="${1:-idle}"
+  local queue_rel="${2:-}"
+  local worker_pid="${3:-0}"
+  local result="${4:-}"
+  local backlog="${5:-0}"
+  local ts
+  local active=0
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  if [[ "$status" == "active" ]]; then
+    active=1
+  fi
+  if ! completion_followup_queue_rel_valid "$queue_rel"; then
+    queue_rel=""
+  fi
+  python3 - "$COMPLETION_FOLLOWUP_WORKER_STATE_FILE" "$status" "$queue_rel" "$worker_pid" "$result" "$backlog" "$ts" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+
+def to_int(value):
+    try:
+        return int(float(value or 0))
+    except Exception:
+        return 0
+
+payload = {
+    "version": 1,
+    "status": str(sys.argv[2] or "idle"),
+    "queue_rel": str(sys.argv[3] or ""),
+    "pid": to_int(sys.argv[4]),
+    "result": str(sys.argv[5] or ""),
+    "backlog": to_int(sys.argv[6]),
+    "ts": str(sys.argv[7] or ""),
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+  fullspan_state_metric_set "completion_followup_backlog" "$backlog"
+  fullspan_state_metric_set "completion_followup_worker_active" "$active"
+  fullspan_state_metric_set "completion_followup_worker_queue" "$queue_rel"
+  fullspan_state_metric_set "completion_followup_worker_last_result" "$result"
+}
+
+completion_followup_queue_rel_valid() {
+  local queue_rel="${1:-}"
+  [[ -n "$queue_rel" ]] || return 1
+  [[ "$queue_rel" != "0" ]] || return 1
+  [[ "$queue_rel" == */run_queue.csv ]]
+}
+
+completion_followup_worker_running() {
+  local worker_pid=""
+  if [[ -f "$COMPLETION_FOLLOWUP_WORKER_PID_FILE" ]]; then
+    worker_pid="$(awk 'NR==1 {print $1}' "$COMPLETION_FOLLOWUP_WORKER_PID_FILE" 2>/dev/null || true)"
+  fi
+  if [[ "$worker_pid" =~ ^[0-9]+$ ]] && kill -0 "$worker_pid" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"
+  return 1
+}
+
+completion_followup_recover_stale_worker() {
+  local status queue_rel worker_pid result backlog
+  status="$(python3 - "$COMPLETION_FOLLOWUP_WORKER_STATE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = {}
+if path.exists():
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        payload = {}
+print(
+    "{}|{}|{}|{}|{}".format(
+        str(payload.get("status") or ""),
+        str(payload.get("queue_rel") or ""),
+        str(payload.get("pid") or "0"),
+        str(payload.get("result") or ""),
+        str(payload.get("backlog") or "0"),
+    )
+)
+PY
+)"
+  IFS='|' read -r status queue_rel worker_pid result backlog <<< "$status"
+  [[ "$worker_pid" =~ ^[0-9]+$ ]] || worker_pid=0
+  [[ "$backlog" =~ ^[0-9]+$ ]] || backlog=0
+  if [[ -n "$queue_rel" ]] && ! completion_followup_queue_rel_valid "$queue_rel"; then
+    if (( worker_pid > 0 )); then
+      kill "$worker_pid" 2>/dev/null || true
+    fi
+    rm -f "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"
+    backlog="$(completion_followup_queue_depth)"
+    completion_followup_worker_state_write "idle" "" "0" "invalid_queue_rel_cleared" "$backlog"
+    log "completion_followup_worker_skip queue=$queue_rel reason=invalid_queue_rel"
+    return 0
+  fi
+  if [[ "$status" != "active" ]]; then
+    return 1
+  fi
+  if (( worker_pid > 0 )) && kill -0 "$worker_pid" 2>/dev/null; then
+    return 1
+  fi
+  if completion_followup_queue_rel_valid "$queue_rel"; then
+    completion_followup_queue_enqueue "$queue_rel" "stale_worker_requeue" >/dev/null 2>&1 || true
+    log "completion_followup_worker_requeue queue=$queue_rel reason=stale_worker"
+  fi
+  backlog="$(completion_followup_queue_depth)"
+  completion_followup_worker_state_write "idle" "" "0" "stale_recovered" "$backlog"
+  return 0
+}
+
+completion_followup_queue_enqueue() {
+  local queue_rel="$1"
+  local trigger_reason="${2:-loop}"
+  local now_epoch
+  now_epoch="$(date +%s)"
+  (
+    flock -x 8
+    python3 - "$COMPLETION_FOLLOWUP_QUEUE_FILE" "$COMPLETION_FOLLOWUP_WORKER_STATE_FILE" "$queue_rel" "$trigger_reason" "$now_epoch" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+worker_state_path = Path(sys.argv[2])
+queue_rel = str(sys.argv[3] or "").strip()
+trigger_reason = str(sys.argv[4] or "").strip()
+enqueued_epoch = int(float(sys.argv[5] or 0))
+
+entries = []
+if queue_path.exists():
+    for raw in queue_path.read_text(encoding='utf-8').splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        if str(obj.get('queue_rel') or '').strip():
+            entries.append(obj)
+
+active_queue = ""
+allow_active_requeue = trigger_reason.startswith("worker_requeue_")
+if worker_state_path.exists():
+    try:
+        worker_state = json.loads(worker_state_path.read_text(encoding='utf-8'))
+    except Exception:
+        worker_state = {}
+    if isinstance(worker_state, dict) and str(worker_state.get('status') or '').strip() == 'active':
+        candidate = str(worker_state.get('queue_rel') or '').strip()
+        if candidate.endswith('/run_queue.csv') and candidate != '0':
+            active_queue = candidate
+
+enqueued = 0
+if queue_rel.endswith('/run_queue.csv') and queue_rel != '0' and (allow_active_requeue or active_queue != queue_rel) and not any(str(item.get('queue_rel') or '').strip() == queue_rel for item in entries):
+    entries.append(
+        {
+            'queue_rel': queue_rel,
+            'trigger_reason': trigger_reason,
+            'enqueued_epoch': enqueued_epoch,
+        }
+    )
+    enqueued = 1
+
+queue_path.parent.mkdir(parents=True, exist_ok=True)
+queue_path.write_text(
+    ''.join(json.dumps(item, ensure_ascii=False, sort_keys=True) + '\n' for item in entries),
+    encoding='utf-8',
+)
+print(f"{enqueued}\t{len(entries)}")
+PY
+  ) 8>"$COMPLETION_FOLLOWUP_QUEUE_LOCK_FILE"
+}
+
+completion_followup_queue_dequeue() {
+  (
+    flock -x 8
+    python3 - "$COMPLETION_FOLLOWUP_QUEUE_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+entries = []
+if queue_path.exists():
+    for raw in queue_path.read_text(encoding='utf-8').splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        if str(obj.get('queue_rel') or '').strip():
+            entries.append(obj)
+
+if entries:
+    current = entries.pop(0)
+    queue_rel = str(current.get('queue_rel') or '').strip()
+else:
+    queue_rel = ''
+
+if not queue_rel.endswith('/run_queue.csv') or queue_rel == '0':
+    queue_rel = ''
+
+queue_path.parent.mkdir(parents=True, exist_ok=True)
+queue_path.write_text(
+    ''.join(json.dumps(item, ensure_ascii=False, sort_keys=True) + '\n' for item in entries),
+    encoding='utf-8',
+)
+print(f"{queue_rel}|{len(entries)}")
+PY
+  ) 8>"$COMPLETION_FOLLOWUP_QUEUE_LOCK_FILE"
+}
+
+completion_followup_enqueue_ready_queue() {
+  local queue_rel="$1"
+  local trigger_reason="${2:-loop}"
+  local enqueued=0
+  local backlog=0
+  if [[ -z "$queue_rel" ]]; then
+    return 1
+  fi
+  IFS=$'\t' read -r enqueued backlog <<< "$(completion_followup_queue_enqueue "$queue_rel" "$trigger_reason")"
+  [[ "$enqueued" =~ ^[0-9]+$ ]] || enqueued=0
+  [[ "$backlog" =~ ^[0-9]+$ ]] || backlog=0
+  if (( enqueued > 0 )); then
+    log "completion_followup_enqueued queue=$queue_rel trigger=$trigger_reason backlog=$backlog"
+  else
+    log "completion_followup_enqueue_skip queue=$queue_rel trigger=$trigger_reason backlog=$backlog"
+  fi
+  fullspan_state_metric_set "completion_followup_backlog" "$backlog"
+  maybe_kick_completion_followup_worker "$trigger_reason" || true
+  return 0
+}
+
+completion_followup_worker_main() {
+  local trigger_reason="${1:-loop}"
+  local worker_pid="$BASHPID"
+  local backlog=0
+  local queue_rel=""
+  local queue_abs=""
+  local pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed
+  local safe_queue_name=""
+  local worker_result="idle"
+  local winner_queue_rel=""
+  local winner_top_run_group=""
+  local winner_top_variant=""
+
+  (
+    flock -n 8 || exit 0
+    printf '%s\n' "$worker_pid" > "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"
+    backlog="$(completion_followup_queue_depth)"
+    completion_followup_worker_state_write "active" "" "$worker_pid" "started:$trigger_reason" "$backlog"
+    trap 'backlog="$(completion_followup_queue_depth)"; rm -f "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"; completion_followup_worker_state_write "idle" "" "0" "$worker_result" "$backlog"' EXIT
+    while true; do
+      IFS='|' read -r queue_rel backlog <<< "$(completion_followup_queue_dequeue)"
+      [[ "$backlog" =~ ^[0-9]+$ ]] || backlog=0
+      if [[ -z "${queue_rel:-}" ]]; then
+        break
+      fi
+      if ! completion_followup_queue_rel_valid "$queue_rel"; then
+        worker_result="invalid_queue_rel"
+        log "completion_followup_worker_skip queue=$queue_rel reason=invalid_queue_rel"
+        completion_followup_worker_state_write "active" "" "$worker_pid" "$worker_result" "$backlog"
+        continue
+      fi
+
+      completion_followup_worker_state_write "active" "$queue_rel" "$worker_pid" "processing" "$backlog"
+      queue_abs="$ROOT_DIR/$queue_rel"
+      if [[ ! -f "$queue_abs" ]]; then
+        worker_result="queue_missing"
+        log "completion_followup_worker_skip queue=$queue_rel reason=queue_missing"
+        completion_followup_worker_state_write "active" "$queue_rel" "$worker_pid" "$worker_result" "$backlog"
+        continue
+      fi
+
+      sync_queue_status "$queue_rel"
+      read -r pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+      if (( pending > 0 )); then
+        worker_result="requeue_pending"
+        completion_followup_enqueue_ready_queue "$queue_rel" "worker_requeue_pending" >/dev/null 2>&1 || true
+        log "completion_followup_worker_requeue queue=$queue_rel pending=$pending completed=$completed completed_with_metrics=$completed_with_metrics"
+        completion_followup_worker_state_write "active" "$queue_rel" "$worker_pid" "$worker_result" "$backlog"
+        break
+      fi
+
+      if (( completed > 0 )); then
+        if (( completed_with_metrics == 0 )); then
+          fullspan_rollup_sync "$queue_rel" "completion_followup_worker"
+        fi
+        safe_queue_name="$(normalize_fullspan_queue_name "$queue_abs" "run_queue.csv")"
+        run_fullspan_cycle "$queue_rel" "$queue_abs" "$safe_queue_name"
+        worker_result="completed"
+        log "completion_followup_worker_done queue=$queue_rel completed=$completed completed_with_metrics=$completed_with_metrics"
+        IFS=$'\t' read -r winner_queue_rel winner_top_run_group winner_top_variant <<< "$(winner_hold_target)"
+        if [[ -n "${winner_queue_rel:-}" ]]; then
+          backlog="$(completion_followup_queue_depth)"
+          completion_followup_worker_state_write "active" "$queue_rel" "$worker_pid" "winner_hold" "$backlog"
+          log "completion_followup_worker_stop reason=winner_hold queue=$winner_queue_rel"
+          break
+        fi
+      else
+        worker_result="no_completed"
+        log "completion_followup_worker_skip queue=$queue_rel reason=no_completed"
+      fi
+      backlog="$(completion_followup_queue_depth)"
+      completion_followup_worker_state_write "active" "$queue_rel" "$worker_pid" "$worker_result" "$backlog"
+    done
+    trap - EXIT
+    backlog="$(completion_followup_queue_depth)"
+    rm -f "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"
+    completion_followup_worker_state_write "idle" "" "0" "$worker_result" "$backlog"
+  ) 8>"$COMPLETION_FOLLOWUP_WORKER_LOCK_FILE"
+}
+
+maybe_kick_completion_followup_worker() {
+  local trigger_reason="${1:-loop}"
+  local backlog=0
+  local worker_pid=0
+
+  completion_followup_recover_stale_worker || true
+  backlog="$(completion_followup_queue_depth)"
+  [[ "$backlog" =~ ^[0-9]+$ ]] || backlog=0
+  fullspan_state_metric_set "completion_followup_backlog" "$backlog"
+  if (( backlog <= 0 )); then
+    if ! completion_followup_worker_running; then
+      completion_followup_worker_state_write "idle" "" "0" "idle" "0"
+    fi
+    return 1
+  fi
+  if completion_followup_worker_running; then
+    return 0
+  fi
+
+  (
+    exec 9>&-
+    completion_followup_worker_main "$trigger_reason"
+  ) >>"$LOG_FILE" 2>&1 &
+  worker_pid=$!
+  printf '%s\n' "$worker_pid" > "$COMPLETION_FOLLOWUP_WORKER_PID_FILE"
+  completion_followup_worker_state_write "active" "" "$worker_pid" "spawned:$trigger_reason" "$backlog"
+  log "completion_followup_worker_started trigger=$trigger_reason pid=$worker_pid backlog=$backlog"
+  return 0
+}
+
+maybe_process_completion_followup() {
+  local trigger_reason="${1:-loop}"
+  local queue_rel queue_abs
+  local pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed
+
+  if [[ "${completion_followup_pending:-0}" != "1" || -z "${completion_followup_queue_rel:-}" ]]; then
+    return 1
+  fi
+
+  queue_rel="$completion_followup_queue_rel"
+  queue_abs="$ROOT_DIR/$queue_rel"
+  if [[ ! -f "$queue_abs" ]]; then
+    log "completion_followup_clear queue=$queue_rel reason=queue_missing trigger=$trigger_reason"
+    completion_followup_clear
+    return 1
+  fi
+
+  sync_queue_status "$queue_rel"
+  read -r pending dispatchable_pending executable_pending completed_with_metrics planned running stalled failed completed <<< "$(queue_hygiene_snapshot "$queue_rel")"
+
+  if (( pending > 0 )); then
+    log "completion_followup_wait queue=$queue_rel trigger=$trigger_reason pending=$pending completed=$completed completed_with_metrics=$completed_with_metrics"
+    return 0
+  fi
+
+  if (( completed > 0 )); then
+    completion_followup_enqueue_ready_queue "$queue_rel" "$trigger_reason"
+    log "completion_followup_queued queue=$queue_rel trigger=$trigger_reason completed=$completed completed_with_metrics=$completed_with_metrics"
+    completion_followup_clear
+    return 0
+  fi
+
+  log "completion_followup_clear queue=$queue_rel reason=no_completed trigger=$trigger_reason pending=$pending"
+  completion_followup_clear
+  return 1
 }
 
 vps_is_reachable() {
@@ -7186,7 +9059,7 @@ ensure_vps_ready() {
   vps_runtime_commit
   if (( skip_remote_probe == 0 )); then
     log "vps_recover_attempt reason=$reason attempt=$attempt_no timeout_sec=$timeout_sec state_hint=${state_hint:-unknown}"
-    if timeout "$timeout_sec" env SKIP_POWER=0 STOP_AFTER=0 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 "$ROOT_DIR/scripts/remote/run_server_job.sh" echo ping >>"$LOG_FILE" 2>&1 && vps_is_reachable; then
+    if timeout "$timeout_sec" env SKIP_POWER=0 STOP_AFTER=0 UPDATE_CODE=0 SYNC_BACK=0 SYNC_UP=0 SSH_READY_TIMEOUT_SEC="$timeout_sec" SSH_ACTIVE_FORCE_CYCLE_AFTER_SEC="$VPS_ACTIVE_SSH_FORCE_CYCLE_AFTER_SEC" SSH_ACTIVE_FORCE_CYCLE_MAX_ATTEMPTS="$VPS_ACTIVE_SSH_FORCE_CYCLE_MAX_ATTEMPTS" SSH_FORCE_CYCLE_SHUTDOWN_WAIT_SEC="$VPS_FORCE_CYCLE_SHUTDOWN_WAIT_SEC" "$ROOT_DIR/scripts/remote/run_server_job.sh" echo ping >>"$LOG_FILE" 2>&1 && vps_is_reachable; then
       fullspan_state_metric_inc "vps_recover_success_count" 1
       vps_runtime_fail_streak=0
       vps_runtime_next_retry_epoch=0
@@ -7459,7 +9332,7 @@ PY
       --max-retries 2 \
       --watchdog true \
       --wait-completion false \
-      --postprocess true \
+      --postprocess false \
       --poweroff "$queue_poweroff" \
       >>"$qlog" 2>&1
   ) &
@@ -7560,6 +9433,7 @@ start_queue() {
   local cause="$2"
   local target="$ROOT_DIR/$queue_rel"
   local coverage_verified coverage_reason coverage_policy_path
+  START_QUEUE_SKIP_REASON=""
 
   if [[ ! -f "$target" ]]; then
     log "candidate_missing queue=$queue_rel"
@@ -7617,11 +9491,13 @@ start_queue() {
   total=$((planned + running + stalled + failed + completed))
 
 	  if (( pending <= 0 )); then
+    START_QUEUE_SKIP_REASON="queue_hygiene_empty_skip"
     log "queue_hygiene_empty_skip queue=$queue_rel pending=$pending completed_metrics=$completed_with_metrics"
     return 2
   fi
 
   if (( pending > 0 && dispatchable_pending == 0 && completed_with_metrics > 0 )); then
+    START_QUEUE_SKIP_REASON="queue_hygiene_noop_skip"
     fullspan_state_metric_inc "no_op_queue_skips" 1
     fullspan_state_metric_set "last_no_op_queue_skip_epoch" "$(date +%s)"
     fullspan_state_metric_set "seed_trigger_reason" "queue_hygiene_noop"
@@ -7638,9 +9514,36 @@ start_queue() {
   stamp="$(date -u +%Y%m%d_%H%M%S)"
   local qlog="$STATE_DIR/run_${stamp}_$(basename "$(dirname "$queue_rel")").log"
   local softpass_reason=""
+  local sync_code_policy="runtime-first"
+  local run_statuses="auto"
+  local handoff_action="dispatch"
+  local handoff_fail_count="0"
+  local handoff_sync_escalated="0"
+  local handoff_last_code=""
+  local handoff_last_reason=""
 
-  log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries"
+  if simple_control_plane_enabled && (( stalled > 0 && running == 0 && planned == 0 )); then
+    run_statuses="stalled"
+  fi
+
+  IFS=$'\t' read -r handoff_action sync_code_policy handoff_fail_count handoff_sync_escalated handoff_last_code handoff_last_reason <<< "$(handoff_retry_preflight_action "$queue_rel")"
+  if [[ "$handoff_action" == "quarantine" ]]; then
+    START_QUEUE_SKIP_REASON="handoff_retry_quarantine"
+    LAST_REJECTED_QUEUE="$queue_rel"
+    handoff_retry_mark_quarantine "$queue_rel" "${handoff_last_code:-REMOTE_HANDOFF_FAILED}" "${handoff_last_reason:-handoff_retry_cap}"
+    ready_buffer_release_claim "$queue_rel"
+    log_state "idle now=none reason=handoff_retry_quarantine queue=$queue_rel startup_failure_code=${handoff_last_code:-REMOTE_HANDOFF_FAILED}"
+    refresh_control_plane_guard_state || true
+    return 2
+  fi
+  if [[ "$sync_code_policy" == "strict" ]]; then
+    log "handoff_retry_escalation queue=$queue_rel fail_count=$handoff_fail_count last_failure_code=${handoff_last_code:-unknown} sync_policy=$sync_code_policy"
+    log_decision_note "$queue_rel" "HANDOFF_RETRY_ESCALATION" "fail_count=$handoff_fail_count last_failure_code=${handoff_last_code:-unknown} sync_policy=$sync_code_policy" "retry_with_strict_sync"
+  fi
+
+  log "start queue_rel=$queue_rel cause=$cause parallel=$parallel max_retries=$max_retries sync_policy=$sync_code_policy statuses=$run_statuses"
   preflight_started_epoch="$(date +%s)"
+  record_dispatch_attempt "$queue_rel" "preflight" "$preflight_started_epoch"
   if ! ensure_vps_ready "start_queue:$queue_rel"; then
     preflight_finished_epoch="$(date +%s)"
     preflight_wait_sec=$((preflight_finished_epoch - preflight_started_epoch))
@@ -7668,6 +9571,7 @@ start_queue() {
     fi
     fullspan_state_metric_inc "vps_start_softpass_count" 1
     set_infra_gate_state "starting" "${softpass_reason:-startup_softpass}" "" "0" ""
+    update_dispatch_attempt_result "$queue_rel" "softpass" "$(date +%s)"
     log "start_softpass queue=$queue_rel reason=$softpass_reason startup_failure_code=$startup_code preflight_wait_sec=$preflight_wait_sec"
     log_decision_note "$queue_rel" "START_VPS_SOFTPASS" "reason=$softpass_reason startup_failure_code=$startup_code preflight_wait_sec=$preflight_wait_sec" "continue_dispatch"
   else
@@ -7683,18 +9587,20 @@ start_queue() {
       --queue "$queue_rel" \
       --compute-host "$SERVER_IP" \
       --ssh-user "$SERVER_USER" \
+      --sync-code-policy "$sync_code_policy" \
       --parallel "$parallel" \
-      --statuses auto \
+      --statuses "$run_statuses" \
       --max-retries "$max_retries" \
       --watchdog true \
       --wait-completion false \
-      --postprocess true \
+      --postprocess false \
       --poweroff "$queue_poweroff" \
       >>"$qlog" 2>&1
   ) &
   batch_session_note_dispatch
   local rc=$?
   if [[ "$rc" -ne 0 ]]; then
+    update_dispatch_attempt_result "$queue_rel" "failed" "$(date +%s)"
     record_infra_fail_closed "$queue_rel" "START_PROCESS_SPAWN_FAILED" "failed_to_start" "$qlog" "orphan_and_continue_search"
     log "failed_to_start queue=$queue_rel rc=$rc log=$qlog"
     return "$rc"
@@ -7715,6 +9621,7 @@ start_queue() {
   fi
   IFS=$'\t' read -r startup_code startup_reason <<< "$startup_payload"
   if (( startup_rc == 0 )); then
+    update_dispatch_attempt_result "$queue_rel" "started" "$(date +%s)"
     set_infra_gate_state "ok" "" "" "0" ""
     fullspan_state_metric_set "auto_seed_hard_block" 0
     fullspan_state_metric_set "auto_seed_block_reason" ""
@@ -7724,10 +9631,42 @@ start_queue() {
       "startup_confirmed_epoch" "$(date +%s)" \
       "startup_failure_code" "" \
       "startup_failure_reason" ""
+    handoff_retry_clear_queue "$queue_rel" >/dev/null 2>&1 || true
     consume_controlled_recovery_attempt "$queue_rel" || true
+    completion_followup_track "$queue_rel"
     log_state "running queue=$queue_rel reason=$cause started_at=$stamp log=$qlog parallel=$parallel max_retries=$max_retries selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict pre_rank_score=$pre_rank_score promotion_potential=$promotion_potential gate_status=$gate_status effective_planned_count=${effective_planned_count:-0} stalled_share=${stalled_share:-0} queue_yield_score=${queue_yield_score:-0} recent_yield=${recent_yield:-0} startup_code=${startup_code:-REMOTE_RUN_STARTED}"
     log "started queue=$queue_rel log=$qlog selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict startup_code=${startup_code:-REMOTE_RUN_STARTED}"
   else
+    if [[ "${startup_code:-}" == "REMOTE_HANDOFF_FAILED" ]]; then
+      local startup_failed_epoch
+      local retry_fail_count retry_sync_escalated retry_cooldown_until
+      startup_failed_epoch="$(date +%s)"
+      LAST_REJECTED_QUEUE="$queue_rel"
+      update_dispatch_attempt_result "$queue_rel" "failed" "$startup_failed_epoch"
+      IFS=$'\t' read -r retry_fail_count retry_sync_escalated retry_cooldown_until <<< "$(handoff_retry_record_failure "$queue_rel" "${startup_code:-REMOTE_HANDOFF_FAILED}" "${startup_reason:-startup_fail_closed}" "$sync_code_policy")"
+      fullspan_state_metric_set "vps_infra_fail_closed" 0
+      fullspan_state_metric_set "auto_seed_hard_block" 0
+      fullspan_state_metric_set "auto_seed_block_reason" ""
+      set_infra_gate_state "ok" "" "" "0" ""
+      fullspan_state_queue_set "$queue_rel" \
+        "startup_state" "failed" \
+        "startup_log" "$qlog" \
+        "startup_failure_code" "${startup_code:-START_CONFIRM_FAILED}" \
+        "startup_failure_reason" "${startup_reason:-startup_fail_closed}" \
+        "startup_failed_epoch" "$startup_failed_epoch" \
+        "dispatch_attempt_epoch" "$startup_failed_epoch" \
+        "dispatch_attempt_result" "remote_handoff_failed" \
+        "dispatch_attempt_session_epoch" "0"
+      log_decision_note "$queue_rel" "QUEUE_START_FAILED" "reason=${startup_reason:-startup_fail_closed} startup_failure_code=${startup_code:-START_CONFIRM_FAILED} fail_count=${retry_fail_count:-1} sync_policy=$sync_code_policy log=$qlog" "orphan_and_continue_search"
+      log "queue_start_failed queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} startup_reason=${startup_reason:-startup_fail_closed} fail_count=${retry_fail_count:-1} sync_policy=$sync_code_policy log=$qlog"
+      ready_buffer_release_claim "$queue_rel"
+      log_state "idle now=none reason=queue_start_softfail queue=$queue_rel startup_failure_code=${startup_code:-START_CONFIRM_FAILED} log=$qlog"
+      refresh_control_plane_guard_state || true
+      return 1
+    fi
+    if handoff_retry_failure_is_tracked "${startup_code:-}"; then
+      handoff_retry_record_failure "$queue_rel" "${startup_code:-START_CONFIRM_FAILED}" "${startup_reason:-startup_fail_closed}" "$sync_code_policy" >/dev/null 2>&1 || true
+    fi
     record_infra_fail_closed "$queue_rel" "${startup_code:-START_CONFIRM_FAILED}" "${startup_reason:-startup_fail_closed}" "$qlog" "orphan_and_continue_search"
     return 1
   fi
@@ -7738,6 +9677,9 @@ start_queue() {
 }
 
 maybe_dispatch_overlap_from_buffer() {
+  if simple_control_plane_enabled; then
+    return 1
+  fi
   local active_queue_rel="$1"
   local active_pending="$2"
   local active_running="$3"
@@ -7780,7 +9722,7 @@ maybe_dispatch_overlap_from_buffer() {
     return 1
   fi
 
-  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     ready_buffer_release_claim "$next_queue"
     return 1
@@ -7821,6 +9763,9 @@ prev_running=0
 prev_stalled=0
 prev_failed=0
 prev_pending=0
+completion_followup_queue_rel=""
+completion_followup_pending=0
+completion_followup_started_epoch=0
 busy_repeat_count=0
 busy_backoff_seconds=90
 no_progress_breaker_streak_count="$(fullspan_state_metric_get no_progress_breaker_streak 0)"
@@ -7841,6 +9786,13 @@ fullspan_state_metric_set "last_completed_with_metrics_count" "$global_completed
 fullspan_state_metric_set "last_completed_with_metrics_progress_epoch" "$no_progress_breaker_last_progress_epoch"
 fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
 fullspan_state_metric_set "completed_with_metrics_global" "$global_completed_metrics_last"
+fullspan_state_metric_set "completion_followup_pending" "0"
+fullspan_state_metric_set "completion_followup_queue" ""
+fullspan_state_metric_set "completion_followup_backlog" "$(completion_followup_queue_depth)"
+fullspan_state_metric_set "completion_followup_worker_active" "0"
+fullspan_state_metric_set "completion_followup_worker_queue" ""
+fullspan_state_metric_set "completion_followup_worker_last_result" ""
+completion_followup_worker_state_write "idle" "" "0" "idle" "$(completion_followup_queue_depth)"
 
 if ! find "$QUEUE_ROOT" -name run_queue.csv >/dev/null 2>&1; then
   log_state "No aggregate queues found: $QUEUE_ROOT"
@@ -7851,13 +9803,56 @@ while true; do
   if ! driver_runtime_guard; then
     exit 75
   fi
-  maybe_trigger_auto_seed "low_planned_backlog" || true
-  fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
+  if simple_control_plane_enabled; then
+    fullspan_state_metric_set "ready_buffer_depth" "0"
+  else
+    fullspan_state_metric_set "ready_buffer_depth" "$(ready_buffer_depth)"
+  fi
   fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
   refresh_remote_runtime_metrics
+  refresh_control_plane_guard_state || true
+  maybe_clear_sync_retryable_infra_fail_closed "loop_head" || true
+  maybe_clear_fast_completed_start_process_exit_fail_closed "loop_head" || true
+  cleared_retryable_handoff_blocks="$(clear_retryable_remote_handoff_queue_blocks)"
+  [[ "$cleared_retryable_handoff_blocks" =~ ^[0-9]+$ ]] || cleared_retryable_handoff_blocks=0
+  if (( cleared_retryable_handoff_blocks > 0 )); then
+    log "retryable_remote_handoff_blocks_cleared count=$cleared_retryable_handoff_blocks"
+    log_decision_note "global" "RETRYABLE_REMOTE_HANDOFF_BLOCKS_CLEARED" "count=$cleared_retryable_handoff_blocks" "resume_dispatch_after_queue_state_cleanup"
+    refresh_control_plane_guard_state || true
+  fi
+  cleared_handoff_retry_state="$(handoff_retry_cleanup_state)"
+  [[ "$cleared_handoff_retry_state" =~ ^[0-9]+$ ]] || cleared_handoff_retry_state=0
+  if (( cleared_handoff_retry_state > 0 )); then
+    log "handoff_retry_state_cleared count=$cleared_handoff_retry_state"
+  fi
   refresh_runtime_observability_metrics
+  maybe_process_completion_followup "loop_head" || true
+  maybe_kick_completion_followup_worker "loop_head" || true
+  IFS=$'\t' read -r winner_queue_rel winner_top_run_group winner_top_variant <<< "$(winner_hold_target)"
+  if [[ -n "${winner_queue_rel:-}" ]]; then
+    previous_winner_hold_queue="$(fullspan_state_metric_get winner_hold_queue "")"
+    fullspan_state_metric_set "winner_hold_active" "1"
+    fullspan_state_metric_set "winner_hold_queue" "$winner_queue_rel"
+    fullspan_state_metric_set "winner_hold_top_run_group" "$winner_top_run_group"
+    fullspan_state_metric_set "winner_hold_top_variant" "$winner_top_variant"
+    if [[ "$previous_winner_hold_queue" != "$winner_queue_rel" ]]; then
+      log "winner_hold queue=$winner_queue_rel top_run_group=$winner_top_run_group top_variant=$winner_top_variant"
+      log_decision_note "$winner_queue_rel" "WINNER_HOLD" "top_run_group=$winner_top_run_group top_variant=$winner_top_variant" "stop_new_dispatch_and_hold_winner"
+    fi
+    batch_session_maybe_stop "winner_hold"
+    log_state "winner_hold queue=$winner_queue_rel top_run_group=$winner_top_run_group top_variant=$winner_top_variant"
+    sleep "$WINNER_HOLD_POLL_SEC"
+    continue
+  fi
+  fullspan_state_metric_set "winner_hold_active" "0"
+  fullspan_state_metric_set "winner_hold_queue" ""
+  fullspan_state_metric_set "winner_hold_top_run_group" ""
+  fullspan_state_metric_set "winner_hold_top_variant" ""
   dispatch_replay_fastlane_hooks || true
-  maybe_prepare_hot_standby || true
+  if ! simple_control_plane_enabled; then
+    maybe_prepare_hot_standby || true
+    maybe_trigger_auto_seed "low_planned_backlog" || true
+  fi
 
   current_epoch="$(date +%s)"
   global_completed_metrics_now="$(global_completed_metrics_count)"
@@ -7894,15 +9889,19 @@ while true; do
   fi
 
   find_candidate 1
-  ready_buffer_refresh "" || true
-
-  if ! candidate_file_has_rows; then
-    cleanup_orphans
-    find_candidate 0
+  if ! simple_control_plane_enabled; then
     ready_buffer_refresh "" || true
   fi
 
   if ! candidate_file_has_rows; then
+    cleanup_orphans
+    find_candidate 0
+    if ! simple_control_plane_enabled; then
+      ready_buffer_refresh "" || true
+    fi
+  fi
+
+  if ! candidate_file_has_rows && ! simple_control_plane_enabled; then
     if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
       log "ready_buffer_hit reason=no_candidate_file"
       log_decision_note "global" "READY_BUFFER_HIT" "reason=no_candidate_file" "reuse_ready_buffer_candidate"
@@ -7913,9 +9912,11 @@ while true; do
 	    if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
 	      log "candidate_fallback_selected reason=no_candidate_file"
 		    else
-		      log_state "idle now=none completed=all"
+		  log_state "idle now=none completed=all"
 		      log "candidate_empty"
-		      if handle_empty_candidate_state "candidate_empty"; then
+			      maybe_process_completion_followup "candidate_empty" || true
+			      maybe_kick_completion_followup_worker "candidate_empty" || true
+		      if handle_empty_candidate_or_exit "candidate_empty"; then
 	          continue
 	        fi
 		      maybe_trigger_auto_seed "candidate_empty" || true
@@ -7931,31 +9932,57 @@ while true; do
     fi
   fi
 
-  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+  IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
 
   if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
     if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
       log "candidate_parse_fallback reason=parse_empty"
-      IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+      IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
     fi
   fi
 
 	  if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
-      ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
-      if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
-        log "ready_buffer_hit reason=candidate_parse_empty"
-        log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty" "reuse_ready_buffer_candidate"
-        IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
-	      else
-		    log_state "idle now=none completed=all"
-		    log "candidate_parse_empty"
-		    if handle_empty_candidate_state "candidate_parse_empty"; then
-	        continue
-	      fi
-		    maybe_trigger_auto_seed "candidate_parse_empty" || true
-		    if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-		      adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-	    fi
+      if ! simple_control_plane_enabled; then
+        ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+        if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+          log "ready_buffer_hit reason=candidate_parse_empty"
+          log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty" "reuse_ready_buffer_candidate"
+          IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
+        else
+          log_state "idle now=none completed=all"
+          log "candidate_parse_empty"
+	          maybe_process_completion_followup "candidate_parse_empty" || true
+	          maybe_kick_completion_followup_worker "candidate_parse_empty" || true
+          if handle_empty_candidate_or_exit "candidate_parse_empty"; then
+            continue
+          fi
+          if ! simple_control_plane_enabled; then
+            maybe_trigger_auto_seed "candidate_parse_empty" || true
+          fi
+          if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+            adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+          fi
+          if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+            adaptive_idle_sleep=300
+          fi
+          batch_session_maybe_stop "candidate_parse_empty"
+          sleep "$adaptive_idle_sleep"
+          continue
+        fi
+      else
+        log_state "idle now=none completed=all"
+        log "candidate_parse_empty"
+	        maybe_process_completion_followup "candidate_parse_empty" || true
+	        maybe_kick_completion_followup_worker "candidate_parse_empty" || true
+        if handle_empty_candidate_or_exit "candidate_parse_empty"; then
+          continue
+        fi
+        if ! simple_control_plane_enabled; then
+          maybe_trigger_auto_seed "candidate_parse_empty" || true
+        fi
+        if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+          adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+        fi
         if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
           adaptive_idle_sleep=300
         fi
@@ -8009,18 +10036,20 @@ PY
     fi
   fi
 
-	  if (( pending <= 0 )); then
-	    reconcile_safe_queue_name="$(basename "$queue")"
-	    if (( pending_before_reconcile > 0 && completed > 0 )); then
-	      run_fullspan_cycle "$queue_rel" "$queue" "$reconcile_safe_queue_name"
-	      cycle_ran_this_loop=1
-	      cycle_ran_queue_rel="$queue_rel"
-	    fi
+		  if (( pending <= 0 )); then
+		    if (( pending_before_reconcile > 0 && completed > 0 )); then
+		      completion_followup_enqueue_ready_queue "$queue_rel" "candidate_reconcile"
+		      cycle_ran_this_loop=1
+		      cycle_ran_queue_rel="$queue_rel"
+		    fi
+    handoff_retry_clear_queue "$queue_rel" >/dev/null 2>&1 || true
     : > "$CANDIDATE_FILE"
-    ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
-    if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
-      log "ready_buffer_hit reason=reconcile_pending_zero"
-      log_decision_note "global" "READY_BUFFER_HIT" "reason=reconcile_pending_zero" "reuse_ready_buffer_candidate"
+    if ! simple_control_plane_enabled; then
+      ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+      if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+        log "ready_buffer_hit reason=reconcile_pending_zero"
+        log_decision_note "global" "READY_BUFFER_HIT" "reason=reconcile_pending_zero" "reuse_ready_buffer_candidate"
+      fi
     fi
     if ! candidate_file_has_rows; then
       find_candidate 1
@@ -8035,10 +10064,14 @@ PY
 	    if ! candidate_file_has_rows; then
 	      log_state "idle now=none completed=all"
 	      log "candidate_empty_after_reconcile"
-	      if handle_empty_candidate_state "candidate_empty_after_reconcile"; then
+		      maybe_process_completion_followup "candidate_empty_after_reconcile" || true
+		      maybe_kick_completion_followup_worker "candidate_empty_after_reconcile" || true
+	      if handle_empty_candidate_or_exit "candidate_empty_after_reconcile"; then
 	        continue
 	      fi
-	      maybe_trigger_auto_seed "candidate_empty_after_reconcile" || true
+	      if ! simple_control_plane_enabled; then
+	        maybe_trigger_auto_seed "candidate_empty_after_reconcile" || true
+	      fi
 	      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
 	        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
 	      fi
@@ -8049,35 +10082,61 @@ PY
       sleep "$adaptive_idle_sleep"
       continue
     fi
-	    IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+	    IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
 	    if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
 	      if fallback_pending_candidate "$ORPHAN_FILE" "$LAST_REJECTED_QUEUE" "$FULLSPAN_DECISION_STATE_FILE"; then
 	        log "candidate_parse_fallback reason=parse_empty_after_reconcile"
-	        IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
+	        IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
 	      fi
 	    fi
 	    if [[ -z "${queue:-}" || "$queue" == "queue" ]]; then
-        ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
-        if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
-          log "ready_buffer_hit reason=candidate_parse_empty_after_reconcile"
-          log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty_after_reconcile" "reuse_ready_buffer_candidate"
-          IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield < <(tail -n 1 "$CANDIDATE_FILE")
-	        else
-		      log_state "idle now=none completed=all"
-		      log "candidate_parse_empty_after_reconcile"
-		      if handle_empty_candidate_state "candidate_parse_empty_after_reconcile"; then
-		        continue
-	        fi
-		      maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
-		      if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
-		        adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
-	      fi
-	      if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
-	        adaptive_idle_sleep=300
-	      fi
-	      batch_session_maybe_stop "candidate_parse_empty_after_reconcile"
-	      sleep "$adaptive_idle_sleep"
-	      continue
+        if ! simple_control_plane_enabled; then
+          ready_buffer_refresh "${LAST_REJECTED_QUEUE:-}" || true
+          if ready_buffer_emit_candidate "${LAST_REJECTED_QUEUE:-}" >/dev/null 2>&1; then
+            log "ready_buffer_hit reason=candidate_parse_empty_after_reconcile"
+            log_decision_note "global" "READY_BUFFER_HIT" "reason=candidate_parse_empty_after_reconcile" "reuse_ready_buffer_candidate"
+            IFS=',' read -r queue planned running stalled failed completed total urgency mtime promotion_potential gate_status gate_reason pre_rank_score strict_gate_status strict_gate_reason effective_planned_count stalled_share queue_yield_score recent_yield dispatch_block_reason < <(tail -n 1 "$CANDIDATE_FILE")
+          else
+            log_state "idle now=none completed=all"
+            log "candidate_parse_empty_after_reconcile"
+	            maybe_process_completion_followup "candidate_parse_empty_after_reconcile" || true
+	            maybe_kick_completion_followup_worker "candidate_parse_empty_after_reconcile" || true
+            if handle_empty_candidate_or_exit "candidate_parse_empty_after_reconcile"; then
+              continue
+            fi
+            if ! simple_control_plane_enabled; then
+              maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
+            fi
+            if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+              adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+            fi
+            if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+              adaptive_idle_sleep=300
+            fi
+            batch_session_maybe_stop "candidate_parse_empty_after_reconcile"
+            sleep "$adaptive_idle_sleep"
+            continue
+          fi
+        else
+          log_state "idle now=none completed=all"
+          log "candidate_parse_empty_after_reconcile"
+          maybe_process_completion_followup "candidate_parse_empty_after_reconcile" || true
+          maybe_kick_completion_followup_worker "candidate_parse_empty_after_reconcile" || true
+          if handle_empty_candidate_or_exit "candidate_parse_empty_after_reconcile"; then
+            continue
+          fi
+          if ! simple_control_plane_enabled; then
+            maybe_trigger_auto_seed "candidate_parse_empty_after_reconcile" || true
+          fi
+          if [[ "$adaptive_idle_sleep" -lt 300 ]]; then
+            adaptive_idle_sleep=$((adaptive_idle_sleep * 2))
+          fi
+          if [[ "$adaptive_idle_sleep" -gt 300 ]]; then
+            adaptive_idle_sleep=300
+          fi
+          batch_session_maybe_stop "candidate_parse_empty_after_reconcile"
+          sleep "$adaptive_idle_sleep"
+          continue
         fi
 	    fi
 	    queue_rel="${queue#$ROOT_DIR/}"
@@ -8095,7 +10154,11 @@ PY
 	        queue_age_sec=0
 	      fi
 	    fi
-	    if (( queue_age_sec < NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC && completed == 0 && failed == 0 && stalled == 0 && pending == planned )); then
+	    if [[ "$(queue_has_current_session_dispatch_attempt "$queue_rel")" != "1" ]]; then
+	      no_progress_breaker_streak_count=0
+	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
+	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=no_dispatch_attempt"
+	    elif (( queue_age_sec < NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC && completed == 0 && failed == 0 && stalled == 0 && pending == planned )); then
 	      no_progress_breaker_streak_count=0
 	      fullspan_state_metric_set "no_progress_breaker_streak" "$no_progress_breaker_streak_count"
 	      log "no_progress_phase_switch_deferred queue=$queue_rel pending=$pending reason=fresh_queue_grace age_sec=$queue_age_sec grace_sec=$NO_PROGRESS_BREAKER_FRESH_QUEUE_GRACE_SEC"
@@ -8188,6 +10251,11 @@ PY
       if (( pending <= 0 )); then
         sleep 2
         continue
+      fi
+    else
+      early_stop_reason="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(str(d.get(\"reason\") or \"\"))' "$early_stop_payload" 2>/dev/null || true)"
+      if [[ -n "$early_stop_reason" ]]; then
+        log "early_stop_soft_note queue=$queue_rel reason=$early_stop_reason"
       fi
     fi
   fi
@@ -8295,8 +10363,8 @@ PY
   fi
 
   if [[ "$state_verdict" == "PROMOTE_PENDING_CONFIRM" || "$state_verdict" == "PROMOTE_DEFER_CONFIRM" ]]; then
-    if (( state_strict_pass_count > 0 && state_strict_run_groups >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
-      fullspan_rollup_sync "$queue_rel" "confirm_fastlane_watch"
+    if (( pending == 0 && state_strict_pass_count > 0 && state_strict_run_groups >= FULLSPAN_CONFIRM_MIN_GROUPS )); then
+      completion_followup_enqueue_ready_queue "$queue_rel" "confirm_fastlane_watch"
     fi
   fi
 
@@ -8304,8 +10372,11 @@ PY
     if [[ "$pending" -lt "$prev_pending" ]]; then
       clear_orphan "$queue_rel"
       no_progress_streak_by_queue["$queue_rel"]=0
+      handoff_retry_clear_queue "$queue_rel" >/dev/null 2>&1 || true
       log "progress_seen queue=$queue_rel prev=$prev_pending curr=$pending"
-      fullspan_rollup_sync "$queue_rel" "progress_milestone"
+      if (( pending == 0 && completed > 0 )); then
+        completion_followup_enqueue_ready_queue "$queue_rel" "progress_milestone"
+      fi
     fi
   fi
 
@@ -8358,12 +10429,14 @@ PY
         sync_queue_status "$queue_rel"
       fi
       if (( completed > 0 )); then
-        fullspan_rollup_sync "$queue_rel" "remote_runner_active_sync"
+        log "fullspan_rollup_sync_deferred queue=$queue_rel reason=remote_runner_active_sync completed=$completed pending=$pending"
       else
         log "fullspan_rollup_sync_skip queue=$queue_rel reason=remote_runner_active_sync completed=0"
       fi
       if [[ "$remote_activity_source" == "postprocess_active" || "$remote_activity_source" == "build_index_active" ]]; then
         log "overlap_dispatch_skip queue=$queue_rel reason=$remote_activity_source"
+      elif simple_control_plane_enabled; then
+        log "overlap_dispatch_skip queue=$queue_rel reason=simple_control_plane"
       else
         maybe_dispatch_overlap_from_buffer "$queue_rel" "$pending" "$running" "$stalled" "$failed" "$total" || true
       fi
@@ -8372,6 +10445,10 @@ PY
     fi
 
     if (( running > 0 || stalled > 0 )); then
+      if [[ "$(queue_has_current_session_dispatch_attempt "$queue_rel")" != "1" && -z "$remote_activity_source" ]]; then
+        no_progress_streak_by_queue["$queue_rel"]=0
+        log "no_progress_fail_closed_deferred queue=$queue_rel pending=$pending running=$running stalled=$stalled reason=no_dispatch_attempt"
+      else
       no_progress_count="${no_progress_streak_by_queue[$queue_rel]:-0}"
       if [[ -n "$prev_queue" && "$prev_queue" == "$queue_rel" ]]; then
         if [[ "$pending" -eq "$prev_pending" && "$running" -eq "$prev_running" && "$stalled" -eq "$prev_stalled" && "$planned" -eq "$prev_planned" && "$failed" -eq "$prev_failed" ]]; then
@@ -8392,6 +10469,7 @@ PY
         sleep 2
         continue
       fi
+      fi
     else
       no_progress_streak_by_queue["$queue_rel"]=0
     fi
@@ -8399,22 +10477,26 @@ PY
     no_progress_streak_by_queue["$queue_rel"]=0
   fi
 
-	  safe_queue_name="$(basename "$queue")"
 	  if [[ "$pending" -eq 0 && "$completed" -gt 0 ]] && [[ "$cycle_ran_this_loop" != "1" || "$cycle_ran_queue_rel" != "$queue_rel" ]]; then
-	    run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+	    completion_followup_enqueue_ready_queue "$queue_rel" "pending_zero_completed"
 	    cycle_ran_this_loop=1
 	    cycle_ran_queue_rel="$queue_rel"
 	  fi
 
-  if [[ "$promotion_verdict" == "REJECT" && "$promotion_potential" == "REJECT" ]]; then
+  dispatch_block_reason="$(current_queue_dispatch_block_reason "$queue_rel")"
+  if [[ -n "$dispatch_block_reason" ]]; then
     LAST_REJECTED_QUEUE="$queue_rel"
-    mark_orphan "$queue_rel" "gated_reject_no_progress"
-    cold_fail_state_add "$queue_rel" "${gate_reason:-HARD_FAIL}"
-    fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
+    if [[ "$dispatch_block_reason" == "FULLSPAN_REJECT" || "$dispatch_block_reason" == "FAIL_CLOSED" ]]; then
+      mark_orphan "$queue_rel" "dispatch_block_${dispatch_block_reason,,}"
+      cold_fail_state_add "$queue_rel" "${gate_reason:-$dispatch_block_reason}"
+      fullspan_state_metric_set "cold_fail_active_count" "$(cold_fail_active_count)"
+    fi
     : > "$CANDIDATE_FILE"
-    log "candidate_gated_reject queue=$queue_rel promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
-    log_decision_note "$queue_rel" "REJECT" "gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
-    log_decision_note "$queue_rel" "COLD_FAIL_INDEX_ADD" "gate_reason=${gate_reason:-HARD_FAIL} ttl_sec=$HARD_FAIL_COLD_TTL_SEC" "exclude_from_hot_selector"
+    log "candidate_gated_reject queue=$queue_rel dispatch_block_reason=$dispatch_block_reason promotion_verdict=$promotion_verdict gate_status=$gate_status gate_reason=$gate_reason pre_rank_score=$pre_rank_score"
+    log_decision_note "$queue_rel" "REJECT" "dispatch_block_reason=$dispatch_block_reason gate_status=$gate_status reason=$gate_reason" "skip_and_select_next_candidate"
+    if [[ "$dispatch_block_reason" == "FULLSPAN_REJECT" || "$dispatch_block_reason" == "FAIL_CLOSED" ]]; then
+      log_decision_note "$queue_rel" "COLD_FAIL_INDEX_ADD" "gate_reason=${gate_reason:-$dispatch_block_reason} ttl_sec=$HARD_FAIL_COLD_TTL_SEC" "exclude_from_hot_selector"
+    fi
     batch_session_maybe_stop "gated_reject"
     sleep 2
     continue
@@ -8429,7 +10511,9 @@ PY
   action=""
   reason=""
 
-  if [[ -n "$hb_queue" && "$running" -eq 0 && "$stalled" -gt 0 ]]; then
+  if simple_control_plane_enabled && [[ "$running" -eq 0 && "$stalled" -gt 0 ]]; then
+    log "repair_stalled_bypass queue=$queue_rel reason=simple_control_plane_direct_dispatch stalled=$stalled planned=$planned"
+  elif [[ -n "$hb_queue" && "$running" -eq 0 && "$stalled" -gt 0 ]]; then
     if awk -v stale="$hb_stale_sec" -v th="$ORPHAN_STALE_SECONDS" 'BEGIN { exit (stale + 0 >= th) ? 0 : 1 }'; then
       reason="stalled_queue_no_progress"
       if repair_stalled_queue "$queue_rel" "$planned" "$running" "$stalled" "$total" "$reason"; then
@@ -8517,11 +10601,11 @@ PY
 
 	  if [[ "$reason" == "no_pending" ]]; then
 	    if [[ "$completed" -gt 0 ]] && [[ "$cycle_ran_this_loop" != "1" || "$cycle_ran_queue_rel" != "$queue_rel" ]]; then
-	      safe_queue_name="$(basename "$queue")"
-	      run_fullspan_cycle "$queue_rel" "$queue" "$safe_queue_name"
+	      completion_followup_enqueue_ready_queue "$queue_rel" "no_pending"
 	      cycle_ran_this_loop=1
 	      cycle_ran_queue_rel="$queue_rel"
 	    fi
+    handoff_retry_clear_queue "$queue_rel" >/dev/null 2>&1 || true
     log_state "idle current_queue=$queue_rel pending=0 completed=$completed"
     log "no_pending queue=$queue_rel action=WAIT selection_policy=$FULLSPAN_POLICY_NAME selection_mode=$PROMOTION_SELECTION_MODE promotion_verdict=$promotion_verdict"
     batch_session_maybe_stop "no_pending"
@@ -8600,9 +10684,12 @@ PY
     start_rc=$?
   fi
   if (( start_rc == 2 )); then
-    fullspan_state_metric_set "seed_trigger_reason" "queue_hygiene_skip"
-    log "start_skipped queue=$queue_rel cause=$cause reason=queue_hygiene_skip"
-    maybe_trigger_auto_seed "queue_hygiene_skip" || true
+    skip_reason="${START_QUEUE_SKIP_REASON:-queue_hygiene_skip}"
+    fullspan_state_metric_set "seed_trigger_reason" "$skip_reason"
+    log "start_skipped queue=$queue_rel cause=$cause reason=$skip_reason"
+    if [[ "$skip_reason" == "queue_hygiene_skip" || "$skip_reason" == "queue_hygiene_noop_skip" || "$skip_reason" == "queue_hygiene_empty_skip" ]] && ! simple_control_plane_enabled; then
+      maybe_trigger_auto_seed "queue_hygiene_skip" || true
+    fi
     : > "$CANDIDATE_FILE"
     sleep 2
     continue
@@ -8612,6 +10699,12 @@ PY
     batch_session_maybe_stop "start_failed"
   fi
 
-  sleep 120
+  if [[ "${completion_followup_pending:-0}" == "1" && "${completion_followup_queue_rel:-}" == "$queue_rel" ]]; then
+    sleep 1
+  elif simple_control_plane_enabled; then
+    sleep "$DRIVER_SIMPLE_POST_START_SLEEP_SEC"
+  else
+    sleep "$DRIVER_POST_START_SLEEP_SEC"
+  fi
 
 done

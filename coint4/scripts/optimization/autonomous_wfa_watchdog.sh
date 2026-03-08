@@ -9,8 +9,6 @@ DRIVER_SCRIPT="$ROOT_DIR/scripts/optimization/autonomous_wfa_driver.sh"
 SERVER_IP="${SERVER_IP:-85.198.90.128}"
 SERVER_USER="${SERVER_USER:-root}"
 WATCHDOG_MAX_IDLE_CYCLES="${WATCHDOG_MAX_IDLE_CYCLES:-1}"
-WATCHDOG_PARALLEL="${WATCHDOG_PARALLEL:-4}"
-WATCHDOG_POWEROFF_AFTER_RUN="${WATCHDOG_POWEROFF_AFTER_RUN:-true}"
 
 mkdir -p "$STATE_DIR"
 
@@ -193,27 +191,7 @@ PY
 
 trigger_powered_repair() {
   local queue_rel="$1"
-  local stamp
-  stamp="$(date -u +%Y%m%d_%H%M%S)"
-  local qlog="$STATE_DIR/watchdog_repair_${stamp}_$(basename "$(dirname "$queue_rel")").log"
-  (
-    cd "$ROOT_DIR"
-    AUTONOMOUS_MODE=1 \
-    ALLOW_HEAVY_RUN=1 \
-    ./.venv/bin/python scripts/optimization/run_wfa_queue_powered.py \
-      --queue "$queue_rel" \
-      --compute-host "$SERVER_IP" \
-      --ssh-user "$SERVER_USER" \
-      --parallel "$WATCHDOG_PARALLEL" \
-      --statuses auto \
-      --max-retries 2 \
-      --watchdog true \
-      --wait-completion false \
-      --postprocess true \
-      --poweroff "$WATCHDOG_POWEROFF_AFTER_RUN" \
-      >>"$qlog" 2>&1
-  ) &
-  log "WATCHDOG_TRIGGER_REPAIR queue=$queue_rel log=$qlog"
+  log "WATCHDOG_LIVENESS_ONLY queue=$queue_rel action=skip_powered_repair"
 }
 
 main() {
